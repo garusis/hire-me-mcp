@@ -41,10 +41,11 @@ function readMdxFrontmatterIds(dir: string): string[] {
     .map((file) => {
       const raw = fs.readFileSync(path.join(dirAbs, file), "utf-8");
       const match = raw.match(/^id:\s*(\S+)\s*$/m);
-      if (!match) {
+      const id = match?.[1];
+      if (id === undefined) {
         throw new Error(`no id frontmatter field found in ${dir}/${file}`);
       }
-      return match[1];
+      return id;
     });
 }
 
