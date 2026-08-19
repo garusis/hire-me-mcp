@@ -1,0 +1,51 @@
+# lefthook.yml — tool-agnostic pre-commit enforcement.
+#
+# Formats/lints staged files with Biome and runs Vitest only for the
+# packages affected by the staged changes. This binds every contributor
+# and every agent (Claude Code, Codex, humans) equally, independent of
+# whether editor- or agent-level hooks are honoured.
+#
+# Only a `pre-commit` stage is defined:
+#   - No `commit-msg` stage: this repo has no commit message linter
+#     (commitlint or equivalent) yet, so there is nothing cheap to check.
+#   - No `pre-push` stage: it would either duplicate what `pre-commit`
+#     already verified (redundant cost on every push) or run the full
+#     suite/E2E, which belongs to CI, not a local hook.
+#
+# Escape hatch — emergencies only, CI re-checks everything anyway:
+#   LEFTHOOK=0 git commit -m "..."
+#   git commit --no-verify -m "..."
+# See README.md > "Pre-commit hooks (lefthook)" for details.
+pre-commit:
+  parallel: true
+  jobs:
+    - name: biome
+      # See scripts/lefthook/biome-staged.sh for why this isn't a plain
+      # `biome check --write {staged_files}` one-liner.
+      run: bash scripts/lefthook/biome-staged.sh
+      glob:
+        - "*.js"
+        - "*.jsx"
+        - "*.ts"
+        - "*.tsx"
+        - "*.json"
+        - "*.jsonc"
+      stage_fixed: true
+
+    - name: tests
+      # `--filter=[HEAD]` (no leading `...`) scopes to packages that
+      # themselves have staged/uncommitted changes relative to HEAD, and
+      # deliberately excludes dependents: a `packages/core`-only change
+      # must not run `apps/web` tests just because `apps/web` depends on
+      # `@hire-me-mcp/core`. `turbo` still builds any changed package's
+      # own dependencies first (the `test` task's `dependsOn: ["^build"]`
+      # in turbo.json), which is required for the test to run at all but
+      # never triggers unrelated packages' *tests*.
+      run: pnpm turbo run test --filter="[HEAD]" --output-logs=new-only
+      glob:
+        - "*.js"
+        - "*.jsx"
+        - "*.ts"
+        - "*.tsx"
+        - "*.mjs"
+        - "*.cjs"
