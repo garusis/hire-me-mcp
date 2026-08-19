@@ -1,0 +1,9 @@
+{
+  "id": "fixture-role-fixtureco-2020",
+  "company": "Fixtureco",
+  "role": "Fixture Engineer",
+  "startDate": "not-a-date",
+  "summary": "A fake role used only to exercise the content loader in tests.",
+  "highlights": ["Did a fixture thing"],
+  "tech": ["fixture-lang"]
+}

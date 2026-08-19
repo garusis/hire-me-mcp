@@ -1,0 +1,16 @@
+[
+  {
+    "id": "fixture-skill",
+    "name": "Fixture Skill",
+    "aliases": [],
+    "category": "fixture-category",
+    "proficiency": "expert",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "fixture-role-fixtureco-2020",
+        "label": "Fixture Engineer, Fixtureco"
+      }
+    ]
+  }
+]

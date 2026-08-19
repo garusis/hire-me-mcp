@@ -1,0 +1,10 @@
+[
+  {
+    "id": "fixture-skill",
+    "name": "Fixture Skill",
+    "aliases": [],
+    "category": "fixture-category",
+    "proficiency": "expert",
+    "evidence": []
+  }
+]
