@@ -12,7 +12,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "test": "echo \"no tests configured yet\""
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@hire-me-mcp/career-data": "workspace:*",
@@ -22,9 +24,15 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@types/node": "22.10.10",
+    "@testing-library/dom": "10.4.1",
+    "@testing-library/react": "16.3.2",
+    "@types/node": "22.20.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
-    "typescript": "5.9.3"
+    "@vitejs/plugin-react": "6.0.5",
+    "@vitest/coverage-v8": "4.1.11",
+    "happy-dom": "20.11.2",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
   }
 }
