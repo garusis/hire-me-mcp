@@ -103,3 +103,47 @@ pnpm --filter web test:watch     # watch mode for a single package (not run by t
 pnpm test:coverage        # turbo run test:coverage — vitest run --coverage everywhere
 pnpm --filter web test:coverage  # coverage for a single package
 ```
+
+### Continuous integration and branch protection
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull request and on every push to `main`. It has a single `quality` job with four separately visible steps — Biome check, typecheck, unit tests, build — so a failure is attributable at a glance. It is structured to let a future `e2e` job (Playwright, a later task) be appended without restructuring the workflow.
+
+- Node is pinned via `.nvmrc`; pnpm is installed via `pnpm/action-setup`, which reads the version from the root `packageManager` field.
+- Dependencies install with `pnpm install --frozen-lockfile`, so a stale lockfile fails CI instead of silently drifting.
+- The pnpm store and the Turborepo cache (`.turbo`) are cached across runs, so an unchanged branch replays cached task output (`>>> FULL TURBO`) instead of re-running typecheck/test/build.
+- `concurrency` cancels a previous in-flight run for the same ref when a new commit is pushed.
+- CI is the remote mirror of the lefthook pre-commit gate (#18): anything pre-commit rejects locally must also fail here, so `--no-verify` doesn't let a violation reach `main`.
+
+`main` is protected to match: no direct pushes, no force pushes, and the `quality` check must pass before a PR can merge. This was configured once, by hand, by PUTting a JSON body (the branch protection endpoint rejects `gh api -f/-F` key-path syntax for this nested shape, so a body file is the reliable way to reproduce it):
+
+```bash
+cat > branch-protection.json <<'EOF'
+{
+  "required_status_checks": {
+    "strict": true,
+    "checks": [{ "context": "quality" }]
+  },
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 0,
+    "dismiss_stale_reviews": false,
+    "require_code_owner_reviews": false
+  },
+  "restrictions": null,
+  "required_linear_history": false,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}
+EOF
+
+gh api repos/garusis/hire-me-mcp/branches/main/protection \
+  -X PUT \
+  -H "Accept: application/vnd.github+json" \
+  --input branch-protection.json
+```
+
+Verify the live configuration at any time with:
+
+```bash
+gh api repos/garusis/hire-me-mcp/branches/main/protection
+```
