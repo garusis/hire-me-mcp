@@ -56,6 +56,9 @@ jobs:
       - name: Typecheck
         run: pnpm turbo typecheck
 
+      - name: Validate career data content
+        run: pnpm turbo validate
+
       - name: Unit tests
         run: pnpm turbo test
 
