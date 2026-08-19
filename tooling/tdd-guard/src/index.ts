@@ -1,3 +1,4 @@
+export { applyEditToolInput } from "./applyEdit.js";
 export type {
   Decision,
   DecisionInput,
