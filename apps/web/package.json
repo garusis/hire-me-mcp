@@ -1,0 +1,29 @@
+{
+  "name": "@hire-me-mcp/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Portfolio site, chat, and MCP endpoint — the single user-facing Next.js app",
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"no lint configured yet\"",
+    "test": "echo \"no tests configured yet\""
+  },
+  "dependencies": {
+    "@hire-me-mcp/career-data": "workspace:*",
+    "@hire-me-mcp/core": "workspace:*",
+    "next": "15.3.9",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.10",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "typescript": "5.9.3"
+  }
+}
