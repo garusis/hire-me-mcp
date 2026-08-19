@@ -6,7 +6,7 @@
   "license": "UNLICENSED",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "packageManager": "pnpm@10.18.3",
   "scripts": {
@@ -18,15 +18,18 @@
     "format:check": "biome format .",
     "test": "turbo run test",
     "test:coverage": "turbo run test:coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "typecheck": "turbo run typecheck",
     "validate:lefthook": "node scripts/lefthook/validate-config.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.9",
+    "@playwright/test": "1.62.1",
     "@vitest/coverage-v8": "4.1.11",
     "lefthook": "2.1.10",
-    "turbo": "2.10.11",
     "tsx": "4.23.12",
+    "turbo": "2.10.11",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
   }
