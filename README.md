@@ -72,4 +72,20 @@ pnpm test                  # turbo run test
 pnpm --filter web dev      # run only the web app's dev server (http://localhost:3000)
 ```
 
-Linting (Biome), unit tests (Vitest), pre-commit hooks, CI, and deployment are wired up in later tasks of the [Foundation & Agentic DX epic](https://github.com/garusis/hire-me-mcp/issues/1); the `lint`/`test` scripts are no-op placeholders in each package until then.
+Unit tests (Vitest), pre-commit hooks, CI, and deployment are wired up in later tasks of the [Foundation & Agentic DX epic](https://github.com/garusis/hire-me-mcp/issues/1); the `test` scripts are no-op placeholders in each package until then.
+
+### Linting and formatting (Biome)
+
+[Biome](https://biomejs.dev) is the **single** linter and formatter for the whole repo — there is no ESLint or Prettier anywhere, and none should be added. A single root `biome.json` configures formatting and linting for every workspace package; packages inherit it rather than duplicating rules.
+
+```bash
+pnpm lint                  # turbo run lint — biome check in every package (fans out, cacheable)
+pnpm --filter web lint     # lint a single package
+pnpm format                # biome format --write . — format the whole repo
+pnpm format:check          # biome format . — check formatting without writing
+pnpm biome check .         # run Biome directly across the whole repo (format + lint + import sort)
+```
+
+Strict rules are enforced at `error` severity, not `warn`: no explicit or implicit `any` (`noExplicitAny`, `noImplicitAnyLet`), cognitive complexity limits (`noExcessiveCognitiveComplexity`), no unused imports/variables, and organized imports enforced as part of `biome check`. Named exports are preferred over default exports (`noDefaultExport`); the only exception is Next.js App Router files that the framework requires to use a default export (`page.tsx`, `layout.tsx`, `route.ts`, etc. under `apps/web/app/**`, plus `next.config.ts`), which are excluded via a `biome.json` override.
+
+If you use VS Code, install the [Biome extension](https://marketplace.visualstudio.com/items?itemName=biomejs.biome) — `.vscode/settings.json` already sets it as the default formatter with format-on-save, so editor and agent edits converge on the same output.

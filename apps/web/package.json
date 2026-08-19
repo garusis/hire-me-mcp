@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "echo \"no lint configured yet\"",
+    "lint": "biome check .",
+    "format": "biome format --write .",
     "test": "echo \"no tests configured yet\""
   },
   "dependencies": {

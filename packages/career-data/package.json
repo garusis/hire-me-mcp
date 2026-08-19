@@ -13,11 +13,14 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "echo \"no lint configured yet\"",
+    "lint": "biome check .",
+    "format": "biome format --write .",
     "test": "echo \"no tests configured yet\""
   },
   "devDependencies": {
