@@ -21,7 +21,8 @@
       "!**/coverage",
       "!**/next-env.d.ts",
       "!**/*.tsbuildinfo",
-      "!**/pnpm-lock.yaml"
+      "!**/pnpm-lock.yaml",
+      "!**/src/content/__fixtures__"
     ]
   },
   "formatter": {

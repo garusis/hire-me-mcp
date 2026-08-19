@@ -1,0 +1,9 @@
+{
+  "id": "profile-fixture",
+  "name": "Fixture Person",
+  "headline": "",
+  "location": "Fixtureville, XX",
+  "availability": "open",
+  "summary": "A fake profile used only to exercise the content loader in tests.",
+  "contacts": []
+}

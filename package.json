@@ -21,6 +21,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "typecheck": "turbo run typecheck",
+    "validate": "turbo run validate",
     "validate:lefthook": "node scripts/lefthook/validate-config.mjs"
   },
   "devDependencies": {
