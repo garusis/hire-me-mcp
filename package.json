@@ -10,6 +10,7 @@
   },
   "packageManager": "pnpm@10.18.3",
   "scripts": {
+    "prepare": "lefthook install --force",
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
@@ -17,11 +18,13 @@
     "format:check": "biome format .",
     "test": "turbo run test",
     "test:coverage": "turbo run test:coverage",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "validate:lefthook": "node scripts/lefthook/validate-config.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.9",
     "@vitest/coverage-v8": "4.1.11",
+    "lefthook": "2.1.10",
     "turbo": "2.10.11",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
