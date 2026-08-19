@@ -108,7 +108,14 @@ importers:
         version: 4.1.11(@types/node@22.20.1)(@vitest/coverage-v8@4.1.11)(happy-dom@20.11.2)(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.12))
 
   packages/core:
+    dependencies:
+      '@hire-me-mcp/career-data':
+        specifier: workspace:*
+        version: link:../career-data
     devDependencies:
+      '@types/node':
+        specifier: 22.20.1
+        version: 22.20.1
       '@vitest/coverage-v8':
         specifier: 4.1.11
         version: 4.1.11(vitest@4.1.11)
