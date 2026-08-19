@@ -92,7 +92,7 @@ If you use VS Code, install the [Biome extension](https://marketplace.visualstud
 
 ### Testing (Vitest)
 
-[Vitest](https://vitest.dev) is the unit/integration test runner for the whole repo. A shared base config (`vitest.config.base.ts`, root) sets the test file convention, exclusions, and coverage settings; each package's `vitest.config.ts` extends it via `mergeConfig`, adding only what differs — `environment: "node"` for `packages/*`, `environment: "happy-dom"` plus the `@vitejs/plugin-react` plugin for `apps/web` (App Router components need JSX/React support; `happy-dom` is a pure-JS DOM implementation, so no browser is ever downloaded or launched — Playwright/e2e is a separate, later task and a separate command). Coverage uses the `v8` provider; no hard threshold is enforced yet, so `test:coverage` just has to run clean and print a report.
+[Vitest](https://vitest.dev) is the unit/integration test runner for the whole repo. A shared base config (`vitest.config.base.ts`, root) sets the test file convention, exclusions, and coverage settings; each package's `vitest.config.ts` extends it via `mergeConfig`, adding only what differs — `environment: "node"` for `packages/*`, `environment: "happy-dom"` plus the `@vitejs/plugin-react` plugin for `apps/web` (App Router components need JSX/React support; `happy-dom` is a pure-JS DOM implementation, so no browser is ever downloaded or launched — Playwright/e2e is a separate command, documented below). Coverage uses the `v8` provider; no hard threshold is enforced yet, so `test:coverage` just has to run clean and print a report.
 
 **Test file convention — co-located `*.test.ts` / `*.test.tsx` next to the source file they exercise** (e.g. `src/index.ts` → `src/index.test.ts`, `app/page.tsx` → `app/page.test.tsx`). This is chosen over a parallel `tests/` directory because it keeps a 1:1, greppable mapping between a source file and its test with no path translation — `path/to/foo.ts` always has its test at `path/to/foo.test.ts`, which is exactly the deterministic rule later TDD tooling needs to map one to the other.
 
@@ -103,6 +103,20 @@ pnpm --filter web test:watch     # watch mode for a single package (not run by t
 pnpm test:coverage        # turbo run test:coverage — vitest run --coverage everywhere
 pnpm --filter web test:coverage  # coverage for a single package
 ```
+
+### End-to-end tests (Playwright) — added in #36
+
+[Playwright](https://playwright.dev) is the e2e runner, fully separate from Vitest: it owns its own command (`pnpm test:e2e`), its own config (`playwright.config.ts`, root), and its own CI job (`e2e` in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)) — `pnpm test` / `pnpm turbo test` never downloads or launches a browser, and `pnpm test:e2e` never runs Vitest. Specs live under `apps/web/e2e/*.spec.ts` (a `.spec.ts` suffix, not `.test.ts`, so Vitest's `include` globs never pick them up), currently one smoke spec (`apps/web/e2e/home.smoke.spec.ts`) that asserts the scaffolded home page responds and its `<h1>` heading is visible.
+
+The suite targets a **production build**, not the dev server: Playwright's `webServer` option runs `pnpm turbo run build --filter=@hire-me-mcp/web` (which also builds `packages/core` and `packages/career-data`, `apps/web`'s workspace dependencies) followed by `pnpm --filter @hire-me-mcp/web start`, and waits for it to respond before running specs. Chromium is the only project configured — this is a smoke check, not a cross-browser matrix. Traces and screenshots are captured on first retry only; retries are enabled on CI (2) and disabled locally (0), matching Vitest's "fast and deterministic locally, resilient in CI" split.
+
+```bash
+pnpm test:e2e             # playwright test — builds + starts apps/web in production mode, runs the smoke spec
+pnpm test:e2e:ui          # playwright test --ui — interactive UI mode for authoring/debugging specs
+pnpm exec playwright show-report   # open the last HTML report (playwright-report/index.html)
+```
+
+First-time setup needs the Chromium binary once: `pnpm exec playwright install --with-deps chromium` (CI does this itself, browser-cached across runs). Playwright's output directories (`playwright-report/`, `test-results/`, `blob-report/`, `playwright/.cache/`) are git-ignored — no browser binaries or run artifacts are ever committed.
 
 ### Pre-commit hooks (lefthook)
 
@@ -128,7 +142,10 @@ LEFTHOOK=0 git commit -m "..."    # same effect, explicit env var
 
 ### Continuous integration and branch protection
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull request and on every push to `main`. It has a single `quality` job with four separately visible steps — Biome check, typecheck, unit tests, build — so a failure is attributable at a glance. It is structured to let a future `e2e` job (Playwright, a later task) be appended without restructuring the workflow.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull request and on every push to `main`, with two jobs:
+
+- **`quality`** — four separately visible steps (Biome check, typecheck, unit tests, build) so a failure is attributable at a glance.
+- **`e2e`** (added in #36, `needs: quality`) — installs Chromium (`pnpm exec playwright install --with-deps chromium`, browser binaries cached by Playwright version), runs `pnpm test:e2e` (the Playwright smoke spec against a production build), and on failure uploads two artifacts: the Playwright HTML report (`playwright-report/`) and the trace/screenshot output (`test-results/`), both 7-day retention. A broken home page fails this job and therefore fails the required check on the PR.
 
 - Node is pinned via `.nvmrc`; pnpm is installed via `pnpm/action-setup`, which reads the version from the root `packageManager` field.
 - Dependencies install with `pnpm install --frozen-lockfile`, so a stale lockfile fails CI instead of silently drifting.
@@ -136,14 +153,14 @@ LEFTHOOK=0 git commit -m "..."    # same effect, explicit env var
 - `concurrency` cancels a previous in-flight run for the same ref when a new commit is pushed.
 - CI is the remote mirror of the lefthook pre-commit gate (#18): anything pre-commit rejects locally must also fail here, so `--no-verify` doesn't let a violation reach `main`.
 
-`main` is protected to match: no direct pushes, no force pushes, and the `quality` check must pass before a PR can merge. This was configured once, by hand, by PUTting a JSON body (the branch protection endpoint rejects `gh api -f/-F` key-path syntax for this nested shape, so a body file is the reliable way to reproduce it):
+`main` is protected to match: no direct pushes, no force pushes, and both the `quality` and `e2e` checks must pass before a PR can merge. This was configured once, by hand, by PUTting a JSON body (the branch protection endpoint rejects `gh api -f/-F` key-path syntax for this nested shape, so a body file is the reliable way to reproduce it):
 
 ```bash
 cat > branch-protection.json <<'EOF'
 {
   "required_status_checks": {
     "strict": true,
-    "checks": [{ "context": "quality" }]
+    "checks": [{ "context": "quality" }, { "context": "e2e" }]
   },
   "enforce_admins": true,
   "required_pull_request_reviews": {
