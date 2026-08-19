@@ -33,3 +33,6 @@ pnpm-debug.log*
 
 # Testing
 coverage/
+
+# Claude Code agent worktrees (created by isolated agent sessions; never tracked)
+.claude/worktrees/

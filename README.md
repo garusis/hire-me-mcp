@@ -169,3 +169,42 @@ Verify the live configuration at any time with:
 ```bash
 gh api repos/garusis/hire-me-mcp/branches/main/protection
 ```
+
+### Test-first enforcement (Claude Code hooks)
+
+Coding agents working in this repo — Claude Code in particular — are pushed into a test-first
+loop by three layers of enforcement; the full explanation of why all three exist lives in
+[`AGENTS.md`](./AGENTS.md#three-layers-of-enforcement), the rules themselves in
+[`.claude/rules/`](./.claude/rules), and the mechanism below.
+
+**`.claude/hooks/`** (Claude Code specific, registered in `.claude/settings.json`):
+
+| Hook | Event | What it does |
+| --- | --- | --- |
+| `tdd-pre-edit-guard.sh` | `PreToolUse` (Edit/Write/MultiEdit) | Blocks (exit 2) creating/editing an enforced source file (`apps/*/{src,app}/**/*.ts(x)`, `packages/*/src/**/*.ts(x)`) unless its co-located test file (`src/foo.ts` → `src/foo.test.ts`, per the convention above) exists **and** currently fails. The block message names the exact expected test path. Also blocks edits that weaken a test file — adding `.skip`/`.only`, removing test cases, or removing assertions. |
+| `tdd-pre-bash-guard.sh` | `PreToolUse` (Bash) | Blocks `rm` / `git rm` / `unlink` commands that target a `*.test.ts(x)` path — closes the deletion bypass the Edit/Write hook can't see. |
+| `tdd-post-edit-tests.sh` | `PostToolUse` (Edit/Write/MultiEdit) | Non-blocking. Runs the nearest test file plus a Biome check on the edited file, for immediate feedback. |
+| `tdd-stop-guard.sh` | `Stop` | Blocks (exit 2) ending the session if any package touched by uncommitted changes has a failing test or a dirty (failing) `biome check`. Guards against re-blocking in the same turn via `stop_hook_active`. |
+
+All four hooks are hermetic (only local `tsx`/`vitest`/`biome` binaries — no network, no `npx`
+resolution) and bounded (`run_with_timeout` in `.claude/hooks/tdd-lib.sh`, a portable
+kill-after-N-seconds wrapper, since macOS's built-in bash lacks GNU `timeout`). The actual
+allow/block *decision logic* — not the shell glue — lives in a tested TypeScript module,
+**`tooling/tdd-guard`**: `pathMapping.ts` maps a source path to its expected test path,
+`testContentAnalysis.ts` detects test-weakening edits, and `decision.ts` combines both into a pure
+`decide()` function the hooks shell out to via `tooling/tdd-guard/src/cli.ts`. It's a normal pnpm
+workspace package (`pnpm --filter @hire-me-mcp/tdd-guard test`, covered by `pnpm turbo test`) with
+Vitest coverage of the allow / block-no-test / block-test-deletion / block-`.only` cases (and
+several more).
+
+**Debugging a hook:** every hook reads Claude Code's PreToolUse/PostToolUse/Stop JSON payload from
+stdin — pipe a representative payload into it directly:
+
+```bash
+echo '{"tool_name":"Edit","tool_input":{"file_path":"packages/core/src/foo.ts","old_string":"a","new_string":"b"}}' \
+  | .claude/hooks/tdd-pre-edit-guard.sh; echo "exit=$?"
+```
+
+`TDD_SKIP_GUARD=1` skips `tdd-pre-edit-guard.sh`, `tdd-pre-bash-guard.sh`, and `tdd-stop-guard.sh`
+for a single command — a narrow, documented escape hatch for genuine exceptions, not a routine
+bypass (layer 3 — lefthook pre-commit, #18, plus CI — still enforces a green suite regardless).
