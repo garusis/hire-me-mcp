@@ -72,7 +72,7 @@ pnpm test                  # turbo run test
 pnpm --filter web dev      # run only the web app's dev server (http://localhost:3000)
 ```
 
-Unit tests (Vitest), pre-commit hooks, CI, and deployment are wired up in later tasks of the [Foundation & Agentic DX epic](https://github.com/garusis/hire-me-mcp/issues/1); the `test` scripts are no-op placeholders in each package until then.
+Pre-commit hooks, CI, and deployment are wired up in later tasks of the [Foundation & Agentic DX epic](https://github.com/garusis/hire-me-mcp/issues/1).
 
 ### Linting and formatting (Biome)
 
@@ -89,3 +89,17 @@ pnpm biome check .         # run Biome directly across the whole repo (format + 
 Strict rules are enforced at `error` severity, not `warn`: no explicit or implicit `any` (`noExplicitAny`, `noImplicitAnyLet`), cognitive complexity limits (`noExcessiveCognitiveComplexity`), no unused imports/variables, and organized imports enforced as part of `biome check`. Named exports are preferred over default exports (`noDefaultExport`); the only exception is Next.js App Router files that the framework requires to use a default export (`page.tsx`, `layout.tsx`, `route.ts`, etc. under `apps/web/app/**`, plus `next.config.ts`), which are excluded via a `biome.json` override.
 
 If you use VS Code, install the [Biome extension](https://marketplace.visualstudio.com/items?itemName=biomejs.biome) — `.vscode/settings.json` already sets it as the default formatter with format-on-save, so editor and agent edits converge on the same output.
+
+### Testing (Vitest)
+
+[Vitest](https://vitest.dev) is the unit/integration test runner for the whole repo. A shared base config (`vitest.config.base.ts`, root) sets the test file convention, exclusions, and coverage settings; each package's `vitest.config.ts` extends it via `mergeConfig`, adding only what differs — `environment: "node"` for `packages/*`, `environment: "happy-dom"` plus the `@vitejs/plugin-react` plugin for `apps/web` (App Router components need JSX/React support; `happy-dom` is a pure-JS DOM implementation, so no browser is ever downloaded or launched — Playwright/e2e is a separate, later task and a separate command). Coverage uses the `v8` provider; no hard threshold is enforced yet, so `test:coverage` just has to run clean and print a report.
+
+**Test file convention — co-located `*.test.ts` / `*.test.tsx` next to the source file they exercise** (e.g. `src/index.ts` → `src/index.test.ts`, `app/page.tsx` → `app/page.test.tsx`). This is chosen over a parallel `tests/` directory because it keeps a 1:1, greppable mapping between a source file and its test with no path translation — `path/to/foo.ts` always has its test at `path/to/foo.test.ts`, which is exactly the deterministic rule later TDD tooling needs to map one to the other.
+
+```bash
+pnpm test                        # turbo run test — vitest run in every package (cacheable)
+pnpm --filter web test           # test a single package
+pnpm --filter web test:watch     # watch mode for a single package (not run by turbo)
+pnpm test:coverage        # turbo run test:coverage — vitest run --coverage everywhere
+pnpm --filter web test:coverage  # coverage for a single package
+```
