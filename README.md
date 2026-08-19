@@ -46,7 +46,7 @@ Later: analytics on what recruiters ask, a `contact`/`book_call` tool (write act
 
 ## Workspace
 
-A pnpm + Turborepo monorepo. Node >= 20, pnpm 10 (pinned via `packageManager`).
+A pnpm + Turborepo monorepo. Node >= 22 (CI and Vercel run 24), pnpm 10 (pinned via `packageManager`).
 
 ```
 apps/
