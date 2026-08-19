@@ -232,7 +232,8 @@ bypass (layer 3 — lefthook pre-commit, #18, plus CI — still enforces a green
 deployment. The BFF, the public MCP endpoint (`mcp-handler`), and the embedded Mastra agent all
 ship inside this same Next.js app in later epics.
 
-**Live URL:** pending — see "Current status" below.
+**Live URL:** <https://hire-me-mcp-web.vercel.app> — production, deployed from `main`, verified
+HTTP 200 with the expected page content (see "Current status" below).
 
 ### Project settings (reproduce by hand in the Vercel dashboard)
 
@@ -243,15 +244,22 @@ rewrites), add a minimal `vercel.json` then and document why here.
 
 | Setting | Value |
 | --- | --- |
+| Vercel project | `hire-me-mcp-web`, personal Hobby account `marcos-javier-alvarez-maestres-projects` (**not** the House Numbers team — see note below) |
 | Framework Preset | Next.js |
 | Root Directory | `apps/web` |
 | Install Command | default (Vercel detects `pnpm-workspace.yaml` + the root `packageManager` field via corepack and runs `pnpm install --frozen-lockfile` at the workspace root) |
 | Build Command | `cd ../.. && pnpm turbo run build --filter=@hire-me-mcp/web` (override — the default per-package `next build` would skip `packages/core` and `packages/career-data`; this is the same command CI and a clean local clone use, so the Vercel build is guaranteed to be the workspace build, not an isolated `next build`) |
 | Output Directory | default (`apps/web/.next`, auto-detected for Next.js under Root Directory) |
-| Node.js Version | matches `.nvmrc` |
+| Node.js Version | project currently on Node 20 or older — Vercel is warning that builds on this version stop being supported after **2026-09-30**; the project's Node.js Version setting should be bumped to 22 or 24 before then (owner/dashboard action; tracked for #33/#57, not fixed by this doc-only change) |
 | Git repository | `garusis/hire-me-mcp`, Production Branch `main` |
-| Vercel Authentication (deployment protection) | disabled, so preview URLs return a plain HTTP 200 without a login wall |
+| Deployment Protection | **Standard Protection is on for Preview deployments** (Vercel's default) — a preview URL redirects (302) to `vercel.com/sso-api` for anyone not authenticated to the Vercel project instead of returning the page directly. Production is not protected. This is left as-is for now (not something this task changes) but matters for later preview-targeting e2e work (#58/#69), which will need either a bypass token or protection disabled on Preview. |
 | Ignored Build Step | not configured — evaluated and deferred, see below |
+
+Because the project lives under the owner's **personal Vercel account**, not the House Numbers
+team, the Vercel MCP tooling used elsewhere in this repo's tasks cannot see or manage it (it's
+scoped to House Numbers). Day-to-day Vercel operations for this project (settings changes,
+env vars, protection toggles) go through the Vercel dashboard or CLI as the owner, not through
+MCP/API automation.
 
 Verify locally that the exact same command reproduces what Vercel builds, from a clean clone:
 
@@ -263,6 +271,20 @@ pnpm turbo run build --filter=@hire-me-mcp/web
 The build log (local or on Vercel) must show `@hire-me-mcp/core` and `@hire-me-mcp/career-data`
 building before `@hire-me-mcp/web` — that's the check that the deploy is going through Turborepo's
 dependency graph rather than a bare `next build` in isolation.
+
+Automation has no dashboard/log access to this personal-account project (see the MCP note above),
+so this was verified indirectly instead of by reading the Vercel build log directly: the deployed
+production page renders values that only exist if `@hire-me-mcp/core` and
+`@hire-me-mcp/career-data` were actually built and bundled in —
+
+```bash
+curl -s https://hire-me-mcp-web.vercel.app/ | grep -o 'Domain package:.*package'
+```
+
+returns `Domain package: @hire-me-mcp/core` and `Career data package: @hire-me-mcp/career-data`,
+which the page can only print by importing both workspace packages at build time. Combined with
+the local `pnpm turbo run build --filter=@hire-me-mcp/web` run above (same command, same result),
+this is the evidence that Vercel is building through Turborepo and not a bare `next build`.
 
 ### Environment variables
 
@@ -288,9 +310,13 @@ None are required yet (see `.env.example` at the repo root). The convention goin
 ### Preview deployments
 
 Every pull request against `garusis/hire-me-mcp` gets an automatic Vercel preview deployment on
-its own `*.vercel.app` URL, posted as a comment/check on the PR by the Vercel GitHub integration.
-No Playwright/e2e runs against preview URLs — #36 runs e2e against a local production build only,
-per the epic's out-of-scope note.
+its own `*.vercel.app` URL, posted as a deployment/check on the PR by the Vercel GitHub
+integration. Preview URLs sit behind Vercel's Standard Protection by default (see the settings
+table above) — an unauthenticated request 302s to `vercel.com/sso-api` instead of returning the
+page, so a plain `curl` against a preview URL is not expected to return 200 the way production
+does. No Playwright/e2e runs against preview URLs — #36 runs e2e against a local production build
+only, per the epic's out-of-scope note; #58/#69 will need to account for this protection when they
+target previews.
 
 ### Ignored Build Step
 
@@ -304,19 +330,17 @@ later, the command is `npx turbo-ignore @hire-me-mcp/web` as the project's Ignor
 
 ### Current status
 
-The Vercel project is not yet connected. The Vercel GitHub App is installed on the `garusis`
-GitHub account but has a **pending permission-update request** that requires the repo owner to
-approve it interactively (GitHub sudo-mode re-authentication — passkey/password/2FA — which an
-agent cannot and should not perform on the owner's behalf):
+Connected and live. The Vercel project (`hire-me-mcp-web`, personal Hobby account) is linked to
+`garusis/hire-me-mcp` with Production Branch `main`.
 
-1. Sign in as `garusis` and open <https://github.com/settings/installations>, then **Configure**
-   next to the Vercel app; approve the pending permission-update request.
-2. Ensure repository access includes `garusis/hire-me-mcp` (add it if the app is scoped to
-   "Only select repositories").
-3. In the Vercel dashboard (House Numbers team), **Add New Project**, import
-   `garusis/hire-me-mcp`, and apply the settings table above (or re-run project creation through
-   the Vercel MCP/CLI once the GitHub App has repo access — it will fail with a `bad_request`
-   "install the GitHub integration first" error until step 1–2 are done).
-4. Confirm a production deployment from `main` returns HTTP 200 at the assigned `*.vercel.app`
-   URL, open this PR (or any PR) and confirm its preview deployment also returns HTTP 200, then
-   fill in the live URL above.
+- **Production:** `main`'s latest commit is deployed; `curl -s -o /dev/null -w '%{http_code}' https://hire-me-mcp-web.vercel.app/`
+  returns `200`, and the HTML includes both `Domain package: @hire-me-mcp/core` and
+  `Career data package: @hire-me-mcp/career-data` (see the build-command section above).
+- **Preview:** confirmed working — a follow-up PR to this repo produces its own Vercel preview
+  deployment, visible via `gh api repos/garusis/hire-me-mcp/deployments` and the deployment's own
+  check on the PR. Consistent with Standard Protection being on for Preview (see above), the
+  preview URL 302s to `vercel.com/sso-api` for an unauthenticated request rather than returning
+  200 directly — that's Vercel's default protection behavior, not a broken deployment.
+- One already-open PR (#89, from before this project was connected) did not get a retroactive
+  preview deployment — Vercel only builds previews for pushes made after the GitHub integration
+  is live, so a PR with no new commits since connection has no preview until it receives one.
