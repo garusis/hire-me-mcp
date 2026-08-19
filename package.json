@@ -1,0 +1,22 @@
+{
+  "name": "hire-me-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Portfolio as an API — monorepo root",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.18.3",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "turbo": "2.10.11",
+    "typescript": "5.9.3"
+  }
+}
