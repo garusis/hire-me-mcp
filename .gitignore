@@ -12,10 +12,9 @@ build/
 # Turborepo
 .turbo/
 
-# Env
-.env
-.env.local
-.env.*.local
+# Env (#40): ignore every .env* file except the committed example/template
+.env*
+!.env.example
 
 # Logs
 *.log

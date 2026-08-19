@@ -225,3 +225,98 @@ echo '{"tool_name":"Edit","tool_input":{"file_path":"packages/core/src/foo.ts","
 `TDD_SKIP_GUARD=1` skips `tdd-pre-edit-guard.sh`, `tdd-pre-bash-guard.sh`, and `tdd-stop-guard.sh`
 for a single command — a narrow, documented escape hatch for genuine exceptions, not a routine
 bypass (layer 3 — lefthook pre-commit, #18, plus CI — still enforces a green suite regardless).
+
+## Deployment (Vercel) — #40
+
+`apps/web` is one Vercel project for the whole monorepo — there is no separate API/service
+deployment. The BFF, the public MCP endpoint (`mcp-handler`), and the embedded Mastra agent all
+ship inside this same Next.js app in later epics.
+
+**Live URL:** pending — see "Current status" below.
+
+### Project settings (reproduce by hand in the Vercel dashboard)
+
+These are dashboard/Project Settings, not `vercel.json` — a monorepo root directory, install
+command, and build command are all expressible through Project Settings, so no `vercel.json` is
+committed. If a future requirement genuinely can't be expressed that way (e.g. custom headers,
+rewrites), add a minimal `vercel.json` then and document why here.
+
+| Setting | Value |
+| --- | --- |
+| Framework Preset | Next.js |
+| Root Directory | `apps/web` |
+| Install Command | default (Vercel detects `pnpm-workspace.yaml` + the root `packageManager` field via corepack and runs `pnpm install --frozen-lockfile` at the workspace root) |
+| Build Command | `cd ../.. && pnpm turbo run build --filter=@hire-me-mcp/web` (override — the default per-package `next build` would skip `packages/core` and `packages/career-data`; this is the same command CI and a clean local clone use, so the Vercel build is guaranteed to be the workspace build, not an isolated `next build`) |
+| Output Directory | default (`apps/web/.next`, auto-detected for Next.js under Root Directory) |
+| Node.js Version | matches `.nvmrc` |
+| Git repository | `garusis/hire-me-mcp`, Production Branch `main` |
+| Vercel Authentication (deployment protection) | disabled, so preview URLs return a plain HTTP 200 without a login wall |
+| Ignored Build Step | not configured — evaluated and deferred, see below |
+
+Verify locally that the exact same command reproduces what Vercel builds, from a clean clone:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm turbo run build --filter=@hire-me-mcp/web
+```
+
+The build log (local or on Vercel) must show `@hire-me-mcp/core` and `@hire-me-mcp/career-data`
+building before `@hire-me-mcp/web` — that's the check that the deploy is going through Turborepo's
+dependency graph rather than a bare `next build` in isolation.
+
+### Environment variables
+
+None are required yet (see `.env.example` at the repo root). The convention going forward:
+
+- **Local development** — an untracked `apps/web/.env.local` (git-ignored; see `.gitignore`).
+- **Preview / Production** — Vercel Project Settings → Environment Variables, scoped per
+  environment. Real values are never committed; `.env.example` only ever holds commented
+  placeholders (`NAME=`) for variables that exist.
+
+### CI vs. Vercel — two independent gates
+
+- **GitHub Actions CI** (`.github/workflows/ci.yml`, the `quality` check, #27) is the correctness
+  gate: Biome, typecheck, unit tests, build. It runs on every PR and on `main`, and branch
+  protection requires it to pass before merge. CI never deploys anything.
+- **Vercel** is the deploy path only: it builds and deploys every push, independent of CI. A
+  Vercel build failure shows up as a failed/red check on the PR (via the Vercel GitHub integration)
+  but is a separate check from `quality` — it does not block the `quality` check from passing or
+  running, and branch protection is not configured to require the Vercel check, so a red Vercel
+  build cannot itself block a merge that CI has approved. Conversely, a red `quality` check has no
+  effect on whether Vercel attempts a build. The two systems intentionally cannot block each other.
+
+### Preview deployments
+
+Every pull request against `garusis/hire-me-mcp` gets an automatic Vercel preview deployment on
+its own `*.vercel.app` URL, posted as a comment/check on the PR by the Vercel GitHub integration.
+No Playwright/e2e runs against preview URLs — #36 runs e2e against a local production build only,
+per the epic's out-of-scope note.
+
+### Ignored Build Step
+
+Turborepo exposes `turbo-ignore` for exactly this ("skip the deploy if nothing this app depends on
+changed"). It was evaluated and **deliberately not configured** for this task: the project is a
+single Next.js app plus two workspace packages it always depends on, so in practice almost every
+change in the repo is app-relevant, and skipping builds would mostly save nothing while adding a
+failure mode (a change that *should* deploy silently doesn't) before there's a second app in the
+monorepo to make the skip worthwhile. Revisit when a second deployable target exists. If enabled
+later, the command is `npx turbo-ignore @hire-me-mcp/web` as the project's Ignored Build Step.
+
+### Current status
+
+The Vercel project is not yet connected. The Vercel GitHub App is installed on the `garusis`
+GitHub account but has a **pending permission-update request** that requires the repo owner to
+approve it interactively (GitHub sudo-mode re-authentication — passkey/password/2FA — which an
+agent cannot and should not perform on the owner's behalf):
+
+1. Sign in as `garusis` and open <https://github.com/settings/installations>, then **Configure**
+   next to the Vercel app; approve the pending permission-update request.
+2. Ensure repository access includes `garusis/hire-me-mcp` (add it if the app is scoped to
+   "Only select repositories").
+3. In the Vercel dashboard (House Numbers team), **Add New Project**, import
+   `garusis/hire-me-mcp`, and apply the settings table above (or re-run project creation through
+   the Vercel MCP/CLI once the GitHub App has repo access — it will fail with a `bad_request`
+   "install the GitHub integration first" error until step 1–2 are done).
+4. Confirm a production deployment from `main` returns HTTP 200 at the assigned `*.vercel.app`
+   URL, open this PR (or any PR) and confirm its preview deployment also returns HTTP 200, then
+   fill in the live URL above.
