@@ -1,0 +1,13 @@
+{
+  "id": "belatrix-software-2018-senior-nodejs-software-developer",
+  "company": "Belatrix Software",
+  "role": "Senior NodeJS Software Developer",
+  "startDate": "2018-07",
+  "endDate": "2018-11",
+  "summary": "Led architecture design and the development team for a serverless dynamic-document platform for a major supply-chain provider.",
+  "highlights": [
+    "Designed the serverless architecture and led the development team delivering it.",
+    "Orchestrated automated deployments via CloudFormation."
+  ],
+  "tech": ["aws", "nodejs", "react", "docker", "serverless"]
+}

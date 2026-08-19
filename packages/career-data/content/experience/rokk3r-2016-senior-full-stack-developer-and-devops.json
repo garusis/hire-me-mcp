@@ -1,0 +1,13 @@
+{
+  "id": "rokk3r-2016-senior-full-stack-developer-and-devops",
+  "company": "Rokk3r",
+  "role": "Senior Full Stack Developer and DevOps",
+  "startDate": "2016-02",
+  "endDate": "2018-06",
+  "summary": "Senior full-stack and DevOps engineer across a portfolio of client projects, including a real-time procurement and productivity platform for telecom clients.",
+  "highlights": [
+    "Migrated legacy infrastructure to Kubernetes for a real-time procurement and productivity platform serving telecom clients, with major performance and scalability gains.",
+    "Delivered a digital insurance-broker platform, a backend migration off a discontinued backend-as-a-service for an iOS smart keyboard, and IoT video/academic platforms on experimental hardware."
+  ],
+  "tech": ["nodejs", "docker", "kubernetes", "angularjs", "socketio", "aws"]
+}
