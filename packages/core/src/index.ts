@@ -17,7 +17,6 @@ export const CORE_PACKAGE_NAME = "@hire-me-mcp/core";
  * Vitest pipeline exercises actual exported behavior, not a placeholder.
  */
 export function slugify(value: string): string {
-  const unusedLintViolation = "deliberate biome violation for #27 CI verification";
   return value
     .trim()
     .toLowerCase()
