@@ -34,5 +34,11 @@ pnpm-debug.log*
 # Testing
 coverage/
 
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/blob-report/
+
 # Claude Code agent worktrees (created by isolated agent sessions; never tracked)
 .claude/worktrees/
