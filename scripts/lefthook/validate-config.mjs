@@ -60,7 +60,9 @@ const jobNames = jobs.map((job) => job.name);
 
 for (const expected of ["biome", "tests"]) {
   if (!jobNames.includes(expected)) {
-    fail(`pre-commit is missing the expected "${expected}" job (found: ${jobNames.join(", ") || "none"})`);
+    fail(
+      `pre-commit is missing the expected "${expected}" job (found: ${jobNames.join(", ") || "none"})`,
+    );
   }
 }
 
