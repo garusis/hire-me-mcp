@@ -72,7 +72,7 @@ pnpm test                  # turbo run test
 pnpm --filter web dev      # run only the web app's dev server (http://localhost:3000)
 ```
 
-Pre-commit hooks, CI, and deployment are wired up in later tasks of the [Foundation & Agentic DX epic](https://github.com/garusis/hire-me-mcp/issues/1).
+Pre-commit hooks are documented below; CI and deployment are wired up in later tasks of the [Foundation & Agentic DX epic](https://github.com/garusis/hire-me-mcp/issues/1).
 
 ### Linting and formatting (Biome)
 
@@ -103,6 +103,28 @@ pnpm --filter web test:watch     # watch mode for a single package (not run by t
 pnpm test:coverage        # turbo run test:coverage — vitest run --coverage everywhere
 pnpm --filter web test:coverage  # coverage for a single package
 ```
+
+### Pre-commit hooks (lefthook)
+
+[lefthook](https://lefthook.dev) is the **tool-agnostic** enforcement layer: a `pre-commit` hook that formats/lints staged files with Biome and runs Vitest for the packages affected by the staged changes, so a commit with a Biome violation or a broken test never reaches CI in the first place. It binds every contributor and every agent (Claude Code, Codex, or a human at the keyboard) equally, regardless of whether any editor- or agent-level hook is honoured — see `lefthook.yml` at the repo root for the full job config.
+
+Installation is automatic: `pnpm install` runs `lefthook install --force` via the root `prepare` script, so a fresh clone is protected after one install with no manual step. (`--force` makes install succeed even if your machine has a global `core.hooksPath` override — lefthook installs into whatever path git actually reads hooks from, not blindly into `.git/hooks`.)
+
+Pre-commit runs two jobs in parallel:
+
+- **`biome`** — `biome check --write --staged` (via `scripts/lefthook/biome-staged.sh`, which adds a bounded retry for an intermittent Biome 2.5.9 daemon crash — see the script for details) over staged files only. Fixes it applies are automatically re-staged (`stage_fixed: true`), so the commit contains the formatted result, not the pre-fix version.
+- **`tests`** — `pnpm turbo run test --filter="[HEAD]"`, scoped to only the packages that themselves have staged/uncommitted changes (not their dependents). A `packages/core`-only commit never runs `apps/web`'s test suite, even though `apps/web` depends on `@hire-me-mcp/core`.
+
+Only `pre-commit` is defined — no `commit-msg` (no commit-message linter exists yet to make one worthwhile) and no `pre-push` (it would either duplicate what `pre-commit` already checked or run the full/E2E suite, which belongs to CI). Playwright/E2E never runs on pre-commit, on any hook — that's CI-only, a separate task in the epic.
+
+**Emergency bypass** — CI re-checks everything, so this is safe to use when you need to get a commit out and fix follow-up locally, but it is not a substitute for fixing the underlying failure:
+
+```bash
+git commit --no-verify -m "..."   # skip hooks for this commit only
+LEFTHOOK=0 git commit -m "..."    # same effect, explicit env var
+```
+
+`pnpm validate:lefthook` (`scripts/lefthook/validate-config.mjs`) asserts `lefthook.yml` parses and defines the `biome` and `tests` pre-commit jobs with the expected shape (`stage_fixed: true`, turbo-filtered, Playwright-free) — a plain package script any CI pipeline can call directly.
 
 ### Continuous integration and branch protection
 
