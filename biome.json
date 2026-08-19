@@ -82,6 +82,38 @@
           }
         }
       }
+    },
+    {
+      "includes": ["packages/core/src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "react": "packages/core is framework-free — React belongs in apps/web.",
+                  "react-dom": "packages/core is framework-free — React belongs in apps/web.",
+                  "next": "packages/core is framework-free — Next.js belongs in apps/web.",
+                  "express": "packages/core is framework-free — HTTP frameworks belong in apps/web.",
+                  "fastify": "packages/core is framework-free — HTTP frameworks belong in apps/web.",
+                  "koa": "packages/core is framework-free — HTTP frameworks belong in apps/web.",
+                  "http": "packages/core is framework-free — avoid Node-only server APIs.",
+                  "node:http": "packages/core is framework-free — avoid Node-only server APIs.",
+                  "https": "packages/core is framework-free — avoid Node-only server APIs.",
+                  "node:https": "packages/core is framework-free — avoid Node-only server APIs."
+                },
+                "patterns": [
+                  {
+                    "group": ["next/*", "react/*", "react-dom/*"],
+                    "message": "packages/core is framework-free — see README.md."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }
