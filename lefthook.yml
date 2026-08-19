@@ -28,6 +28,8 @@ pre-commit:
         - "*.jsx"
         - "*.ts"
         - "*.tsx"
+        - "*.mjs"
+        - "*.cjs"
         - "*.json"
         - "*.jsonc"
       stage_fixed: true
