@@ -25,7 +25,11 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
+  "dependencies": {
+    "@hire-me-mcp/career-data": "workspace:*"
+  },
   "devDependencies": {
+    "@types/node": "22.20.1",
     "@vitest/coverage-v8": "4.1.11",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
