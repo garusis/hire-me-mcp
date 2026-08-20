@@ -47,7 +47,11 @@ const footnote =
   "\n\\* SEO's aggregate category score always shows below 100 against a preview URL — every preview deploy " +
   "intentionally sets `noindex` (see `apps/web/src/lib/config/site-url.ts#getRobotsIndexable`), which the " +
   "`is-crawlable` audit correctly flags. The gate itself (`lighthouserc.json`) asserts every other SEO audit " +
-  "individually instead of the aggregate score, so a real SEO regression still fails the build.";
+  "individually instead of the aggregate score, so a real SEO regression still fails the build. `robots-txt` is " +
+  "also excluded from that per-audit list: it's fetched by Lighthouse's own out-of-band request rather than " +
+  "through the page's browser context, so it never carries the Vercel Deployment Protection bypass header and " +
+  "always hits the protection interstitial on a gated preview — robots.txt validity is instead covered by " +
+  "apps/web/e2e-preview/specs/seo.spec.ts, whose request does carry the bypass header.";
 
 const table = `${header}\n${separator}\n${body}${footnote}\n`;
 console.log(table);
