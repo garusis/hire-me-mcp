@@ -1,0 +1,12 @@
+{
+  "id": "jarvi-games-2013-full-stack-developer-and-devops",
+  "company": "Jarvi Games",
+  "role": "Full Stack Developer and DevOps",
+  "startDate": "2013-02",
+  "endDate": "2015-06",
+  "summary": "Full-stack and DevOps developer building a real-time game backend with micropayments.",
+  "highlights": [
+    "Built a real-time game backend with micropayments, including the underlying full-stack infrastructure and DevOps."
+  ],
+  "tech": ["nodejs", "mongodb", "postgresql", "php"]
+}

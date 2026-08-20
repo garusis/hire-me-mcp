@@ -37,4 +37,14 @@ describe("educationEntrySchema", () => {
     const result = educationEntrySchema.safeParse({ ...validEducation, startDate: "2012" });
     expect(result.success).toBe(false);
   });
+
+  it("accepts an entry with startDate omitted, for a credential whose start date is not on record", () => {
+    const { startDate: _startDate, ...withoutStartDate } = validEducation;
+    expect(educationEntrySchema.safeParse(withoutStartDate).success).toBe(true);
+  });
+
+  it("accepts an entry with both startDate and endDate omitted", () => {
+    const { startDate: _startDate, endDate: _endDate, ...withoutDates } = validEducation;
+    expect(educationEntrySchema.safeParse(withoutDates).success).toBe(true);
+  });
 });

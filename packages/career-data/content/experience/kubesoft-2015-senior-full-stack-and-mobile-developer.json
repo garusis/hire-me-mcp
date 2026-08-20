@@ -1,0 +1,12 @@
+{
+  "id": "kubesoft-2015-senior-full-stack-and-mobile-developer",
+  "company": "Kubesoft SAS",
+  "role": "Senior Full Stack & Mobile Developer",
+  "startDate": "2015-01",
+  "endDate": "2018-06",
+  "summary": "Concurrent senior full-stack and mobile engineering role alongside the Rokk3r engagement, building web and mobile products for Colombian and international clients.",
+  "highlights": [
+    "Delivered full-stack web and mobile features across a portfolio of client products, working concurrently with the Rokk3r engagement."
+  ],
+  "tech": ["nodejs", "angularjs"]
+}
