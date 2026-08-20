@@ -71,6 +71,8 @@
       "includes": [
         "apps/web/app/**/{page,layout,loading,error,not-found,template,default,global-error}.tsx",
         "apps/web/app/**/route.ts",
+        "apps/web/app/**/{icon,apple-icon,opengraph-image,twitter-image}.tsx",
+        "apps/web/app/{sitemap,robots,manifest}.ts",
         "**/next.config.ts",
         "**/vitest.config.ts",
         "vitest.config.base.ts"
