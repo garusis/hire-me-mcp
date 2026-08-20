@@ -29,8 +29,25 @@ export function resolveDefaultContentDir(): string {
   return path.join(moduleDir, "..", "content");
 }
 
-export type { CareerDataset, ContentValidationError } from "./content/loader.js";
-export { loadContentDir, validateContentDir } from "./content/loader.js";
+export type {
+  CareerDataset,
+  CareerDatasetWithSources,
+  ContentValidationError,
+  EntitySource,
+} from "./content/loader.js";
+export {
+  loadContentDir,
+  loadContentDirWithSources,
+  validateContentDir,
+} from "./content/loader.js";
+export type {
+  LintContext,
+  LintResult,
+  LintRule,
+  LintSeverity,
+  LintViolation,
+} from "./lint.js";
+export { ALL_RULES, formatLintReport, runLint } from "./lint.js";
 export * from "./schemas/index.js";
 export type { ValidateResult } from "./validate.js";
 export { formatValidationReport, runValidate } from "./validate.js";
