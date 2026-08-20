@@ -84,6 +84,23 @@
       }
     },
     {
+      "includes": ["apps/web/**", "!apps/web/src/lib/content/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@hire-me-mcp/career-data": "apps/web reads career content only through src/lib/content/ (issue #16) — import from packages/core (via src/lib/content) instead of the data package directly."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["packages/core/src/**"],
       "linter": {
         "rules": {
