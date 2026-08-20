@@ -1,6 +1,10 @@
 import { createMcpHandler } from "mcp-handler";
 import { defineTool } from "../../../lib/mcp/define-tool";
+import { getExperienceTool } from "../../../lib/mcp/tools/get-experience";
+import { getProfileTool } from "../../../lib/mcp/tools/get-profile";
+import { getSkillEvidenceTool } from "../../../lib/mcp/tools/get-skill-evidence";
 import { pingTool } from "../../../lib/mcp/tools/ping";
+import { searchProjectsTool } from "../../../lib/mcp/tools/search-projects";
 import packageJson from "../../../package.json" with { type: "json" };
 
 // This route runs as a Node.js serverless function (the Next.js App Router
@@ -29,6 +33,10 @@ const handler = createMcpHandler(
     // documented in `lib/mcp/CONVENTIONS.md` — so citation passthrough and error mapping
     // are uniform across tools instead of hand-rolled per call site.
     defineTool(server, pingTool);
+    defineTool(server, getProfileTool);
+    defineTool(server, getExperienceTool);
+    defineTool(server, searchProjectsTool);
+    defineTool(server, getSkillEvidenceTool);
   },
   {
     serverInfo: {
@@ -38,8 +46,10 @@ const handler = createMcpHandler(
     instructions:
       "This server answers questions about Marcos Alvarez's professional career: work " +
       "experience, projects, and skills, grounded in his real career history. It is public " +
-      "and read-only — no authentication is required. Career-data tools are not registered " +
-      "yet; only the diagnostic `ping` tool is currently available.",
+      "and read-only — no authentication is required. Use `get-profile` for who he is, " +
+      "`get-experience` for his work history, `search-projects` for keyword/tag search over " +
+      "his project portfolio, and `get-skill-evidence` to check whether a specific skill or " +
+      "technology is claimed.",
   },
 );
 

@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { EXPECTED_TOOL_NAMES } from "../../../lib/mcp/tool-names";
 import packageJson from "../../../package.json" with { type: "json" };
 import { GET, POST } from "./route";
 
@@ -80,17 +81,19 @@ describe("MCP endpoint (app/api/mcp/route.ts)", () => {
     await client.close();
   });
 
-  it("lists exactly one tool, ping, with a description and a valid JSON Schema input", async () => {
+  it("lists exactly the expected tool set, each with a description and a valid JSON Schema input", async () => {
     const client = new Client({ name: "test-client", version: "0.0.0" });
     const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
     await client.connect(transport);
 
     const { tools } = await client.listTools();
+    const names = tools.map((tool) => tool.name).sort();
 
-    expect(tools).toHaveLength(1);
-    expect(tools[0]?.name).toBe("ping");
-    expect(tools[0]?.description).toBeTruthy();
-    expect(tools[0]?.inputSchema).toMatchObject({ type: "object" });
+    expect(names).toEqual([...EXPECTED_TOOL_NAMES].sort());
+    for (const tool of tools) {
+      expect(tool.description).toBeTruthy();
+      expect(tool.inputSchema).toMatchObject({ type: "object" });
+    }
 
     await client.close();
   });
@@ -104,6 +107,78 @@ describe("MCP endpoint (app/api/mcp/route.ts)", () => {
 
     expect(result.isError).not.toBe(true);
     expect(Array.isArray(result.content)).toBe(true);
+
+    await client.close();
+  });
+
+  it("calls get-profile over streamable HTTP and gets a successful result carrying a profile and citations", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const result = await client.callTool({ name: "get-profile", arguments: {} });
+
+    expect(result.isError).not.toBe(true);
+    const structuredContent = result.structuredContent as {
+      data: { id: string };
+      citations: unknown[];
+    };
+    expect(structuredContent.data.id).toBeTruthy();
+    expect(Array.isArray(structuredContent.citations)).toBe(true);
+
+    await client.close();
+  });
+
+  it("calls get-experience over streamable HTTP and gets a successful result carrying a list and citations", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const result = await client.callTool({ name: "get-experience", arguments: {} });
+
+    expect(result.isError).not.toBe(true);
+    const structuredContent = result.structuredContent as { data: unknown[]; citations: unknown[] };
+    expect(Array.isArray(structuredContent.data)).toBe(true);
+    expect(Array.isArray(structuredContent.citations)).toBe(true);
+
+    await client.close();
+  });
+
+  it("calls search-projects over streamable HTTP and gets a successful result carrying a list and citations", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "search-projects",
+      arguments: { query: "typescript" },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const structuredContent = result.structuredContent as { data: unknown[]; citations: unknown[] };
+    expect(Array.isArray(structuredContent.data)).toBe(true);
+    expect(Array.isArray(structuredContent.citations)).toBe(true);
+
+    await client.close();
+  });
+
+  it("calls get-skill-evidence over streamable HTTP and gets a successful, discriminated-union result", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "get-skill-evidence",
+      arguments: { term: "typescript" },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const structuredContent = result.structuredContent as {
+      data: { kind: string };
+      citations: unknown[];
+    };
+    expect(["claimed", "not-claimed", "unknown"]).toContain(structuredContent.data.kind);
+    expect(Array.isArray(structuredContent.citations)).toBe(true);
 
     await client.close();
   });
