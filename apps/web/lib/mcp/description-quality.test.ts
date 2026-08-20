@@ -10,14 +10,23 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { ToolDefinition } from "./define-tool.js";
+import { EXPECTED_TOOL_NAMES } from "./tool-names.js";
 import { getExperienceTool } from "./tools/get-experience.js";
 import { getProfileTool } from "./tools/get-profile.js";
+import { getSkillEvidenceTool } from "./tools/get-skill-evidence.js";
+import { pingTool } from "./tools/ping.js";
+import { searchProjectsTool } from "./tools/search-projects.js";
 
 /** Documented minimum: enough room for purpose + when-to-use + when-not-to-use in one paragraph. */
 const MIN_DESCRIPTION_LENGTH = 120;
 
 // biome-ignore lint/suspicious/noExplicitAny: tool definitions here are only ever inspected generically.
-const toolsUnderTest: ToolDefinition<z.ZodTypeAny, any>[] = [getProfileTool, getExperienceTool];
+const toolsUnderTest: ToolDefinition<z.ZodTypeAny, any>[] = [
+  getProfileTool,
+  getExperienceTool,
+  searchProjectsTool,
+  getSkillEvidenceTool,
+];
 
 function schemaProperties(schema: z.ZodTypeAny): Record<string, z.ZodTypeAny> {
   const jsonSchema = z.toJSONSchema(schema) as { properties?: Record<string, unknown> };
@@ -49,12 +58,7 @@ describe("career tool description quality", () => {
       const siblingNames = toolsUnderTest
         .map((sibling) => sibling.name)
         .filter((name) => name !== tool.name);
-      const mentionsAnySibling =
-        siblingNames.some((name) => tool.description.includes(name)) ||
-        // get-profile is the only one of this pair with no sibling yet requiring `search-projects`
-        // / `get-skill-evidence` cross-references — those tools land in #32.
-        tool.description.includes("search-projects") ||
-        tool.description.includes("get-skill-evidence");
+      const mentionsAnySibling = siblingNames.some((name) => tool.description.includes(name));
       expect(mentionsAnySibling).toBe(true);
     },
   );
@@ -70,4 +74,15 @@ describe("career tool description quality", () => {
       }
     },
   );
+
+  it("search-projects's description states matching is keyword/tag-based", () => {
+    expect(searchProjectsTool.description.toLowerCase()).toMatch(/keyword|tag-based/);
+  });
+
+  it("EXPECTED_TOOL_NAMES matches exactly this server's registered tool set (ping + all four career tools)", () => {
+    const registeredTools = [pingTool, ...toolsUnderTest];
+    const registeredNames = registeredTools.map((tool) => tool.name).sort();
+
+    expect(registeredNames).toEqual([...EXPECTED_TOOL_NAMES].sort());
+  });
 });
