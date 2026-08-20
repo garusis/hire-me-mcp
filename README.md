@@ -83,10 +83,12 @@ pnpm lint                  # turbo run lint — biome check in every package (fa
 pnpm --filter web lint     # lint a single package
 pnpm format                # biome format --write . — format the whole repo
 pnpm format:check          # biome format . — check formatting without writing
-pnpm biome check .         # run Biome directly across the whole repo (format + lint + import sort)
+bash scripts/biome-check.sh check .   # run Biome directly across the whole repo (format + lint + import sort)
 ```
 
 Strict rules are enforced at `error` severity, not `warn`: no explicit or implicit `any` (`noExplicitAny`, `noImplicitAnyLet`), cognitive complexity limits (`noExcessiveCognitiveComplexity`), no unused imports/variables, and organized imports enforced as part of `biome check`. Named exports are preferred over default exports (`noDefaultExport`); the only exception is Next.js App Router files that the framework requires to use a default export (`page.tsx`, `layout.tsx`, `route.ts`, etc. under `apps/web/app/**`, plus `next.config.ts`), which are excluded via a `biome.json` override.
+
+Every Biome invocation in this repo — `pnpm lint`/`pnpm format` in each package, the lefthook pre-commit hook, and any raw invocation — goes through `scripts/biome-check.sh`, a bounded retry wrapper (max 3 attempts) around `pnpm exec biome`. Biome 2.5.9 intermittently crashes its linter worker process with exit 254 ("Linter process terminated abnormally (possibly out of memory)"), reproducing on macOS (Apple Silicon) but never observed on CI's Linux runners ([#96](https://github.com/garusis/hire-me-mcp/issues/96)). The wrapper retries only on exit 254 — a real lint/format failure (`exit 1`) still fails on the first attempt. Prefer `bash scripts/biome-check.sh check .` (or `format`/`format --write`) over invoking `biome`/`pnpm exec biome` directly so you get the same protection.
 
 If you use VS Code, install the [Biome extension](https://marketplace.visualstudio.com/items?itemName=biomejs.biome) — `.vscode/settings.json` already sets it as the default formatter with format-on-save, so editor and agent edits converge on the same output.
 
@@ -126,7 +128,7 @@ Installation is automatic: `pnpm install` runs `lefthook install --force` via th
 
 Pre-commit runs two jobs in parallel:
 
-- **`biome`** — `biome check --write --staged` (via `scripts/lefthook/biome-staged.sh`, which adds a bounded retry for an intermittent Biome 2.5.9 daemon crash — see the script for details) over staged files only. Fixes it applies are automatically re-staged (`stage_fixed: true`), so the commit contains the formatted result, not the pre-fix version.
+- **`biome`** — `biome check --write --staged` (via `scripts/lefthook/biome-staged.sh`, which delegates to the shared `scripts/biome-check.sh` bounded-retry wrapper for an intermittent Biome 2.5.9 daemon crash — see [#96](https://github.com/garusis/hire-me-mcp/issues/96) and "Linting and formatting (Biome)" above) over staged files only. Fixes it applies are automatically re-staged (`stage_fixed: true`), so the commit contains the formatted result, not the pre-fix version.
 - **`tests`** — `pnpm turbo run test --filter="[HEAD]"`, scoped to only the packages that themselves have staged/uncommitted changes (not their dependents). A `packages/core`-only commit never runs `apps/web`'s test suite, even though `apps/web` depends on `@hire-me-mcp/core`.
 
 Only `pre-commit` is defined — no `commit-msg` (no commit-message linter exists yet to make one worthwhile) and no `pre-push` (it would either duplicate what `pre-commit` already checked or run the full/E2E suite, which belongs to CI). Playwright/E2E never runs on pre-commit, on any hook — that's CI-only, a separate task in the epic.
