@@ -19,6 +19,8 @@ export function SiteHeader() {
           <Link href="/">Home</Link>
           <Link href="/experience">Experience</Link>
           <Link href="/projects">Projects</Link>
+          <Link href="/skills">Skills</Link>
+          <Link href="/writing">Writing</Link>
         </nav>
         <ThemeToggle />
       </Container>
