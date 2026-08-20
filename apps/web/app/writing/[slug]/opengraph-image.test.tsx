@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { WritingEntryView } from "../../../src/lib/content";
 
-const { getWritingEntryView } = vi.hoisted(() => ({ getWritingEntryView: vi.fn() }));
-vi.mock("../../../src/lib/content", () => ({ getWritingEntryView }));
+const { getWritingEntryView, listWritingSlugs } = vi.hoisted(() => ({
+  getWritingEntryView: vi.fn(),
+  listWritingSlugs: vi.fn(),
+}));
+vi.mock("../../../src/lib/content", () => ({ getWritingEntryView, listWritingSlugs }));
 
 const { notFound } = vi.hoisted(() => ({
   notFound: vi.fn(() => {
@@ -29,6 +32,15 @@ function foundView(): WritingEntryView {
 }
 
 describe("writing opengraph image", () => {
+  it("generateStaticParams returns exactly the slugs the content layer exposes — #119, so the route prerenders (●) instead of running as a request-time Lambda (ƒ)", async () => {
+    listWritingSlugs.mockReturnValue(["local-post", "another-local-post"]);
+    const { generateStaticParams } = await import("./opengraph-image.js");
+
+    const params = await generateStaticParams();
+
+    expect(params).toEqual([{ slug: "local-post" }, { slug: "another-local-post" }]);
+  });
+
   it("declares the standard 1200x630 Open Graph size", async () => {
     const { size } = await import("./opengraph-image.js");
     expect(size).toEqual({ width: 1200, height: 630 });

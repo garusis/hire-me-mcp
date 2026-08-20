@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ProjectDetailView } from "../../../src/lib/content";
 
-const { getProjectDetailView } = vi.hoisted(() => ({ getProjectDetailView: vi.fn() }));
-vi.mock("../../../src/lib/content", () => ({ getProjectDetailView }));
+const { getProjectDetailView, listProjectSlugs } = vi.hoisted(() => ({
+  getProjectDetailView: vi.fn(),
+  listProjectSlugs: vi.fn(),
+}));
+vi.mock("../../../src/lib/content", () => ({ getProjectDetailView, listProjectSlugs }));
 
 const { notFound } = vi.hoisted(() => ({
   notFound: vi.fn(() => {
@@ -31,6 +34,15 @@ function foundView(): ProjectDetailView {
 }
 
 describe("project opengraph image", () => {
+  it("generateStaticParams returns exactly the slugs the content layer exposes — #119, so the route prerenders (●) instead of running as a request-time Lambda (ƒ)", async () => {
+    listProjectSlugs.mockReturnValue(["alpha-project", "beta-project"]);
+    const { generateStaticParams } = await import("./opengraph-image.js");
+
+    const params = await generateStaticParams();
+
+    expect(params).toEqual([{ slug: "alpha-project" }, { slug: "beta-project" }]);
+  });
+
   it("declares the standard 1200x630 Open Graph size", async () => {
     const { size } = await import("./opengraph-image.js");
     expect(size).toEqual({ width: 1200, height: 630 });
