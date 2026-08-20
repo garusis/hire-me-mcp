@@ -1,7 +1,7 @@
 import { createMcpHandler } from "mcp-handler";
 import { defineTool } from "../../../lib/mcp/define-tool";
 import { readRateLimitConfig } from "../../../lib/mcp/rate-limit/config";
-import { createRateLimiter } from "../../../lib/mcp/rate-limit/limiter";
+import { selectRateLimiter } from "../../../lib/mcp/rate-limit/select-limiter";
 import { withRateLimit } from "../../../lib/mcp/rate-limit/with-rate-limit";
 import { getExperienceTool } from "../../../lib/mcp/tools/get-experience";
 import { getProfileTool } from "../../../lib/mcp/tools/get-profile";
@@ -59,11 +59,15 @@ const handler = createMcpHandler(
 // Rate limiting (#39) is enforced BEFORE `handler` (and therefore before mcp-handler /
 // the MCP server) ever sees the request, so an over-limit caller gets a clean HTTP 429
 // with RateLimit/Retry-After headers and a parseable JSON body instead of a half-open
-// stream. `createRateLimiter` fails open — logging loudly, never throwing — when
-// UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN aren't set (CI, forked PR previews,
-// local dev without the env vars), so the endpoint and the test suite both work without
-// Upstash credentials. See lib/mcp/rate-limit/ and the README "Rate limiting" section.
-const rateLimiter = createRateLimiter(readRateLimitConfig());
+// stream. `selectRateLimiter` normally builds the real limiter, which fails open —
+// logging loudly, never throwing — when UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN
+// aren't set (CI, forked PR previews, local dev without the env vars), so the endpoint
+// works without Upstash credentials. `MCP_TEST_RATE_LIMITER=1` swaps in a deterministic
+// in-memory limiter instead — used exclusively by the protocol-level MCP integration
+// suite (#49) to exercise the real 429 path in CI, where fail-open would otherwise make
+// it unobservable. See lib/mcp/rate-limit/select-limiter.ts and the README "Rate
+// limiting" section.
+const rateLimiter = selectRateLimiter(readRateLimitConfig());
 const rateLimitedGet = withRateLimit(rateLimiter, handler);
 const rateLimitedPost = withRateLimit(rateLimiter, handler);
 
