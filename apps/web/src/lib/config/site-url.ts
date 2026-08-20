@@ -61,3 +61,14 @@ export function getSiteUrl(): string {
 export function getMcpEndpointUrl(): string {
   return `${getSiteUrl()}${MCP_ROUTE_PATH}`;
 }
+
+/**
+ * Whether this deploy should be indexed by search engines (#44). Only a
+ * genuine Vercel **production** deploy (`VERCEL_ENV === "production"`) is
+ * indexable — preview deploys, Vercel "development" deploys, and local dev
+ * (no `VERCEL_ENV` at all) all emit `noindex`, so a preview URL can never
+ * outrank or duplicate the production site in search results.
+ */
+export function getRobotsIndexable(): boolean {
+  return process.env.VERCEL_ENV === "production";
+}
