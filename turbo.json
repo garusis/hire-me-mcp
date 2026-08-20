@@ -1,6 +1,7 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "ui": "tui",
+  "globalPassThroughEnv": ["PREVIEW_URL", "VERCEL_AUTOMATION_BYPASS_SECRET"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

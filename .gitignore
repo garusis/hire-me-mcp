@@ -35,10 +35,15 @@ coverage/
 
 # Playwright
 /test-results/
+/test-results-preview/
 /playwright-report/
+/playwright-report-preview/
 /playwright/.cache/
 /blob-report/
 apps/web/e2e/screenshots/
+
+# Lighthouse CI (#58)
+/.lighthouseci/
 
 # Claude Code agent worktrees (created by isolated agent sessions; never tracked)
 .claude/worktrees/

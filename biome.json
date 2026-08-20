@@ -12,8 +12,11 @@
       "packages/**",
       "scripts/**",
       "tooling/**",
+      "e2e/**",
       "*.json",
       "vitest.config.base.ts",
+      "playwright.preview.config.ts",
+      "lighthouserc.cjs",
       "!**/.next",
       "!**/dist",
       "!**/.turbo",
@@ -75,7 +78,8 @@
         "apps/web/app/{sitemap,robots,manifest}.ts",
         "**/next.config.ts",
         "**/vitest.config.ts",
-        "vitest.config.base.ts"
+        "vitest.config.base.ts",
+        "playwright.preview.config.ts"
       ],
       "linter": {
         "rules": {
