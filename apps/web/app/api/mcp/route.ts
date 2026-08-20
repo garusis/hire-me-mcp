@@ -1,5 +1,6 @@
 import { createMcpHandler } from "mcp-handler";
-import { z } from "zod";
+import { defineTool } from "../../../lib/mcp/define-tool";
+import { pingTool } from "../../../lib/mcp/tools/ping";
 import packageJson from "../../../package.json" with { type: "json" };
 
 // This route runs as a Node.js serverless function (the Next.js App Router
@@ -24,18 +25,10 @@ export const maxDuration = 60;
 
 const handler = createMcpHandler(
   (server) => {
-    server.registerTool(
-      "ping",
-      {
-        title: "Ping",
-        description:
-          "Diagnostic tool that returns 'pong'. Use it to verify the MCP connection is working before calling any other tool.",
-        inputSchema: z.object({}),
-      },
-      async () => ({
-        content: [{ type: "text", text: "pong" }],
-      }),
-    );
+    // Every tool is registered through `defineTool` — the single registration path
+    // documented in `lib/mcp/CONVENTIONS.md` — so citation passthrough and error mapping
+    // are uniform across tools instead of hand-rolled per call site.
+    defineTool(server, pingTool);
   },
   {
     serverInfo: {
