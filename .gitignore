@@ -40,5 +40,14 @@ coverage/
 /blob-report/
 apps/web/e2e/screenshots/
 
+# Preview e2e gate (#58)
+/test-results-preview/
+/playwright-preview-report/
+
+# Lighthouse gate (#58) — .lighthouserc.local.json is generated per-run and
+# may embed the Vercel Deployment Protection bypass header; never committed.
+/.lighthouseci/
+/.lighthouserc.local.json
+
 # Claude Code agent worktrees (created by isolated agent sessions; never tracked)
 .claude/worktrees/

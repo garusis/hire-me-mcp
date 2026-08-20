@@ -1,0 +1,93 @@
+name: Resolve Vercel preview URL
+description: >
+  Polls the GitHub Deployments API for the Vercel preview deployment of a
+  given commit SHA and outputs its resolved URL once ready. Shared by any
+  workflow job that needs to run against a PR's real Vercel preview rather
+  than localhost (issue #58; also intended for reuse by #69's MCP preview
+  smoke suite and #59, per the shared-infrastructure note on #58 — one
+  resolution/wait step instead of three copies of the same polling loop).
+
+inputs:
+  sha:
+    description: Commit SHA to resolve the Vercel "Preview" deployment for.
+    required: true
+  timeout-seconds:
+    description: Maximum time to wait for a ready deployment before giving up.
+    required: false
+    default: "300"
+  poll-interval-seconds:
+    description: Delay between polling attempts.
+    required: false
+    default: "10"
+
+runs:
+  using: composite
+  steps:
+    - name: Poll GitHub Deployments API for a ready Vercel preview
+      id: resolve
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SHA: ${{ inputs.sha }}
+        TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
+        POLL_INTERVAL_SECONDS: ${{ inputs.poll-interval-seconds }}
+      run: |
+        set -euo pipefail
+
+        # Vercel's GitHub App creates a real GitHub Deployment (environment
+        # "Preview") for every preview build, then posts DeploymentStatus
+        # updates against it as the build progresses — the last one with
+        # state=success carries `environment_url`, the actual deployed
+        # origin (distinct from `target_url`, which points at the Vercel
+        # dashboard, not the site itself). Polling this — rather than the
+        # simpler commit-status API (`GET /commits/{sha}/status`, context
+        # "Vercel") — is deliberate: that status's own `target_url` is the
+        # dashboard link too, so it can't give us the origin this workflow
+        # actually needs to test against.
+        deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
+        resolved_url=""
+
+        while [ "$(date +%s)" -lt "$deadline" ]; do
+          deployment_id=$(gh api "repos/${GITHUB_REPOSITORY}/deployments?sha=${SHA}&environment=Preview&per_page=1" \
+            --jq '.[0].id // empty')
+
+          if [ -n "$deployment_id" ]; then
+            status_json=$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses?per_page=10")
+            state=$(echo "$status_json" | jq -r '.[0].state // empty')
+            resolved_url=$(echo "$status_json" | jq -r '[.[] | select(.state == "success") | .environment_url][0] // empty')
+
+            if [ -n "$resolved_url" ]; then
+              echo "Resolved Vercel preview deployment (state: success)."
+              break
+            fi
+
+            if [ "$state" = "failure" ] || [ "$state" = "error" ]; then
+              echo "Vercel preview deployment for ${SHA} reported state=${state} — not waiting further."
+              break
+            fi
+          fi
+
+          echo "No ready Vercel preview deployment yet for ${SHA} — retrying in ${POLL_INTERVAL_SECONDS}s."
+          sleep "$POLL_INTERVAL_SECONDS"
+        done
+
+        if [ -n "$resolved_url" ]; then
+          echo "url=${resolved_url}" >> "$GITHUB_OUTPUT"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          # The URL itself is not a secret (it's a public preview address, printed
+          # deliberately per #58's acceptance criteria) — never echo the bypass
+          # secret anywhere in this action.
+          echo "Resolved preview URL: ${resolved_url}"
+        else
+          echo "url=" >> "$GITHUB_OUTPUT"
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          echo "Could not resolve a ready Vercel preview deployment for ${SHA} within ${TIMEOUT_SECONDS}s."
+        fi
+
+outputs:
+  url:
+    description: The resolved preview URL, or empty if not found.
+    value: ${{ steps.resolve.outputs.url }}
+  found:
+    description: '"true"/"false" — whether a preview URL was resolved.'
+    value: ${{ steps.resolve.outputs.found }}
