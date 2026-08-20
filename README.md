@@ -44,6 +44,42 @@ The hook: nobody else's CV can be added as a tool to your AI assistant.
 
 Later: analytics on what recruiters ask, a `contact`/`book_call` tool (write action), downloadable CV generated from the data.
 
+## MCP endpoint — #11
+
+`apps/web` mounts a public, anonymous MCP server at `apps/web/app/api/mcp/route.ts`, served at the
+stable path `/api/mcp` (locally: `http://localhost:3000/api/mcp`) using
+[`mcp-handler`](https://github.com/vercel/mcp-handler) with the Streamable HTTP transport.
+
+- **Version pinned:** `mcp-handler@2.1.1` with its peer dependency `@modelcontextprotocol/server@2.0.0`
+  and `zod@4`. This is a deliberate deviation from the older `mcp-handler` 1.x /
+  `@modelcontextprotocol/sdk` pairing: `mcp-handler` 2.x (current `latest` on npm as of this task,
+  verified against its published README/CHANGELOG rather than older blog posts) requires
+  `@modelcontextprotocol/server` instead and dropped its `basePath`/`redisUrl`/`maxDuration`/
+  `sessionIdGenerator` config options — the protocol it serves (MCP spec 2026-07-28, with a
+  stateless fallback for 2025-era Streamable HTTP clients) has no sessions and no long-lived SSE
+  connection to configure, so there's no equivalent option to carry over. `@modelcontextprotocol/sdk`
+  (1.x) is still used, but only as a `devDependency` for the *test client* — the current SDK's
+  client transport is the standard way to drive a real MCP handshake in tests, and it still speaks
+  the 2025-era Streamable HTTP protocol the handler's stateless fallback answers.
+- **Runtime:** `export const runtime = "nodejs"` — explicit, even though it's the Next.js App
+  Router default, because `mcp-handler` needs full Node APIs. `export const maxDuration = 60` is
+  the standard [Next.js/Vercel route-segment config](https://vercel.com/docs/functions/configuring-functions/duration)
+  (unrelated to `mcp-handler`'s now-removed option of the same name) — 60s is the ceiling on the
+  Hobby plan this project deploys to; every tool this task and its siblings register responds in
+  well under a second, so this is headroom, not a requirement.
+- **Server identity:** name `hire-me-mcp`, `version` read from `apps/web/package.json` at build
+  time (not hand-duplicated), and a non-empty `instructions` string describing the career-Q&A
+  purpose.
+- **Tools:** one diagnostic tool, `ping`, so `initialize` / `tools/list` / `tools/call` are all
+  exercisable before the real career-data tools (`get_profile`, `get_experience`,
+  `search_projects`, `get_skill_evidence` — later tasks in #3) exist.
+- **No environment variables introduced** — see `.env.example`.
+- **Tests:** `apps/web/app/api/mcp/route.test.ts` drives a *real* `@modelcontextprotocol/sdk`
+  client (`Client` + `StreamableHTTPClientTransport`) against a real local HTTP server whose
+  request handler is the route module's own exported `GET`/`POST`, asserting the full
+  `initialize` → `tools/list` → `tools/call ping` sequence over the wire — not just the route's
+  internals.
+
 ## Workspace
 
 A pnpm + Turborepo monorepo. Node >= 22 (CI and Vercel run 24), pnpm 10 (pinned via `packageManager`).
