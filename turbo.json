@@ -30,6 +30,10 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    "@hire-me-mcp/web#typecheck": {
+      "dependsOn": ["^build", "@hire-me-mcp/web#build"],
+      "outputs": []
+    },
     "validate": {
       "outputs": []
     }
