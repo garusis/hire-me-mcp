@@ -21,6 +21,14 @@
 }
 
 .snippet {
+  /* .snippetRow is a flex column with align-items: flex-start, so without
+     an explicit width this shrinks/grows to its content's max-content
+     width (the unwrapped snippet line) instead of the row's available
+     width — overflow-x: auto never kicks in and the whole page scrolls
+     horizontally instead. A real bug the responsive e2e suite (#58)
+     caught on /mcp at every tested viewport width. */
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
