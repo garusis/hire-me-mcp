@@ -1,5 +1,5 @@
-import { CAREER_DATA_PACKAGE_NAME } from "@hire-me-mcp/career-data";
 import { CORE_PACKAGE_NAME } from "@hire-me-mcp/core";
+import { CAREER_DATA_PACKAGE_NAME } from "../src/lib/content";
 import { RevealOnScroll } from "./design-system/motion/reveal-on-scroll";
 import { Badge } from "./design-system/primitives/badge";
 import { Container } from "./design-system/primitives/container";
