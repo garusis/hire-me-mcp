@@ -41,6 +41,17 @@ module.exports = {
       numberOfRuns: 3,
       settings: {
         preset: "desktop",
+        // #44 deliberately makes every non-production deploy (every
+        // preview) noindex — robots.txt disallows "/" and the page emits
+        // <meta name="robots" content="noindex">, both by design, so a
+        // preview is never confused with production in search results.
+        // Lighthouse's "is-crawlable" SEO audit fails hard on exactly
+        // that noindex signal, which would make the SEO category
+        // unattainable against *any* preview regardless of real content
+        // quality — skip only that one audit here; every other SEO audit
+        // (meta description, canonical, headings, structured data, link
+        // text, etc.) still runs and is asserted below.
+        skipAudits: ["is-crawlable"],
         ...(extraHeaders ? { extraHeaders: JSON.stringify(extraHeaders) } : {}),
       },
     },
