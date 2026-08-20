@@ -20,6 +20,7 @@
     "test:coverage": "turbo run test:coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "test:mcp": "pnpm --filter @hire-me-mcp/web test:mcp",
     "typecheck": "turbo run typecheck",
     "validate": "turbo run validate",
     "lint:content": "turbo run lint:content",

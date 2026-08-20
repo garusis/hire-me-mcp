@@ -1,0 +1,270 @@
+/**
+ * Protocol-level MCP integration suite (#49): drives a real, locally
+ * started production `next start` server with the real
+ * `@modelcontextprotocol/sdk` client over Streamable HTTP — black-box, no
+ * import of the route handlers. This is the goal-boundary the issue draws
+ * against `app/api/mcp/route.test.ts` (in-process, same file the handlers
+ * live in): this suite catches transport, serialization, and
+ * schema-registration bugs an in-process test cannot, at the cost of a real
+ * `next build` + `next start`.
+ *
+ * Runs against `packages/career-data`'s REAL content, so assertions here
+ * are structural/invariant-based (shape, schema conformance, citation
+ * well-formedness, non-empty where data is guaranteed to exist) — never an
+ * exact career string, which would make this suite brittle against content
+ * edits (explicitly out of scope per the issue).
+ *
+ * Own command (`pnpm test:mcp`, from `apps/web` or the repo root) and own
+ * `vitest.mcp.config.ts` so it's distinguishable in CI output from the unit
+ * suite (`pnpm turbo test`) — see the README "Protocol-level MCP
+ * integration tests" section for how to run it locally.
+ */
+
+import { citationSchema } from "@hire-me-mcp/career-data";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { EXPECTED_TOOL_NAMES } from "../lib/mcp/tool-names";
+import packageJson from "../package.json" with { type: "json" };
+import { type StartedServer, startNextServer } from "./support/next-server";
+import {
+  getExperienceOutputSchema,
+  getProfileOutputSchema,
+  getSkillEvidenceOutputSchema,
+  searchProjectsOutputSchema,
+} from "./support/tool-output-schemas";
+
+let server: StartedServer;
+
+beforeAll(async () => {
+  server = await startNextServer();
+}, 60_000);
+
+afterAll(async () => {
+  await server.stop();
+});
+
+function connectClient(): { client: Client; transport: StreamableHTTPClientTransport } {
+  const client = new Client({ name: "mcp-e2e-test-client", version: "0.0.0" });
+  const transport = new StreamableHTTPClientTransport(new URL(server.mcpUrl));
+  return { client, transport };
+}
+
+/** Asserts `citations` is a non-empty array of well-formed Citation records. */
+function expectWellFormedCitations(citations: unknown): asserts citations is unknown[] {
+  expect(Array.isArray(citations)).toBe(true);
+  const list = citations as unknown[];
+  expect(list.length).toBeGreaterThan(0);
+  for (const citation of list) {
+    const parsed = citationSchema.safeParse(citation);
+    expect(parsed.success).toBe(true);
+  }
+}
+
+describe("initialize handshake", () => {
+  it("returns the expected server name, version, and non-empty instructions", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const serverVersion = client.getServerVersion();
+    expect(serverVersion?.name).toBe("hire-me-mcp");
+    expect(serverVersion?.version).toBe(packageJson.version);
+
+    const instructions = client.getInstructions();
+    expect(instructions).toBeTruthy();
+    expect((instructions ?? "").length).toBeGreaterThan(0);
+
+    await client.close();
+  });
+});
+
+describe("tools/list", () => {
+  it("returns exactly the expected tool set, each with a description and a valid input JSON Schema", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const { tools } = await client.listTools();
+    const names = tools.map((tool) => tool.name).sort();
+
+    expect(names).toEqual([...EXPECTED_TOOL_NAMES].sort());
+    for (const tool of tools) {
+      expect(tool.description).toBeTruthy();
+      expect((tool.description ?? "").length).toBeGreaterThan(0);
+      expect(tool.inputSchema).toMatchObject({ type: "object" });
+      expect(
+        typeof tool.inputSchema.properties === "object" ||
+          tool.inputSchema.properties === undefined,
+      ).toBe(true);
+    }
+
+    await client.close();
+  });
+});
+
+describe("tools/call — career tools", () => {
+  it("get-profile succeeds and its result validates against the profile output shape, with well-formed citations", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({ name: "get-profile", arguments: {} });
+
+    expect(result.isError).not.toBe(true);
+    const parsed = getProfileOutputSchema.safeParse(result.structuredContent);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error?.issues)).toBe(
+      true,
+    );
+    expectWellFormedCitations((result.structuredContent as { citations: unknown }).citations);
+
+    await client.close();
+  });
+
+  it("get-experience succeeds and its result validates against the experience-list output shape, with well-formed citations", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({ name: "get-experience", arguments: {} });
+
+    expect(result.isError).not.toBe(true);
+    const parsed = getExperienceOutputSchema.safeParse(result.structuredContent);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error?.issues)).toBe(
+      true,
+    );
+    const structuredContent = result.structuredContent as { data: unknown[]; citations: unknown };
+    expect(structuredContent.data.length).toBeGreaterThan(0);
+    expectWellFormedCitations(structuredContent.citations);
+
+    await client.close();
+  });
+
+  it("search-projects with a realistic query succeeds and its result validates against the search-result output shape, with well-formed citations", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "search-projects",
+      arguments: { query: "typescript" },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const parsed = searchProjectsOutputSchema.safeParse(result.structuredContent);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error?.issues)).toBe(
+      true,
+    );
+    const structuredContent = result.structuredContent as { data: unknown[]; citations: unknown };
+    expect(structuredContent.data.length).toBeGreaterThan(0);
+    expectWellFormedCitations(structuredContent.citations);
+
+    await client.close();
+  });
+
+  it("get-skill-evidence for a claimed term succeeds and its result validates against the discriminated-union output shape, with well-formed citations", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "get-skill-evidence",
+      arguments: { term: "typescript" },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const parsed = getSkillEvidenceOutputSchema.safeParse(result.structuredContent);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error?.issues)).toBe(
+      true,
+    );
+    const structuredContent = result.structuredContent as {
+      data: { kind: string };
+      citations: unknown;
+    };
+    // A structural, not exact-string, assertion: whatever the real dataset
+    // claims for "typescript" today, the outcome must be one of the three
+    // documented kinds, and a "claimed"/"not-claimed" outcome must carry
+    // real evidence.
+    expect(["claimed", "not-claimed", "unknown"]).toContain(structuredContent.data.kind);
+    if (structuredContent.data.kind !== "unknown") {
+      expectWellFormedCitations(structuredContent.citations);
+    }
+
+    await client.close();
+  });
+
+  it("get-skill-evidence for a term guaranteed not to exist returns the honest 'unknown' outcome, not an error", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "get-skill-evidence",
+      arguments: { term: "definitely-not-a-real-skill-zzz-42" },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const structuredContent = result.structuredContent as { data: { kind: string } };
+    expect(structuredContent.data.kind).toBe("unknown");
+
+    await client.close();
+  });
+});
+
+describe("error paths — documented MCP errors, not transport failures", () => {
+  it("calling an unregistered tool name fails with a documented JSON-RPC error, not a transport crash", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    let caught: unknown;
+    try {
+      await client.callTool({ name: "not-a-real-tool", arguments: {} });
+    } catch (error) {
+      caught = error;
+    }
+
+    // The underlying `@modelcontextprotocol/server` maps an unregistered
+    // tool name to InvalidParams (-32602, "Tool ... not found"), not
+    // MethodNotFound — verified against the real running server rather
+    // than assumed from the spec's error-code table. Either way, this is a
+    // structured `McpError` with a real JSON-RPC code, never a raw
+    // network/transport exception.
+    expect(caught).toBeInstanceOf(McpError);
+    expect((caught as McpError).code).toBe(ErrorCode.InvalidParams);
+    expect((caught as McpError).message).toContain("not-a-real-tool");
+
+    // The connection itself must still be usable afterwards — an unknown
+    // tool name is a documented protocol error, not a broken stream.
+    const followUp = await client.callTool({ name: "ping", arguments: {} });
+    expect(followUp.isError).not.toBe(true);
+
+    await client.close();
+  });
+
+  it("calling a known tool with invalid arguments returns a documented tool-call error, not a transport failure", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "get-skill-evidence",
+      // `term` is a required, non-empty string per get-skill-evidence's
+      // input schema — an empty string is a documented validation failure.
+      arguments: { term: "" },
+    });
+
+    // The registered `McpServer`'s own input-schema validation (run before
+    // this server's `defineTool` executor — see `lib/mcp/define-tool.ts`)
+    // rejects this call first, so the result carries only a descriptive
+    // text block, not this project's own `{ code, message }`
+    // `structuredContent` envelope (`lib/mcp/errors.ts`) — that envelope
+    // is reachable for a domain/internal error, but a schema-shape
+    // violation is caught upstream of it. Either way this is a normal
+    // `isError: true` tool result, never a thrown transport exception.
+    expect(result.isError).toBe(true);
+    expect(Array.isArray(result.content)).toBe(true);
+    const [firstBlock] = result.content as Array<{ type: string; text?: string }>;
+    expect(firstBlock?.type).toBe("text");
+    expect(firstBlock?.text?.length ?? 0).toBeGreaterThan(0);
+    expect(firstBlock?.text).toMatch(/invalid|validation/i);
+
+    // The connection remains usable afterwards.
+    const followUp = await client.callTool({ name: "ping", arguments: {} });
+    expect(followUp.isError).not.toBe(true);
+
+    await client.close();
+  });
+});

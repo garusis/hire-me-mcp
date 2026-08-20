@@ -75,7 +75,9 @@
         "apps/web/app/{sitemap,robots,manifest}.ts",
         "**/next.config.ts",
         "**/vitest.config.ts",
-        "vitest.config.base.ts"
+        "vitest.config.base.ts",
+        "apps/web/vitest.mcp.config.ts",
+        "apps/web/mcp-e2e/support/global-setup.ts"
       ],
       "linter": {
         "rules": {
@@ -86,7 +88,7 @@
       }
     },
     {
-      "includes": ["apps/web/**", "!apps/web/src/lib/content/**"],
+      "includes": ["apps/web/**", "!apps/web/src/lib/content/**", "!apps/web/mcp-e2e/**"],
       "linter": {
         "rules": {
           "style": {
