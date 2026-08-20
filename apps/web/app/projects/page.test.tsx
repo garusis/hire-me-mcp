@@ -1,10 +1,28 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ProjectListView } from "../../src/lib/content";
+import type { ProfileView, ProjectListView } from "../../src/lib/content";
 
-const { getProjectsListView } = vi.hoisted(() => ({ getProjectsListView: vi.fn() }));
+const { getProjectsListView, getProfileView } = vi.hoisted(() => ({
+  getProjectsListView: vi.fn(),
+  getProfileView: vi.fn(),
+}));
 
-vi.mock("../../src/lib/content", () => ({ getProjectsListView }));
+vi.mock("../../src/lib/content", () => ({ getProjectsListView, getProfileView }));
+
+function profileView(): ProfileView {
+  return {
+    citations: [],
+    profile: {
+      id: "profile",
+      name: "Ada Fixture",
+      headline: "Fixture Engineer",
+      location: "Remote",
+      availability: "open",
+      summary: "A fixture summary of Ada.",
+      contacts: [{ label: "GitHub", url: "https://github.com/ada-fixture" }],
+    },
+  };
+}
 
 function projectsView(): ProjectListView {
   return {
@@ -132,5 +150,49 @@ describe("Projects page", () => {
     if (card !== null) {
       expect(within(card).getByText("The alpha summary.")).toBeDefined();
     }
+  });
+});
+
+describe("Projects page metadata", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns a non-empty title and a description built from the stubbed content layer", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getProjectsListView.mockReturnValue(projectsView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.title).toBeTruthy();
+    expect(metadata.description).toContain("Alpha Project");
+    expect(metadata.description).toContain("Beta Project");
+  });
+
+  it("changing the stub's data changes the description", async () => {
+    getProfileView.mockReturnValue(profileView());
+    const view = projectsView();
+    const firstItem = view.items[0];
+    if (firstItem === undefined) {
+      throw new Error("test fixture missing item");
+    }
+    firstItem.project.name = "Renamed Project";
+    getProjectsListView.mockReturnValue(view);
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.description).toContain("Renamed Project");
+  });
+
+  it("sets a canonical URL for this route", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getProjectsListView.mockReturnValue(projectsView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.alternates?.canonical).toBe("/projects");
   });
 });

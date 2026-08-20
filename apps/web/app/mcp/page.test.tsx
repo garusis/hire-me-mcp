@@ -1,6 +1,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MCP_TOOL_CATALOGUE } from "../../lib/mcp/tool-catalogue";
+import type { ProfileView } from "../../src/lib/content";
 
 const { getMcpEndpointUrl } = vi.hoisted(() => ({
   getMcpEndpointUrl: vi.fn(),
@@ -10,6 +11,27 @@ vi.mock("../../src/lib/config/site-url", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/lib/config/site-url")>();
   return { ...actual, getMcpEndpointUrl };
 });
+
+const { getProfileView } = vi.hoisted(() => ({ getProfileView: vi.fn() }));
+vi.mock("../../src/lib/content", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/lib/content")>();
+  return { ...actual, getProfileView };
+});
+
+function profileView(): ProfileView {
+  return {
+    citations: [],
+    profile: {
+      id: "profile",
+      name: "Ada Fixture",
+      headline: "Fixture Engineer",
+      location: "Remote",
+      availability: "open",
+      summary: "A fixture summary of Ada.",
+      contacts: [{ label: "GitHub", url: "https://github.com/ada-fixture" }],
+    },
+  };
+}
 
 describe("MCP page (#43)", () => {
   afterEach(() => {
@@ -98,5 +120,41 @@ describe("MCP page (#43)", () => {
 
     const link = screen.getByRole("link", { name: /rate limit|troubleshoot/i });
     expect(link).toHaveAttribute("href", expect.stringContaining("#rate-limiting"));
+  });
+});
+
+describe("MCP page metadata", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns a non-empty title and a description built from the stubbed content layer", async () => {
+    getProfileView.mockReturnValue(profileView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.title).toBeTruthy();
+    expect(metadata.description).toContain("Ada Fixture");
+  });
+
+  it("changing the stub profile changes the description", async () => {
+    const view = profileView();
+    view.profile.name = "Changed Name";
+    getProfileView.mockReturnValue(view);
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.description).toContain("Changed Name");
+  });
+
+  it("sets a canonical URL for this route", async () => {
+    getProfileView.mockReturnValue(profileView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.alternates?.canonical).toBe("/mcp");
   });
 });

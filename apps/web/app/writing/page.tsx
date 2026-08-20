@@ -1,5 +1,6 @@
+import type { Metadata } from "next";
 import type { WritingListItemView } from "../../src/lib/content";
-import { getWritingListView } from "../../src/lib/content";
+import { getProfileView, getWritingListView } from "../../src/lib/content";
 import { Card } from "../design-system/primitives/card";
 import { Container } from "../design-system/primitives/container";
 import { Heading } from "../design-system/primitives/heading";
@@ -25,6 +26,21 @@ function WritingEntryCard({ item }: { item: WritingListItemView }) {
       </Prose>
     </Card>
   );
+}
+
+/** Description lists every writing entry's title, or names the documented empty state. */
+export function generateMetadata(): Metadata {
+  const { profile } = getProfileView();
+  const { items } = getWritingListView();
+  const description =
+    items.length === 0
+      ? `${profile.name} hasn't published any writing here yet.`
+      : `${profile.name}'s writing: ${items.map((item) => item.entry.title).join(", ")}.`;
+  return {
+    title: "Writing",
+    description,
+    alternates: { canonical: "/writing" },
+  };
 }
 
 /**
