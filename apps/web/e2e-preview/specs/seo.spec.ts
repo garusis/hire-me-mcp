@@ -47,6 +47,15 @@ test("the default Open Graph image endpoint returns an image", async ({ request,
 });
 
 test("a project's Open Graph image endpoint returns an image", async ({ request, baseURL }) => {
+  // Regression proof for #119: this route 500'd on Vercel production
+  // (deployed Lambda) while passing against every local check — a
+  // preview/production HTTP round-trip is the only signal that actually
+  // exercises the real deployed environment, which is why it's asserted
+  // here rather than only via the local build-trace guards in
+  // apps/web/e2e/og-image-content-trace.smoke.spec.ts. Beyond `response.ok()`
+  // (which alone would already have caught the 500), the body-size check
+  // guards against a "200 but empty/broken image" regression that a bare
+  // status/content-type check wouldn't catch.
   const [project] = dataset.projects;
   if (project === undefined) {
     test.skip(true, "no projects authored");
@@ -55,4 +64,9 @@ test("a project's Open Graph image endpoint returns an image", async ({ request,
   const response = await request.get(`${baseURL}/projects/${slugify(project.id)}/opengraph-image`);
   expect(response.ok()).toBe(true);
   expect(response.headers()["content-type"]).toContain("image");
+  const body = await response.body();
+  expect(
+    body.byteLength,
+    "expected a non-trivial PNG body, not an empty/broken image",
+  ).toBeGreaterThan(1000);
 });
