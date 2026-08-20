@@ -180,3 +180,206 @@ jobs:
 
       - name: Run protocol-level MCP integration tests
         run: pnpm test:mcp
+
+  # Runs against the PR's real Vercel preview deployment (#58), not
+  # localhost — resolved via .github/actions/resolve-vercel-preview, a
+  # composite action shared with the `lighthouse` job below so the
+  # deployment-polling logic exists exactly once (see the shared-infra note
+  # on issue #58, also relevant to #69 and #59). Independent of `quality`/
+  # `e2e` (no `needs:`) and only meaningful for `pull_request` — a push to
+  # `main` produces a Production deploy, not a Preview one, and this suite
+  # is specifically about gating what merges into `main`.
+  preview-e2e:
+    name: preview-e2e
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Fork PRs never carry repo secrets (GitHub withholds them for
+      # security), so VERCEL_AUTOMATION_BYPASS_SECRET is empty here — this
+      # step, and therefore the whole job, skips with an explicit message
+      # instead of failing on an unresolvable/unauthenticated preview.
+      - name: Check for required secrets (skips on fork PRs)
+        id: secrets-check
+        run: |
+          if [ -z "${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping preview-e2e — VERCEL_AUTOMATION_BYPASS_SECRET is unavailable (expected for fork PRs, which never receive repo secrets)."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve Vercel preview URL
+        id: preview
+        if: steps.secrets-check.outputs.available == 'true'
+        uses: ./.github/actions/resolve-vercel-preview
+        with:
+          sha: ${{ github.event.pull_request.head.sha }}
+
+      - name: Build packages/core and packages/career-data
+        if: steps.preview.outputs.found == 'true'
+        run: pnpm turbo run build --filter=@hire-me-mcp/core --filter=@hire-me-mcp/career-data
+
+      - name: Resolve installed Playwright version
+        id: playwright-version
+        if: steps.preview.outputs.found == 'true'
+        run: echo "version=$(node -p "require('./package.json').devDependencies['@playwright/test']")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        if: steps.preview.outputs.found == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Chromium (with OS deps)
+        if: steps.preview.outputs.found == 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run preview e2e suite against the resolved preview URL
+        if: steps.preview.outputs.found == 'true'
+        env:
+          BASE_URL: ${{ steps.preview.outputs.url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          echo "Running the preview e2e suite against: ${BASE_URL}"
+          pnpm test:e2e:preview
+
+      - name: No ready preview deployment found
+        if: steps.secrets-check.outputs.available == 'true' && steps.preview.outputs.found != 'true'
+        run: |
+          echo "::warning::No ready Vercel preview deployment was found for ${{ github.event.pull_request.head.sha }} within the timeout — skipping preview-e2e rather than failing red. Re-run this job once the Vercel preview check on this PR is green."
+
+      - name: Upload Playwright HTML report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-preview-report
+          path: playwright-preview-report/
+          retention-days: 7
+
+      - name: Upload Playwright traces and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-preview-traces
+          path: test-results-preview/
+          retention-days: 7
+
+  # Lighthouse gate (#58) — performance/accessibility/best-practices/SEO on
+  # the preview URL for home, one project detail and /mcp. Shares the same
+  # preview-resolution and fork-skip behaviour as `preview-e2e` above.
+  lighthouse:
+    name: lighthouse
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check for required secrets (skips on fork PRs)
+        id: secrets-check
+        run: |
+          if [ -z "${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping lighthouse — VERCEL_AUTOMATION_BYPASS_SECRET is unavailable (expected for fork PRs, which never receive repo secrets)."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve Vercel preview URL
+        id: preview
+        if: steps.secrets-check.outputs.available == 'true'
+        uses: ./.github/actions/resolve-vercel-preview
+        with:
+          sha: ${{ github.event.pull_request.head.sha }}
+
+      - name: Build packages/core and packages/career-data
+        if: steps.preview.outputs.found == 'true'
+        run: pnpm turbo run build --filter=@hire-me-mcp/core --filter=@hire-me-mcp/career-data
+
+      - name: Generate per-run Lighthouse config
+        if: steps.preview.outputs.found == 'true'
+        env:
+          BASE_URL: ${{ steps.preview.outputs.url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          echo "Running Lighthouse against: ${BASE_URL}"
+          node scripts/lighthouse/build-config.mjs .lighthouserc.local.json
+
+      - name: Run Lighthouse CI
+        if: steps.preview.outputs.found == 'true'
+        run: pnpm exec lhci autorun --config=.lighthouserc.local.json
+
+      - name: Print Lighthouse scores
+        if: steps.preview.outputs.found == 'true' && always()
+        run: node scripts/lighthouse/print-scores.mjs
+
+      - name: No ready preview deployment found
+        if: steps.secrets-check.outputs.available == 'true' && steps.preview.outputs.found != 'true'
+        run: |
+          echo "::warning::No ready Vercel preview deployment was found for ${{ github.event.pull_request.head.sha }} within the timeout — skipping lighthouse rather than failing red. Re-run this job once the Vercel preview check on this PR is green."
+
+      - name: Upload Lighthouse report
+        if: always() && steps.preview.outputs.found == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-report
+          path: .lighthouseci/
+          retention-days: 7
