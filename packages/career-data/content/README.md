@@ -12,7 +12,11 @@ Content is authored in follow-up issues:
   `writing/*.mdx`. `writing/` is currently an intentionally empty-but-valid
   collection — no published writing/talks with a public URL exist in the
   sourced career references yet.
-- #50 — `skills.json`, `projects/*.mdx`, `gaps.json`
+- #50 (done) — `skills.json`, `projects/*.mdx`, `gaps.json`. Every `Skill`
+  cites at least one real `experience`/`project` id; every deliberately
+  non-claimed technology from the gap-discipline reference is a `Gap`
+  record with an honest statement and `relatedSkills`. Invariant tests live
+  in `src/content/real-content.test.ts`.
 
 Layout (see `src/content/loader.ts` for the authoritative mapping):
 
