@@ -21,10 +21,10 @@ Next.js-shaped by the time they reach here.
   human-readable label per entity type. It throws `UnknownEntityError` — naming the type and id —
   rather than building a citation that points at nothing. See `src/citation-builder.ts`.
 
-- **The domain services.** `getProfile()` and `getExperience(filter?)` (#54) are the first two
-  query services built on the spine above. `searchProjects` and `getSkillEvidence` (#55/#56) will
-  follow the same shape. See "Domain services" below for their signatures and documented
-  semantics.
+- **The domain services.** `getProfile()` and `getExperience(filter?)` (#54), and now
+  `searchProjects(query, options?)` (#55), are the query services built on the spine above.
+  `getSkillEvidence` (#56) will follow the same shape and reuse `searchProjects`'s underlying search
+  module. See "Domain services" below for their signatures and documented semantics.
 
 ## Domain services
 
@@ -70,8 +70,90 @@ multi-value field**. There is no cross-field OR.
 same-start ties, ahead of one that has since ended. Any remaining tie is broken by `id` ascending,
 so the order is fully deterministic regardless of the input array's order.
 
-No individual query service beyond these two ships from this package yet — `searchProjects` and
-`getSkillEvidence` are #55/#56.
+### `searchProjects(repository: CareerDataRepository, query: string, options?: SearchProjectsOptions): DomainResult<ProjectSearchResult[]>`
+
+Deterministic keyword/tag search over the repository's `Project` entries — **no embeddings, no
+randomness, no semantic ranking** (that's epic #6, deliberately out of scope here). The same query
+against the same dataset always ranks the same way; see "Determinism" below.
+
+Each `ProjectSearchResult` is `{ project, score, matches }`: the matched `Project`, its integer
+score, and `matches: MatchExplanation[]` — the machine-readable `{ field, token }` pairs that
+produced the score, so a caller (the MCP server in #3, the chat agent in #5) can explain *why* a
+result matched instead of just asserting that it did.
+
+**The scoring rule.** `query` is normalized and tokenized (case folding, punctuation stripping —
+surrounding and internal, except hyphens are preserved so kebab-case tags like `openai-api` stay
+one token — diacritic stripping, so Spanish accents like "diseño" fold to "diseno", and whitespace
+collapsing; see `src/search/normalize.ts`). Each token is additionally resolved against a
+controlled-vocabulary alias index built from the dataset's `skills` (`skill.id` doubles as the
+canonical `TECH_TAGS` value; `skill.name` and `skill.aliases` are its alternate spellings), so a
+query naming an alias (`"ts"`, `"postgres"`) matches the same projects its canonical tag
+(`"typescript"`, `"postgresql"`) would.
+
+A project is scored against four fields, each with a fixed weight — **exact tag match outweighs a
+name match, which outweighs a summary match, which outweighs a body match**:
+
+| Field     | Weight | What's compared                                             |
+| --------- | -----: | ------------------------------------------------------------- |
+| `tag`     |    100 | `Project.tech` — exact match against a (possibly alias-resolved) query token |
+| `name`    |     50 | `Project.name`, tokenized                                     |
+| `summary` |     20 | `Project.summary`, tokenized                                  |
+| `body`    |      5 | `Project.body` (the MDX prose), tokenized                     |
+
+For every field, for every *distinct* query token that field's token list contains, the field's
+weight is added to the project's score **once** — repeating a word within a field does not inflate
+its contribution. A project's total score is the sum across every matching (field, token) pair; a
+project matching on multiple fields and/or multiple tokens scores higher than one matching on a
+single field/token. Projects with a score of `0` (no field matched anything) are excluded from the
+results entirely.
+
+**Tie-breaker:** equally-scored projects are ordered by `id` ascending — the same "stable id
+ordering" convention `getExperience` uses for its own ties — so ranking never depends on dataset
+input order.
+
+**Determinism:** scores are an integer sum of fixed weights; there is no floating-point ranking, no
+randomness, and no dependency on wall-clock time or iteration order beyond what's documented above.
+The same query against the same dataset, run any number of times, returns byte-identical results.
+
+`SearchProjectsOptions`:
+
+- `limit?: number` — maximum results to return, applied **after** ranking as a truncation; it never
+  changes the relative order of the results kept.
+- `tags?: string[]` — pre-filters candidate projects to those with **at least one** of the given
+  tags (OR semantics across the list, the same convention as `getExperience`'s `tech` filter)
+  before scoring. Each given tag is resolved through the same skill-alias index the query itself
+  goes through, so `tags: ["postgres"]` and `tags: ["postgresql"]` pre-filter identically. Omitted
+  or an empty array imposes no constraint.
+
+An empty/whitespace-only `query`, or a `query` that matches nothing, returns
+`{ data: [], citations: [] }` — never throws. Every returned result carries a citation resolving to
+its `Project` (`citations[i]` corresponds to `data[i]`).
+
+### The reusable `./search/` module
+
+`searchProjects` is built on a search module (`src/search/`) that is deliberately kept separate and
+domain-agnostic, because #56 (`getSkillEvidence`) is expected to reuse it unchanged for skill/gap
+lookup, and epic #6 (semantic/vector retrieval) will sit alongside it rather than replace it. Its
+own unit tests (`src/search/*.test.ts`) exercise it independently of `searchProjects`. Exported from
+this package's entry point alongside the domain services:
+
+- **`tokenize(value: string): string[]`** and **`normalizeTerm(value: string): string`**
+  (`src/search/normalize.ts`) — the shared normalization pipeline described above. `tokenize` splits
+  free text into normalized word tokens (stopwords removed); `normalizeTerm` normalizes a whole term
+  (single- or multi-word) into one comparable, space-joined string, for alias/name lookup.
+- **`buildAliasIndex(entries: AliasedEntry[]): AliasIndex`** (`src/search/alias-resolver.ts`) —
+  generic alias/vocabulary resolution: given an arbitrary collection of
+  `{ canonical: string, aliases: string[] }` entries, `index.resolve(term)` resolves any spelling —
+  the canonical value or one of its aliases, in any casing/punctuation/diacritic form — back to the
+  canonical value, or `undefined` if nothing matches. Not hardcoded to projects or tags — #56 is
+  expected to build a second index straight from skill/gap collections, unchanged.
+- **`search(documents: SearchDocument[], queryTokens: string[], options?: SearchOptions): SearchMatch[]`**
+  (`src/search/engine.ts`) — the generic scoring engine described above, parameterized entirely by
+  the caller-supplied field weights on each `SearchDocument`. Knows nothing about projects, skills,
+  or any other domain shape.
+
+No individual query service beyond `getProfile`, `getExperience` and `searchProjects` ships from
+this package yet — `getSkillEvidence` is #56.
 
 ## The framework-free boundary — what may and may not be imported
 

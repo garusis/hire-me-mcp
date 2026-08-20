@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAliasIndex,
   buildCitation,
   createDomainResult,
   createInMemoryCareerDataRepository,
   emptyCareerDataset,
   getExperience,
   getProfile,
+  search,
+  searchProjects,
   slugify,
+  tokenize,
   UnknownEntityError,
 } from "./index.js";
 
@@ -91,5 +95,46 @@ describe("public entry point", () => {
     const experienceResult = getExperience(repository, { company: "Fixtureco" });
     expect(experienceResult.data.map((entry) => entry.id)).toEqual(["fixture-role-fixtureco-2020"]);
     expect(experienceResult.citations).toHaveLength(1);
+  });
+
+  it("re-exports the reusable search module (tokenize, buildAliasIndex, search) alongside searchProjects", () => {
+    const repository = createInMemoryCareerDataRepository({
+      ...emptyCareerDataset(),
+      projects: [
+        {
+          id: "fixture-project",
+          name: "Fixture Project",
+          summary: "A fixture summary.",
+          role: "Engineer",
+          tech: ["typescript"],
+          links: [],
+          body: "Fixture body.",
+        },
+      ],
+      skills: [
+        {
+          id: "typescript",
+          name: "TypeScript",
+          aliases: ["ts"],
+          category: "language",
+          proficiency: "expert",
+          evidence: [],
+        },
+      ],
+    });
+
+    expect(tokenize("TypeScript!")).toEqual(["typescript"]);
+    const aliasIndex = buildAliasIndex([{ canonical: "typescript", aliases: ["ts"] }]);
+    expect(aliasIndex.resolve("ts")).toBe("typescript");
+    expect(
+      search(
+        [{ id: "a", fields: [{ name: "tag", weight: 100, tokens: ["typescript"] }] }],
+        ["typescript"],
+      ).map((r) => r.id),
+    ).toEqual(["a"]);
+
+    const searchResult = searchProjects(repository, "ts");
+    expect(searchResult.data.map((r) => r.project.id)).toEqual(["fixture-project"]);
+    expect(searchResult.citations).toHaveLength(1);
   });
 });
