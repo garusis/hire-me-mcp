@@ -1,0 +1,599 @@
+[
+  {
+    "id": "typescript",
+    "name": "TypeScript",
+    "aliases": ["ts"],
+    "category": "language",
+    "proficiency": "expert",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "xogito-group-2020-senior-software-development-engineer",
+        "label": "Senior Software Development Engineer, Xogito Group"
+      }
+    ]
+  },
+  {
+    "id": "javascript",
+    "name": "JavaScript",
+    "aliases": ["js", "ecmascript"],
+    "category": "language",
+    "proficiency": "expert",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "jarvi-games-2013-full-stack-developer-and-devops",
+        "label": "Full Stack Developer and DevOps, Jarvi Games"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "rokk3r-2016-senior-full-stack-developer-and-devops",
+        "label": "Senior Full Stack Developer and DevOps, Rokk3r"
+      }
+    ]
+  },
+  {
+    "id": "nodejs",
+    "name": "Node.js",
+    "aliases": ["node"],
+    "category": "runtime",
+    "proficiency": "expert",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "jarvi-games-2013-full-stack-developer-and-devops",
+        "label": "Full Stack Developer and DevOps, Jarvi Games"
+      }
+    ]
+  },
+  {
+    "id": "react",
+    "name": "React",
+    "aliases": ["reactjs"],
+    "category": "framework",
+    "proficiency": "expert",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "fullstack-labs-2018-senior-software-engineer",
+        "label": "Senior Software Engineer, FullStack Labs"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "belatrix-software-2018-senior-nodejs-software-developer",
+        "label": "Senior NodeJS Software Developer, Belatrix Software"
+      }
+    ]
+  },
+  {
+    "id": "nestjs",
+    "name": "NestJS",
+    "aliases": [],
+    "category": "framework",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "xogito-group-2020-senior-software-development-engineer",
+        "label": "Senior Software Development Engineer, Xogito Group"
+      }
+    ]
+  },
+  {
+    "id": "mongodb",
+    "name": "MongoDB",
+    "aliases": ["mongo"],
+    "category": "database",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "jarvi-games-2013-full-stack-developer-and-devops",
+        "label": "Full Stack Developer and DevOps, Jarvi Games"
+      }
+    ]
+  },
+  {
+    "id": "postgresql",
+    "name": "PostgreSQL",
+    "aliases": ["postgres", "psql"],
+    "category": "database",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "xogito-group-2020-senior-software-development-engineer",
+        "label": "Senior Software Development Engineer, Xogito Group"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "fullstack-labs-2018-senior-software-engineer",
+        "label": "Senior Software Engineer, FullStack Labs"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "jarvi-games-2013-full-stack-developer-and-devops",
+        "label": "Full Stack Developer and DevOps, Jarvi Games"
+      }
+    ]
+  },
+  {
+    "id": "redis",
+    "name": "Redis",
+    "aliases": [],
+    "category": "database",
+    "proficiency": "familiar",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      }
+    ]
+  },
+  {
+    "id": "aws",
+    "name": "AWS",
+    "aliases": ["amazon web services"],
+    "category": "cloud-infra",
+    "proficiency": "expert",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "xogito-group-2020-senior-software-development-engineer",
+        "label": "Senior Software Development Engineer, Xogito Group"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "rokk3r-2016-senior-full-stack-developer-and-devops",
+        "label": "Senior Full Stack Developer and DevOps, Rokk3r"
+      }
+    ]
+  },
+  {
+    "id": "docker",
+    "name": "Docker",
+    "aliases": [],
+    "category": "cloud-infra",
+    "proficiency": "expert",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "xogito-group-2020-senior-software-development-engineer",
+        "label": "Senior Software Development Engineer, Xogito Group"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "fullstack-labs-2018-senior-software-engineer",
+        "label": "Senior Software Engineer, FullStack Labs"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "rokk3r-2016-senior-full-stack-developer-and-devops",
+        "label": "Senior Full Stack Developer and DevOps, Rokk3r"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes",
+    "name": "Kubernetes",
+    "aliases": ["k8s"],
+    "category": "cloud-infra",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "rokk3r-2016-senior-full-stack-developer-and-devops",
+        "label": "Senior Full Stack Developer and DevOps, Rokk3r",
+        "fragment": "highlights.0"
+      }
+    ]
+  },
+  {
+    "id": "angularjs",
+    "name": "AngularJS",
+    "aliases": ["angular.js", "angular 1"],
+    "category": "framework",
+    "proficiency": "familiar",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "rokk3r-2016-senior-full-stack-developer-and-devops",
+        "label": "Senior Full Stack Developer and DevOps, Rokk3r"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "kubesoft-2015-senior-full-stack-and-mobile-developer",
+        "label": "Senior Full Stack & Mobile Developer, Kubesoft SAS"
+      }
+    ]
+  },
+  {
+    "id": "socketio",
+    "name": "Socket.IO",
+    "aliases": ["websockets"],
+    "category": "framework",
+    "proficiency": "familiar",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "rokk3r-2016-senior-full-stack-developer-and-devops",
+        "label": "Senior Full Stack Developer and DevOps, Rokk3r"
+      }
+    ]
+  },
+  {
+    "id": "php",
+    "name": "PHP",
+    "aliases": [],
+    "category": "language",
+    "proficiency": "familiar",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "jarvi-games-2013-full-stack-developer-and-devops",
+        "label": "Full Stack Developer and DevOps, Jarvi Games"
+      }
+    ]
+  },
+  {
+    "id": "serverless",
+    "name": "Serverless (AWS Lambda / CloudFormation)",
+    "aliases": ["aws lambda", "cloudformation"],
+    "category": "cloud-infra",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "belatrix-software-2018-senior-nodejs-software-developer",
+        "label": "Senior NodeJS Software Developer, Belatrix Software",
+        "fragment": "highlights.1"
+      }
+    ]
+  },
+  {
+    "id": "openai-api",
+    "name": "OpenAI API",
+    "aliases": ["gpt", "chatgpt api"],
+    "category": "ai-ml",
+    "proficiency": "expert",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      },
+      {
+        "entityType": "project",
+        "entityId": "document-extraction-pipeline",
+        "label": "AI Document Extraction Pipeline"
+      }
+    ]
+  },
+  {
+    "id": "anthropic-api",
+    "name": "Anthropic API",
+    "aliases": ["claude api"],
+    "category": "ai-ml",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      }
+    ]
+  },
+  {
+    "id": "python",
+    "name": "Python",
+    "aliases": ["py"],
+    "category": "language",
+    "proficiency": "familiar",
+    "evidence": [
+      {
+        "entityType": "project",
+        "entityId": "cowork",
+        "label": "cowork (open-source AI-agent orchestration CLI)"
+      }
+    ]
+  },
+  {
+    "id": "gitlab-ci",
+    "name": "GitLab CI",
+    "aliases": ["gitlab ci/cd"],
+    "category": "cloud-infra",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "xogito-group-2020-senior-software-development-engineer",
+        "label": "Senior Software Development Engineer, Xogito Group"
+      }
+    ]
+  },
+  {
+    "id": "microservices",
+    "name": "Microservices",
+    "aliases": [],
+    "category": "architecture",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers",
+        "fragment": "summary"
+      }
+    ]
+  },
+  {
+    "id": "event-driven-architecture",
+    "name": "Event-Driven Architecture",
+    "aliases": ["eda", "event driven"],
+    "category": "architecture",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers",
+        "fragment": "highlights.1"
+      }
+    ]
+  },
+  {
+    "id": "rest-apis",
+    "name": "REST APIs",
+    "aliases": ["restful apis", "rest"],
+    "category": "protocol",
+    "proficiency": "expert",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "xogito-group-2020-senior-software-development-engineer",
+        "label": "Senior Software Development Engineer, Xogito Group"
+      }
+    ]
+  },
+  {
+    "id": "ci-cd",
+    "name": "CI/CD",
+    "aliases": ["continuous integration", "continuous deployment"],
+    "category": "practice",
+    "proficiency": "expert",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "xogito-group-2020-senior-software-development-engineer",
+        "label": "Senior Software Development Engineer, Xogito Group"
+      },
+      {
+        "entityType": "project",
+        "entityId": "monorepo-documentation-system",
+        "label": "Monorepo Agent-Consumable Documentation System"
+      }
+    ]
+  },
+  {
+    "id": "observability",
+    "name": "Observability",
+    "aliases": ["monitoring", "tracing"],
+    "category": "practice",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers",
+        "fragment": "highlights.4"
+      },
+      {
+        "entityType": "project",
+        "entityId": "llm-evaluation-infrastructure",
+        "label": "LLM Evaluation Infrastructure"
+      }
+    ]
+  },
+  {
+    "id": "llms",
+    "name": "LLMs (Large Language Models)",
+    "aliases": ["large language models", "generative ai"],
+    "category": "ai-ml",
+    "proficiency": "expert",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers",
+        "fragment": "highlights.0"
+      },
+      {
+        "entityType": "project",
+        "entityId": "document-extraction-pipeline",
+        "label": "AI Document Extraction Pipeline"
+      }
+    ]
+  },
+  {
+    "id": "ai-agents",
+    "name": "AI Agents",
+    "aliases": ["agentic ai", "autonomous agents"],
+    "category": "ai-ml",
+    "proficiency": "expert",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers",
+        "fragment": "highlights.2"
+      },
+      {
+        "entityType": "project",
+        "entityId": "cowork",
+        "label": "cowork (open-source AI-agent orchestration CLI)"
+      }
+    ]
+  },
+  {
+    "id": "prompt-engineering",
+    "name": "Prompt Engineering",
+    "aliases": [],
+    "category": "ai-ml",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers",
+        "fragment": "highlights.2"
+      },
+      {
+        "entityType": "project",
+        "entityId": "llm-evaluation-infrastructure",
+        "label": "LLM Evaluation Infrastructure"
+      }
+    ]
+  },
+  {
+    "id": "sql",
+    "name": "SQL",
+    "aliases": [],
+    "category": "language",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "xogito-group-2020-senior-software-development-engineer",
+        "label": "Senior Software Development Engineer, Xogito Group"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "fullstack-labs-2018-senior-software-engineer",
+        "label": "Senior Software Engineer, FullStack Labs"
+      }
+    ]
+  },
+  {
+    "id": "turborepo",
+    "name": "Turborepo",
+    "aliases": [],
+    "category": "practice",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "project",
+        "entityId": "monorepo-documentation-system",
+        "label": "Monorepo Agent-Consumable Documentation System"
+      }
+    ]
+  },
+  {
+    "id": "pnpm",
+    "name": "pnpm",
+    "aliases": [],
+    "category": "practice",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "project",
+        "entityId": "monorepo-documentation-system",
+        "label": "Monorepo Agent-Consumable Documentation System"
+      }
+    ]
+  },
+  {
+    "id": "mentoring",
+    "name": "Mentoring & Onboarding",
+    "aliases": ["technical mentoring", "onboarding engineers"],
+    "category": "practice",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "xogito-group-2020-senior-software-development-engineer",
+        "label": "Senior Software Development Engineer, Xogito Group",
+        "fragment": "highlights.2"
+      }
+    ]
+  },
+  {
+    "id": "requirements-gathering",
+    "name": "Requirements Gathering",
+    "aliases": ["stakeholder requirements", "customer-facing requirements"],
+    "category": "practice",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "xogito-group-2020-senior-software-development-engineer",
+        "label": "Senior Software Development Engineer, Xogito Group",
+        "fragment": "highlights.1"
+      }
+    ]
+  },
+  {
+    "id": "regulated-data-handling",
+    "name": "Regulated / Encrypted Data Handling",
+    "aliases": ["field-level encryption", "pii handling", "encrypted data handling"],
+    "category": "practice",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers",
+        "fragment": "highlights.1"
+      }
+    ]
+  },
+  {
+    "id": "mobile-hybrid",
+    "name": "Hybrid Mobile Development",
+    "aliases": ["ionic", "hybrid mobile"],
+    "category": "practice",
+    "proficiency": "familiar",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "kubesoft-2015-senior-full-stack-and-mobile-developer",
+        "label": "Senior Full Stack & Mobile Developer, Kubesoft SAS"
+      }
+    ]
+  }
+]

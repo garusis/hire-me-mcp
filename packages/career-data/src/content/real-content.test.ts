@@ -2,8 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import type { CitableEntityType } from "../schemas/index.js";
 import { idSchema, isKnownTechTag } from "../schemas/index.js";
-import { validateContentDir } from "./loader.js";
+import type { CareerDataset } from "./loader.js";
+import { loadContentDir, validateContentDir } from "./loader.js";
 
 /**
  * Invariant tests over the *real* authored content in `content/` (#48) —
@@ -169,5 +171,173 @@ describe("real career-data content", () => {
         expect(isKnownTechTag(tag)).toBe(true);
       }
     }
+  });
+});
+
+/**
+ * Invariant tests over the skills/gaps/projects claim layer authored in #50.
+ * `loadContentDir` gives us the fully schema-validated, typed dataset —
+ * these tests assert the cross-entity invariants no single Zod schema can
+ * express: citation resolution, alias/name collision between claimed
+ * (Skill) and disclaimed (Gap) records, alias uniqueness, and tag
+ * membership for the technologies actually claimed.
+ */
+describe("skills, gaps and projects content (#50)", () => {
+  const dataset: CareerDataset = loadContentDir(contentDir);
+
+  /** Every entity id this content set can resolve a Citation against, keyed by entityType. */
+  function buildResolvers(data: CareerDataset): Record<CitableEntityType, Set<string>> {
+    return {
+      profile: new Set(data.profile ? [data.profile.id] : []),
+      experience: new Set(data.experience.map((entry) => entry.id)),
+      project: new Set(data.projects.map((project) => project.id)),
+      skill: new Set(data.skills.map((skill) => skill.id)),
+      gap: new Set(data.gaps.map((gap) => gap.id)),
+      education: new Set(data.education.map((entry) => entry.id)),
+      writing: new Set(data.writing.map((entry) => entry.id)),
+    };
+  }
+
+  /** Skill ids that are not themselves a technology (soft skills / practices) — exempt from tag-vocabulary membership. */
+  const NON_TECHNOLOGY_SKILL_IDS = new Set([
+    "mentoring",
+    "requirements-gathering",
+    "regulated-data-handling",
+    "mobile-hybrid",
+  ]);
+
+  /** The authoritative, closed known-gaps list from `~/.claude/career/evidence.md`. */
+  const EXPECTED_GAP_IDS = [
+    "golang",
+    "rust",
+    "java",
+    "dotnet",
+    "graphql",
+    "mobile-native",
+    "django",
+    "shopify",
+  ];
+
+  describe("skills", () => {
+    it("has at least one skill", () => {
+      expect(dataset.skills.length).toBeGreaterThan(0);
+    });
+
+    it("every skill id is unique", () => {
+      const ids = dataset.skills.map((skill) => skill.id);
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("every skill citation resolves to an existing entity of its declared type", () => {
+      const resolvers = buildResolvers(dataset);
+      for (const skill of dataset.skills) {
+        for (const citation of skill.evidence) {
+          expect(resolvers[citation.entityType].has(citation.entityId)).toBe(true);
+        }
+      }
+    });
+
+    it("every skill alias is unique within skills, case-insensitively", () => {
+      const seen = new Set<string>();
+      for (const skill of dataset.skills) {
+        for (const alias of skill.aliases) {
+          const key = alias.toLowerCase();
+          expect(seen.has(key)).toBe(false);
+          seen.add(key);
+        }
+      }
+    });
+
+    it("every technology skill id is a member of the controlled tag vocabulary", () => {
+      for (const skill of dataset.skills) {
+        if (NON_TECHNOLOGY_SKILL_IDS.has(skill.id)) {
+          continue;
+        }
+        expect(isKnownTechTag(skill.id)).toBe(true);
+      }
+    });
+  });
+
+  describe("gaps", () => {
+    it("covers the full authoritative known-gaps list from the gap-discipline reference", () => {
+      const ids = dataset.gaps.map((gap) => gap.id).sort();
+      expect(ids).toEqual([...EXPECTED_GAP_IDS].sort());
+    });
+
+    it("every gap id is unique", () => {
+      const ids = dataset.gaps.map((gap) => gap.id);
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("every gap alias is unique within gaps, case-insensitively", () => {
+      const seen = new Set<string>();
+      for (const gap of dataset.gaps) {
+        for (const alias of gap.aliases) {
+          const key = alias.toLowerCase();
+          expect(seen.has(key)).toBe(false);
+          seen.add(key);
+        }
+      }
+    });
+
+    it("every gap has a non-empty honest statement", () => {
+      for (const gap of dataset.gaps) {
+        expect(gap.statement.trim().length).toBeGreaterThan(0);
+      }
+    });
+
+    it("every gap's relatedSkills entry resolves to an existing Skill id", () => {
+      const skillIds = new Set(dataset.skills.map((skill) => skill.id));
+      for (const gap of dataset.gaps) {
+        for (const relatedId of gap.relatedSkills) {
+          expect(skillIds.has(relatedId)).toBe(true);
+        }
+      }
+    });
+  });
+
+  describe("skill/gap collisions", () => {
+    it("no name or alias is shared between a Skill and a Gap record, case-insensitively", () => {
+      const skillTerms = new Set<string>();
+      for (const skill of dataset.skills) {
+        skillTerms.add(skill.name.toLowerCase());
+        skillTerms.add(skill.id.toLowerCase());
+        for (const alias of skill.aliases) {
+          skillTerms.add(alias.toLowerCase());
+        }
+      }
+      for (const gap of dataset.gaps) {
+        const gapTerms = [gap.name, gap.id, ...gap.aliases].map((term) => term.toLowerCase());
+        for (const term of gapTerms) {
+          expect(skillTerms.has(term)).toBe(false);
+        }
+      }
+    });
+  });
+
+  describe("projects", () => {
+    it("has at least one project", () => {
+      expect(dataset.projects.length).toBeGreaterThan(0);
+    });
+
+    it("every project id is unique", () => {
+      const ids = dataset.projects.map((project) => project.id);
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("every project technology tag is a member of the controlled vocabulary", () => {
+      for (const project of dataset.projects) {
+        expect(project.tech.length).toBeGreaterThan(0);
+        for (const tag of project.tech) {
+          expect(isKnownTechTag(tag)).toBe(true);
+        }
+      }
+    });
+
+    it("every project has a non-empty MDX body", () => {
+      for (const project of dataset.projects) {
+        expect(project.body.trim().length).toBeGreaterThan(0);
+      }
+    });
   });
 });

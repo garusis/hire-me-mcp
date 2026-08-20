@@ -1,0 +1,46 @@
+---
+id: llm-evaluation-infrastructure
+name: LLM Evaluation Infrastructure
+summary: >-
+  Solo-built evaluation infrastructure for production LLM features — a
+  labeled corpus, human-graded ground truth, LLM-as-judge scoring, per-call
+  cost tracing and version-controlled prompts.
+role: Sole engineer / owner
+tech:
+  - typescript
+  - llms
+  - ai-agents
+  - prompt-engineering
+  - observability
+links: []
+---
+
+## The problem
+
+Once an LLM feature ships, "it looked good in a demo" stops being a useful
+signal. Prompts drift, models get swapped, and without a way to measure
+quality on a fixed corpus, every change becomes an argument instead of a
+number.
+
+## What I built
+
+I built the evaluation infrastructure that turns "does this still work"
+into something measurable, on my own, end to end:
+
+- A labeled corpus of real cases with human-graded ground truth, so changes
+  have something fixed to compare against.
+- LLM-as-judge scoring for the cases where a strict string match does not
+  capture correctness, calibrated against the human-graded set rather than
+  trusted blindly.
+- Per-call cost tracing, so a quality improvement is judged against what it
+  costs to run, not in isolation.
+- Version-controlled prompts, so a regression can be bisected the same way a
+  code regression can.
+
+## Why it mattered
+
+This is the piece that made every other LLM feature — the document
+extraction pipeline, message classification — accountable to a number
+instead of a feeling. It is also the project I point to for "owns a
+large-scope effort end to end": nobody assigned the scope, I decided what
+mattered and built it.

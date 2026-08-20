@@ -1,0 +1,58 @@
+[
+  {
+    "id": "golang",
+    "name": "Go (Golang)",
+    "aliases": ["go", "golang"],
+    "statement": "No production Go experience. What transfers is a track record of getting productive fast in unfamiliar, complicated systems — expect to be reviewing pull requests within a couple of weeks rather than a couple of months, given the syntax-level size of the gap coming from other statically-typed languages.",
+    "relatedSkills": ["nodejs", "kubernetes", "docker"]
+  },
+  {
+    "id": "rust",
+    "name": "Rust",
+    "aliases": ["rustlang"],
+    "statement": "No production Rust experience. Unlike a syntax-level gap, Rust's ownership and borrowing model is a genuinely new runtime model, so this would be a ramp measured in months rather than weeks.",
+    "relatedSkills": ["typescript"]
+  },
+  {
+    "id": "java",
+    "name": "Java",
+    "aliases": ["jvm", "java se"],
+    "statement": "No production Java experience. Backend patterns from typed, convention-driven frameworks used elsewhere carry over conceptually; the gap is syntax and ecosystem, not architecture.",
+    "relatedSkills": ["nestjs", "typescript"]
+  },
+  {
+    "id": "dotnet",
+    "name": ".NET",
+    "aliases": [".net", "c#", "csharp", "dot net"],
+    "statement": "No production .NET/C# experience. Closest overlap is backend work in NestJS and other typed, convention-driven server frameworks.",
+    "relatedSkills": ["nestjs"]
+  },
+  {
+    "id": "graphql",
+    "name": "GraphQL",
+    "aliases": ["graphql api"],
+    "statement": "No production GraphQL experience — API work to date has been REST throughout. Expect a syntax-level ramp on schemas and resolvers on top of existing API-design experience, not a conceptual one.",
+    "relatedSkills": ["rest-apis", "nodejs"]
+  },
+  {
+    "id": "mobile-native",
+    "name": "Native Mobile (iOS/Android)",
+    "aliases": ["ios", "android", "swift", "kotlin", "native mobile development"],
+    "statement": "No native iOS/Android development (Swift, Kotlin or Objective-C). Past mobile work was delivered through hybrid, web-based frameworks rather than native platform APIs.",
+    "relatedSkills": ["mobile-hybrid"]
+  },
+  {
+    "id": "django",
+    "name": "Django",
+    "aliases": ["django rest framework", "drf"],
+    "statement": "No production Django experience. Backend framework depth is concentrated in NestJS and other convention-driven frameworks, with Python familiarity limited to tooling work — not enough to present as a Python specialist.",
+    "relatedSkills": ["nestjs", "python"]
+  },
+  {
+    "id": "shopify",
+    "name": "Shopify",
+    "aliases": ["shopify liquid", "checkout extensibility", "shopify admin api"],
+    "statement": "No production Shopify experience, including platform-specific surfaces such as Checkout Extensibility or the GraphQL Admin API.",
+    "relatedSkills": ["react", "rest-apis"]
+  }
+]

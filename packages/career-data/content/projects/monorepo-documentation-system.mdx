@@ -1,0 +1,41 @@
+---
+id: monorepo-documentation-system
+name: Monorepo Agent-Consumable Documentation System
+summary: >-
+  Solo-built documentation system for a large TypeScript monorepo, with
+  deterministic integrity checks enforced in CI so the docs cannot silently
+  drift from the code they describe.
+role: Sole engineer / owner
+tech:
+  - typescript
+  - turborepo
+  - pnpm
+  - ci-cd
+  - nodejs
+links: []
+---
+
+## The problem
+
+Documentation in a fast-moving monorepo rots the same way everywhere: it is
+accurate the day it is written and stale within a quarter, because nothing
+forces it to stay in sync with the code. This started as a complaint I kept
+making in reviews before I decided to fix it instead.
+
+## What I built
+
+A documentation system for the monorepo, designed to be consumed by both
+engineers and coding agents, with deterministic integrity gates wired into
+CI — a doc that references a file, export or command that no longer exists
+fails the build the same way a broken type does. I built it solo, on top of
+the existing Turborepo/pnpm workspace tooling, and it now covers the shared
+packages and services across the monorepo.
+
+## Why it mattered
+
+It raised the whole team's throughput, not just mine: onboarding a new
+engineer or agent onto an unfamiliar part of the codebase got measurably
+faster once the docs could be trusted instead of double-checked against the
+source. It is also the clearest example I have of a self-directed
+improvement that turned into standing infrastructure rather than a one-off
+cleanup.
