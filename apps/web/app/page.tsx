@@ -1,26 +1,180 @@
-import { CORE_PACKAGE_NAME } from "@hire-me-mcp/core";
-import { CAREER_DATA_PACKAGE_NAME } from "../src/lib/content";
+import {
+  type ExperienceListItemView,
+  getExperienceListView,
+  getProfileView,
+  getProjectsListView,
+  getSkillsListView,
+  type ProjectListItemView,
+  type Skill,
+} from "../src/lib/content";
 import { RevealOnScroll } from "./design-system/motion/reveal-on-scroll";
 import { Badge } from "./design-system/primitives/badge";
+import { Button } from "./design-system/primitives/button";
+import { Card } from "./design-system/primitives/card";
 import { Container } from "./design-system/primitives/container";
 import { Heading } from "./design-system/primitives/heading";
 import { Prose } from "./design-system/primitives/prose";
 import { Section } from "./design-system/primitives/section";
+import styles from "./page.module.css";
+
+/**
+ * How many entries surface in each highlight rail. Generic UI configuration
+ * (not career content) — the *selection* itself always follows the content
+ * layer's own ordering (reverse-chronological for experience, dataset order
+ * for projects, proficiency rank for skills), never a hardcoded id list, so
+ * editing `packages/career-data` changes the page with no code change here.
+ */
+const HIGHLIGHT_EXPERIENCE_COUNT = 3;
+const HIGHLIGHT_PROJECT_COUNT = 3;
+const HIGHLIGHT_SKILL_COUNT = 8;
+
+const AVAILABILITY_LABEL: Record<"open" | "selective" | "not-looking", string> = {
+  open: "Open to new roles",
+  selective: "Selectively open",
+  "not-looking": "Not currently looking",
+};
+
+/** First sentence of a longer paragraph, used as a one-line positioning statement. */
+function firstSentence(text: string): string {
+  const match = /[^.]+\./.exec(text);
+  return match ? match[0].trim() : text.trim();
+}
+
+function ExperienceHighlightCard({ item }: { item: ExperienceListItemView }) {
+  return (
+    <Card as="article" className={styles.highlightCard}>
+      <Heading level={4} className={styles.highlightCardTitle}>
+        {item.entry.role}, {item.entry.company}
+      </Heading>
+      <p className={styles.highlightCardBody}>{item.entry.summary}</p>
+    </Card>
+  );
+}
+
+function ProjectHighlightCard({ item }: { item: ProjectListItemView }) {
+  return (
+    <Card as="article" className={styles.highlightCard}>
+      <Heading level={4} className={styles.highlightCardTitle}>
+        {item.project.name}
+      </Heading>
+      <p className={styles.highlightCardBody}>{item.project.summary}</p>
+    </Card>
+  );
+}
+
+function SkillBadge({ skill }: { skill: Skill }) {
+  return <Badge>{skill.name}</Badge>;
+}
 
 export default function Home() {
+  const { profile } = getProfileView();
+  const experience = getExperienceListView().items.slice(0, HIGHLIGHT_EXPERIENCE_COUNT);
+  const projects = getProjectsListView().items.slice(0, HIGHLIGHT_PROJECT_COUNT);
+  const skills = getSkillsListView().items.slice(0, HIGHLIGHT_SKILL_COUNT);
+  const [primaryContact] = profile.contacts;
+
   return (
-    <Section>
-      <Container>
-        <RevealOnScroll>
-          <Badge variant="accent">Under construction</Badge>
-          <Heading level={1}>Hire-me MCP</Heading>
-          <Prose>
-            <p>Portfolio as an API — placeholder page, design work pending.</p>
-            <p>Domain package: {CORE_PACKAGE_NAME}</p>
-            <p>Career data package: {CAREER_DATA_PACKAGE_NAME}</p>
-          </Prose>
-        </RevealOnScroll>
-      </Container>
-    </Section>
+    <>
+      <Section aria-labelledby="hero-heading">
+        <Container>
+          <RevealOnScroll>
+            <Badge variant="accent">{AVAILABILITY_LABEL[profile.availability]}</Badge>
+            <Heading level={1} id="hero-heading" className={styles.heroName}>
+              {profile.name}
+            </Heading>
+            <p className={styles.heroHeadline}>{profile.headline}</p>
+            <p className={styles.heroPositioning}>{firstSentence(profile.summary)}</p>
+            <div className={styles.heroActions}>
+              {primaryContact ? (
+                <Button href={primaryContact.url} variant="solid">
+                  {primaryContact.label}
+                </Button>
+              ) : null}
+              <Button href="#mcp" variant="outline">
+                Add me to your AI
+              </Button>
+            </div>
+          </RevealOnScroll>
+        </Container>
+      </Section>
+
+      <Section aria-labelledby="bio-heading">
+        <Container>
+          <RevealOnScroll>
+            <Heading level={2} id="bio-heading">
+              About
+            </Heading>
+            <Prose>
+              <p>{profile.summary}</p>
+            </Prose>
+          </RevealOnScroll>
+        </Container>
+      </Section>
+
+      <Section aria-labelledby="highlights-heading">
+        <Container>
+          <RevealOnScroll>
+            <Heading level={2} id="highlights-heading">
+              Highlights
+            </Heading>
+
+            {experience.length > 0 ? (
+              <div className={styles.highlightGroup}>
+                <Heading level={3}>Recent roles</Heading>
+                <div className={styles.highlightGrid}>
+                  {experience.map((item) => (
+                    <ExperienceHighlightCard key={item.slug} item={item} />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {projects.length > 0 ? (
+              <div className={styles.highlightGroup}>
+                <Heading level={3}>Selected projects</Heading>
+                <div className={styles.highlightGrid}>
+                  {projects.map((item) => (
+                    <ProjectHighlightCard key={item.slug} item={item} />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {skills.length > 0 ? (
+              <div className={styles.highlightGroup}>
+                <Heading level={3}>Top skills</Heading>
+                <ul className={styles.skillList}>
+                  {skills.map((skill) => (
+                    <li key={skill.id}>
+                      <SkillBadge skill={skill} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </RevealOnScroll>
+        </Container>
+      </Section>
+
+      <Section id="mcp" aria-labelledby="mcp-heading" className={styles.mcpTeaser}>
+        <Container>
+          <RevealOnScroll>
+            <Heading level={2} id="mcp-heading">
+              Add me to your AI
+            </Heading>
+            <Prose>
+              <p>
+                Query this CV like an API — connect any MCP-compatible client (Claude, Cursor and
+                more) directly to the same career data that powers this site, with full-text answers
+                and citations back to the source.
+              </p>
+            </Prose>
+            <Button href="/mcp" variant="solid">
+              Explore the MCP endpoint
+            </Button>
+          </RevealOnScroll>
+        </Container>
+      </Section>
+    </>
   );
 }
