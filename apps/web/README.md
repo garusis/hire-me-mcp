@@ -113,6 +113,55 @@ suite). Run `pnpm test:e2e` from the repo root; PNGs land in
 `apps/web/e2e/screenshots/` (git-ignored — not part of the deployed artifact). See the PR
 description for the captured images.
 
+## Rate limiting
+
+The public MCP endpoint (`/api/mcp`) is public and anonymous — no auth, no OAuth (out of scope for
+this epic) — so per-IP rate limiting, backed by Upstash Redis (free tier) via `@upstash/ratelimit`
++ `@upstash/redis`, is the only cost/abuse control (#39). This section is the canonical
+documentation for the limit and the limit-exceeded behavior; the `/mcp` connection page's
+troubleshooting section and other docs link back here rather than duplicating it.
+
+- **Default limit**: 60 requests per caller IP per 60-second sliding window — generous for an
+  interactive AI assistant making a handful of tool calls per turn, not for scripted abuse.
+- **Override**: set `RATELIMIT_MAX_REQUESTS` and/or `RATELIMIT_WINDOW_SECONDS` (see
+  `.env.example`). An unset, non-numeric, non-integer, or non-positive value silently falls back
+  to the default rather than erroring.
+- **Algorithm**: `Ratelimit.slidingWindow` (smoother enforcement than a fixed window), with
+  Upstash's ephemeral in-memory cache enabled so a caller already known to be blocked is rejected
+  locally on a warm serverless instance without spending a Redis command per retry.
+- **Caller identity**: the caller's IP, extracted with a documented header precedence
+  (`apps/web/lib/mcp/rate-limit/identify-caller.ts`): `x-forwarded-for` first (Vercel's edge
+  overwrites this header with the true client IP and does not forward external IPs, so it isn't
+  spoofable by the caller on this deployment), then `x-real-ip` as a fallback, then a single fixed
+  `"unknown"` bucket if neither is present (e.g. local dev with no proxy in front). No other
+  client-supplied header is trusted, since an arbitrary client-settable header would let a caller
+  pick its own rate-limit bucket.
+- **Fail-open, by explicit decision**: enforcement is wired into `apps/web/app/api/mcp/route.ts`
+  BEFORE the MCP request handler runs, so it never turns into a truncated stream — but if
+  `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` aren't set (CI, a forked PR's preview, local
+  dev without the env vars) or a configured limiter's call to Redis itself fails, the endpoint
+  still serves MCP traffic with no limiting rather than a 500, logging a loud `console.warn` each
+  time. This keeps local development and the test suite from requiring Upstash credentials, at the
+  cost of no protection in that (non-production) state.
+- **Limit-exceeded response**: `HTTP 429`, with `RateLimit-Limit` / `RateLimit-Remaining` /
+  `RateLimit-Reset` headers (IETF `RateLimit` header field draft) and `Retry-After` (RFC 9110,
+  seconds until the window resets), plus a complete, parseable JSON body:
+  ```json
+  { "error": { "code": "rate_limited", "message": "Too many requests from this client — the limit is 60 requests per configured window. Retry after 42 second(s). See the \"Rate limiting\" section of the hire-me-mcp README for the current default limit and how it's configured." } }
+  ```
+  The message never includes a stack trace, an internal path, or credential material — see
+  `apps/web/lib/mcp/rate-limit/response.ts`.
+- **Implementation**: `apps/web/lib/mcp/rate-limit/` — `identify-caller.ts` (identifier
+  extraction), `config.ts` (env parsing/defaults), `limiter.ts` (Upstash-backed and fail-open
+  limiter construction), `response.ts` (429 builder), `with-rate-limit.ts` (the route wrapper,
+  limiter injected for testability). Each has a co-located Vitest suite exercising header
+  combinations, the fail-open path, under-limit passthrough, and a burst over a low configured
+  limit — all without a network call, via an injectable in-memory fake limiter.
+- **Upstash project config**: `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` are set in the
+  Vercel project (Production + Preview, marked Sensitive) against a dedicated free-tier Upstash
+  Redis database. No credential value is ever committed to the repo or pasted into an issue/PR —
+  see `.env.example` at the repo root for the (empty) placeholder entries.
+
 ## Commands
 
 ```bash
