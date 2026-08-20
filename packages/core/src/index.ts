@@ -10,6 +10,9 @@ export type { BuildCitationOptions } from "./citation-builder.js";
 export { buildCitation, UnknownEntityError } from "./citation-builder.js";
 export type { DependencyAllowlist } from "./dependency-allowlist.js";
 export { findDisallowedDependencies } from "./dependency-allowlist.js";
+export type { ExperienceFilter } from "./get-experience.js";
+export { getExperience } from "./get-experience.js";
+export { getProfile, ProfileNotFoundError } from "./get-profile.js";
 export type { CareerDataRepository, CareerDataset } from "./repository.js";
 export {
   createContentCareerDataRepository,

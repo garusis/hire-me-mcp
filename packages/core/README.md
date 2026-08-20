@@ -21,8 +21,57 @@ Next.js-shaped by the time they reach here.
   human-readable label per entity type. It throws `UnknownEntityError` — naming the type and id —
   rather than building a citation that points at nothing. See `src/citation-builder.ts`.
 
-No individual query service (`getProfile`, `searchProjects`, ...) ships from this package yet —
-that's #54/#55/#56. This package only provides what they'll all be built on.
+- **The domain services.** `getProfile()` and `getExperience(filter?)` (#54) are the first two
+  query services built on the spine above. `searchProjects` and `getSkillEvidence` (#55/#56) will
+  follow the same shape. See "Domain services" below for their signatures and documented
+  semantics.
+
+## Domain services
+
+Every domain service takes a `CareerDataRepository` and returns a `DomainResult<T>` — never
+throws for "no results", only for genuinely exceptional input (see each service below). See
+`src/get-profile.ts` and `src/get-experience.ts`.
+
+### `getProfile(repository: CareerDataRepository): DomainResult<Profile>`
+
+Returns the singleton `Profile` record from the repository's dataset, with a citation resolving
+to it (`citations` always has exactly one entry). Throws `ProfileNotFoundError` if the dataset has
+no profile authored — this is the one case where the service throws rather than returning an
+"empty" result, because there is no meaningful empty `Profile`.
+
+### `getExperience(repository: CareerDataRepository, filter?: ExperienceFilter): DomainResult<ExperienceEntry[]>`
+
+Returns every `ExperienceEntry` matching `filter` (all entries if `filter` is omitted), sorted per
+the stable order below, each with a citation resolving to it (`citations[i]` always corresponds to
+`data[i]`). A filter matching nothing returns `{ data: [], citations: [] }` — never throws.
+
+`ExperienceFilter` fields:
+
+- `company?: string` — exact match against `ExperienceEntry.company`, case-insensitive (still
+  exact matching, never fuzzy).
+- `tech?: string[]` — matches an entry if it has **any** of the given tags in its `tech` array
+  (OR within this field). Tags are matched as opaque strings against the controlled vocabulary
+  defined by `@hire-me-mcp/career-data`'s `TECH_TAGS`; the filter itself does not validate that a
+  given tag is a known one. An empty array imposes no constraint, same as omitting the field.
+- `from?: string`, `to?: string` — inclusive `YYYY-MM` bounds of a date-range **overlap** check
+  against an entry's `[startDate, endDate]` span (not "starts within range" — an entry that merely
+  overlaps the given range matches). A role with no `endDate` (a current role, per #48's
+  "current role" representation) is treated as open-ended/still-ongoing, so it overlaps any range
+  that reaches into the present. Omitting `from` and/or `to` leaves that bound open.
+- `status?: "current" | "past"` — `"current"` restricts to the entry/entries with no `endDate`;
+  `"past"` restricts to entries that have one. Omitted imposes no constraint.
+
+**Filter combination semantics:** every field present on the filter must match — **AND across
+fields**. Within `tech`, a match against **any** listed tag is enough — **OR within that
+multi-value field**. There is no cross-field OR.
+
+**Stable sort order:** reverse-chronological by `startDate` (most recent first). Ties (identical
+`startDate`) are broken by `endDate` descending — an open-ended (current) role sorts first among
+same-start ties, ahead of one that has since ended. Any remaining tie is broken by `id` ascending,
+so the order is fully deterministic regardless of the input array's order.
+
+No individual query service beyond these two ships from this package yet — `searchProjects` and
+`getSkillEvidence` are #55/#56.
 
 ## The framework-free boundary — what may and may not be imported
 
