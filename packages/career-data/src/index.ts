@@ -1,13 +1,39 @@
 /**
- * Zod-typed career content package.
- *
- * This is an empty shell — real schemas and content land in the
- * Career Data epic (#2). For now it only exports a placeholder value
- * so consumers can prove the workspace wiring resolves.
+ * Zod-typed career content package: schemas, a content loader/validator,
+ * and this public entry point, which is the only surface `packages/core`
+ * (and any other workspace consumer) is allowed to import from — never a
+ * deep `dist/...` or `src/...` path.
  */
+
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** Name of this package, exported as a trivial placeholder value. */
 export const CAREER_DATA_PACKAGE_NAME = "@hire-me-mcp/career-data";
+
+/**
+ * Absolute path to this package's own `content/` directory — the default
+ * data source for {@link loadContentDir}. Resolved relative to this module
+ * (works identically from `src/index.ts` under Vitest/tsx and from
+ * `dist/index.js` after build, since both sit one level inside the package
+ * root, alongside `content/`).
+ *
+ * Deliberately built with `node:path` rather than `new URL("../content",
+ * import.meta.url)`: bundlers (webpack, via Next.js) statically detect that
+ * literal `new URL(..., import.meta.url)` pattern and try to resolve it as
+ * a bundled asset, which fails at build time for a directory that isn't a
+ * module. This form is opaque to that static analysis.
+ */
+export function resolveDefaultContentDir(): string {
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  return path.join(moduleDir, "..", "content");
+}
+
+export type { CareerDataset, ContentValidationError } from "./content/loader.js";
+export { loadContentDir, validateContentDir } from "./content/loader.js";
+export * from "./schemas/index.js";
+export type { ValidateResult } from "./validate.js";
+export { formatValidationReport, runValidate } from "./validate.js";
 
 /**
  * Format a career-history year range as displayable text, e.g. `2021 – Present`

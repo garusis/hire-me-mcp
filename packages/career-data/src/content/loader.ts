@@ -2,12 +2,19 @@ import fs from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
 import type { z } from "zod";
+import type { EducationEntry } from "../schemas/education.js";
 import { educationEntrySchema } from "../schemas/education.js";
+import type { ExperienceEntry } from "../schemas/experience.js";
 import { experienceEntrySchema } from "../schemas/experience.js";
+import type { Gap } from "../schemas/gap.js";
 import { gapSchema } from "../schemas/gap.js";
+import type { Profile } from "../schemas/profile.js";
 import { profileSchema } from "../schemas/profile.js";
+import type { Project } from "../schemas/project.js";
 import { projectSchema } from "../schemas/project.js";
+import type { Skill } from "../schemas/skill.js";
 import { skillSchema } from "../schemas/skill.js";
+import type { WritingEntry } from "../schemas/writing.js";
 import { writingEntrySchema } from "../schemas/writing.js";
 
 /** One reported failure: which file, which field, and why. */
@@ -173,4 +180,114 @@ export function validateContentDir(contentDir: string): ContentValidationError[]
     }
   }
   return errors;
+}
+
+/** Every entity type's content, loaded and validated, keyed by entity kind. */
+export interface CareerDataset {
+  /** `undefined` when `profile.json` has not been authored yet. */
+  profile: Profile | undefined;
+  experience: ExperienceEntry[];
+  projects: Project[];
+  skills: Skill[];
+  gaps: Gap[];
+  education: EducationEntry[];
+  writing: WritingEntry[];
+}
+
+function readSingleInto<T>(
+  contentDir: string,
+  relPath: string,
+  schema: z.ZodType<T>,
+  assign: (value: T) => void,
+): void {
+  const absPath = path.join(contentDir, relPath);
+  if (!fs.existsSync(absPath)) {
+    return;
+  }
+  const data = parseJsonFile(absPath, relPath, []);
+  if (data !== undefined) {
+    assign(schema.parse(data));
+  }
+}
+
+function readArrayInto<T>(
+  contentDir: string,
+  relPath: string,
+  schema: z.ZodType<T[]>,
+  target: T[],
+): void {
+  const absPath = path.join(contentDir, relPath);
+  if (!fs.existsSync(absPath)) {
+    return;
+  }
+  const data = parseJsonFile(absPath, relPath, []);
+  if (data !== undefined) {
+    target.push(...schema.parse(data));
+  }
+}
+
+function readPerFileInto<T>(
+  contentDir: string,
+  dir: string,
+  ext: "json" | "mdx",
+  schema: z.ZodType<T>,
+  target: T[],
+): void {
+  const dirAbs = path.join(contentDir, dir);
+  if (!fs.existsSync(dirAbs)) {
+    return;
+  }
+  const files = fs.readdirSync(dirAbs).filter((file) => file.endsWith(`.${ext}`));
+  for (const file of files) {
+    const relPath = path.join(dir, file);
+    const absPath = path.join(dirAbs, file);
+    const data =
+      ext === "mdx" ? parseMdxFile(absPath, relPath, []) : parseJsonFile(absPath, relPath, []);
+    if (data !== undefined) {
+      target.push(schema.parse(data));
+    }
+  }
+}
+
+function formatValidationReport(errors: ContentValidationError[]): string {
+  return errors.map((error) => `${error.file}: ${error.path}: ${error.message}`).join("\n");
+}
+
+/**
+ * Loads and validates every content file under `contentDir`, returning a
+ * fully typed {@link CareerDataset}. Unlike `validateContentDir` — which
+ * collects every failure for reporting — this fails fast: callers want data,
+ * not a partial or invalid dataset, so a single invalid file throws with a
+ * readable report naming every failure.
+ *
+ * Missing files/directories are not an error (content may not be authored
+ * yet); their slot in the dataset is `undefined`/`[]`.
+ */
+export function loadContentDir(contentDir: string): CareerDataset {
+  const errors = validateContentDir(contentDir);
+  if (errors.length > 0) {
+    throw new Error(`career-data: cannot load invalid content:\n${formatValidationReport(errors)}`);
+  }
+
+  const dataset: CareerDataset = {
+    profile: undefined,
+    experience: [],
+    projects: [],
+    skills: [],
+    gaps: [],
+    education: [],
+    writing: [],
+  };
+
+  readSingleInto(contentDir, "profile.json", profileSchema, (value) => {
+    dataset.profile = value;
+  });
+  readPerFileInto(contentDir, "experience", "json", experienceEntrySchema, dataset.experience);
+  readPerFileInto(contentDir, "projects", "mdx", projectSchema, dataset.projects);
+  readArrayInto(contentDir, "skills.json", skillSchema.array(), dataset.skills);
+  readArrayInto(contentDir, "gaps.json", gapSchema.array(), dataset.gaps);
+  readArrayInto(contentDir, "education.json", educationEntrySchema.array(), dataset.education);
+  readPerFileInto(contentDir, "writing", "mdx", writingEntrySchema, dataset.writing);
+
+  return dataset;
 }

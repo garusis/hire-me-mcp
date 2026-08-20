@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { validateContentDir } from "./loader.js";
+import { loadContentDir, validateContentDir } from "./loader.js";
 
 const fixtureDir = (name: string) =>
   fileURLToPath(new URL(`./__fixtures__/${name}/`, import.meta.url));
@@ -71,5 +71,48 @@ describe("validateContentDir", () => {
     const errors = validateContentDir(fixtureDir("multi-invalid-content"));
     const brokenFileError = errors.find((error) => error.file === "experience/broken.json");
     expect(brokenFileError?.message).toMatch(/JSON/i);
+  });
+});
+
+describe("loadContentDir", () => {
+  it("loads a fully valid content directory into a typed dataset", () => {
+    const dataset = loadContentDir(fixtureDir("valid-content"));
+
+    expect(dataset.profile?.id).toBe("profile-fixture");
+    expect(dataset.experience).toEqual([
+      expect.objectContaining({ id: "fixture-role-fixtureco-2020" }),
+    ]);
+    expect(dataset.projects).toEqual([expect.objectContaining({ id: "fixture-project" })]);
+    expect(dataset.skills).toEqual([expect.objectContaining({ id: "fixture-skill" })]);
+    expect(dataset.gaps).toEqual([expect.objectContaining({ id: "fixture-gap" })]);
+    expect(dataset.education).toEqual([
+      expect.objectContaining({ id: "fixture-degree-fixture-university" }),
+    ]);
+    expect(dataset.writing).toEqual([expect.objectContaining({ id: "fixture-article" })]);
+  });
+
+  it("merges MDX frontmatter with the trimmed body for projects and writing", () => {
+    const dataset = loadContentDir(fixtureDir("valid-content"));
+
+    expect(dataset.projects[0]?.body).toMatch(/Fake long-form body content/);
+    expect(dataset.writing[0]?.body).toMatch(/Fake long-form article body/);
+  });
+
+  it("returns an empty dataset — not an error — for a directory with no content files yet", () => {
+    const dataset = loadContentDir(fixtureDir("empty-content"));
+
+    expect(dataset).toEqual({
+      profile: undefined,
+      experience: [],
+      projects: [],
+      skills: [],
+      gaps: [],
+      education: [],
+      writing: [],
+    });
+  });
+
+  it("throws a readable error naming the offending file instead of returning invalid data", () => {
+    expect(() => loadContentDir(fixtureDir("invalid-content"))).toThrow(/profile\.json/);
   });
 });

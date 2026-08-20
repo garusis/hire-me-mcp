@@ -2,8 +2,22 @@
  * Framework-free domain layer.
  *
  * This package must never depend on React, Next.js, or any HTTP framework —
- * it is consumed by both the web app and the future public MCP endpoint.
+ * it is consumed by both the web app and the future public MCP endpoint. See
+ * README.md for the enforced dependency/import boundary.
  */
+
+export type { BuildCitationOptions } from "./citation-builder.js";
+export { buildCitation, UnknownEntityError } from "./citation-builder.js";
+export type { DependencyAllowlist } from "./dependency-allowlist.js";
+export { findDisallowedDependencies } from "./dependency-allowlist.js";
+export type { CareerDataRepository, CareerDataset } from "./repository.js";
+export {
+  createContentCareerDataRepository,
+  createInMemoryCareerDataRepository,
+  emptyCareerDataset,
+} from "./repository.js";
+export type { Citation, DomainResult } from "./result.js";
+export { createDomainResult } from "./result.js";
 
 /** Name of this package, exported as a trivial placeholder value. */
 export const CORE_PACKAGE_NAME = "@hire-me-mcp/core";
