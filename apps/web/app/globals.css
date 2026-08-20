@@ -125,6 +125,12 @@ h5,
 h6 {
   font-family: var(--font-display);
   margin: 0;
+  /* A long unbroken word (e.g. a project title) in a narrow display-scale
+     heading can be wider than its container; without this, the default
+     "overflow, don't break mid-word" behavior pushes it past the
+     viewport edge instead of wrapping — a real horizontal-overflow bug
+     the responsive e2e suite (#58) caught at 360px on /projects and /mcp. */
+  overflow-wrap: anywhere;
 }
 
 p {
