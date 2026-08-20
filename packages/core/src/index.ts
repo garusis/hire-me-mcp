@@ -21,6 +21,19 @@ export {
 } from "./repository.js";
 export type { Citation, DomainResult } from "./result.js";
 export { createDomainResult } from "./result.js";
+export type { AliasedEntry, AliasIndex } from "./search/alias-resolver.js";
+export { buildAliasIndex } from "./search/alias-resolver.js";
+export type {
+  MatchExplanation,
+  SearchDocument,
+  SearchField,
+  SearchMatch,
+  SearchOptions,
+} from "./search/engine.js";
+export { search } from "./search/engine.js";
+export { normalizeTerm, tokenize } from "./search/normalize.js";
+export type { ProjectSearchResult, SearchProjectsOptions } from "./search-projects.js";
+export { searchProjects } from "./search-projects.js";
 
 /** Name of this package, exported as a trivial placeholder value. */
 export const CORE_PACKAGE_NAME = "@hire-me-mcp/core";
