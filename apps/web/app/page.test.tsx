@@ -21,4 +21,11 @@ describe("Home", () => {
     expect(screen.getByText(/Career data package:/)).toBeDefined();
     expect(screen.getByText(/@hire-me-mcp\/career-data/)).toBeDefined();
   });
+
+  it("renders the heading as a level-1 heading styled by the display type scale", () => {
+    render(<Home />);
+
+    const heading = screen.getByRole("heading", { level: 1, name: "Hire-me MCP" });
+    expect(heading.tagName).toBe("H1");
+  });
 });
