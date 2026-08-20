@@ -49,8 +49,17 @@ export function createInMemoryCareerDataRepository(dataset: CareerDataset): Care
 export interface ContentCareerDataRepositoryOptions {
   /** Defaults to `@hire-me-mcp/career-data`'s own `content/` directory. */
   contentDir?: string;
+  /**
+   * Passed through to `loadContentDir`. `false` (the default) means a
+   * missing content directory, or one that yields zero entities, throws
+   * instead of silently producing an empty dataset (#113) — flip this to
+   * `true` only for a caller that's genuinely fine with "nothing authored
+   * yet" (e.g. early-scaffolding fixtures), never as a way to paper over a
+   * misconfigured `contentDir`.
+   */
+  allowEmpty?: boolean;
   /** Injection point for tests that need to count/observe load calls. Defaults to `loadContentDir`. */
-  load?: (contentDir: string) => CareerDataset;
+  load?: (contentDir: string, options?: { allowEmpty?: boolean }) => CareerDataset;
 }
 
 /**
@@ -67,13 +76,14 @@ export function createContentCareerDataRepository(
   options: ContentCareerDataRepositoryOptions = {},
 ): CareerDataRepository {
   const contentDir = options.contentDir ?? resolveDefaultContentDir();
+  const allowEmpty = options.allowEmpty ?? false;
   const load = options.load ?? loadContentDir;
   let cached: CareerDataset | undefined;
 
   return {
     getDataset(): CareerDataset {
       if (cached === undefined) {
-        cached = load(contentDir);
+        cached = load(contentDir, { allowEmpty });
       }
       return cached;
     },

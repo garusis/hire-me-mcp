@@ -28,7 +28,12 @@ export function runLint(contentDir: string): LintResult {
     return { ok: false, violations: [], schemaErrors };
   }
 
-  const { dataset, sources } = loadContentDirWithSources(contentDir);
+  // allowEmpty: true — the lint tool's entire purpose is checking content
+  // that may not be fully authored yet (early scaffolding, a category with
+  // nothing written), so "nothing loaded" is a legitimate, tolerated state
+  // here, not the #113 misconfiguration signal loadContentDirWithSources
+  // guards against by default elsewhere.
+  const { dataset, sources } = loadContentDirWithSources(contentDir, { allowEmpty: true });
   const violations = runRules({ dataset, sources });
   const ok = !violations.some((violation) => violation.severity === "error");
   return { ok, violations, schemaErrors: [] };
