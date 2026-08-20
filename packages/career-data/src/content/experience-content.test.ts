@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { idSchema, isKnownTechTag } from "../schemas/index.js";
+import { idSchema } from "../schemas/index.js";
 import { validateContentDir } from "./loader.js";
 
 /**
@@ -86,13 +86,8 @@ describe("real content: experience/*.json", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("only uses technology tags from the controlled vocabulary", () => {
-    const entries = readExperienceEntries();
-    for (const entry of entries) {
-      expect(entry.tech.length).toBeGreaterThan(0);
-      for (const tag of entry.tech) {
-        expect(isKnownTechTag(tag)).toBe(true);
-      }
-    }
-  });
+  // Tech-tag vocabulary membership is a cross-entity invariant — enforced
+  // once, by name, as `tag-in-vocabulary` in the #51 rule engine, and
+  // asserted against this real content set in
+  // src/content/real-content-lint.test.ts, rather than duplicated here.
 });
