@@ -6,6 +6,7 @@ import {
   getProjectDetailView,
   getProjectsListView,
   getSkillEvidenceView,
+  getSkillsListView,
   getWritingEntryView,
   getWritingListView,
   listExperienceSlugs,
@@ -36,5 +37,8 @@ describe("apps/web content layer public entry point", () => {
     expect(getProjectsListView().items.length).toBe(projectSlugs.length);
 
     expect(getSkillEvidenceView("typescript").outcome.kind).toBe("claimed");
+
+    const skills = getSkillsListView().items;
+    expect(skills.length).toBeGreaterThan(0);
   });
 });

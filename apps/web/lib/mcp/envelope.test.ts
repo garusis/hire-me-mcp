@@ -1,0 +1,43 @@
+import type { Citation, DomainResult } from "@hire-me-mcp/core";
+import { describe, expect, it } from "vitest";
+import { buildToolSuccessResult } from "./envelope.js";
+
+describe("buildToolSuccessResult", () => {
+  const citation: Citation = { entityType: "skill", entityId: "skill-1", label: "TypeScript" };
+  const domainResult: DomainResult<{ term: string }> = {
+    data: { term: "typescript" },
+    citations: [citation],
+  };
+
+  it("wraps data and citations into structuredContent", () => {
+    const result = buildToolSuccessResult(domainResult);
+    expect(result.structuredContent).toEqual({
+      data: domainResult.data,
+      citations: domainResult.citations,
+    });
+  });
+
+  it("passes citations through by deep equality — no field added, dropped, or altered", () => {
+    const result = buildToolSuccessResult(domainResult);
+    expect(result.structuredContent.citations).toStrictEqual(domainResult.citations);
+  });
+
+  it("produces a text content block equal to structuredContent, deterministically serialized", () => {
+    const first = buildToolSuccessResult(domainResult);
+    const second = buildToolSuccessResult(domainResult);
+    expect(first.content[0].text).toBe(JSON.stringify(first.structuredContent));
+    expect(first.content[0].text).toBe(second.content[0].text);
+  });
+
+  it("has exactly one content block, of type text", () => {
+    const result = buildToolSuccessResult(domainResult);
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0].type).toBe("text");
+  });
+
+  it("carries an empty citations array through unchanged when the domain result has none", () => {
+    const empty: DomainResult<{ term: string }> = { data: { term: "cobol" }, citations: [] };
+    const result = buildToolSuccessResult(empty);
+    expect(result.structuredContent.citations).toStrictEqual([]);
+  });
+});
