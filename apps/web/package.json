@@ -10,8 +10,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "biome check .",
-    "format": "biome format --write .",
+    "lint": "bash ../../scripts/biome-check.sh check .",
+    "format": "bash ../../scripts/biome-check.sh format --write .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
