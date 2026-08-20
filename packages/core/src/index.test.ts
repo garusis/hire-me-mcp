@@ -4,6 +4,8 @@ import {
   createDomainResult,
   createInMemoryCareerDataRepository,
   emptyCareerDataset,
+  getExperience,
+  getProfile,
   slugify,
   UnknownEntityError,
 } from "./index.js";
@@ -54,5 +56,40 @@ describe("public entry point", () => {
   it("re-exports UnknownEntityError for callers to catch the citation failure path", () => {
     const repository = createInMemoryCareerDataRepository(emptyCareerDataset());
     expect(() => buildCitation(repository, "skill", "missing")).toThrow(UnknownEntityError);
+  });
+
+  it("re-exports getProfile and getExperience, both returning a DomainResult envelope", () => {
+    const repository = createInMemoryCareerDataRepository({
+      ...emptyCareerDataset(),
+      profile: {
+        id: "profile-fixture",
+        name: "Fixture Person",
+        headline: "Fixture Engineer",
+        location: "Fixtureville",
+        availability: "open",
+        summary: "Fixture summary.",
+        contacts: [{ label: "Website", url: "https://example.test" }],
+      },
+      experience: [
+        {
+          id: "fixture-role-fixtureco-2020",
+          company: "Fixtureco",
+          role: "Fixture Engineer",
+          startDate: "2020-01",
+          endDate: "2022-01",
+          summary: "Fixture summary.",
+          highlights: ["Did a fixture thing"],
+          tech: ["typescript"],
+        },
+      ],
+    });
+
+    const profileResult = getProfile(repository);
+    expect(profileResult.data.id).toBe("profile-fixture");
+    expect(profileResult.citations).toHaveLength(1);
+
+    const experienceResult = getExperience(repository, { company: "Fixtureco" });
+    expect(experienceResult.data.map((entry) => entry.id)).toEqual(["fixture-role-fixtureco-2020"]);
+    expect(experienceResult.citations).toHaveLength(1);
   });
 });
