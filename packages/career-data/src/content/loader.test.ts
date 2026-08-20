@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { loadContentDir, validateContentDir } from "./loader.js";
+import { loadContentDir, loadContentDirWithSources, validateContentDir } from "./loader.js";
 
 const fixtureDir = (name: string) =>
   fileURLToPath(new URL(`./__fixtures__/${name}/`, import.meta.url));
@@ -114,5 +114,57 @@ describe("loadContentDir", () => {
 
   it("throws a readable error naming the offending file instead of returning invalid data", () => {
     expect(() => loadContentDir(fixtureDir("invalid-content"))).toThrow(/profile\.json/);
+  });
+});
+
+describe("loadContentDirWithSources", () => {
+  it("loads the same dataset as loadContentDir", () => {
+    const { dataset } = loadContentDirWithSources(fixtureDir("valid-content"));
+    expect(dataset).toEqual(loadContentDir(fixtureDir("valid-content")));
+  });
+
+  it("records the originating file for every loaded entity, keyed by entity type and id", () => {
+    const { sources } = loadContentDirWithSources(fixtureDir("valid-content"));
+
+    expect(sources).toContainEqual({
+      entityType: "profile",
+      id: "profile-fixture",
+      file: "profile.json",
+    });
+    expect(sources).toContainEqual({
+      entityType: "experience",
+      id: "fixture-role-fixtureco-2020",
+      file: "experience/fixture-role.json",
+    });
+    expect(sources).toContainEqual({
+      entityType: "project",
+      id: "fixture-project",
+      file: "projects/fixture-project.mdx",
+    });
+    expect(sources).toContainEqual({
+      entityType: "skill",
+      id: "fixture-skill",
+      file: "skills.json",
+    });
+    expect(sources).toContainEqual({
+      entityType: "gap",
+      id: "fixture-gap",
+      file: "gaps.json",
+    });
+    expect(sources).toContainEqual({
+      entityType: "education",
+      id: "fixture-degree-fixture-university",
+      file: "education.json",
+    });
+    expect(sources).toContainEqual({
+      entityType: "writing",
+      id: "fixture-article",
+      file: "writing/fixture-article.mdx",
+    });
+  });
+
+  it("returns no sources for a directory with no content files yet", () => {
+    const { sources } = loadContentDirWithSources(fixtureDir("empty-content"));
+    expect(sources).toEqual([]);
   });
 });

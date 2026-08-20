@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
 import type { z } from "zod";
+import type { CitableEntityType } from "../schemas/common.js";
 import type { EducationEntry } from "../schemas/education.js";
 import { educationEntrySchema } from "../schemas/education.js";
 import type { ExperienceEntry } from "../schemas/experience.js";
@@ -194,11 +195,20 @@ export interface CareerDataset {
   writing: WritingEntry[];
 }
 
-function readSingleInto<T>(
+/** Which file backs a given loaded entity — the cross-reference the content lint (#51) needs to name an offending file per violation. */
+export interface EntitySource {
+  entityType: CitableEntityType;
+  id: string;
+  file: string;
+}
+
+function readSingleInto<T extends { id: string }>(
   contentDir: string,
   relPath: string,
+  entityType: CitableEntityType,
   schema: z.ZodType<T>,
   assign: (value: T) => void,
+  sources?: EntitySource[],
 ): void {
   const absPath = path.join(contentDir, relPath);
   if (!fs.existsSync(absPath)) {
@@ -206,15 +216,19 @@ function readSingleInto<T>(
   }
   const data = parseJsonFile(absPath, relPath, []);
   if (data !== undefined) {
-    assign(schema.parse(data));
+    const value = schema.parse(data);
+    assign(value);
+    sources?.push({ entityType, id: value.id, file: relPath });
   }
 }
 
-function readArrayInto<T>(
+function readArrayInto<T extends { id: string }>(
   contentDir: string,
   relPath: string,
+  entityType: CitableEntityType,
   schema: z.ZodType<T[]>,
   target: T[],
+  sources?: EntitySource[],
 ): void {
   const absPath = path.join(contentDir, relPath);
   if (!fs.existsSync(absPath)) {
@@ -222,16 +236,22 @@ function readArrayInto<T>(
   }
   const data = parseJsonFile(absPath, relPath, []);
   if (data !== undefined) {
-    target.push(...schema.parse(data));
+    const parsed = schema.parse(data);
+    target.push(...parsed);
+    for (const value of parsed) {
+      sources?.push({ entityType, id: value.id, file: relPath });
+    }
   }
 }
 
-function readPerFileInto<T>(
+function readPerFileInto<T extends { id: string }>(
   contentDir: string,
   dir: string,
   ext: "json" | "mdx",
+  entityType: CitableEntityType,
   schema: z.ZodType<T>,
   target: T[],
+  sources?: EntitySource[],
 ): void {
   const dirAbs = path.join(contentDir, dir);
   if (!fs.existsSync(dirAbs)) {
@@ -244,7 +264,9 @@ function readPerFileInto<T>(
     const data =
       ext === "mdx" ? parseMdxFile(absPath, relPath, []) : parseJsonFile(absPath, relPath, []);
     if (data !== undefined) {
-      target.push(schema.parse(data));
+      const value = schema.parse(data);
+      target.push(value);
+      sources?.push({ entityType, id: value.id, file: relPath });
     }
   }
 }
@@ -253,17 +275,26 @@ function formatValidationReport(errors: ContentValidationError[]): string {
   return errors.map((error) => `${error.file}: ${error.path}: ${error.message}`).join("\n");
 }
 
+/** {@link loadContentDirWithSources}'s return shape: the typed dataset plus its per-entity file provenance. */
+export interface CareerDatasetWithSources {
+  dataset: CareerDataset;
+  sources: EntitySource[];
+}
+
 /**
  * Loads and validates every content file under `contentDir`, returning a
- * fully typed {@link CareerDataset}. Unlike `validateContentDir` — which
- * collects every failure for reporting — this fails fast: callers want data,
- * not a partial or invalid dataset, so a single invalid file throws with a
- * readable report naming every failure.
+ * fully typed {@link CareerDataset} together with an {@link EntitySource}
+ * per loaded entity — which file it came from, keyed by entity type and id.
+ * The content lint (#51) uses this provenance to name an offending file per
+ * rule violation. Like `loadContentDir`, this fails fast: a single invalid
+ * file throws with a readable report naming every failure, since callers
+ * want a fully valid dataset, not a partial one.
  *
  * Missing files/directories are not an error (content may not be authored
- * yet); their slot in the dataset is `undefined`/`[]`.
+ * yet); their slot in the dataset is `undefined`/`[]` and contributes no
+ * sources.
  */
-export function loadContentDir(contentDir: string): CareerDataset {
+export function loadContentDirWithSources(contentDir: string): CareerDatasetWithSources {
   const errors = validateContentDir(contentDir);
   if (errors.length > 0) {
     throw new Error(`career-data: cannot load invalid content:\n${formatValidationReport(errors)}`);
@@ -278,16 +309,65 @@ export function loadContentDir(contentDir: string): CareerDataset {
     education: [],
     writing: [],
   };
+  const sources: EntitySource[] = [];
 
-  readSingleInto(contentDir, "profile.json", profileSchema, (value) => {
-    dataset.profile = value;
-  });
-  readPerFileInto(contentDir, "experience", "json", experienceEntrySchema, dataset.experience);
-  readPerFileInto(contentDir, "projects", "mdx", projectSchema, dataset.projects);
-  readArrayInto(contentDir, "skills.json", skillSchema.array(), dataset.skills);
-  readArrayInto(contentDir, "gaps.json", gapSchema.array(), dataset.gaps);
-  readArrayInto(contentDir, "education.json", educationEntrySchema.array(), dataset.education);
-  readPerFileInto(contentDir, "writing", "mdx", writingEntrySchema, dataset.writing);
+  readSingleInto(
+    contentDir,
+    "profile.json",
+    "profile",
+    profileSchema,
+    (value) => {
+      dataset.profile = value;
+    },
+    sources,
+  );
+  readPerFileInto(
+    contentDir,
+    "experience",
+    "json",
+    "experience",
+    experienceEntrySchema,
+    dataset.experience,
+    sources,
+  );
+  readPerFileInto(
+    contentDir,
+    "projects",
+    "mdx",
+    "project",
+    projectSchema,
+    dataset.projects,
+    sources,
+  );
+  readArrayInto(contentDir, "skills.json", "skill", skillSchema.array(), dataset.skills, sources);
+  readArrayInto(contentDir, "gaps.json", "gap", gapSchema.array(), dataset.gaps, sources);
+  readArrayInto(
+    contentDir,
+    "education.json",
+    "education",
+    educationEntrySchema.array(),
+    dataset.education,
+    sources,
+  );
+  readPerFileInto(
+    contentDir,
+    "writing",
+    "mdx",
+    "writing",
+    writingEntrySchema,
+    dataset.writing,
+    sources,
+  );
 
-  return dataset;
+  return { dataset, sources };
+}
+
+/**
+ * Loads and validates every content file under `contentDir`, returning a
+ * fully typed {@link CareerDataset}. A thin wrapper over
+ * {@link loadContentDirWithSources} for callers that only need the data,
+ * not its file provenance.
+ */
+export function loadContentDir(contentDir: string): CareerDataset {
+  return loadContentDirWithSources(contentDir).dataset;
 }
