@@ -14,27 +14,9 @@
 #   underlying daemon crash is still an intermittent process-spawn flake,
 #   not a lint failure (`exit 1` is a real diagnostic; `exit 254` is not).
 #
-# The crash never partially applies fixes, so retrying is safe: either the
-# process crashed before writing anything, or it completed and returned a
-# normal exit code. Retrying only masks the *infra* flake; a genuine lint
-# or format violation still fails the commit on the very first attempt.
+# The bounded retry itself lives in scripts/biome-check.sh (see #96) so
+# every Biome invocation across the repo — this hook, package.json lint
+# scripts, and documented raw invocations — shares the same retry policy.
 set -uo pipefail
 
-max_attempts=3
-attempt=1
-
-while true; do
-  pnpm exec biome check --write --staged
-  status=$?
-
-  if [ "$status" -eq 0 ]; then
-    exit 0
-  fi
-
-  if [ "$status" -ne 254 ] || [ "$attempt" -ge "$max_attempts" ]; then
-    exit "$status"
-  fi
-
-  echo "biome: worker process crashed (exit 254), retrying (${attempt}/${max_attempts})..." >&2
-  attempt=$((attempt + 1))
-done
+exec "$(dirname "$0")/../biome-check.sh" check --write --staged
