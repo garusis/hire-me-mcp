@@ -165,6 +165,26 @@ pnpm exec playwright show-report   # open the last HTML report (playwright-repor
 
 First-time setup needs the Chromium binary once: `pnpm exec playwright install --with-deps chromium` (CI does this itself, browser-cached across runs). Playwright's output directories (`playwright-report/`, `test-results/`, `blob-report/`, `playwright/.cache/`) are git-ignored — no browser binaries or run artifacts are ever committed.
 
+### Protocol-level MCP integration tests (SDK client) — added in #49
+
+A third, separate suite drives the real `/api/mcp` endpoint with the real `@modelcontextprotocol/sdk` client over Streamable HTTP, against a **locally started production server** — black-box, never importing the route handlers directly. This is the layer above `apps/web/app/api/mcp/route.test.ts` (an in-process Vitest suite driving the same real SDK client against the route module mounted on a `node:http` server in the same process): this suite catches transport, serialization, and MCP-server schema-registration bugs that only show up when the app is actually built and running as its own process. It never asserts exact career content strings — `packages/career-data` is real, unstubbed content, so assertions are structural (shape, schema conformance, non-empty results, well-formed citations).
+
+Own command, own config, own CI job — never runs as part of `pnpm test`/`pnpm turbo test`:
+
+```bash
+pnpm test:mcp             # builds apps/web once, then runs the suite against real next start servers
+pnpm --filter web test:mcp   # same, scoped to apps/web directly
+```
+
+Layout, under `apps/web/`:
+
+- `vitest.mcp.config.ts` — its own Vitest config (`mcp-e2e/**/*.spec.ts`, a `.spec.ts` suffix so the unit-test config's `*.test.ts` include globs never pick these up, the same convention Playwright's specs already use). `globalSetup` runs `pnpm turbo run build --filter=@hire-me-mcp/web` exactly once for the whole run — the same production build Playwright's `webServer` builds, cached by Turborepo the same way.
+- `mcp-e2e/support/next-server.ts` — starts `next start` on a fresh ephemeral port (found by briefly binding to port `0`) with a given env, polls the MCP endpoint until it responds, and tears the process down afterward with a bounded `SIGTERM`→`SIGKILL` fallback so a hung process can never hang the test run.
+- `mcp-e2e/protocol.spec.ts` — the default-config server: `initialize` handshake fields, `tools/list` against `EXPECTED_TOOL_NAMES` with valid input JSON Schemas, all four career tools called with realistic arguments and validated against structural output schemas (`mcp-e2e/support/tool-output-schemas.ts`, built from `@hire-me-mcp/career-data`'s real Zod schemas — see that file's docstring for why: no tool currently declares a wire-level `outputSchema` on its `ToolDefinition`), well-formed non-empty citations, and the documented error shape for an unknown tool name and for invalid arguments to a known tool.
+- `mcp-e2e/rate-limit.spec.ts` — its own server process with a deliberately low `RATELIMIT_MAX_REQUESTS`/`RATELIMIT_WINDOW_SECONDS`, asserting a burst produces the documented 429 and that the server is fully usable again once the window elapses.
+
+**Rate-limit testing without Upstash credentials.** CI never has Upstash credentials, and `createRateLimiter`'s fail-open path (`apps/web/lib/mcp/rate-limit/limiter.ts`, #39) deliberately always returns `success: true` when they're absent — by design, so the endpoint never 500s for want of Redis. That makes the real 429 path structurally unobservable through the production limiter alone. `apps/web/lib/mcp/rate-limit/select-limiter.ts` adds one env-gated hook to close that gap: setting `MCP_TEST_RATE_LIMITER=1` swaps in `test-limiter.ts`, a deterministic, in-memory, hermetic limiter that actually enforces the configured limit. It is wired into `app/api/mcp/route.ts` itself (so the black-box suite exercises the real route, not a stand-in), but is inert unless that exact env var is set — never set in production, preview, or the default-config server `protocol.spec.ts` starts. `apps/web/lib/mcp/rate-limit/select-limiter.test.ts` and `test-limiter.test.ts` cover the selection logic and the limiter's own enforcement at the unit level; `app/api/mcp/route.test.ts` has an additional in-process case proving the flag is actually wired through to the live route.
+
 ### Pre-commit hooks (lefthook)
 
 [lefthook](https://lefthook.dev) is the **tool-agnostic** enforcement layer: a `pre-commit` hook that formats/lints staged files with Biome and runs Vitest for the packages affected by the staged changes, so a commit with a Biome violation or a broken test never reaches CI in the first place. It binds every contributor and every agent (Claude Code, Codex, or a human at the keyboard) equally, regardless of whether any editor- or agent-level hook is honoured — see `lefthook.yml` at the repo root for the full job config.
@@ -189,10 +209,11 @@ LEFTHOOK=0 git commit -m "..."    # same effect, explicit env var
 
 ### Continuous integration and branch protection
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull request and on every push to `main`, with two jobs:
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull request and on every push to `main`, with three jobs:
 
 - **`quality`** — four separately visible steps (Biome check, typecheck, unit tests, build) so a failure is attributable at a glance.
 - **`e2e`** (added in #36) — runs in parallel with `quality` (no `needs:`, so a broken page is always reported as an `e2e` failure rather than skipped because `quality` also failed), installs Chromium (`pnpm exec playwright install --with-deps chromium`, browser binaries cached by Playwright version), runs `pnpm test:e2e` (the Playwright smoke spec against a production build), and on failure uploads two artifacts: the Playwright HTML report (`playwright-report/`) and the trace/screenshot output (`test-results/`), both 7-day retention. `timeout-minutes: 15` fails the job fast instead of hanging if the production server never becomes ready. A broken home page fails this job and therefore fails the required check on the PR.
+- **`mcp-integration`** (added in #49) — also runs in parallel with `quality`, for the same reason. A single step, `pnpm test:mcp` (the protocol-level MCP integration suite — see "Protocol-level MCP integration tests" above), which builds `apps/web` itself via its own `globalSetup`, so this job installs dependencies only, no separate build step. `timeout-minutes: 10` bounds it; the suite itself finishes in well under a minute once dependencies are cached.
 
 - Node is pinned via `.nvmrc`; pnpm is installed via `pnpm/action-setup`, which reads the version from the root `packageManager` field.
 - Dependencies install with `pnpm install --frozen-lockfile`, so a stale lockfile fails CI instead of silently drifting.
@@ -200,14 +221,14 @@ LEFTHOOK=0 git commit -m "..."    # same effect, explicit env var
 - `concurrency` cancels a previous in-flight run for the same ref when a new commit is pushed.
 - CI is the remote mirror of the lefthook pre-commit gate (#18): anything pre-commit rejects locally must also fail here, so `--no-verify` doesn't let a violation reach `main`.
 
-`main` is protected to match: no direct pushes, no force pushes, and both the `quality` and `e2e` checks must pass before a PR can merge. This was configured once, by hand, by PUTting a JSON body (the branch protection endpoint rejects `gh api -f/-F` key-path syntax for this nested shape, so a body file is the reliable way to reproduce it):
+`main` is protected to match: no direct pushes, no force pushes, and the `quality`, `e2e`, and `mcp-integration` checks must all pass before a PR can merge. This was configured once, by hand, by PUTting a JSON body (the branch protection endpoint rejects `gh api -f/-F` key-path syntax for this nested shape, so a body file is the reliable way to reproduce it):
 
 ```bash
 cat > branch-protection.json <<'EOF'
 {
   "required_status_checks": {
     "strict": true,
-    "checks": [{ "context": "quality" }, { "context": "e2e" }]
+    "checks": [{ "context": "quality" }, { "context": "e2e" }, { "context": "mcp-integration" }]
   },
   "enforce_admins": true,
   "required_pull_request_reviews": {

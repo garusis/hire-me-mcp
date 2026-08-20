@@ -14,7 +14,8 @@
     "format": "bash ../../scripts/biome-check.sh format --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:mcp": "vitest run --config vitest.mcp.config.ts"
   },
   "dependencies": {
     "@hire-me-mcp/career-data": "workspace:*",

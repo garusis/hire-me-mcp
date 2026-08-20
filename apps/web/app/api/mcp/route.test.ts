@@ -3,10 +3,51 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { EXPECTED_TOOL_NAMES } from "../../../lib/mcp/tool-names";
 import packageJson from "../../../package.json" with { type: "json" };
 import { GET, POST } from "./route";
+
+/**
+ * Wraps a pair of Next.js route handlers (`GET`/`POST`) in a real, ephemeral
+ * `node:http` server — the exact pattern `beforeAll` below uses for the
+ * default-config route module, factored out so the
+ * `MCP_TEST_RATE_LIMITER` test below can do the same against a *freshly
+ * imported* route module (env vars this module reads are only evaluated
+ * once, at import time — see `select-limiter.ts`).
+ */
+function startTestServer(handlers: {
+  GET: typeof GET;
+  POST: typeof POST;
+}): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+  const httpServer = createServer((req, res) => {
+    void (async () => {
+      const origin = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
+      const request = await toFetchRequest(req, origin);
+      const response =
+        request.method === "GET" ? await handlers.GET(request) : await handlers.POST(request);
+      res.statusCode = response.status;
+      response.headers.forEach((value, key) => {
+        res.setHeader(key, value);
+      });
+      const body = response.body ? Buffer.from(await response.arrayBuffer()) : undefined;
+      res.end(body);
+    })();
+  });
+
+  return new Promise((resolve) => {
+    httpServer.listen(0, "127.0.0.1", () => {
+      const port = (httpServer.address() as AddressInfo).port;
+      resolve({
+        baseUrl: `http://127.0.0.1:${port}/api/mcp`,
+        close: () =>
+          new Promise<void>((closeResolve, closeReject) => {
+            httpServer.close((err) => (err ? closeReject(err) : closeResolve()));
+          }),
+      });
+    });
+  });
+}
 
 /**
  * Real MCP client (from @modelcontextprotocol/sdk) driven over a real
@@ -181,5 +222,77 @@ describe("MCP endpoint (app/api/mcp/route.ts)", () => {
     expect(Array.isArray(structuredContent.citations)).toBe(true);
 
     await client.close();
+  });
+
+  describe("MCP_TEST_RATE_LIMITER=1 (real 429 enforcement, no Upstash credentials)", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    });
+
+    it("rejects a caller once it exceeds the configured limit, with a clean 429 rather than a crashed stream", async () => {
+      vi.stubEnv("MCP_TEST_RATE_LIMITER", "1");
+      // 2: the SDK's `connect()` handshake itself makes two HTTP requests
+      // (the `initialize` call, then the `notifications/initialized`
+      // notification) — the limit must accommodate both so the handshake
+      // itself succeeds, with the very next request over budget.
+      vi.stubEnv("RATELIMIT_MAX_REQUESTS", "2");
+      vi.stubEnv("RATELIMIT_WINDOW_SECONDS", "60");
+      vi.resetModules();
+      const testRoute = await import("./route");
+      const server = await startTestServer(testRoute);
+
+      try {
+        // The handshake consumes both allowed slots and must still
+        // succeed normally.
+        const client = new Client({ name: "test-client", version: "0.0.0" });
+        const transport = new StreamableHTTPClientTransport(new URL(server.baseUrl));
+        await client.connect(transport);
+        await client.close();
+
+        // The next request, over the limit, must fail with the
+        // documented rate-limit shape (an HTTP 429 the raw fetch layer
+        // can read) rather than a hung or truncated MCP stream.
+        const response = await fetch(server.baseUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "initialize",
+            params: {
+              protocolVersion: "2026-07-28",
+              capabilities: {},
+              clientInfo: { name: "test-client-2", version: "0.0.0" },
+            },
+          }),
+        });
+
+        expect(response.status).toBe(429);
+        expect(response.headers.get("Retry-After")).toBeTruthy();
+        const body = (await response.json()) as { error: { code: string; message: string } };
+        expect(body.error.code).toBe("rate_limited");
+        expect(body.error.message.length).toBeGreaterThan(0);
+
+        // The server process itself must remain usable afterwards — a new
+        // connection attempt gets a clean, immediate rejection describing
+        // the 429 rather than hanging or crashing the transport.
+        const recoveredClient = new Client({ name: "test-client-3", version: "0.0.0" });
+        const recoveredTransport = new StreamableHTTPClientTransport(new URL(server.baseUrl));
+        let recoveryError: unknown;
+        try {
+          await recoveredClient.connect(recoveredTransport);
+        } catch (error) {
+          recoveryError = error;
+        }
+        expect(recoveryError).toBeInstanceOf(Error);
+        expect(String((recoveryError as Error).message)).toMatch(/rate_limited|Too many requests/);
+      } finally {
+        await server.close();
+      }
+    });
   });
 });
