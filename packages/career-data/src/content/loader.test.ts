@@ -98,8 +98,8 @@ describe("loadContentDir", () => {
     expect(dataset.writing[0]?.body).toMatch(/Fake long-form article body/);
   });
 
-  it("returns an empty dataset — not an error — for a directory with no content files yet", () => {
-    const dataset = loadContentDir(fixtureDir("empty-content"));
+  it("returns an empty dataset for a directory with no content files yet, given explicit allowEmpty opt-in", () => {
+    const dataset = loadContentDir(fixtureDir("empty-content"), { allowEmpty: true });
 
     expect(dataset).toEqual({
       profile: undefined,
@@ -114,6 +114,18 @@ describe("loadContentDir", () => {
 
   it("throws a readable error naming the offending file instead of returning invalid data", () => {
     expect(() => loadContentDir(fixtureDir("invalid-content"))).toThrow(/profile\.json/);
+  });
+
+  it("throws, naming the attempted path, for a directory with no content files yet, by default (#113 — silent-empty is a bug, not a feature)", () => {
+    const contentDir = fixtureDir("empty-content");
+    expect(() => loadContentDir(contentDir)).toThrow(contentDir);
+    expect(() => loadContentDir(contentDir)).toThrow(/no content was loaded/i);
+  });
+
+  it("throws, naming the attempted path, for a content directory that does not exist at all", () => {
+    const missingDir = fixtureDir("this-directory-does-not-exist");
+    expect(() => loadContentDir(missingDir)).toThrow(missingDir);
+    expect(() => loadContentDir(missingDir)).toThrow(/does not exist/i);
   });
 });
 
@@ -163,8 +175,16 @@ describe("loadContentDirWithSources", () => {
     });
   });
 
-  it("returns no sources for a directory with no content files yet", () => {
-    const { sources } = loadContentDirWithSources(fixtureDir("empty-content"));
+  it("returns no sources for a directory with no content files yet, given explicit allowEmpty opt-in", () => {
+    const { sources } = loadContentDirWithSources(fixtureDir("empty-content"), {
+      allowEmpty: true,
+    });
     expect(sources).toEqual([]);
+  });
+
+  it("throws for a directory with no content files yet, by default", () => {
+    expect(() => loadContentDirWithSources(fixtureDir("empty-content"))).toThrow(
+      /no content was loaded/i,
+    );
   });
 });

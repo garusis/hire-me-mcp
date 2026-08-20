@@ -281,6 +281,22 @@ export interface CareerDatasetWithSources {
   sources: EntitySource[];
 }
 
+/** Options shared by {@link loadContentDir} and {@link loadContentDirWithSources}. */
+export interface LoadContentDirOptions {
+  /**
+   * By default (`false`), a missing `contentDir` or a directory that yields
+   * zero entities across every entity type is treated as a bug and throws
+   * — see {@link loadContentDirWithSources}'s docstring. Pass `true` only
+   * for a caller that's genuinely fine with "nothing authored yet" (e.g.
+   * scaffolding-stage fixtures) — an explicit, deliberate opt-in rather
+   * than the default, so a deploy/config mistake can't silently produce a
+   * confidently-empty dataset (#113: this is exactly how a missing
+   * production content directory became "unknown"/`internal_error`
+   * responses instead of a loud failure).
+   */
+  allowEmpty?: boolean;
+}
+
 /**
  * Loads and validates every content file under `contentDir`, returning a
  * fully typed {@link CareerDataset} together with an {@link EntitySource}
@@ -290,11 +306,27 @@ export interface CareerDatasetWithSources {
  * file throws with a readable report naming every failure, since callers
  * want a fully valid dataset, not a partial one.
  *
- * Missing files/directories are not an error (content may not be authored
- * yet); their slot in the dataset is `undefined`/`[]` and contributes no
- * sources.
+ * `contentDir` missing entirely, or existing but yielding zero entities
+ * across every entity type, throws by default (naming the attempted path)
+ * unless `options.allowEmpty` is `true`. A single content *type* being
+ * absent (e.g. no `writing/*.mdx` yet, while everything else is authored)
+ * is not an error either way — that's ordinary, partial-but-real content,
+ * not the "nothing loaded at all" signal this guards against.
  */
-export function loadContentDirWithSources(contentDir: string): CareerDatasetWithSources {
+export function loadContentDirWithSources(
+  contentDir: string,
+  options: LoadContentDirOptions = {},
+): CareerDatasetWithSources {
+  const allowEmpty = options.allowEmpty ?? false;
+
+  if (!allowEmpty && !fs.existsSync(contentDir)) {
+    throw new Error(
+      `career-data: content directory does not exist: ${contentDir}\n` +
+        "This usually means the caller's content-directory resolution (e.g. " +
+        "resolveDefaultContentDir()) doesn't match the current runtime's file layout.",
+    );
+  }
+
   const errors = validateContentDir(contentDir);
   if (errors.length > 0) {
     throw new Error(`career-data: cannot load invalid content:\n${formatValidationReport(errors)}`);
@@ -359,6 +391,14 @@ export function loadContentDirWithSources(contentDir: string): CareerDatasetWith
     sources,
   );
 
+  if (!allowEmpty && sources.length === 0) {
+    throw new Error(
+      `career-data: no content was loaded from ${contentDir} — every entity type came back ` +
+        "empty. This usually means the wrong directory was resolved (or the content directory " +
+        "is genuinely not authored yet, in which case pass { allowEmpty: true } explicitly).",
+    );
+  }
+
   return { dataset, sources };
 }
 
@@ -366,8 +406,12 @@ export function loadContentDirWithSources(contentDir: string): CareerDatasetWith
  * Loads and validates every content file under `contentDir`, returning a
  * fully typed {@link CareerDataset}. A thin wrapper over
  * {@link loadContentDirWithSources} for callers that only need the data,
- * not its file provenance.
+ * not its file provenance. See that function's docstring for the
+ * missing/empty-directory throw behavior and the `allowEmpty` opt-in.
  */
-export function loadContentDir(contentDir: string): CareerDataset {
-  return loadContentDirWithSources(contentDir).dataset;
+export function loadContentDir(
+  contentDir: string,
+  options: LoadContentDirOptions = {},
+): CareerDataset {
+  return loadContentDirWithSources(contentDir, options).dataset;
 }

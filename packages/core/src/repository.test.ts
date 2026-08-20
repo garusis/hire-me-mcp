@@ -63,11 +63,20 @@ describe("createContentCareerDataRepository", () => {
     expect(loader).toHaveBeenCalledTimes(1);
   });
 
-  it("returns the empty dataset for a content directory with no content authored yet", () => {
+  it("returns the empty dataset for a content directory with no content authored yet, given explicit allowEmpty opt-in", () => {
+    const repository = createContentCareerDataRepository({
+      contentDir: fixtureDir("empty-content"),
+      allowEmpty: true,
+    });
+
+    expect(repository.getDataset()).toEqual(emptyCareerDataset());
+  });
+
+  it("throws, by default, for a content directory with no content authored yet (#113 — silent-empty is a bug, not a feature)", () => {
     const repository = createContentCareerDataRepository({
       contentDir: fixtureDir("empty-content"),
     });
 
-    expect(repository.getDataset()).toEqual(emptyCareerDataset());
+    expect(() => repository.getDataset()).toThrow(/no content was loaded/i);
   });
 });
