@@ -165,6 +165,31 @@ pnpm exec playwright show-report   # open the last HTML report (playwright-repor
 
 First-time setup needs the Chromium binary once: `pnpm exec playwright install --with-deps chromium` (CI does this itself, browser-cached across runs). Playwright's output directories (`playwright-report/`, `test-results/`, `blob-report/`, `playwright/.cache/`) are git-ignored — no browser binaries or run artifacts are ever committed.
 
+### Preview/production gates (Playwright + Lighthouse) — #58
+
+A second, separate Playwright suite targets a **real deployed URL** (a Vercel preview or production, not a local build): `e2e/preview/*.spec.ts` at the repo root, run via its own config (`playwright.preview.config.ts`) and its own CI job (`preview-gates` in `ci.yml`), gating every PR before merge alongside `quality`/`e2e`.
+
+```bash
+# Playwright: navigation, content-correctness (vs packages/career-data),
+# responsive (360/768/1440px, no horizontal overflow), axe a11y (both
+# themes, every route) and SEO artifact checks (sitemap/robots/canonical/OG)
+PREVIEW_URL=https://<preview-or-prod>.vercel.app \
+VERCEL_AUTOMATION_BYPASS_SECRET=<secret> \
+pnpm test:e2e:preview
+
+# Lighthouse CI: performance/accessibility/best-practices/SEO, >= 0.95 each,
+# median of 3 runs, for home, one project detail page and /mcp
+PREVIEW_URL=https://<preview-or-prod>.vercel.app \
+VERCEL_AUTOMATION_BYPASS_SECRET=<secret> \
+pnpm test:lighthouse:preview
+```
+
+`VERCEL_AUTOMATION_BYPASS_SECRET` is only required against a URL that has Vercel Deployment Protection on — every preview does (see "Preview deployments" below); omit it for an unprotected target (e.g. production). Both commands accept **any** base URL, not just a Vercel deployment.
+
+Content-correctness specs (`e2e/preview/content-correctness.spec.ts`) import `@hire-me-mcp/career-data` directly in the test process and assert specific rendered strings on the live page equal the content layer's own values — a hardcoded/edited copy string in a page component fails this suite even though the page still renders. Reports land in `playwright-report-preview/` and `.lighthouseci/`; traces in `test-results-preview/` (all git-ignored, same as the local-build suite).
+
+In CI, the `preview-gates` job resolves the PR head commit's Vercel preview URL via a reusable composite action (`.github/actions/resolve-vercel-preview`, polling the GitHub Deployments API — shared infrastructure other preview-targeting tasks in the roadmap, e.g. the MCP-endpoint and docs-rot preview suites, are expected to reuse instead of reimplementing preview-URL discovery), sends the bypass header, and runs both gates. It **skips with an explicit `::warning::`** (not a failure) when no preview deployment or `VERCEL_AUTOMATION_BYPASS_SECRET` is available — e.g. fork PRs, which don't receive repository secrets.
+
 ### Pre-commit hooks (lefthook)
 
 [lefthook](https://lefthook.dev) is the **tool-agnostic** enforcement layer: a `pre-commit` hook that formats/lints staged files with Biome and runs Vitest for the packages affected by the staged changes, so a commit with a Biome violation or a broken test never reaches CI in the first place. It binds every contributor and every agent (Claude Code, Codex, or a human at the keyboard) equally, regardless of whether any editor- or agent-level hook is honoured — see `lefthook.yml` at the repo root for the full job config.
@@ -193,6 +218,7 @@ LEFTHOOK=0 git commit -m "..."    # same effect, explicit env var
 
 - **`quality`** — four separately visible steps (Biome check, typecheck, unit tests, build) so a failure is attributable at a glance.
 - **`e2e`** (added in #36) — runs in parallel with `quality` (no `needs:`, so a broken page is always reported as an `e2e` failure rather than skipped because `quality` also failed), installs Chromium (`pnpm exec playwright install --with-deps chromium`, browser binaries cached by Playwright version), runs `pnpm test:e2e` (the Playwright smoke spec against a production build), and on failure uploads two artifacts: the Playwright HTML report (`playwright-report/`) and the trace/screenshot output (`test-results/`), both 7-day retention. `timeout-minutes: 15` fails the job fast instead of hanging if the production server never becomes ready. A broken home page fails this job and therefore fails the required check on the PR.
+- **`preview-gates`** (added in #58, `pull_request` only) — resolves the PR head SHA's Vercel preview URL (`.github/actions/resolve-vercel-preview`), then runs the preview-targeting Playwright suite (`pnpm test:e2e:preview`) and Lighthouse CI (`pnpm test:lighthouse:preview`) against it — see "Preview/production gates" above. Skips with a `::warning::` (not a failure) when no preview or `VERCEL_AUTOMATION_BYPASS_SECRET` is available (fork PRs). Uploads the Playwright preview report/traces on failure and the Lighthouse report always, all 7-day retention.
 
 - Node is pinned via `.nvmrc`; pnpm is installed via `pnpm/action-setup`, which reads the version from the root `packageManager` field.
 - Dependencies install with `pnpm install --frozen-lockfile`, so a stale lockfile fails CI instead of silently drifting.
@@ -200,14 +226,14 @@ LEFTHOOK=0 git commit -m "..."    # same effect, explicit env var
 - `concurrency` cancels a previous in-flight run for the same ref when a new commit is pushed.
 - CI is the remote mirror of the lefthook pre-commit gate (#18): anything pre-commit rejects locally must also fail here, so `--no-verify` doesn't let a violation reach `main`.
 
-`main` is protected to match: no direct pushes, no force pushes, and both the `quality` and `e2e` checks must pass before a PR can merge. This was configured once, by hand, by PUTting a JSON body (the branch protection endpoint rejects `gh api -f/-F` key-path syntax for this nested shape, so a body file is the reliable way to reproduce it):
+`main` is protected to match: no direct pushes, no force pushes, and `quality`, `e2e` and `preview-gates` must all pass before a PR can merge. This was configured once, by hand, by PUTting a JSON body (the branch protection endpoint rejects `gh api -f/-F` key-path syntax for this nested shape, so a body file is the reliable way to reproduce it):
 
 ```bash
 cat > branch-protection.json <<'EOF'
 {
   "required_status_checks": {
     "strict": true,
-    "checks": [{ "context": "quality" }, { "context": "e2e" }]
+    "checks": [{ "context": "quality" }, { "context": "e2e" }, { "context": "preview-gates" }]
   },
   "enforce_admins": true,
   "required_pull_request_reviews": {
@@ -361,9 +387,12 @@ its own `*.vercel.app` URL, posted as a deployment/check on the PR by the Vercel
 integration. Preview URLs sit behind Vercel's Standard Protection by default (see the settings
 table above) — an unauthenticated request 302s to `vercel.com/sso-api` instead of returning the
 page, so a plain `curl` against a preview URL is not expected to return 200 the way production
-does. No Playwright/e2e runs against preview URLs — #36 runs e2e against a local production build
-only, per the epic's out-of-scope note; #58/#69 will need to account for this protection when they
-target previews.
+does. #36's local-build e2e suite (`pnpm test:e2e`) still runs against a local production build only,
+per that epic's out-of-scope note. #58 adds the suite that actually targets previews
+(`pnpm test:e2e:preview` / `pnpm test:lighthouse:preview`, "Preview/production gates" above): it
+accounts for this protection by sending Vercel's Protection Bypass for Automation header
+(`x-vercel-protection-bypass`) on every request, via the `VERCEL_AUTOMATION_BYPASS_SECRET` GitHub
+Actions secret in CI (never logged) or the same-named env var locally.
 
 ### Ignored Build Step
 
