@@ -138,6 +138,17 @@ describe("Experience page", () => {
     );
   });
 
+  it("gives each entry card a stable id anchor matching its slug, so /skills citations can link to it", async () => {
+    getExperienceListView.mockReturnValue(experienceView());
+    getProjectsListView.mockReturnValue(projectsView());
+    const { default: ExperiencePage } = await import("./page.js");
+
+    const { container } = render(await ExperiencePage());
+
+    expect(container.querySelector("#second-role")).not.toBeNull();
+    expect(container.querySelector("#first-role")).not.toBeNull();
+  });
+
   it("does not render a related-projects section for an entry with no tech overlap", async () => {
     getExperienceListView.mockReturnValue(experienceView());
     getProjectsListView.mockReturnValue(projectsView());
