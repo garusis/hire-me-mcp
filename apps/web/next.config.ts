@@ -14,25 +14,35 @@ const nextConfig: NextConfig = {
   // them in explicitly.
   //
   // `/projects/[slug]/opengraph-image` and `/writing/[slug]/opengraph-image`
-  // (#44) need the same treatment, for the same underlying reason plus one
-  // more: unlike `/projects/[slug]` and `/writing/[slug]` (which export
-  // `generateStaticParams` and are prerendered at build time — see
-  // `page.tsx` in each directory), the two `opengraph-image.tsx` files
-  // don't export `generateStaticParams` themselves, so Next.js builds them
-  // as fully dynamic routes (confirmed via `next build`'s route table: `ƒ`,
-  // not `●`) that run in the Vercel Lambda on every request rather than
-  // being prerendered as static images at build time — unlike the
-  // build-time-static root `/opengraph-image`, which never hits this code
-  // path in production at all. At request time each route calls
+  // (#44, #119) originally needed the same treatment for the same
+  // underlying reason: without their own `generateStaticParams`, both
+  // built as fully dynamic routes (`ƒ` in `next build`'s route table) that
+  // ran in a Vercel Lambda on every request, where they called
   // `getProjectDetailView()`/`getWritingEntryView()` (career-data content)
-  // and `loadOgFonts()` (reads `apps/web/assets/fonts/*.ttf` via
-  // `import.meta.url`, see `src/lib/seo/og-fonts.ts`) — neither of which
-  // NFT picked up automatically (confirmed: `route.js.nft.json` for both
-  // routes traced 0 `career-data/content` and 0 `assets/fonts` files
-  // before this change), so `resolveDefaultContentDir()`'s "fail loud"
-  // guard (#115) throws and the route 500s (#119). This traces both the
-  // content and the font files in explicitly, the same way `/api/mcp`
-  // already needed for its content reads.
+  // and `loadOgFonts()` (`apps/web/assets/fonts/*.ttf`) — neither of which
+  // NFT picked up automatically for these routes. That entry alone,
+  // though, did not fix production (round 1, PR #127) — the live Lambda
+  // still 500'd after deploy despite a local `next build`'s
+  // `route.js.nft.json` proving the trace locally, which means local NFT
+  // output isn't a reliable proxy for what Vercel's own build pipeline
+  // actually ships for this route type. Round 2's real fix is in
+  // `app/projects/[slug]/opengraph-image.tsx` and
+  // `app/writing/[slug]/opengraph-image.tsx` themselves: both now export
+  // `generateStaticParams` (mirroring their `page.tsx` siblings), so both
+  // routes prerender as static images at build time (`●`, confirmed via
+  // `next build`'s route table listing every known slug) — no Lambda runs
+  // for them at request time at all for the common case, sidestepping
+  // this whole class of tracing gap the same way the already-static root
+  // `/opengraph-image` always has.
+  //
+  // These two entries are kept, not removed, because `dynamicParams`
+  // defaults to `true`: a request for a slug outside `generateStaticParams`
+  // (e.g. a newly authored entry hit before the next deploy) still falls
+  // back to an on-demand Lambda render, which hits the exact same
+  // content/font reads as before. So this remains load-bearing for that
+  // fallback path — see `og-image-content-trace.smoke.spec.ts`, which
+  // still asserts against `route.js.nft.json` (the build-time function
+  // Next also uses to prerender the static images) and continues to pass.
   outputFileTracingIncludes: {
     "/api/mcp": ["../../packages/career-data/content/**/*"],
     "/projects/[slug]/opengraph-image": [
