@@ -1,16 +1,33 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ExperienceListView, ProjectListView } from "../../src/lib/content";
+import type { ExperienceListView, ProfileView, ProjectListView } from "../../src/lib/content";
 
-const { getExperienceListView, getProjectsListView } = vi.hoisted(() => ({
+const { getExperienceListView, getProjectsListView, getProfileView } = vi.hoisted(() => ({
   getExperienceListView: vi.fn(),
   getProjectsListView: vi.fn(),
+  getProfileView: vi.fn(),
 }));
 
 vi.mock("../../src/lib/content", () => ({
   getExperienceListView,
   getProjectsListView,
+  getProfileView,
 }));
+
+function profileView(): ProfileView {
+  return {
+    citations: [],
+    profile: {
+      id: "profile",
+      name: "Ada Fixture",
+      headline: "Fixture Engineer",
+      location: "Remote",
+      availability: "open",
+      summary: "A fixture summary of Ada.",
+      contacts: [{ label: "GitHub", url: "https://github.com/ada-fixture" }],
+    },
+  };
+}
 
 function experienceView(): ExperienceListView {
   return {
@@ -162,5 +179,49 @@ describe("Experience page", () => {
       throw new Error("expected Earlier Co entry to render");
     }
     expect(within(earlierCoHeading.parentElement).queryByText("AWS Thing")).toBeNull();
+  });
+});
+
+describe("Experience page metadata", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns a non-empty title and a description built from the stubbed content layer", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getExperienceListView.mockReturnValue(experienceView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.title).toBeTruthy();
+    expect(metadata.description).toContain("Later Co");
+    expect(metadata.description).toContain("Earlier Co");
+  });
+
+  it("changing the stub's data changes the description", async () => {
+    getProfileView.mockReturnValue(profileView());
+    const view = experienceView();
+    const firstItem = view.items[0];
+    if (firstItem === undefined) {
+      throw new Error("test fixture missing item");
+    }
+    firstItem.entry.company = "A Totally Different Company";
+    getExperienceListView.mockReturnValue(view);
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.description).toContain("A Totally Different Company");
+  });
+
+  it("sets a canonical URL for this route", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getExperienceListView.mockReturnValue(experienceView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.alternates?.canonical).toBe("/experience");
   });
 });

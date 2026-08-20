@@ -1,5 +1,6 @@
+import type { Metadata } from "next";
 import type { ExperienceListItemView } from "../../src/lib/content";
-import { getExperienceListView, getProjectsListView } from "../../src/lib/content";
+import { getExperienceListView, getProfileView, getProjectsListView } from "../../src/lib/content";
 import { Badge } from "../design-system/primitives/badge";
 import { Card } from "../design-system/primitives/card";
 import { Container } from "../design-system/primitives/container";
@@ -54,6 +55,22 @@ function ExperienceEntryCard({ item }: { item: ExperienceListItemView }) {
       )}
     </Card>
   );
+}
+
+/**
+ * Title stays a static route label ("Experience" — matching this page's own
+ * `<h1>`, not a career fact); the description and canonical are what #44
+ * requires be sourced from/derived per route.
+ */
+export function generateMetadata(): Metadata {
+  const { profile } = getProfileView();
+  const { items } = getExperienceListView();
+  const companies = items.map((item) => item.entry.company).join(", ");
+  return {
+    title: "Experience",
+    description: `${profile.name}'s professional experience: ${companies}.`,
+    alternates: { canonical: "/experience" },
+  };
 }
 
 /**

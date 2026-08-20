@@ -1,12 +1,21 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { GapsListView, Skill, SkillsListView, WritingListView } from "../../src/lib/content";
+import type {
+  GapsListView,
+  ProfileView,
+  Skill,
+  SkillsListView,
+  WritingListView,
+} from "../../src/lib/content";
 
-const { getSkillsListView, getGapsListView, getWritingListView } = vi.hoisted(() => ({
-  getSkillsListView: vi.fn(),
-  getGapsListView: vi.fn(),
-  getWritingListView: vi.fn(),
-}));
+const { getSkillsListView, getGapsListView, getWritingListView, getProfileView } = vi.hoisted(
+  () => ({
+    getSkillsListView: vi.fn(),
+    getGapsListView: vi.fn(),
+    getWritingListView: vi.fn(),
+    getProfileView: vi.fn(),
+  }),
+);
 
 vi.mock("../../src/lib/content", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/lib/content")>();
@@ -15,8 +24,24 @@ vi.mock("../../src/lib/content", async (importOriginal) => {
     getSkillsListView,
     getGapsListView,
     getWritingListView,
+    getProfileView,
   };
 });
+
+function profileView(): ProfileView {
+  return {
+    citations: [],
+    profile: {
+      id: "profile",
+      name: "Ada Fixture",
+      headline: "Fixture Engineer",
+      location: "Remote",
+      availability: "open",
+      summary: "A fixture summary of Ada.",
+      contacts: [{ label: "GitHub", url: "https://github.com/ada-fixture" }],
+    },
+  };
+}
 
 const strongSkill: Skill = {
   id: "typescript",
@@ -238,5 +263,43 @@ describe("Skills page", () => {
       "href",
       "/skills#typescript",
     );
+  });
+});
+
+describe("Skills page metadata", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns a non-empty title and a description built from the stubbed content layer", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getSkillsListView.mockReturnValue(skillsView([strongSkill, singleSourceSkill]));
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.title).toBeTruthy();
+    expect(metadata.description).toContain("TypeScript");
+    expect(metadata.description).toContain("Python");
+  });
+
+  it("changing the stub's data changes the description", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getSkillsListView.mockReturnValue(skillsView([{ ...strongSkill, name: "Renamed Skill" }]));
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.description).toContain("Renamed Skill");
+  });
+
+  it("sets a canonical URL for this route", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getSkillsListView.mockReturnValue(skillsView([strongSkill]));
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.alternates?.canonical).toBe("/skills");
   });
 });

@@ -1,7 +1,9 @@
 import type { Citation } from "@hire-me-mcp/core";
+import type { Metadata } from "next";
 import type { GapListItemView, Skill, WritingEntry } from "../../src/lib/content";
 import {
   getGapsListView,
+  getProfileView,
   getSkillsListView,
   getWritingListView,
   toSlug,
@@ -105,6 +107,18 @@ function GapCard({ item }: { item: GapListItemView }) {
       )}
     </Card>
   );
+}
+
+/** Description names every claimed skill, so it changes whenever the content layer does. */
+export function generateMetadata(): Metadata {
+  const { profile } = getProfileView();
+  const { items } = getSkillsListView();
+  const names = items.map((skill) => skill.name).join(", ");
+  return {
+    title: "Skills",
+    description: `${profile.name}'s claimed skills, each with cited evidence: ${names}.`,
+    alternates: { canonical: "/skills" },
+  };
 }
 
 /**

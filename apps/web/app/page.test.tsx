@@ -376,4 +376,42 @@ describe("Home", () => {
       expect(source.includes('"use client"')).toBe(false);
     });
   });
+
+  describe("structured data", () => {
+    it("renders a Person JSON-LD script built from the stubbed profile", () => {
+      const { container } = render(<Home />);
+
+      const script = container.querySelector('script[type="application/ld+json"]');
+      expect(script).not.toBeNull();
+      const jsonLd = JSON.parse(script?.textContent ?? "{}");
+      expect(jsonLd["@type"]).toBe("Person");
+      expect(jsonLd.name).toBe("Ada Stubwell");
+      expect(jsonLd.jobTitle).toBe("Staff Engineer, Distributed Systems");
+    });
+
+    it("changes the JSON-LD when the stubbed profile changes", () => {
+      getProfileView.mockReturnValue(buildProfile({ name: "Different Name" }));
+
+      const { container } = render(<Home />);
+
+      const script = container.querySelector('script[type="application/ld+json"]');
+      const jsonLd = JSON.parse(script?.textContent ?? "{}");
+      expect(jsonLd.name).toBe("Different Name");
+    });
+  });
+});
+
+describe("Home page metadata", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("sets a canonical URL for the home route", async () => {
+    stubBaseContent();
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.alternates?.canonical).toBe("/");
+  });
 });

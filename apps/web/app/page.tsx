@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import {
   type ExperienceListItemView,
   getExperienceListView,
@@ -7,6 +8,8 @@ import {
   type ProjectListItemView,
   type Skill,
 } from "../src/lib/content";
+import { buildPersonJsonLd } from "../src/lib/seo/json-ld";
+import { JsonLdScript } from "../src/lib/seo/json-ld-script";
 import { RevealOnScroll } from "./design-system/motion/reveal-on-scroll";
 import { Badge } from "./design-system/primitives/badge";
 import { Button } from "./design-system/primitives/button";
@@ -16,6 +19,11 @@ import { Heading } from "./design-system/primitives/heading";
 import { Prose } from "./design-system/primitives/prose";
 import { Section } from "./design-system/primitives/section";
 import styles from "./page.module.css";
+
+/** Canonical for the home route — title/description fall back to `app/layout.tsx`'s site-wide default, which is already sourced from this same profile view. */
+export function generateMetadata(): Metadata {
+  return { alternates: { canonical: "/" } };
+}
 
 /**
  * How many entries surface in each highlight rail. Generic UI configuration
@@ -67,7 +75,8 @@ function SkillBadge({ skill }: { skill: Skill }) {
 }
 
 export default function Home() {
-  const { profile } = getProfileView();
+  const profileView = getProfileView();
+  const { profile } = profileView;
   const experience = getExperienceListView().items.slice(0, HIGHLIGHT_EXPERIENCE_COUNT);
   const projects = getProjectsListView().items.slice(0, HIGHLIGHT_PROJECT_COUNT);
   const skills = getSkillsListView().items.slice(0, HIGHLIGHT_SKILL_COUNT);
@@ -75,6 +84,8 @@ export default function Home() {
 
   return (
     <>
+      <JsonLdScript data={buildPersonJsonLd(profileView)} />
+
       <Section aria-labelledby="hero-heading">
         <Container>
           <RevealOnScroll>

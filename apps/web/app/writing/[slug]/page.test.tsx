@@ -1,13 +1,33 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { WritingEntryView } from "../../../src/lib/content";
+import type { ProfileView, WritingEntryView } from "../../../src/lib/content";
 
-const { getWritingEntryView, listWritingSlugs } = vi.hoisted(() => ({
+const { getWritingEntryView, listWritingSlugs, getProfileView } = vi.hoisted(() => ({
   getWritingEntryView: vi.fn(),
   listWritingSlugs: vi.fn(),
+  getProfileView: vi.fn(),
 }));
 
-vi.mock("../../../src/lib/content", () => ({ getWritingEntryView, listWritingSlugs }));
+vi.mock("../../../src/lib/content", () => ({
+  getWritingEntryView,
+  listWritingSlugs,
+  getProfileView,
+}));
+
+function profileView(): ProfileView {
+  return {
+    citations: [],
+    profile: {
+      id: "profile",
+      name: "Ada Fixture",
+      headline: "Fixture Engineer",
+      location: "Remote",
+      availability: "open",
+      summary: "A fixture summary of Ada.",
+      contacts: [{ label: "GitHub", url: "https://github.com/ada-fixture" }],
+    },
+  };
+}
 
 const { notFound } = vi.hoisted(() => ({
   notFound: vi.fn(() => {
@@ -50,6 +70,7 @@ describe("Writing detail page", () => {
 
   it("renders the title, date and summary for a known slug", async () => {
     getWritingEntryView.mockReturnValue(foundView());
+    getProfileView.mockReturnValue(profileView());
     const { default: WritingDetailPage } = await import("./page.js");
 
     render(await WritingDetailPage({ params: Promise.resolve({ slug: "local-post" }) }));
@@ -61,6 +82,7 @@ describe("Writing detail page", () => {
 
   it("renders the MDX body content", async () => {
     getWritingEntryView.mockReturnValue(foundView());
+    getProfileView.mockReturnValue(profileView());
     const { default: WritingDetailPage } = await import("./page.js");
 
     render(await WritingDetailPage({ params: Promise.resolve({ slug: "local-post" }) }));
@@ -77,5 +99,67 @@ describe("Writing detail page", () => {
       WritingDetailPage({ params: Promise.resolve({ slug: "unknown-post" }) }),
     ).rejects.toThrow("NEXT_NOT_FOUND");
     expect(notFound).toHaveBeenCalledOnce();
+  });
+
+  it("renders an Article JSON-LD script built from the writing entry view", async () => {
+    getWritingEntryView.mockReturnValue(foundView());
+    getProfileView.mockReturnValue(profileView());
+    const { default: WritingDetailPage } = await import("./page.js");
+
+    const { container } = render(
+      await WritingDetailPage({ params: Promise.resolve({ slug: "local-post" }) }),
+    );
+
+    const script = container.querySelector('script[type="application/ld+json"]');
+    expect(script).not.toBeNull();
+    const jsonLd = JSON.parse(script?.textContent ?? "{}");
+    expect(jsonLd["@type"]).toBe("Article");
+    expect(jsonLd.headline).toBe("Local Post");
+    expect(jsonLd.author).toEqual({ "@type": "Person", name: "Ada Fixture" });
+  });
+});
+
+describe("Writing detail page metadata", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns a non-empty title and description sourced from the stubbed content layer, with a canonical URL", async () => {
+    getWritingEntryView.mockReturnValue(foundView());
+    getProfileView.mockReturnValue(profileView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = await generateMetadata({ params: Promise.resolve({ slug: "local-post" }) });
+
+    expect(metadata.title).toBeTruthy();
+    expect(metadata.description).toBe("The local post's summary.");
+    expect(metadata.alternates?.canonical).toBe("/writing/local-post");
+  });
+
+  it("changing the stub entry changes the metadata", async () => {
+    const view = foundView();
+    if (!view.found) {
+      throw new Error("test fixture expected to be found");
+    }
+    view.value.entry.title = "Renamed Post";
+    view.value.entry.summary = "A brand new summary.";
+    getWritingEntryView.mockReturnValue(view);
+    getProfileView.mockReturnValue(profileView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = await generateMetadata({ params: Promise.resolve({ slug: "local-post" }) });
+
+    expect(metadata.title).toContain("Renamed Post");
+    expect(metadata.description).toBe("A brand new summary.");
+  });
+
+  it("returns empty metadata for an unknown slug rather than throwing", async () => {
+    getWritingEntryView.mockReturnValue({ found: false, slug: "unknown-post" });
+    getProfileView.mockReturnValue(profileView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = await generateMetadata({ params: Promise.resolve({ slug: "unknown-post" }) });
+
+    expect(metadata).toEqual({});
   });
 });

@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { compileMDX } from "next-mdx-remote/rsc";
-import { getProjectDetailView, listProjectSlugs } from "../../../src/lib/content";
+import { getProfileView, getProjectDetailView, listProjectSlugs } from "../../../src/lib/content";
+import { buildProjectJsonLd } from "../../../src/lib/seo/json-ld";
+import { JsonLdScript } from "../../../src/lib/seo/json-ld-script";
 import { Badge } from "../../design-system/primitives/badge";
 import { Container } from "../../design-system/primitives/container";
 import { Heading } from "../../design-system/primitives/heading";
@@ -11,6 +14,26 @@ import styles from "./page.module.css";
 
 interface ProjectDetailPageProps {
   params: Promise<{ slug: string }>;
+}
+
+/**
+ * Empty `{}` for an unknown slug — not a throw or a redirect — matches the
+ * page component's own not-found handling (`view.found` branch below);
+ * Next.js still renders the route's `notFound()` page, this just avoids
+ * emitting misleading metadata for a page that won't render.
+ */
+export async function generateMetadata({ params }: ProjectDetailPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const view = getProjectDetailView(slug);
+  if (!view.found) {
+    return {};
+  }
+  const { project } = view.value;
+  return {
+    title: project.name,
+    description: project.summary,
+    alternates: { canonical: `/projects/${slug}` },
+  };
 }
 
 /**
@@ -43,10 +66,12 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
   }
   const { project } = view.value;
   const { content: mdxContent } = await compileMDX({ source: project.body });
+  const { profile } = getProfileView();
 
   return (
     <Section>
       <Container>
+        <JsonLdScript data={buildProjectJsonLd({ slug: view.slug, ...view.value }, profile.name)} />
         <Heading level={1}>{project.name}</Heading>
         <p>{project.role}</p>
         <Prose>

@@ -1,5 +1,6 @@
+import type { Metadata } from "next";
 import type { ProjectListItemView } from "../../src/lib/content";
-import { getProjectsListView } from "../../src/lib/content";
+import { getProfileView, getProjectsListView } from "../../src/lib/content";
 import { cx } from "../design-system/lib/cx";
 import { Badge } from "../design-system/primitives/badge";
 import { Card } from "../design-system/primitives/card";
@@ -65,6 +66,18 @@ function FilterControls({ options, selectedTags }: { options: string[]; selected
       {selectedTags.length > 0 && <Link href="/projects">Clear filters</Link>}
     </nav>
   );
+}
+
+/** Description names every project, so it changes whenever the content layer does. */
+export function generateMetadata(): Metadata {
+  const { profile } = getProfileView();
+  const { items } = getProjectsListView();
+  const names = items.map((item) => item.project.name).join(", ");
+  return {
+    title: "Projects",
+    description: `${profile.name}'s projects: ${names}.`,
+    alternates: { canonical: "/projects" },
+  };
 }
 
 /**

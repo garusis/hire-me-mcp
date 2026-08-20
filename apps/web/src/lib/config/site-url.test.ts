@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getMcpEndpointUrl, getSiteUrl, MCP_ROUTE_PATH } from "./site-url";
+import { getMcpEndpointUrl, getRobotsIndexable, getSiteUrl, MCP_ROUTE_PATH } from "./site-url";
 
 const ENV_KEYS = ["SITE_URL", "VERCEL_ENV", "VERCEL_URL", "VERCEL_PROJECT_PRODUCTION_URL"] as const;
 
@@ -55,5 +55,24 @@ describe("site-url", () => {
 
   it("exposes the route path as a constant matching the actual mounted route", () => {
     expect(MCP_ROUTE_PATH).toBe("/api/mcp");
+  });
+
+  it("is not indexable on a preview deploy (VERCEL_ENV=preview)", () => {
+    process.env.VERCEL_ENV = "preview";
+    expect(getRobotsIndexable()).toBe(false);
+  });
+
+  it("is not indexable in local dev (no VERCEL_ENV set)", () => {
+    expect(getRobotsIndexable()).toBe(false);
+  });
+
+  it("is not indexable on a development Vercel deploy (VERCEL_ENV=development)", () => {
+    process.env.VERCEL_ENV = "development";
+    expect(getRobotsIndexable()).toBe(false);
+  });
+
+  it("is indexable only on a production deploy (VERCEL_ENV=production)", () => {
+    process.env.VERCEL_ENV = "production";
+    expect(getRobotsIndexable()).toBe(true);
   });
 });

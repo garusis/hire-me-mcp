@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import { MCP_TOOL_CATALOGUE } from "../../lib/mcp/tool-catalogue";
 import { getMcpEndpointUrl } from "../../src/lib/config/site-url";
+import { getProfileView } from "../../src/lib/content";
 import { Container } from "../design-system/primitives/container";
 import { CopyToClipboard } from "../design-system/primitives/copy-to-clipboard";
 import { Heading } from "../design-system/primitives/heading";
@@ -20,6 +22,17 @@ import styles from "./page.module.css";
  */
 const RATE_LIMIT_DOC_URL =
   "https://github.com/garusis/hire-me-mcp/blob/main/README.md#rate-limiting-and-troubleshooting";
+
+/** Description names the profile and the live tool catalogue, so it changes with either. */
+export function generateMetadata(): Metadata {
+  const { profile } = getProfileView();
+  const toolNames = MCP_TOOL_CATALOGUE.map((tool) => tool.name).join(", ");
+  return {
+    title: "Add me to your AI",
+    description: `Connect any MCP-compatible AI assistant directly to ${profile.name}'s real career data: ${toolNames}.`,
+    alternates: { canonical: "/mcp" },
+  };
+}
 
 /**
  * The "Add me to your AI" MCP section (#43) — what the public MCP endpoint

@@ -1,14 +1,31 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { WritingListView } from "../../src/lib/content";
+import type { ProfileView, WritingListView } from "../../src/lib/content";
 
-const { getWritingListView } = vi.hoisted(() => ({
+const { getWritingListView, getProfileView } = vi.hoisted(() => ({
   getWritingListView: vi.fn(),
+  getProfileView: vi.fn(),
 }));
 
 vi.mock("../../src/lib/content", () => ({
   getWritingListView,
+  getProfileView,
 }));
+
+function profileView(): ProfileView {
+  return {
+    citations: [],
+    profile: {
+      id: "profile",
+      name: "Ada Fixture",
+      headline: "Fixture Engineer",
+      location: "Remote",
+      availability: "open",
+      summary: "A fixture summary of Ada.",
+      contacts: [{ label: "GitHub", url: "https://github.com/ada-fixture" }],
+    },
+  };
+}
 
 function writingView(): WritingListView {
   return {
@@ -107,5 +124,43 @@ describe("Writing page", () => {
 
     expect(screen.getByText(/nothing published/i)).toBeDefined();
     expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
+  });
+});
+
+describe("Writing page metadata", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns a non-empty title and a description built from the stubbed content layer", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getWritingListView.mockReturnValue(writingView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.title).toBeTruthy();
+    expect(metadata.description).toContain("Second Post");
+    expect(metadata.description).toContain("First Post");
+  });
+
+  it("still returns a non-empty description for the documented empty state", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getWritingListView.mockReturnValue({ items: [], citations: [] });
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.description).toBeTruthy();
+  });
+
+  it("sets a canonical URL for this route", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getWritingListView.mockReturnValue(writingView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.alternates?.canonical).toBe("/writing");
   });
 });

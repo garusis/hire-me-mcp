@@ -1,13 +1,33 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ProjectDetailView } from "../../../src/lib/content";
+import type { ProfileView, ProjectDetailView } from "../../../src/lib/content";
 
-const { getProjectDetailView, listProjectSlugs } = vi.hoisted(() => ({
+const { getProjectDetailView, listProjectSlugs, getProfileView } = vi.hoisted(() => ({
   getProjectDetailView: vi.fn(),
   listProjectSlugs: vi.fn(),
+  getProfileView: vi.fn(),
 }));
 
-vi.mock("../../../src/lib/content", () => ({ getProjectDetailView, listProjectSlugs }));
+vi.mock("../../../src/lib/content", () => ({
+  getProjectDetailView,
+  listProjectSlugs,
+  getProfileView,
+}));
+
+function profileView(): ProfileView {
+  return {
+    citations: [],
+    profile: {
+      id: "profile",
+      name: "Ada Fixture",
+      headline: "Fixture Engineer",
+      location: "Remote",
+      availability: "open",
+      summary: "A fixture summary of Ada.",
+      contacts: [{ label: "GitHub", url: "https://github.com/ada-fixture" }],
+    },
+  };
+}
 
 const { notFound } = vi.hoisted(() => ({
   notFound: vi.fn(() => {
@@ -52,6 +72,7 @@ describe("Project detail page", () => {
 
   it("renders the full detail — name, role, summary, tech and outbound links — for a known slug", async () => {
     getProjectDetailView.mockReturnValue(foundView());
+    getProfileView.mockReturnValue(profileView());
     const { default: ProjectDetailPage } = await import("./page.js");
 
     render(await ProjectDetailPage({ params: Promise.resolve({ slug: "alpha-project" }) }));
@@ -67,6 +88,7 @@ describe("Project detail page", () => {
 
   it("renders the MDX body content", async () => {
     getProjectDetailView.mockReturnValue(foundView());
+    getProfileView.mockReturnValue(profileView());
     const { default: ProjectDetailPage } = await import("./page.js");
 
     render(await ProjectDetailPage({ params: Promise.resolve({ slug: "alpha-project" }) }));
@@ -83,5 +105,73 @@ describe("Project detail page", () => {
       ProjectDetailPage({ params: Promise.resolve({ slug: "unknown-project" }) }),
     ).rejects.toThrow("NEXT_NOT_FOUND");
     expect(notFound).toHaveBeenCalledOnce();
+  });
+
+  it("renders a SoftwareSourceCode JSON-LD script built from the project view", async () => {
+    getProjectDetailView.mockReturnValue(foundView());
+    getProfileView.mockReturnValue(profileView());
+    const { default: ProjectDetailPage } = await import("./page.js");
+
+    const { container } = render(
+      await ProjectDetailPage({ params: Promise.resolve({ slug: "alpha-project" }) }),
+    );
+
+    const script = container.querySelector('script[type="application/ld+json"]');
+    expect(script).not.toBeNull();
+    const jsonLd = JSON.parse(script?.textContent ?? "{}");
+    expect(jsonLd["@type"]).toBe("SoftwareSourceCode");
+    expect(jsonLd.name).toBe("Alpha Project");
+    expect(jsonLd.author).toEqual({ "@type": "Person", name: "Ada Fixture" });
+  });
+});
+
+describe("Project detail page metadata", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns a non-empty title and description sourced from the stubbed content layer, with a canonical URL", async () => {
+    getProjectDetailView.mockReturnValue(foundView());
+    getProfileView.mockReturnValue(profileView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: "alpha-project" }),
+    });
+
+    expect(metadata.title).toBeTruthy();
+    expect(metadata.description).toBe("The alpha summary.");
+    expect(metadata.alternates?.canonical).toBe("/projects/alpha-project");
+  });
+
+  it("changing the stub project changes the metadata", async () => {
+    const view = foundView();
+    if (!view.found) {
+      throw new Error("test fixture expected to be found");
+    }
+    view.value.project.name = "Renamed Project";
+    view.value.project.summary = "A brand new summary.";
+    getProjectDetailView.mockReturnValue(view);
+    getProfileView.mockReturnValue(profileView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: "alpha-project" }),
+    });
+
+    expect(metadata.title).toContain("Renamed Project");
+    expect(metadata.description).toBe("A brand new summary.");
+  });
+
+  it("returns empty metadata for an unknown slug rather than throwing", async () => {
+    getProjectDetailView.mockReturnValue({ found: false, slug: "unknown-project" });
+    getProfileView.mockReturnValue(profileView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: "unknown-project" }),
+    });
+
+    expect(metadata).toEqual({});
   });
 });
