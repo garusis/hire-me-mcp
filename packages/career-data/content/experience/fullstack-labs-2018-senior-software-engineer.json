@@ -1,0 +1,13 @@
+{
+  "id": "fullstack-labs-2018-senior-software-engineer",
+  "company": "FullStack Labs",
+  "role": "Senior Software Engineer",
+  "startDate": "2018-12",
+  "endDate": "2020-12",
+  "summary": "Full-stack development of a platform supporting a fiduciary purchasing agent for FF&E/OS&E procurement, for a US client.",
+  "highlights": [
+    "Built and maintained full-stack features across the procurement platform.",
+    "Migrated data from a poorly documented legacy platform while preserving the integrity of core financial calculations."
+  ],
+  "tech": ["nodejs", "react", "postgresql", "aws", "docker"]
+}

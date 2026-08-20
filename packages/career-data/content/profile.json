@@ -1,0 +1,13 @@
+{
+  "id": "marcos-alvarez",
+  "name": "Marcos Javier Alvarez",
+  "headline": "Senior Full-Stack Engineer · AI/LLM Systems in Production",
+  "location": "Cucuta, Colombia (Remote)",
+  "availability": "open",
+  "summary": "Senior full-stack engineer specialized in taking AI from demo to production. For the past several years I have built LLM pipelines for document data extraction, communication infrastructure that syncs and classifies email and SMS at scale, and agentic workflows that are tested, cost-traced, and measured like any other engineering system. What I care about most is the gap between an AI demo and an AI system: evaluation harnesses, human-graded ground truth, cost discipline, and observability. Full-stack since 2013 — event-driven backends, React frontends, infrastructure, and DevOps.",
+  "contacts": [
+    { "label": "Email", "url": "mailto:garusis@gmail.com" },
+    { "label": "GitHub", "url": "https://github.com/garusis" },
+    { "label": "LinkedIn", "url": "https://www.linkedin.com/in/garusis/" }
+  ]
+}

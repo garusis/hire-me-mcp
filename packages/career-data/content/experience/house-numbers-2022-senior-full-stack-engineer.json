@@ -1,0 +1,25 @@
+{
+  "id": "house-numbers-2022-senior-full-stack-engineer",
+  "company": "House Numbers",
+  "role": "Senior Full Stack Engineer",
+  "startDate": "2022-05",
+  "summary": "Core engineer on a multi-service TypeScript monorepo for an AI-powered mortgage-lending platform, working across backend services, frontend, and infrastructure.",
+  "highlights": [
+    "Designed and shipped production LLM pipelines for document data extraction, including a fallback lane that lifted field accuracy from roughly 0.30 to 0.87 on documents an existing OCR vendor could not process.",
+    "Built the platform's communication infrastructure end to end: asynchronous email sync with durable retries and reconciliation, a new SMS channel behind a channel-agnostic abstraction, and LLM-driven message classification and matching over encrypted data.",
+    "Turned agentic AI features into engineered systems: evaluation harnesses with LLM-as-judge scoring and human-graded ground truth, per-call cost tracing, and version-controlled prompts.",
+    "Led an evaluation of vision-LLM document classification and extraction as a potential replacement for the incumbent OCR vendor, making large multi-page closing packets processable at a fraction of the vendor's per-document cost.",
+    "Designed and delivered a monorepo-wide, agent-consumable documentation system with automated integrity checks in CI, alongside broad ownership of shared packages, public borrower upload flows, an account-offboarding subsystem, observability, and production incident response."
+  ],
+  "tech": [
+    "typescript",
+    "nodejs",
+    "react",
+    "mongodb",
+    "aws",
+    "redis",
+    "kubernetes",
+    "openai-api",
+    "anthropic-api"
+  ]
+}

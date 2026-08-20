@@ -6,4 +6,5 @@ export { type Gap, gapSchema } from "./gap.js";
 export { type Profile, profileSchema } from "./profile.js";
 export { type Project, projectSchema } from "./project.js";
 export { type Skill, skillSchema } from "./skill.js";
+export { isKnownTechTag, TECH_TAGS, type TechTag } from "./tech-tags.js";
 export { type WritingEntry, writingEntrySchema } from "./writing.js";

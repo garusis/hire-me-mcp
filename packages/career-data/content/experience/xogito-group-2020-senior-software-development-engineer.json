@@ -1,0 +1,14 @@
+{
+  "id": "xogito-group-2020-senior-software-development-engineer",
+  "company": "Xogito Group",
+  "role": "Senior Software Development Engineer",
+  "startDate": "2020-12",
+  "endDate": "2022-03",
+  "summary": "Main backend engineer on a cloud-based, multi-tenant SaaS for real-time quality-control inspections across factories, product lots, and distribution points.",
+  "highlights": [
+    "Owned backend architecture and delivery for the multi-tenant inspection platform end to end.",
+    "Gathered requirements directly with project leaders, QA, and the client, translating them into shipped features.",
+    "Onboarded and mentored new team members on the business domain and technical stack."
+  ],
+  "tech": ["nestjs", "typescript", "postgresql", "docker", "gitlab-ci", "aws"]
+}

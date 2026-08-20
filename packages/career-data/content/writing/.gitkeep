@@ -1,0 +1,7 @@
+# Intentionally empty as of #48
+
+No published writing or talks with a public URL exist in the sourced career
+references yet. The directory is tracked (via this file) so the layout
+documented in `content/README.md` and validated by `src/content/loader.ts`
+is present and exercised (an empty collection is valid, not an error). Add
+`*.mdx` files here as real writing/talks are published.
