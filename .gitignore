@@ -38,6 +38,7 @@ coverage/
 /playwright-report/
 /playwright/.cache/
 /blob-report/
+apps/web/e2e/screenshots/
 
 # Claude Code agent worktrees (created by isolated agent sessions; never tracked)
 .claude/worktrees/
