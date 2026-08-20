@@ -80,6 +80,15 @@ stable path `/api/mcp` (locally: `http://localhost:3000/api/mcp`) using
   `initialize` → `tools/list` → `tools/call ping` sequence over the wire — not just the route's
   internals.
 
+### Rate limiting and troubleshooting
+
+Rate limiting for the public MCP endpoint is planned in a later task of epic #3
+([#39](https://github.com/garusis/hire-me-mcp/issues/39)) and will be documented here, in this
+subsection, once it ships. The `/mcp` page on the site (#43) links to this anchor rather than to a
+specific number so the link stays correct whether or not #39 has landed yet — today there is no
+rate limiting on this endpoint; if you're seeing unexpected throttling or a connection failure that
+isn't a rate limit, it's a bug, not documented behavior.
+
 ## Workspace
 
 A pnpm + Turborepo monorepo. Node >= 22 (CI and Vercel run 24), pnpm 10 (pinned via `packageManager`).

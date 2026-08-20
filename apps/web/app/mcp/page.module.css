@@ -1,0 +1,66 @@
+.endpointRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.endpointUrl {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  word-break: break-all;
+}
+
+.clientInstructions {
+  margin: 0 0 var(--space-3);
+}
+
+.snippet {
+  overflow-x: auto;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+
+.snippetRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.toolList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  list-style: none;
+  padding: 0;
+  margin: var(--space-4) 0 0;
+}
+
+.toolName {
+  font-family: var(--font-mono);
+}
+
+.examplePrompt {
+  margin-top: var(--space-2);
+  font-style: italic;
+  color: var(--color-fg-muted);
+}
+
+.examplePrompt::before {
+  content: "\201C";
+}
+
+.examplePrompt::after {
+  content: "\201D";
+}
