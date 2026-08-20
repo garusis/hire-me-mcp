@@ -9,14 +9,14 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.{ts,tsx}", "app/**/*.test.{ts,tsx}"],
+    include: ["src/**/*.test.{ts,tsx}", "app/**/*.test.{ts,tsx}", "lib/**/*.test.{ts,tsx}"],
     exclude: ["**/node_modules/**", "**/dist/**", "**/.next/**", "**/.turbo/**"],
     css: false,
     restoreMocks: true,
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      include: ["src/**/*.{ts,tsx}", "app/**/*.{ts,tsx}"],
+      include: ["src/**/*.{ts,tsx}", "app/**/*.{ts,tsx}", "lib/**/*.{ts,tsx}"],
       exclude: ["**/*.test.{ts,tsx}", "**/*.d.ts"],
     },
   },
