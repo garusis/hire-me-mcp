@@ -8,6 +8,7 @@ export default mergeConfig(
     plugins: [react()],
     test: {
       environment: "happy-dom",
+      setupFiles: ["./vitest.setup.ts"],
     },
   }),
 );
