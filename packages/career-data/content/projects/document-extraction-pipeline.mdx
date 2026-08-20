@@ -1,0 +1,53 @@
+---
+id: document-extraction-pipeline
+name: AI Document Extraction Pipeline
+summary: >-
+  Production LLM pipeline for extracting structured data from documents,
+  with a fallback lane that lifted field accuracy from roughly 0.30 to 0.87
+  on documents an incumbent OCR vendor could not process at all.
+role: Lead engineer
+tech:
+  - typescript
+  - nodejs
+  - llms
+  - openai-api
+  - anthropic-api
+  - ai-agents
+  - prompt-engineering
+links: []
+---
+
+## What it does
+
+Borrowers and loan officers on a mortgage-lending platform upload closing
+packets, pay stubs, bank statements and dozens of other document types.
+Getting structured, field-level data out of them reliably — not "usually" —
+is the difference between straight-through processing and a human re-keying
+everything by hand.
+
+## What I built
+
+I designed and shipped the production LLM pipeline that extracts that
+structured data. The incumbent OCR vendor returned nothing on a meaningful
+slice of real-world documents — low scan quality, unusual layouts, dense
+tables. I built a fallback lane in front of an LLM-based extraction path for
+exactly that slice, and measured field accuracy against a human-graded
+ground truth before and after: roughly 0.30 to 0.87 on the documents the
+vendor could not process.
+
+The pipeline is not a single prompt. It is a set of typed extraction
+contracts per document type, a routing layer that decides which lane a
+document takes, and a scoring step that treats "the vendor returned
+nothing" as a first-class outcome rather than a failure to swallow silently.
+
+I later led an evaluation of vision-LLM document classification and
+extraction as a potential replacement for parts of the vendor's own path,
+sizing the cost and accuracy trade-off for processing large, multi-page
+closing packets at a fraction of the vendor's per-document price.
+
+## Why it mattered
+
+Every extraction claim here is backed by a measured before/after on real
+documents, not a demo. That distinction — an AI feature that is tested,
+scored and cost-traced like any other production system — is the throughline
+of most of what I have shipped with LLMs since.

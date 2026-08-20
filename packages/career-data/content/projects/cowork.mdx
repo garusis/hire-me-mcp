@@ -1,0 +1,40 @@
+---
+id: cowork
+name: cowork
+summary: >-
+  Open-source Python CLI that orchestrates multiple AI coding agents into
+  role-based teams, with phase gates, per-role evals and cost reporting.
+role: Creator and maintainer
+tech:
+  - python
+  - ai-agents
+  - llms
+  - observability
+links:
+  - label: GitHub
+    url: https://github.com/garusis/cowork
+---
+
+## What it is
+
+cowork is an open-source Python CLI I built and maintain for orchestrating
+multiple AI coding agents — Claude Code, Codex and opencode among them —
+into role-based teams (scout, planner, builder, reviewer) working a task
+through phase gates, rather than one agent freelancing the whole thing.
+
+## What I built
+
+- A role-based orchestration model with phase gates between scout, plan,
+  build and review, so a team of agents cannot skip straight to "build" on
+  an unscoped task.
+- Per-role evaluations, so agent output is graded against the role it was
+  playing, not judged by a single blanket pass/fail.
+- Cost reporting per session and per role, on the same logic behind the
+  evaluation-infrastructure work I do professionally: an AI feature is
+  accountable to its cost, not just its output.
+
+## Why it mattered
+
+It is the clearest evidence I have of building my own tools rather than only
+consuming other people's, and of shipping outside the TypeScript/Node stack
+that dominates my day job — cowork is a Python project, end to end.
