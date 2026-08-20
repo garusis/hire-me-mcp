@@ -1,0 +1,15 @@
+.pending {
+  opacity: 0;
+  transform: translateY(1rem);
+  transition:
+    opacity var(--motion-duration-slow) var(--motion-ease),
+    transform var(--motion-duration-slow) var(--motion-ease);
+}
+
+.revealed {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--motion-duration-slow) var(--motion-ease),
+    transform var(--motion-duration-slow) var(--motion-ease);
+}

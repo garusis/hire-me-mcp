@@ -1,0 +1,15 @@
+.prose {
+  max-width: 65ch;
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  color: var(--color-fg);
+}
+
+.prose > * + * {
+  margin-top: var(--space-4);
+}
+
+.prose a {
+  color: var(--color-accent);
+  text-underline-offset: 0.2em;
+}

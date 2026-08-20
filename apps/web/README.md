@@ -1,0 +1,123 @@
+# apps/web
+
+Next.js 15 App Router site — the single user-facing app in this monorepo (site, chat, and later
+the public MCP endpoint). See the repo root `README.md` for the overall architecture.
+
+## Design system
+
+Issue #15 builds the foundation every later page in Epic #4 (v0.4 Portfolio Site) is expected to
+build on: tokens, typography, dark/light theming, layout/content primitives and a restrained
+motion layer. This ships no career content — the home page below is styled scaffolding only.
+
+### Identity
+
+The angle is "senior engineer whose portfolio is an API" — technical, not decorative. The palette
+and type pairing commit to that instead of a generic SaaS template:
+
+- **Typefaces** (`app/fonts.ts`, self-hosted via `next/font/google`, `display: swap`, zero
+  runtime network requests):
+  - **Fraunces** — a characterful, slightly idiosyncratic display serif — for headings. It reads
+    as considered rather than corporate, and contrasts deliberately with the quiet body face.
+  - **IBM Plex Sans** — a quiet, engineered sans — for body copy. Plex was designed by/for IBM's
+    own products; it reinforces the technical register without competing with Fraunces for
+    attention.
+  - **IBM Plex Mono** — for badges, code-adjacent and tabular content (`.tabular-nums` uses
+    `font-variant-numeric: tabular-nums` so dates/durations/metrics align).
+- **Accent** — a single confident color, not a gradient: a burnt-copper/amber
+  (`#b5541f` light / `#e08a4f` dark) used sparingly (accent badge, links, focus ring, primary
+  button). One accent, consistently applied, reads more deliberate than a multi-color palette.
+- **Neutrals** — warm paper tones (`#f7f5f0` … `#1c1a17`) rather than pure white/black, so the
+  page doesn't read as a stock design-system demo.
+- **Whitespace** — generous section padding (`--space-7`) and a capped content measure
+  (`Container` at `72rem`, `Prose` at `65ch`) instead of a dense dashboard layout.
+- Explicitly avoided: Inter-by-default, gradient hero sections, and a blue "tech" accent.
+
+### Tokens
+
+All tokens are CSS custom properties defined once in `app/globals.css`, on `:root` (light,
+default) and re-scoped under `:root[data-theme="dark"]`. Primitives consume `var(--token-name)` —
+never a raw hex value — enforced by
+`app/design-system/lib/no-hardcoded-hex.test.ts`, which scans every `*.module.css`/`*.ts(x)` file
+under `app/design-system` (excluding `globals.css`, the one place token values are defined) for a
+raw hex literal and fails the suite if it finds one.
+
+| Group      | Tokens                                                                                          |
+| ---------- | ------------------------------------------------------------------------------------------------ |
+| Color      | `--color-bg`, `--color-bg-subtle`, `--color-surface`, `--color-fg`, `--color-fg-muted`, `--color-border`, `--color-accent`, `--color-accent-fg`, `--color-focus-ring` |
+| Elevation  | `--shadow-sm`, `--shadow-md`                                                                     |
+| Typography | `--font-display`, `--font-body`, `--font-mono`, `--text-{xs,sm,base,lg,xl,2xl,3xl,4xl,5xl}`, `--leading-{xs,sm,base,lg,xl,2xl,3xl,4xl,5xl}` |
+| Space      | `--space-{1..8}` (4px base scale)                                                                 |
+| Radii      | `--radius-{sm,md,lg,full}`                                                                        |
+| Motion     | `--motion-duration-{fast,base,slow}`, `--motion-ease` — forced to `0ms` under `prefers-reduced-motion: reduce` |
+
+### Theming
+
+- Default resolution is `prefers-color-scheme`; an explicit user choice is persisted to
+  `localStorage` (`theme` key, `"light" | "dark"`) and takes priority on every later visit.
+  Resolution logic is a single pure function
+  (`app/design-system/theme/resolve-theme.ts#resolveInitialTheme`) shared by the inline script and
+  the client hook, so they can never disagree.
+- **No flash of the wrong theme**: a small inline script
+  (`buildThemeScript`) runs via `next/script` with `strategy="beforeInteractive"`, which Next.js
+  hoists into `<head>` and executes before hydration — it sets `data-theme` and
+  `color-scheme` on `<html>` synchronously, before first paint.
+- `ThemeToggle` (`app/design-system/theme/theme-toggle.tsx`) is the only component in the theme
+  layer that needs to be a Client Component. It's a real `<button>` with `aria-pressed`, keyboard
+  operable, with the shared focus-visible ring.
+- **Manual verification**: hard-reloaded the built app (`pnpm build && pnpm start`) with the OS
+  set to light and then to dark, in both cases with no stored `localStorage` preference — no flash
+  of the opposite theme in either case, and toggling + reloading correctly re-applies the stored
+  choice.
+
+### Primitives
+
+All under `app/design-system/primitives/`, styled with co-located CSS Modules (no CSS-in-JS
+runtime, so this stays cheap for Lighthouse). Server Components by default — the only two Client
+Components in the whole design system are `ThemeToggle` and `CopyToClipboard`, because they are
+the only two that need actual interactivity (state + browser APIs). `Button`, `Link`, etc. render
+plain DOM elements and accept `onClick`/`href` from whichever component composes them; they don't
+declare `"use client"` themselves.
+
+| Primitive          | Notes                                                                                   |
+| ------------------ | ---------------------------------------------------------------------------------------- |
+| `Container`        | Centers + caps content width; `as` prop for the rendered element.                        |
+| `Section`          | `<section>` landmark with vertical rhythm.                                               |
+| `Heading`           | Polymorphic `h1`-`h6`, `level` prop maps to the display type scale.                      |
+| `Prose`            | Long-form copy wrapper — `65ch` measure, spaced children.                                |
+| `Card`              | Bordered/elevated surface; `as` prop (`div`/`article`/…).                                |
+| `Badge`             | Inline label, `neutral`/`accent` variants.                                               |
+| `Link`              | `next/link` for internal hrefs; external hrefs get `target="_blank"`, `rel="noopener noreferrer"` and a screen-reader-only "(opens in a new tab)" hint. |
+| `Button`            | Presentational; renders `<button>` or, given `href`, delegates to `Link`.                |
+| `CopyToClipboard`   | Client component — writes to the clipboard, shows an `aria-live` "Copied!" success state that reverts after 2s. |
+
+Layout primitives (`app/design-system/layout/`): `SkipLink` (visually hidden until focused, jumps
+to `#main-content`), `SiteHeader` (banner landmark, nav, `ThemeToggle`), `SiteFooter` (contentinfo
+landmark). `app/layout.tsx` composes skip link → header → `<main id="main-content">` → footer.
+
+### Motion
+
+`app/design-system/motion/`:
+
+- `useReducedMotion` — tracks `prefers-reduced-motion: reduce` live.
+- `RevealOnScroll` — fades/slides children in via `IntersectionObserver` once they enter the
+  viewport. Under reduced motion it is a true no-op: it renders a plain wrapper with **no**
+  animation class and **no** `data-reveal` attribute, rather than a zero-duration transition.
+- All CSS transitions additionally read their durations from `--motion-duration-*`, which are
+  forced to `0ms` under `@media (prefers-reduced-motion: reduce)` as a second line of defense.
+
+### Screenshots
+
+`apps/web/e2e/design-system.screenshot.spec.ts` captures the home page at 360px and 1440px, in
+both themes, against the production build (`pnpm build && pnpm start`, same as the smoke e2e
+suite). Run `pnpm test:e2e` from the repo root; PNGs land in
+`apps/web/e2e/screenshots/` (git-ignored — not part of the deployed artifact). See the PR
+description for the captured images.
+
+## Commands
+
+```bash
+pnpm --filter @hire-me-mcp/web dev      # dev server
+pnpm --filter @hire-me-mcp/web build    # production build
+pnpm --filter @hire-me-mcp/web test     # vitest
+pnpm test:e2e                           # Playwright smoke + screenshot specs (repo root)
+```
