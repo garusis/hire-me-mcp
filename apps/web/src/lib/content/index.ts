@@ -20,6 +20,7 @@ export {
   getExperienceListView,
   listExperienceSlugs,
 } from "./experience";
+export { type GapListItemView, type GapsListView, getGapsListView } from "./gaps";
 export { getProfileView, type ProfileView } from "./profile";
 export {
   getProjectDetailView,
@@ -48,6 +49,7 @@ export {
   getWritingEntryView,
   getWritingListView,
   listWritingSlugs,
+  type WritingEntry,
   type WritingEntryView,
   type WritingListItemView,
   type WritingListView,

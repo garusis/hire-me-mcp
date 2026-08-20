@@ -15,11 +15,11 @@ function formatPeriod(startDate: string, endDate: string | undefined): string {
 }
 
 function ExperienceEntryCard({ item }: { item: ExperienceListItemView }) {
-  const { entry } = item;
+  const { entry, slug } = item;
   const relatedProjects = getRelatedProjects(entry.tech, getProjectsListView().items);
 
   return (
-    <Card as="article">
+    <Card as="article" id={slug}>
       <Heading level={2}>{entry.company}</Heading>
       <div className={styles.meta}>
         <p>{entry.role}</p>
