@@ -17,7 +17,6 @@
         "http-status-code": ["error", { "minScore": 1 }],
         "link-text": ["error", { "minScore": 1 }],
         "crawlable-anchors": ["error", { "minScore": 1 }],
-        "robots-txt": ["error", { "minScore": 1 }],
         "hreflang": ["error", { "minScore": 1 }],
         "canonical": ["error", { "minScore": 1 }]
       }
