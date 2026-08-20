@@ -1,0 +1,86 @@
+name: Resolve Vercel preview URL
+description: >-
+  Resolves the Vercel preview deployment URL for a commit SHA via the GitHub
+  Deployments API, polling until the deployment reports a terminal status
+  (success/failure/error) or the timeout elapses. Shared infrastructure: the
+  owner's review comment on #58 asked that whichever of #58/#69 lands first
+  factor preview-URL resolution out into a reusable step so #58, #69 and #59
+  don't each reimplement it — this action is that step.
+inputs:
+  sha:
+    description: Commit SHA to resolve the Vercel preview deployment for.
+    required: true
+  github-token:
+    description: Token with read access to the repo's Deployments API (`secrets.GITHUB_TOKEN` is sufficient).
+    required: true
+  environment:
+    description: Deployment "environment" value Vercel's GitHub integration tags previews with.
+    required: false
+    default: Preview
+  timeout-seconds:
+    description: Maximum time to wait for a terminal deployment status before giving up.
+    required: false
+    default: "300"
+  poll-interval-seconds:
+    description: Delay between polls of the Deployments API.
+    required: false
+    default: "10"
+outputs:
+  url:
+    description: Resolved preview URL, or empty string if none was found within the timeout.
+    value: ${{ steps.resolve.outputs.url }}
+  found:
+    description: "'true' if a preview URL was resolved, 'false' otherwise (fork PR, no Vercel deployment, or timeout)."
+    value: ${{ steps.resolve.outputs.found }}
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        SHA: ${{ inputs.sha }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
+        POLL_INTERVAL_SECONDS: ${{ inputs.poll-interval-seconds }}
+      run: |
+        set -euo pipefail
+
+        elapsed=0
+        url=""
+
+        while [ "$elapsed" -lt "$TIMEOUT_SECONDS" ]; do
+          deployment_id=$(gh api "repos/${REPO}/deployments?sha=${SHA}&environment=${ENVIRONMENT}&per_page=1" \
+            --jq '.[0].id // empty' 2>/dev/null || true)
+
+          if [ -n "$deployment_id" ]; then
+            status_json=$(gh api "repos/${REPO}/deployments/${deployment_id}/statuses?per_page=1" \
+              --jq '.[0] // {}' 2>/dev/null || echo '{}')
+            state=$(echo "$status_json" | jq -r '.state // empty')
+            candidate=$(echo "$status_json" | jq -r '.environment_url // .target_url // empty')
+
+            if [ "$state" = "success" ] && [ -n "$candidate" ]; then
+              url="$candidate"
+              break
+            fi
+
+            if [ "$state" = "failure" ] || [ "$state" = "error" ]; then
+              echo "::warning::Vercel deployment ${deployment_id} for ${SHA} reported state=${state} — no preview URL to resolve."
+              break
+            fi
+          fi
+
+          sleep "$POLL_INTERVAL_SECONDS"
+          elapsed=$((elapsed + POLL_INTERVAL_SECONDS))
+        done
+
+        if [ -n "$url" ]; then
+          echo "Resolved ${ENVIRONMENT} deployment URL for ${SHA}: ${url}"
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "::warning::No ${ENVIRONMENT} deployment resolved for ${SHA} within ${TIMEOUT_SECONDS}s (fork PR, missing Vercel integration, or deploy still pending)."
+          echo "url=" >> "$GITHUB_OUTPUT"
+          echo "found=false" >> "$GITHUB_OUTPUT"
+        fi

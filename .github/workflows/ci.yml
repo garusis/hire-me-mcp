@@ -134,3 +134,132 @@ jobs:
           name: playwright-traces
           path: test-results/
           retention-days: 7
+
+  # Gates the deployed Vercel preview itself (#58), not a local build: an
+  # e2e (a11y + content-correctness) suite and a Lighthouse run, both
+  # against the real preview URL for this PR's head commit. Independent of
+  # `quality`/`e2e` (no `needs:`) for the same reason `e2e` has none — a
+  # broken preview is reported as its own failure. Skips (not fails) when no
+  # preview or secrets are available, e.g. fork PRs that don't get repo
+  # secrets, so external contributions don't produce a confusing red build.
+  preview-gates:
+    name: preview-gates
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve preview URL
+        id: preview
+        uses: ./.github/actions/resolve-vercel-preview
+        with:
+          sha: ${{ github.event.pull_request.head.sha }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check preview gate prerequisites
+        id: gate
+        env:
+          BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          if [ "${{ steps.preview.outputs.found }}" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping preview-gates — no Vercel preview deployment was resolved for this PR (fork PR or Vercel integration lag)."
+          elif [ -z "$BYPASS_SECRET" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping preview-gates — VERCEL_AUTOMATION_BYPASS_SECRET is not available to this run (fork PRs don't receive repo secrets)."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Resolved preview URL: ${{ steps.preview.outputs.url }}"
+          fi
+
+      - name: Build career-data and core packages
+        if: steps.gate.outputs.skip != 'true'
+        run: pnpm turbo run build --filter=@hire-me-mcp/career-data --filter=@hire-me-mcp/core
+
+      - name: Typecheck preview e2e suite
+        if: steps.gate.outputs.skip != 'true'
+        run: pnpm typecheck:e2e-preview
+
+      - name: Resolve installed Playwright version
+        if: steps.gate.outputs.skip != 'true'
+        id: playwright-version
+        run: echo "version=$(node -p "require('./package.json').devDependencies['@playwright/test']")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Chromium (with OS deps)
+        if: steps.gate.outputs.skip != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright preview gate (a11y + content-correctness)
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          PREVIEW_URL: ${{ steps.preview.outputs.url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          echo "Running Playwright preview suite against: ${PREVIEW_URL}"
+          pnpm test:e2e:preview
+
+      - name: Run Lighthouse CI against preview
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          PREVIEW_URL: ${{ steps.preview.outputs.url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          echo "Running Lighthouse CI against: ${PREVIEW_URL}"
+          pnpm test:lighthouse:preview
+
+      - name: Upload Playwright preview report
+        if: failure() && steps.gate.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-preview-report
+          path: playwright-report-preview/
+          retention-days: 7
+
+      - name: Upload Playwright preview traces
+        if: failure() && steps.gate.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-preview-traces
+          path: test-results-preview/
+          retention-days: 7
+
+      - name: Upload Lighthouse report
+        if: always() && steps.gate.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-report
+          path: .lighthouseci/
+          retention-days: 7
