@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { compileMDX } from "next-mdx-remote/rsc";
-import { getWritingEntryView, listWritingSlugs } from "../../../src/lib/content";
+import { getProfileView, getWritingEntryView, listWritingSlugs } from "../../../src/lib/content";
+import { buildArticleJsonLd } from "../../../src/lib/seo/json-ld";
+import { JsonLdScript } from "../../../src/lib/seo/json-ld-script";
 import { Container } from "../../design-system/primitives/container";
 import { Heading } from "../../design-system/primitives/heading";
 import { Prose } from "../../design-system/primitives/prose";
@@ -9,6 +12,21 @@ import styles from "./page.module.css";
 
 interface WritingDetailPageProps {
   params: Promise<{ slug: string }>;
+}
+
+/** Empty `{}` for an unknown slug — same rationale as `/projects/[slug]`'s `generateMetadata`. */
+export async function generateMetadata({ params }: WritingDetailPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const view = getWritingEntryView(slug);
+  if (!view.found) {
+    return {};
+  }
+  const { entry } = view.value;
+  return {
+    title: entry.title,
+    description: entry.summary,
+    alternates: { canonical: `/writing/${slug}` },
+  };
 }
 
 /**
@@ -36,10 +54,12 @@ export default async function WritingDetailPage({ params }: WritingDetailPagePro
   }
   const { entry } = view.value;
   const { content: mdxContent } = await compileMDX({ source: entry.body });
+  const { profile } = getProfileView();
 
   return (
     <Section>
       <Container>
+        <JsonLdScript data={buildArticleJsonLd({ slug: view.slug, ...view.value }, profile.name)} />
         <Heading level={1}>{entry.title}</Heading>
         <p className={`${styles.meta} tabular-nums`}>{entry.publishedDate}</p>
         <Prose>
