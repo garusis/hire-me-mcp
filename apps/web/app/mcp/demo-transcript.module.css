@@ -41,6 +41,9 @@
   font-family: var(--font-body);
   font-size: var(--text-xs);
   font-weight: 600;
-  opacity: 0.75;
+  /* No opacity dimming: on `.user` turns this label sits on `--color-accent`
+     with `--color-accent-fg` text, a pairing already at/near the WCAG AA
+     minimum — softening it with opacity dropped the effective contrast
+     below 4.5:1 (a real violation the axe suite in #58 caught). */
   margin-bottom: var(--space-1);
 }
