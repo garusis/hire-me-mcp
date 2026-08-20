@@ -29,7 +29,13 @@ export {
   type ProjectListItemView,
   type ProjectListView,
 } from "./projects";
-export { getSkillEvidenceView, type SkillEvidenceView } from "./skills";
+export {
+  getSkillEvidenceView,
+  getSkillsListView,
+  type Skill,
+  type SkillEvidenceView,
+  type SkillsListView,
+} from "./skills";
 export {
   type FoundBySlug,
   findBySlug,
