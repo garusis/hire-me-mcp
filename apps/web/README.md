@@ -120,4 +120,8 @@ pnpm --filter @hire-me-mcp/web dev      # dev server
 pnpm --filter @hire-me-mcp/web build    # production build
 pnpm --filter @hire-me-mcp/web test     # vitest
 pnpm test:e2e                           # Playwright smoke + screenshot specs (repo root)
+BASE_URL=<url> pnpm test:e2e:preview    # preview e2e gate — navigation/a11y/content-correctness/responsive/SEO (#58, repo root)
+BASE_URL=<url> pnpm run lighthouse      # Lighthouse gate — performance/a11y/best-practices/SEO (#58, repo root)
 ```
+
+See the root README's "Preview gates: e2e + Lighthouse against a deployed URL (#58)" section for the full mechanism (the Vercel Deployment Protection bypass, how routes/specs are organized, and the SEO assertion's `is-crawlable` caveat).
