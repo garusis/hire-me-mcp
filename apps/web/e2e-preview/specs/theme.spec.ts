@@ -20,6 +20,11 @@ test("theme toggle persists across a reload", async ({ gotoRoute, page }) => {
   expect(toggledTheme).not.toBe(initialTheme);
 
   await page.reload();
+  // #128: reload() resolves on navigation commit, not once the document has
+  // settled — read the DOM only after a readiness gate, same fix as
+  // `helpers/theme.ts#setTheme` and for the same reason (a one-shot
+  // `page.evaluate()` right after `reload()` can race a still-loading page).
+  await expect(page).toHaveTitle(/.+/);
 
   const persistedTheme = await page.evaluate(() =>
     document.documentElement.getAttribute("data-theme"),
