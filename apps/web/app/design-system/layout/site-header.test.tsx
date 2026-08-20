@@ -30,4 +30,11 @@ describe("SiteHeader", () => {
     expect(nav.querySelector('a[href="/experience"]')).not.toBeNull();
     expect(nav.querySelector('a[href="/projects"]')).not.toBeNull();
   });
+
+  it("adds Skills and Writing links to the primary navigation alongside the rest", () => {
+    render(<SiteHeader />);
+    const nav = screen.getByRole("navigation", { name: /primary/i });
+    expect(nav.querySelector('a[href="/skills"]')).not.toBeNull();
+    expect(nav.querySelector('a[href="/writing"]')).not.toBeNull();
+  });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getExperienceEntryView,
   getExperienceListView,
+  getGapsListView,
   getProfileView,
   getProjectDetailView,
   getProjectsListView,
@@ -40,5 +41,8 @@ describe("apps/web content layer public entry point", () => {
 
     const skills = getSkillsListView().items;
     expect(skills.length).toBeGreaterThan(0);
+
+    const gaps = getGapsListView().items;
+    expect(gaps.length).toBe(8);
   });
 });

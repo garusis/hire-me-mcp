@@ -18,6 +18,12 @@ import { buildCitation, type CareerDataRepository } from "@hire-me-mcp/core";
 import { getCareerDataRepository } from "./repository";
 import { findBySlug, listSlugs, type SlugLookup, toSlug } from "./slug";
 
+// Re-exported so consumers outside the content layer (e.g. the /skills
+// citation-to-route mapping) can type against `WritingEntry` without
+// importing `@hire-me-mcp/career-data` directly — see
+// `content-source-guard.test.ts`.
+export type { WritingEntry };
+
 /** One writing list entry, paired with its stable slug and citation. */
 export interface WritingListItemView {
   slug: string;
