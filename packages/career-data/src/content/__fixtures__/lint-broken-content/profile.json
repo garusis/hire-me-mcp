@@ -1,0 +1,9 @@
+{
+  "id": "profile-fixture",
+  "name": "Fixture Person",
+  "headline": "Fixture Headline",
+  "location": "Nowhere",
+  "availability": "open",
+  "summary": "Fixture summary used only to exercise the content lint in tests.",
+  "contacts": [{ "label": "Email", "url": "mailto:fixture@example.com" }]
+}

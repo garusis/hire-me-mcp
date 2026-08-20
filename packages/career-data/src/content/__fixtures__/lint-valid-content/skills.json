@@ -1,0 +1,30 @@
+[
+  {
+    "id": "typescript",
+    "name": "TypeScript",
+    "aliases": ["ts"],
+    "category": "language",
+    "proficiency": "expert",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "fixture-role-fixtureco-2020",
+        "label": "Fixture Engineer, Fixtureco"
+      }
+    ]
+  },
+  {
+    "id": "mentoring",
+    "name": "Mentoring",
+    "aliases": [],
+    "category": "practice",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "project",
+        "entityId": "fixture-project",
+        "label": "Fixture Project"
+      }
+    ]
+  }
+]

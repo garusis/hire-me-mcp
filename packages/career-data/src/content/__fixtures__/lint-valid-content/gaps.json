@@ -1,0 +1,9 @@
+[
+  {
+    "id": "fixture-gap",
+    "name": "Fixture Gap Technology",
+    "aliases": ["fgt"],
+    "statement": "Has not used the fixture gap technology; this is fake data for tests only.",
+    "relatedSkills": ["typescript"]
+  }
+]

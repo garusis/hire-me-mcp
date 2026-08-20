@@ -6,6 +6,10 @@
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
+    "@hire-me-mcp/career-data#build": {
+      "dependsOn": ["^build", "lint:content"],
+      "outputs": ["dist/**"]
+    },
     "dev": {
       "cache": false,
       "persistent": true
@@ -35,6 +39,10 @@
       "outputs": []
     },
     "validate": {
+      "outputs": []
+    },
+    "lint:content": {
+      "dependsOn": ["validate"],
       "outputs": []
     }
   }
