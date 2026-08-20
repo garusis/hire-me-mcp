@@ -15,8 +15,10 @@ export function SiteHeader() {
         <Link href="/" className={styles.brand}>
           hire-me-mcp
         </Link>
-        <nav aria-label="Primary">
+        <nav aria-label="Primary" className={styles.nav}>
           <Link href="/">Home</Link>
+          <Link href="/experience">Experience</Link>
+          <Link href="/projects">Projects</Link>
         </nav>
         <ThemeToggle />
       </Container>
