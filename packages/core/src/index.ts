@@ -13,6 +13,14 @@ export { findDisallowedDependencies } from "./dependency-allowlist.js";
 export type { ExperienceFilter } from "./get-experience.js";
 export { getExperience } from "./get-experience.js";
 export { getProfile, ProfileNotFoundError } from "./get-profile.js";
+export type {
+  ClaimedSkillOutcome,
+  NotClaimedGapOutcome,
+  RelatedSkillEvidence,
+  SkillEvidenceOutcome,
+  UnknownSkillOutcome,
+} from "./get-skill-evidence.js";
+export { getSkillEvidence } from "./get-skill-evidence.js";
 export type { CareerDataRepository, CareerDataset } from "./repository.js";
 export {
   createContentCareerDataRepository,

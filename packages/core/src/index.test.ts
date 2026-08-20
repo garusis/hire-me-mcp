@@ -7,6 +7,7 @@ import {
   emptyCareerDataset,
   getExperience,
   getProfile,
+  getSkillEvidence,
   search,
   searchProjects,
   slugify,
@@ -136,5 +137,24 @@ describe("public entry point", () => {
     const searchResult = searchProjects(repository, "ts");
     expect(searchResult.data.map((r) => r.project.id)).toEqual(["fixture-project"]);
     expect(searchResult.citations).toHaveLength(1);
+  });
+
+  it("re-exports getSkillEvidence, returning a claimed outcome for a fixture skill", () => {
+    const repository = createInMemoryCareerDataRepository({
+      ...emptyCareerDataset(),
+      skills: [
+        {
+          id: "typescript",
+          name: "TypeScript",
+          aliases: ["ts"],
+          category: "language",
+          proficiency: "expert",
+          evidence: [],
+        },
+      ],
+    });
+
+    const result = getSkillEvidence(repository, "ts");
+    expect(result.data.kind).toBe("claimed");
   });
 });

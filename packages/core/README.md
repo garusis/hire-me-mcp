@@ -21,10 +21,10 @@ Next.js-shaped by the time they reach here.
   human-readable label per entity type. It throws `UnknownEntityError` — naming the type and id —
   rather than building a citation that points at nothing. See `src/citation-builder.ts`.
 
-- **The domain services.** `getProfile()` and `getExperience(filter?)` (#54), and now
-  `searchProjects(query, options?)` (#55), are the query services built on the spine above.
-  `getSkillEvidence` (#56) will follow the same shape and reuse `searchProjects`'s underlying search
-  module. See "Domain services" below for their signatures and documented semantics.
+- **The domain services.** `getProfile()`, `getExperience(filter?)` (#54), `searchProjects(query,
+  options?)` (#55), and now `getSkillEvidence(skill)` (#56) — the four query services built on the
+  spine above and the complete public API of this package. See "Domain services" below for their
+  signatures and documented semantics.
 
 ## Domain services
 
@@ -152,8 +152,86 @@ this package's entry point alongside the domain services:
   the caller-supplied field weights on each `SearchDocument`. Knows nothing about projects, skills,
   or any other domain shape.
 
-No individual query service beyond `getProfile`, `getExperience` and `searchProjects` ships from
-this package yet — `getSkillEvidence` is #56.
+### `getSkillEvidence(repository: CareerDataRepository, skill: string): DomainResult<SkillEvidenceOutcome>`
+
+The service that makes the project honest — it closes epic #2. Resolves `skill` — a canonical
+name, or any alias/case/punctuation/diacritic variant of one, via the same `./search/`
+alias-resolution module `searchProjects` uses (no fuzzy or semantic matching) — against **both**
+the dataset's claimed `Skill`s and its explicit `Gap`s, and returns a `DomainResult` wrapping
+`SkillEvidenceOutcome`, a discriminated union on a `kind` field with **exactly three** members:
+
+```ts
+type SkillEvidenceOutcome =
+  | { kind: "claimed"; skill: Skill; evidence: Citation[] }
+  | { kind: "not-claimed"; gap: Gap; relatedSkills: RelatedSkillEvidence[] }
+  | { kind: "unknown"; term: string };
+
+interface RelatedSkillEvidence {
+  skill: Skill;
+  evidence: Citation[];
+}
+```
+
+- **`claimed`** — `skill` resolves to a claimed `Skill` record (id, name, aliases, category,
+  proficiency, and its authored `evidence`). `evidence` is that skill's evidence citations,
+  resolved fresh against the repository's current dataset via `buildCitation` (so a stale label on
+  the content record can never leak through, and a dangling citation throws
+  `UnknownEntityError` rather than being silently returned). `result.citations` is exactly this
+  `evidence` array.
+
+- **`not-claimed`** — `skill` resolves to a `Gap` instead of a `Skill`. This is the locked
+  behavior the whole gap-discipline data model (#47, #50, #51) exists for: a term Marcos has
+  deliberately not claimed **never** returns `claimed`, and never returns an empty/silently-missing
+  result that a downstream model could paper over. `gap.statement` is the authored content's own
+  string, passed straight through — **byte-identical**, never synthesized, reworded, or
+  summarized. `relatedSkills` resolves the gap's `relatedSkills` ids to their real `Skill` records,
+  each paired with its own resolved evidence citations, so a caller can render "here's the closest
+  thing he has done" without a second lookup. `result.citations` is a citation to the gap entity
+  itself, followed by every resolved related skill's evidence citations, in order.
+
+- **`unknown`** — `skill` resolves to neither a claimed `Skill` nor a recorded `Gap`. `term` is the
+  original input string, unmodified. This is a distinct, documented "no information" outcome —
+  never conflated with `not-claimed` (which means "explicitly recorded as not done") or with an
+  empty `claimed` result. `result.citations` is `[]`.
+
+Skills are checked before gaps; the content lint rule `no-claim-gap-collision` (#51) guarantees a
+Skill and a Gap never share a resolvable name/alias, so this ordering never changes the outcome for
+valid content — skills simply take priority as the more specific claim. `getSkillEvidence` never
+throws for an unrecognized term; it only propagates `UnknownEntityError` in the (lint-prevented,
+so real-content-unreachable) case of a citation that fails to resolve against the dataset.
+
+**Determinism:** alias resolution and evidence-citation building are both pure lookups against the
+repository's dataset — no randomness, no wall-clock dependency. The same `skill` string against the
+same dataset, called any number of times, returns byte-identical output.
+
+## The response envelope in detail
+
+Every domain service above returns the same `DomainResult<T>` shape:
+
+```ts
+interface DomainResult<T> {
+  data: T;
+  citations: Citation[];
+}
+
+interface Citation {
+  entityType: "profile" | "experience" | "project" | "skill" | "gap" | "education" | "writing";
+  entityId: string;
+  label: string;
+  fragment?: string;
+}
+```
+
+`data` is the service's own result shape (a single record, an array, or — for `getSkillEvidence` —
+the `SkillEvidenceOutcome` union above). `citations` is the flat list of machine-readable pointers
+backing `data`, always present (even as `[]`) so a caller can render sources without parsing prose,
+and never a citation to an entity that doesn't exist in the dataset — `buildCitation` throws
+`UnknownEntityError`, naming the type and id, rather than building one that points at nothing.
+
+No individual query service beyond `getProfile`, `getExperience`, `searchProjects`, and
+`getSkillEvidence` ships from this package — these four are the complete public API for now; a
+future service (or the epic #6 semantic-retrieval variant of `getSkillEvidence`) is additive, not
+a replacement.
 
 ## The framework-free boundary — what may and may not be imported
 
