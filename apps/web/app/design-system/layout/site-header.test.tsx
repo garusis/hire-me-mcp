@@ -22,4 +22,12 @@ describe("SiteHeader", () => {
     render(<SiteHeader />);
     expect(screen.getByRole("navigation", { name: /primary/i })).toBeDefined();
   });
+
+  it("adds Experience and Projects links to the primary navigation alongside Home", () => {
+    render(<SiteHeader />);
+    const nav = screen.getByRole("navigation", { name: /primary/i });
+    expect(nav.querySelector('a[href="/"]')).not.toBeNull();
+    expect(nav.querySelector('a[href="/experience"]')).not.toBeNull();
+    expect(nav.querySelector('a[href="/projects"]')).not.toBeNull();
+  });
 });

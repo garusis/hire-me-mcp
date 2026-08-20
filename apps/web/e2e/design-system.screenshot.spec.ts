@@ -28,12 +28,24 @@ for (const viewport of VIEWPORTS) {
       await expect(
         page.getByRole("heading", { level: 1, name: "Marcos Javier Alvarez" }),
       ).toBeVisible();
-      // Each section of the home page is wrapped in its own RevealOnScroll —
-      // scroll to the bottom first so every wrapper's IntersectionObserver
-      // fires (below-the-fold sections never reveal otherwise), then wait
-      // for all of them to flip to the revealed state before capturing,
-      // otherwise the full-page screenshot catches mid-fade content.
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      // Each section of the home page is wrapped in its own RevealOnScroll,
+      // whose IntersectionObserver only fires for geometry visible at the
+      // *current* scroll position — a single jump straight to the bottom
+      // (as opposed to scrolling through) only reveals whatever section
+      // happens to be in view at the final position, skipping every section
+      // scrolled past in between. #28 grew the home page to several stacked
+      // sections, so this now has to walk down in viewport-sized steps
+      // (pausing briefly at each) to actually pass every wrapper through the
+      // viewport, then wait for all of them to flip to the revealed state
+      // before capturing, otherwise the full-page screenshot catches
+      // mid-fade content.
+      await page.evaluate(async (stepHeight) => {
+        for (let y = 0; y <= document.body.scrollHeight; y += stepHeight) {
+          window.scrollTo(0, y);
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        window.scrollTo(0, document.body.scrollHeight);
+      }, viewport.height);
       await expect(page.locator('[data-reveal="pending"]')).toHaveCount(0);
       await page.evaluate(() => window.scrollTo(0, 0));
       // Let the reveal's opacity/transform transition (--motion-duration-slow) finish.
