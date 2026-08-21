@@ -1,12 +1,22 @@
+import { EXPECTED_TOOL_NAMES } from "../../lib/mcp/tool-names";
 import { dataset, slugify } from "../helpers/dataset";
 import { expect, test } from "../helpers/fixtures";
 import { ROUTES } from "../helpers/routes";
 
 /**
- * SEO artifact checks (#58): `sitemap.xml` and `robots.txt` are reachable
- * and well-formed, every route carries a canonical tag, and the OG image
- * endpoints (default + per-entity, #44) return real images.
+ * SEO artifact checks (#58, extended by #38): `sitemap.xml` and
+ * `robots.txt` are reachable and well-formed, every route carries a
+ * canonical tag plus a full Open Graph/Twitter card set, the OG image
+ * endpoints (default + per-entity, #44) return real >=1200x630 images, and
+ * `/.well-known/mcp.json` (#38's project-convention MCP discovery
+ * descriptor — see that route's module doc for why nothing spec-defined
+ * applies to this no-auth server) matches the real tool registry.
  */
+
+/** Reads a PNG's width/height straight from its IHDR chunk (bytes 16-23 of any valid PNG), no image-parsing dependency needed. */
+function readPngDimensions(body: Buffer): { width: number; height: number } {
+  return { width: body.readUInt32BE(16), height: body.readUInt32BE(20) };
+}
 
 test("sitemap.xml is reachable and well-formed", async ({ request, baseURL }) => {
   const response = await request.get(`${baseURL}/sitemap.xml`);
@@ -40,10 +50,66 @@ for (const route of ROUTES) {
   });
 }
 
-test("the default Open Graph image endpoint returns an image", async ({ request, baseURL }) => {
+for (const route of ROUTES) {
+  test(`${route.name} renders a full Open Graph + Twitter card meta set`, async ({
+    gotoRoute,
+    page,
+  }) => {
+    await gotoRoute(route.path);
+
+    const ogTitle = page.locator('meta[property="og:title"]');
+    const ogDescription = page.locator('meta[property="og:description"]');
+    const ogUrl = page.locator('meta[property="og:url"]');
+    const ogType = page.locator('meta[property="og:type"]');
+    const ogImage = page.locator('meta[property="og:image"]');
+    const twitterCard = page.locator('meta[name="twitter:card"]');
+
+    await expect(ogTitle).toHaveCount(1);
+    await expect(ogDescription).toHaveCount(1);
+    await expect(ogUrl).toHaveCount(1);
+    await expect(ogType).toHaveCount(1);
+    await expect(ogImage).toHaveCount(1);
+    await expect(twitterCard).toHaveCount(1);
+
+    expect(await ogTitle.getAttribute("content")).not.toBe("");
+    expect(await ogDescription.getAttribute("content")).not.toBe("");
+    const url = await ogUrl.getAttribute("content");
+    expect(url, "og:url must be an absolute URL").toMatch(/^https?:\/\//);
+    expect(url).toContain(route.path === "/" ? "/" : route.path);
+    expect(await ogType.getAttribute("content")).not.toBe("");
+    expect(await ogImage.getAttribute("content"), "og:image must be an absolute URL").toMatch(
+      /^https?:\/\//,
+    );
+    expect(await twitterCard.getAttribute("content")).toBe("summary_large_image");
+  });
+}
+
+test("the default Open Graph image endpoint returns an image at least 1200x630", async ({
+  request,
+  baseURL,
+}) => {
   const response = await request.get(`${baseURL}/opengraph-image`);
   expect(response.ok()).toBe(true);
   expect(response.headers()["content-type"]).toContain("image");
+  const { width, height } = readPngDimensions(await response.body());
+  expect(width).toBeGreaterThanOrEqual(1200);
+  expect(height).toBeGreaterThanOrEqual(630);
+});
+
+test("GET /.well-known/mcp.json returns 200, application/json, and a tool list matching the real MCP tool registry", async ({
+  request,
+  baseURL,
+}) => {
+  const response = await request.get(`${baseURL}/.well-known/mcp.json`);
+  expect(response.ok()).toBe(true);
+  expect(response.headers()["content-type"]).toContain("application/json");
+
+  const body = await response.json();
+  expect(body.serverName).toBe("hire-me-mcp");
+  expect(body.transport).toBe("streamable-http");
+  expect(body.auth).toBe("none");
+  expect(body.endpointUrl).toBe(`${baseURL}/api/mcp`);
+  expect(body.tools.map((tool: { name: string }) => tool.name)).toEqual([...EXPECTED_TOOL_NAMES]);
 });
 
 test("a project's Open Graph image endpoint returns an image", async ({ request, baseURL }) => {

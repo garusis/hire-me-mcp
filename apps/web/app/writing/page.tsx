@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { WritingListItemView } from "../../src/lib/content";
 import { getProfileView, getWritingListView } from "../../src/lib/content";
+import { buildPageMetadata } from "../../src/lib/seo/page-metadata";
 import { Card } from "../design-system/primitives/card";
 import { Container } from "../design-system/primitives/container";
 import { Heading } from "../design-system/primitives/heading";
@@ -36,11 +37,7 @@ export function generateMetadata(): Metadata {
     items.length === 0
       ? `${profile.name} hasn't published any writing here yet.`
       : `${profile.name}'s writing: ${items.map((item) => item.entry.title).join(", ")}.`;
-  return {
-    title: "Writing",
-    description,
-    alternates: { canonical: "/writing" },
-  };
+  return buildPageMetadata({ title: "Writing", description, path: "/writing" });
 }
 
 /**

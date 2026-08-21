@@ -84,7 +84,8 @@ export default function Home() {
   const { profile } = profileView;
   const experience = getExperienceListView().items.slice(0, HIGHLIGHT_EXPERIENCE_COUNT);
   const projects = getProjectsListView().items.slice(0, HIGHLIGHT_PROJECT_COUNT);
-  const skills = getSkillsListView().items.slice(0, HIGHLIGHT_SKILL_COUNT);
+  const allSkills = getSkillsListView().items;
+  const skills = allSkills.slice(0, HIGHLIGHT_SKILL_COUNT);
   const [primaryContact] = profile.contacts;
 
   const endpointUrl = getMcpEndpointUrl();
@@ -99,7 +100,7 @@ export default function Home() {
 
   return (
     <>
-      <JsonLdScript data={buildPersonJsonLd(profileView)} />
+      <JsonLdScript data={buildPersonJsonLd(profileView, allSkills)} />
 
       <Section aria-labelledby="hero-heading">
         <Container>

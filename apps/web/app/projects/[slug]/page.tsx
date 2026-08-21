@@ -4,6 +4,7 @@ import { compileMDX } from "next-mdx-remote/rsc";
 import { getProfileView, getProjectDetailView, listProjectSlugs } from "../../../src/lib/content";
 import { buildProjectJsonLd } from "../../../src/lib/seo/json-ld";
 import { JsonLdScript } from "../../../src/lib/seo/json-ld-script";
+import { buildPageMetadata } from "../../../src/lib/seo/page-metadata";
 import { Badge } from "../../design-system/primitives/badge";
 import { Container } from "../../design-system/primitives/container";
 import { Heading } from "../../design-system/primitives/heading";
@@ -29,11 +30,13 @@ export async function generateMetadata({ params }: ProjectDetailPageProps): Prom
     return {};
   }
   const { project } = view.value;
-  return {
+  return buildPageMetadata({
     title: project.name,
     description: project.summary,
-    alternates: { canonical: `/projects/${slug}` },
-  };
+    path: `/projects/${slug}`,
+    type: "article",
+    image: `/projects/${slug}/opengraph-image`,
+  });
 }
 
 /**

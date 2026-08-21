@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ProfileView, ProjectListItemView, WritingListItemView } from "../content";
+import type { ProfileView, ProjectListItemView, Skill, WritingListItemView } from "../content";
 import { buildArticleJsonLd, buildPersonJsonLd, buildProjectJsonLd } from "./json-ld";
 
 const SITE_URL = "https://stub-deploy.example.com";
@@ -20,6 +20,27 @@ function profileView(): ProfileView {
       ],
     },
   };
+}
+
+function skills(): Skill[] {
+  return [
+    {
+      id: "typescript",
+      name: "TypeScript",
+      aliases: [],
+      category: "Languages",
+      proficiency: "expert",
+      evidence: [{ entityType: "project", entityId: "alpha-project", label: "Alpha Project" }],
+    },
+    {
+      id: "react",
+      name: "React",
+      aliases: [],
+      category: "Frameworks",
+      proficiency: "proficient",
+      evidence: [{ entityType: "project", entityId: "alpha-project", label: "Alpha Project" }],
+    },
+  ];
 }
 
 function projectItem(): ProjectListItemView {
@@ -58,7 +79,7 @@ function writingItem(): WritingListItemView {
 
 describe("buildPersonJsonLd", () => {
   it("builds a schema.org Person from the profile view, with every value sourced from it", () => {
-    const jsonLd = buildPersonJsonLd(profileView(), SITE_URL);
+    const jsonLd = buildPersonJsonLd(profileView(), skills(), SITE_URL);
 
     expect(jsonLd["@context"]).toBe("https://schema.org");
     expect(jsonLd["@type"]).toBe("Person");
@@ -70,17 +91,23 @@ describe("buildPersonJsonLd", () => {
       "https://github.com/ada-fixture",
       "https://mailto.example.com/ada",
     ]);
+    expect(jsonLd.knowsAbout).toEqual(["TypeScript", "React"]);
   });
 
   it("changing the stub profile changes the emitted values", () => {
     const view = profileView();
     view.profile.name = "Changed Name";
-    const jsonLd = buildPersonJsonLd(view, SITE_URL);
+    const jsonLd = buildPersonJsonLd(view, skills(), SITE_URL);
     expect(jsonLd.name).toBe("Changed Name");
   });
 
+  it("changing the stub skills list changes the emitted knowsAbout", () => {
+    const jsonLd = buildPersonJsonLd(profileView(), [skills()[0] as Skill], SITE_URL);
+    expect(jsonLd.knowsAbout).toEqual(["TypeScript"]);
+  });
+
   it("parses as valid JSON via JSON.stringify/JSON.parse round trip", () => {
-    const jsonLd = buildPersonJsonLd(profileView(), SITE_URL);
+    const jsonLd = buildPersonJsonLd(profileView(), skills(), SITE_URL);
     expect(() => JSON.parse(JSON.stringify(jsonLd))).not.toThrow();
   });
 });

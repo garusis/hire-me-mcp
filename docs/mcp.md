@@ -160,8 +160,52 @@ else (connection refused, a 5xx, or no `result` field) means the endpoint itself
 a bug worth [reporting](https://github.com/garusis/hire-me-mcp/issues/new), not a client
 misconfiguration.
 
+## Discovery: machine-readable metadata
+
+Besides this document and the `/mcp` page, the site (#38) exposes three "found without reading"
+mechanisms so agents and crawlers that never read prose still resolve the essentials. Two are
+plain web conventions; the third is explicitly **not** part of the MCP specification — see below
+for why.
+
+**JSON-LD `Person`** — the home page embeds one `<script type="application/ld+json">` block
+declaring `@type: Person` (`name`, `jobTitle`, `description`, `url`, `sameAs`, `knowsAbout`),
+generated from the career domain layer (`packages/career-data`) — never hand-typed. `sameAs` is
+the profile's public contact links; `knowsAbout` is every authored skill's name.
+
+**OpenGraph + Twitter cards** — every route sets `og:title`, `og:description`, `og:url`,
+`og:type`, `og:image` (a generated 1200x630 PNG, per route) and `twitter:card`, each sourced from
+that route's own title/description rather than a single site-wide default, so a pasted link to
+`/experience` unfurls as "Experience", not as the home page.
+
+**`GET /.well-known/mcp.json`** — a **project convention, not an MCP-spec-defined document**.
+It's a small JSON descriptor (server name, endpoint, transport, auth model, tool list) rendered
+straight from this same server's connection metadata (#17) — see
+[`apps/web/app/.well-known/mcp.json/route.ts`](../apps/web/app/.well-known/mcp.json/route.ts) for
+the implementation and its module doc for the full spec citation.
+
+### Spec-defined vs project convention
+
+The MCP specification (2025-11-25, `basic/authorization`) does define discovery documents under
+`/.well-known/` — but only for **authorization**, and only conditionally:
+
+> "Authorization is **OPTIONAL** for MCP implementations." When an MCP server *does* support it,
+> it **MUST** implement OAuth 2.0 Protected Resource Metadata ([RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728))
+> at `/.well-known/oauth-protected-resource` (root or per-endpoint path).
+
+This server's connection metadata declares `auth: "none"` — it is public, anonymous, and
+read-only, with no OAuth flow of any kind. Every "MUST" in that spec section is scoped to a
+server that *supports* authorization, so **none of it applies here**: this server correctly
+serves no `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server`, or
+`/.well-known/openid-configuration` document, because it isn't a protected resource. That's a
+deliberate absence, verified against the spec at implementation time — not an oversight.
+
+`/.well-known/mcp.json`, by contrast, lives at a path the spec neither reserves nor defines. It
+exists purely so a crawler or agent that already knows to check `/.well-known/` for *something*
+finds a small, honest, non-normative summary of this server — nothing more.
+
 ## See also
 
 - [`apps/web/README.md` § "Rate limiting"](https://github.com/garusis/hire-me-mcp/blob/main/apps/web/README.md#rate-limiting) — canonical rate-limit documentation.
 - The site's [`/mcp` page](https://hire-me-mcp-web.vercel.app/mcp) — the same setup content with a live demo transcript.
+- [`/.well-known/mcp.json`](https://hire-me-mcp-web.vercel.app/.well-known/mcp.json) — the machine-readable descriptor described in "Discovery" above.
 - Root [`README.md`](../README.md) — project overview and the "Connect your agent in one step" section.

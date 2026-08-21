@@ -8,6 +8,7 @@ import {
   getWritingListView,
   toSlug,
 } from "../../src/lib/content";
+import { buildPageMetadata } from "../../src/lib/seo/page-metadata";
 import { Badge } from "../design-system/primitives/badge";
 import { Card } from "../design-system/primitives/card";
 import { Container } from "../design-system/primitives/container";
@@ -114,11 +115,11 @@ export function generateMetadata(): Metadata {
   const { profile } = getProfileView();
   const { items } = getSkillsListView();
   const names = items.map((skill) => skill.name).join(", ");
-  return {
+  return buildPageMetadata({
     title: "Skills",
     description: `${profile.name}'s claimed skills, each with cited evidence: ${names}.`,
-    alternates: { canonical: "/skills" },
-  };
+    path: "/skills",
+  });
 }
 
 /**

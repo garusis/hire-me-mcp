@@ -163,4 +163,22 @@ describe("Writing page metadata", () => {
 
     expect(metadata.alternates?.canonical).toBe("/writing");
   });
+
+  it("sets Open Graph and Twitter card fields matching this route's own title/description, not the site-wide default (#38)", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getWritingListView.mockReturnValue(writingView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.openGraph?.title).toBe(metadata.title);
+    expect(metadata.openGraph?.description).toBe(metadata.description);
+    expect(metadata.openGraph?.url).toContain("/writing");
+    expect(metadata.openGraph).toMatchObject({ type: "website" });
+    expect(metadata.twitter).toMatchObject({
+      card: "summary_large_image",
+      title: metadata.title,
+      description: metadata.description,
+    });
+  });
 });

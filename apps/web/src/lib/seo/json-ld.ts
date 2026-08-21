@@ -8,7 +8,7 @@
  */
 
 import { getSiteUrl } from "../config/site-url";
-import type { ProfileView, ProjectListItemView, WritingListItemView } from "../content";
+import type { ProfileView, ProjectListItemView, Skill, WritingListItemView } from "../content";
 
 interface PersonRef {
   "@type": "Person";
@@ -23,6 +23,7 @@ export interface PersonJsonLd {
   description: string;
   url: string;
   sameAs: string[];
+  knowsAbout: string[];
 }
 
 export interface ProjectJsonLd {
@@ -48,8 +49,17 @@ export interface ArticleJsonLd {
 
 const CODE_HOST_PATTERN = /github\.com|gitlab\.com|bitbucket\.org/i;
 
-/** `Person` JSON-LD for the home page, built from the site's profile view. */
-export function buildPersonJsonLd(view: ProfileView, siteUrl: string = getSiteUrl()): PersonJsonLd {
+/**
+ * `Person` JSON-LD for the home page, built from the site's profile view and
+ * skills list. `knowsAbout` is every authored skill's `name`, in the content
+ * layer's own order — not a hand-picked subset, so an authored skill always
+ * shows up here without a code change.
+ */
+export function buildPersonJsonLd(
+  view: ProfileView,
+  skills: Skill[],
+  siteUrl: string = getSiteUrl(),
+): PersonJsonLd {
   const { profile } = view;
   return {
     "@context": "https://schema.org",
@@ -59,6 +69,7 @@ export function buildPersonJsonLd(view: ProfileView, siteUrl: string = getSiteUr
     description: profile.summary,
     url: siteUrl,
     sameAs: profile.contacts.map((contact) => contact.url),
+    knowsAbout: skills.map((skill) => skill.name),
   };
 }
 

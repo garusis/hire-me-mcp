@@ -137,7 +137,9 @@ protection), plus how to reproduce the Vercel deployment locally, live in
 - **[`AGENTS.md`](AGENTS.md)** — rules for any coding agent working on this codebase: test-first
   development, the canonical commands, and the three layers that enforce both.
 - **[`docs/mcp.md`](docs/mcp.md)** — the full MCP connection guide (every client, rate limits,
-  troubleshooting).
+  troubleshooting), including its **"Discovery: machine-readable metadata"** section on JSON-LD
+  `Person`, per-route OpenGraph/Twitter cards, and `/.well-known/mcp.json` — and which of those are
+  MCP-spec-defined (none, for this no-auth server) versus project convention.
 - **`/llms.txt`** — the site's own agent entry point, for a visitor who was handed the deployed URL
   rather than this repo (tracked in a sibling issue of this epic; add the link here once it ships).
 - **[Issue tracker](https://github.com/garusis/hire-me-mcp/issues)** — roadmap, open work, and

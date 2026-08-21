@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ExperienceListItemView } from "../../src/lib/content";
 import { getExperienceListView, getProfileView, getProjectsListView } from "../../src/lib/content";
+import { buildPageMetadata } from "../../src/lib/seo/page-metadata";
 import { Badge } from "../design-system/primitives/badge";
 import { Card } from "../design-system/primitives/card";
 import { Container } from "../design-system/primitives/container";
@@ -66,11 +67,11 @@ export function generateMetadata(): Metadata {
   const { profile } = getProfileView();
   const { items } = getExperienceListView();
   const companies = items.map((item) => item.entry.company).join(", ");
-  return {
+  return buildPageMetadata({
     title: "Experience",
     description: `${profile.name}'s professional experience: ${companies}.`,
-    alternates: { canonical: "/experience" },
-  };
+    path: "/experience",
+  });
 }
 
 /**

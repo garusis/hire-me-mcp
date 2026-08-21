@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ProjectListItemView } from "../../src/lib/content";
 import { getProfileView, getProjectsListView } from "../../src/lib/content";
+import { buildPageMetadata } from "../../src/lib/seo/page-metadata";
 import { cx } from "../design-system/lib/cx";
 import { Badge } from "../design-system/primitives/badge";
 import { Card } from "../design-system/primitives/card";
@@ -73,11 +74,11 @@ export function generateMetadata(): Metadata {
   const { profile } = getProfileView();
   const { items } = getProjectsListView();
   const names = items.map((item) => item.project.name).join(", ");
-  return {
+  return buildPageMetadata({
     title: "Projects",
     description: `${profile.name}'s projects: ${names}.`,
-    alternates: { canonical: "/projects" },
-  };
+    path: "/projects",
+  });
 }
 
 /**

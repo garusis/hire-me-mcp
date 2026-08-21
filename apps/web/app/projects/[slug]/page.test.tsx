@@ -163,6 +163,43 @@ describe("Project detail page metadata", () => {
     expect(metadata.description).toBe("A brand new summary.");
   });
 
+  it("sets Open Graph and Twitter card fields matching this route's own title/description, with og:type article (#38)", async () => {
+    getProjectDetailView.mockReturnValue(foundView());
+    getProfileView.mockReturnValue(profileView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: "alpha-project" }),
+    });
+
+    expect(metadata.openGraph?.title).toBe(metadata.title);
+    expect(metadata.openGraph?.description).toBe(metadata.description);
+    expect(metadata.openGraph?.url).toContain("/projects/alpha-project");
+    expect(metadata.openGraph).toMatchObject({ type: "article" });
+  });
+
+  it("points og:image/twitter:image at this project's own opengraph-image route, not the site default (regression: setting an explicit openGraph object used to silently drop the image)", async () => {
+    getProjectDetailView.mockReturnValue(foundView());
+    getProfileView.mockReturnValue(profileView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: "alpha-project" }),
+    });
+
+    expect(metadata.openGraph?.images).toEqual([
+      expect.stringContaining("/projects/alpha-project/opengraph-image"),
+    ]);
+    expect(metadata.twitter?.images).toEqual([
+      expect.stringContaining("/projects/alpha-project/opengraph-image"),
+    ]);
+    expect(metadata.twitter).toMatchObject({
+      card: "summary_large_image",
+      title: metadata.title,
+      description: metadata.description,
+    });
+  });
+
   it("returns empty metadata for an unknown slug rather than throwing", async () => {
     getProjectDetailView.mockReturnValue({ found: false, slug: "unknown-project" });
     getProfileView.mockReturnValue(profileView());
