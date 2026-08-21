@@ -44,6 +44,19 @@ The hook: nobody else's CV can be added as a tool to your AI assistant.
 
 Later: analytics on what recruiters ask, a `contact`/`book_call` tool (write action), downloadable CV generated from the data.
 
+## Add this CV to your AI assistant — #71
+
+The MCP server described below is live and public. Point any MCP-compatible assistant (Claude,
+Cursor, or another Streamable HTTP client) at:
+
+```
+https://hire-me-mcp-web.vercel.app/api/mcp
+```
+
+No API key, no OAuth, no account — the whole setup is that one URL. Full copy-paste instructions
+per client (Claude web/desktop, Claude Code, Cursor, generic), the tool reference, rate limits,
+and troubleshooting live in **[`docs/mcp.md`](docs/mcp.md)**.
+
 ## MCP endpoint — #11
 
 `apps/web` mounts a public, anonymous MCP server at `apps/web/app/api/mcp/route.ts`, served at the
@@ -82,12 +95,12 @@ stable path `/api/mcp` (locally: `http://localhost:3000/api/mcp`) using
 
 ### Rate limiting and troubleshooting
 
-Rate limiting for the public MCP endpoint is planned in a later task of epic #3
-([#39](https://github.com/garusis/hire-me-mcp/issues/39)) and will be documented here, in this
-subsection, once it ships. The `/mcp` page on the site (#43) links to this anchor rather than to a
-specific number so the link stays correct whether or not #39 has landed yet — today there is no
-rate limiting on this endpoint; if you're seeing unexpected throttling or a connection failure that
-isn't a rate limit, it's a bug, not documented behavior.
+Rate limiting for the public MCP endpoint shipped in [#39](https://github.com/garusis/hire-me-mcp/issues/39).
+The canonical documentation for the limit and the limit-exceeded response now lives in
+[`apps/web/README.md` § "Rate limiting"](apps/web/README.md#rate-limiting) — this subsection is
+kept as a stable anchor for older links, but the numbers themselves are only ever written down
+there. For full connection instructions, the tool reference, and troubleshooting, see
+[`docs/mcp.md`](docs/mcp.md) (#71).
 
 ## Workspace
 
