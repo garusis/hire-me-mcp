@@ -28,6 +28,7 @@ export async function generateMetadata({ params }: WritingDetailPageProps): Prom
     description: entry.summary,
     path: `/writing/${slug}`,
     type: "article",
+    image: `/writing/${slug}/opengraph-image`,
   });
 }
 

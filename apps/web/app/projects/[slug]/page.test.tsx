@@ -176,6 +176,23 @@ describe("Project detail page metadata", () => {
     expect(metadata.openGraph?.description).toBe(metadata.description);
     expect(metadata.openGraph?.url).toContain("/projects/alpha-project");
     expect(metadata.openGraph).toMatchObject({ type: "article" });
+  });
+
+  it("points og:image/twitter:image at this project's own opengraph-image route, not the site default (regression: setting an explicit openGraph object used to silently drop the image)", async () => {
+    getProjectDetailView.mockReturnValue(foundView());
+    getProfileView.mockReturnValue(profileView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: "alpha-project" }),
+    });
+
+    expect(metadata.openGraph?.images).toEqual([
+      expect.stringContaining("/projects/alpha-project/opengraph-image"),
+    ]);
+    expect(metadata.twitter?.images).toEqual([
+      expect.stringContaining("/projects/alpha-project/opengraph-image"),
+    ]);
     expect(metadata.twitter).toMatchObject({
       card: "summary_large_image",
       title: metadata.title,

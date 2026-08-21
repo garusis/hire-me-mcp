@@ -35,6 +35,7 @@ export async function generateMetadata({ params }: ProjectDetailPageProps): Prom
     description: project.summary,
     path: `/projects/${slug}`,
     type: "article",
+    image: `/projects/${slug}/opengraph-image`,
   });
 }
 

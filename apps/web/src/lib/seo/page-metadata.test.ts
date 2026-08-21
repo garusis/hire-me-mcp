@@ -43,7 +43,7 @@ describe("buildPageMetadata", () => {
     expect(metadata.openGraph).toMatchObject({ type: "article" });
   });
 
-  it("sets a summary_large_image Twitter card with the same title/description", () => {
+  it("sets a summary_large_image Twitter card with the same title/description/image", () => {
     const metadata = buildPageMetadata(
       { title: "Experience", description: "A stub description.", path: "/experience" },
       SITE_URL,
@@ -53,6 +53,7 @@ describe("buildPageMetadata", () => {
       card: "summary_large_image",
       title: "Experience",
       description: "A stub description.",
+      images: [`${SITE_URL}/opengraph-image`],
     });
   });
 
@@ -64,5 +65,33 @@ describe("buildPageMetadata", () => {
     });
 
     expect(metadata.openGraph?.url).toMatch(/^https?:\/\/.*\/experience$/);
+  });
+
+  it("defaults og:image to the site's default OG image endpoint, so a route without its own opengraph-image.tsx still carries an image (regression: #38's per-route openGraph object silently dropped the image Next would otherwise inherit from app/opengraph-image.tsx)", () => {
+    const metadata = buildPageMetadata(
+      { title: "Experience", description: "A stub description.", path: "/experience" },
+      SITE_URL,
+    );
+
+    expect(metadata.openGraph).toMatchObject({
+      images: [`${SITE_URL}/opengraph-image`],
+    });
+  });
+
+  it("allows overriding the OG image, e.g. to a route's own per-entity opengraph-image.tsx URL", () => {
+    const metadata = buildPageMetadata(
+      {
+        title: "Some Article",
+        description: "A stub description.",
+        path: "/writing/some-article",
+        type: "article",
+        image: "/writing/some-article/opengraph-image",
+      },
+      SITE_URL,
+    );
+
+    expect(metadata.openGraph).toMatchObject({
+      images: [`${SITE_URL}/writing/some-article/opengraph-image`],
+    });
   });
 });
