@@ -49,9 +49,11 @@ Later: analytics on what recruiters ask, a `contact`/`book_call` tool (write act
 The MCP server described below is live and public. Point any MCP-compatible assistant (Claude,
 Cursor, or another Streamable HTTP client) at:
 
+<!-- BEGIN GENERATED: mcp-endpoint-url -->
 ```
 https://hire-me-mcp-web.vercel.app/api/mcp
 ```
+<!-- END GENERATED: mcp-endpoint-url -->
 
 No API key, no OAuth, no account — the whole setup is that one URL. Full copy-paste instructions
 per client (Claude web/desktop, Claude Code, Cursor, generic), the tool reference, rate limits,

@@ -1,28 +1,26 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { checkGeneratedRegions } from "@hire-me-mcp/connect-metadata";
 import { describe, expect, it } from "vitest";
+import { computeDocsMcpRegions } from "../../lib/mcp/generate-connect";
 import { EXPECTED_TOOL_NAMES } from "../../lib/mcp/tool-names";
+import { PRODUCTION_MCP_ENDPOINT_URL } from "../../src/lib/config/site-url";
 
 /**
- * Drift guard for `docs/mcp.md` (#71): the doc is a hand-authored markdown
- * file, not generated from the tool registry the way `/mcp`'s page is
- * (`tool-catalogue.ts`, #43) — epic #7 will formalize real doc generation.
- * Until then, this test is the cheap substitute: it fails loudly if the doc
- * drifts from the two things most likely to go stale silently — the set of
- * tool names it documents, and the endpoint URL it tells people to paste.
+ * Drift guard for `docs/mcp.md` (#71 -> #17). Originally a hand-rolled
+ * regex-based substitute (see git history) written before real doc
+ * generation existed; #17 built that generation mechanism
+ * (`lib/mcp/generate-connect.ts` + `@hire-me-mcp/connect-metadata`'s marker
+ * injector) and the "generated regions match a fresh render" describe block
+ * below is now the real enforcement — the same check `generate:connect
+ * --check` runs in CI. The original assertions are kept rather than
+ * removed (protected test cases, and they're still true, covering the
+ * whole document rather than just the marked regions) but no longer need
+ * to invent their own hardcoded endpoint URL: `PRODUCTION_MCP_ENDPOINT_URL`
+ * is the same single source of truth `connection-metadata.ts` derives from.
  */
 
 const DOCS_MCP_PATH = join(__dirname, "..", "..", "..", "..", "docs", "mcp.md");
-
-/**
- * The one production MCP endpoint URL this doc should ever reference — the
- * same origin as the root README's "Live URL" (`hire-me-mcp-web.vercel.app`)
- * plus `apps/web/src/lib/config/site-url.ts`'s `MCP_ROUTE_PATH`
- * (`/api/mcp`). Hardcoded here rather than imported: this doc describes the
- * fixed production URL for a human reader, not whatever `getMcpEndpointUrl()`
- * resolves to in a given environment (which varies by preview deploy).
- */
-const PRODUCTION_MCP_ENDPOINT_URL = "https://hire-me-mcp-web.vercel.app/api/mcp";
 
 function readDocsMcp(): string {
   return readFileSync(DOCS_MCP_PATH, "utf-8");
@@ -58,5 +56,14 @@ describe("docs/mcp.md consistency (#71)", () => {
     const doc = readDocsMcp();
     expect(doc).toContain("apps/web/README.md#rate-limiting");
     expect(doc).not.toMatch(/\b60\s+requests?\b/i);
+  });
+});
+
+describe("docs/mcp.md generated regions (#17)", () => {
+  it("has no stale generated region — every marked section matches a fresh render from the real tool registry and PRODUCTION_MCP_ENDPOINT_URL", () => {
+    const doc = readDocsMcp();
+    const regions = computeDocsMcpRegions(PRODUCTION_MCP_ENDPOINT_URL);
+    const { drifted } = checkGeneratedRegions(doc, regions);
+    expect(drifted).toEqual([]);
   });
 });
