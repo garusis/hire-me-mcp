@@ -10,9 +10,10 @@ worker, or extra deploy target. `apps/web` route handlers (Node runtime) call `g
 directly, the same way they import `@hire-me-mcp/core`. No new deployable process, container, or
 HTTP surface is introduced by this package.
 
-Out of scope here (covered by later tasks in epic #5): tools/domain grounding (#64), the HTTP chat
-route, streaming, sessions, guardrails, and evals. The agent instantiated by this package has a
-real, versioned system prompt (#65 — see below) and no tools yet.
+Out of scope here (covered by later tasks in epic #5): the HTTP chat route, streaming, sessions,
+guardrails, and evals. The agent instantiated by this package has a real, versioned system prompt
+(#65 — see below) and registers the full domain-grounded tool set (#64 — see "One source of
+truth" below).
 
 ## Provider abstraction
 
@@ -56,6 +57,38 @@ ANTHROPIC_API_KEY=...
 Both bindings are exercised by the test suite using fake/injected keys and — for the agent
 itself — a stubbed AI SDK model (`MockLanguageModelV4` from `ai/test`). **Zero real model calls
 happen in this package's test suite.**
+
+## One source of truth: agent tools and the MCP server share `packages/core`
+
+`src/tools/*.ts` are **thin adapters, not a second implementation**. Each tool wraps exactly one
+`packages/core` domain service — `getProfile`, `getExperience`, `searchProjects`,
+`getSkillEvidence` — the same four functions `apps/web`'s public MCP server
+(`apps/web/lib/mcp/tools/*.ts`) wraps as its own tools. A tool's `execute` does one thing:
+validate input, call the core service, return its `DomainResult` (`{ data, citations }`)
+unmodified. **No querying, filtering, ranking, or business rule is ever reimplemented here** — if
+a tool needs new logic, that logic belongs in `packages/core`, consumed by both surfaces, never
+duplicated into this package.
+
+This is enforced mechanically, not just documented:
+
+- **`src/tools/source-boundary.ts` + `.test.ts`** scans every real `.ts` file under `src/` and
+  fails if any of them imports `@hire-me-mcp/career-data` directly, or `node:fs`/`fs` — the only
+  approved path to career content is `packages/core`'s `CareerDataRepository` seam
+  (`src/tools/repository.ts`). It also asserts each tool module imports the exact core function it
+  wraps (e.g. `get-profile.ts` must import `getProfile` from `@hire-me-mcp/core`).
+- **`apps/web/lib/mcp/tool-core-parity.test.ts`** is the drift detector for the *other* half of the
+  claim: that this package's tool set and the MCP server's tool set resolve every shared tool name
+  to the literal same `@hire-me-mcp/core` function, not two implementations that merely agree
+  today. It replaces each core function with a distinct fixture spy and proves both surfaces
+  invoke that exact spy — a private reimplementation or reimport-from-elsewhere on either side
+  makes that suite fail.
+- **`src/tools/index.test.ts` and `src/interview-agent.test.ts`** assert the full registered tool
+  set's names (`AGENT_TOOL_NAMES`) match the intended list and that `getInterviewAgent()` actually
+  registers all of them — a tool defined but never wired in is caught too.
+
+If you're adding a fifth tool: give it its own `packages/core` domain service first (with its own
+citations), then add a matching adapter here that imports it — never write the domain logic
+directly inside a `src/tools/*.ts` file.
 
 ## Public API
 
