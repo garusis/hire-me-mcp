@@ -169,6 +169,55 @@ troubleshooting section and other docs link back here rather than duplicating it
   Redis database. No credential value is ever committed to the repo or pasted into an issue/PR —
   see `.env.example` at the repo root for the (empty) placeholder entries.
 
+## Chat guardrails
+
+`/api/chat` (#67) is also a public, anonymous endpoint funded out of pocket, so it carries its own
+guardrail budget (#68) — rate limiting, conversation caps, a per-turn step cap, and
+instruction-hierarchy/tool-input hardening. Each guardrail returns a distinct machine-readable
+error code from the closed set in `apps/web/lib/chat/error-codes.ts` plus a short, fixed,
+UI-safe message — the seam #70 (the chat widget) codes its UI against.
+
+- **Per-session and per-IP rate limiting** (`apps/web/lib/chat/rate-limit.ts`) reuses the exact
+  Upstash-backed sliding-window mechanism above (#39) rather than a second stack — two limiter
+  instances, namespaced `chat-session` / `chat-ip` in the Redis key prefix
+  (`apps/web/lib/mcp/rate-limit/limiter.ts`'s `namespace` param) so their counters can never
+  collide with the MCP route's or each other's.
+  - **Session**: 20 requests / 5-minute window, keyed by the client-generated `sessionId`
+    (`session_rate_limited`). Override with `CHAT_SESSION_RATELIMIT_MAX_REQUESTS` /
+    `CHAT_SESSION_RATELIMIT_WINDOW_SECONDS`.
+  - **IP backstop**: 40 requests / 5-minute window, keyed by the same caller-IP extraction as the
+    MCP limiter (`ip_rate_limited`) — a client that rotates its `sessionId` still trips this.
+    Override with `CHAT_IP_RATELIMIT_MAX_REQUESTS` / `CHAT_IP_RATELIMIT_WINDOW_SECONDS`.
+  - Same fail-open-without-Upstash-credentials policy as the MCP limiter, and the same 429 header
+    family (`RateLimit-*` + `Retry-After`).
+- **Conversation caps**, enforced server-side in `chatRequestSchema`
+  (`apps/web/lib/chat/request-schema.ts`) regardless of what the client sends: max 50 messages per
+  request (`message_count_exceeded`), max 8,000 characters per message
+  (`message_size_exceeded`), and max 40,000 characters total across the conversation
+  (`conversation_size_exceeded`) — closing the gap where every individual message stays under its
+  own limit but the conversation as a whole doesn't.
+- **Per-turn step/tool-call cap** (`apps/web/lib/chat/agent-limits.ts`, default 8, override
+  `CHAT_AGENT_MAX_STEPS`): once a turn has taken more distinct tool calls than the budget, the
+  handler stops reading the model stream and emits a `step_limit_exceeded` error instead of
+  running the turn unbounded — enforced by the handler itself (not just Mastra's own `maxSteps`,
+  which stops silently with no client-visible error).
+- **Instruction-hierarchy hardening**: the system prompt's own redirect-policy section
+  (`packages/agent/src/prompt/sections.ts`) states the rule in words; the mechanical layer
+  (`apps/web/lib/chat/wrap-user-content.ts`) wraps every visitor message in `<user_message>` /
+  `</user_message>` delimiter tags before it reaches the model, stripping any literal tag text the
+  visitor tried to inject first, and `role: "system"` is rejected outright from the request body
+  (`chatRequestSchema`) — the system prompt is set exclusively via the agent's own `instructions`,
+  never by a client-supplied message. `apps/web/lib/chat/injection-resistance.test.ts` is the
+  documented injection-pattern table, asserted deterministically against a stubbed echo model.
+- **Tool-argument rejection**: strict, `.strict()` Zod schemas per tool (#64) reject malformed
+  arguments before the domain service ever runs; a rejection is logged
+  (`apps/web/lib/chat/logger.ts`, `errorCode: "tool_input_rejected"`) with the session id, never
+  the raw (possibly attacker-controlled) input.
+- **Implementation**: `apps/web/app/api/chat/handler.ts` runs every guardrail above, in order,
+  before the agent is ever constructed (steps #1-#4) or inside the stream's chunk loop (the step
+  cap and tool-input logging, #5, which depend on what the model does mid-turn). See that file's
+  module docs for the full order and rationale.
+
 ## Commands
 
 ```bash
