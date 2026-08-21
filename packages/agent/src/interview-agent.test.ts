@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { MissingEnvVarError } from "./config.js";
 import { getInterviewAgent } from "./interview-agent.js";
 import { PROMPT_SECTIONS, SYSTEM_PROMPT } from "./prompt/index.js";
+import { AGENT_TOOL_NAMES } from "./tools/index.js";
 
 function stubModel(text: string): MockLanguageModelV4 {
   return new MockLanguageModelV4({
@@ -46,5 +47,13 @@ describe("getInterviewAgent", () => {
     for (const section of PROMPT_SECTIONS) {
       expect(instructions).toContain(section.body);
     }
+  });
+
+  it("registers the full domain-grounded tool set — names match AGENT_TOOL_NAMES exactly", async () => {
+    const agent = getInterviewAgent({ model: stubModel("hi") });
+
+    const registeredTools = await agent.listTools();
+
+    expect(Object.keys(registeredTools).sort()).toEqual([...AGENT_TOOL_NAMES].sort());
   });
 });
