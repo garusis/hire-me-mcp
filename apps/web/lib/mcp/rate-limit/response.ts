@@ -50,3 +50,30 @@ export function buildRateLimitExceededResponse(
 
   return new Response(JSON.stringify(body), { status: 429, headers });
 }
+
+/**
+ * Tags an ALLOWED response (`with-rate-limit.ts`'s success path) with the
+ * same `RateLimit-*` header family as the 429 builder above, so a normal,
+ * under-limit caller can inspect its remaining budget instead of only ever
+ * learning about the limit once already blocked (#69's preview smoke suite
+ * asserts this on a real deployed request). Deliberately does NOT set
+ * `Retry-After` — there is nothing to retry when the request already
+ * succeeded, so that header stays reserved for the 429 case. Status, body,
+ * and every header the wrapped handler already set are preserved untouched.
+ */
+export function attachRateLimitHeaders(
+  response: Response,
+  outcome: Pick<RateLimitOutcome, "limit" | "remaining" | "reset">,
+  now: number = Date.now(),
+): Response {
+  const headers = new Headers(response.headers);
+  headers.set("RateLimit-Limit", String(outcome.limit));
+  headers.set("RateLimit-Remaining", String(Math.max(0, outcome.remaining)));
+  headers.set("RateLimit-Reset", String(retryAfterSeconds(outcome.reset, now)));
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}

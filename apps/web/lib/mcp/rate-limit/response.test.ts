@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRateLimitExceededResponse } from "./response";
+import { attachRateLimitHeaders, buildRateLimitExceededResponse } from "./response";
 
 describe("buildRateLimitExceededResponse", () => {
   it("returns HTTP 429 with RateLimit-* and Retry-After headers derived from the outcome", async () => {
@@ -42,5 +42,40 @@ describe("buildRateLimitExceededResponse", () => {
     expect(body.error.message.toLowerCase()).not.toContain("stack");
     expect(body.error.message).not.toMatch(/\/Users\/|\/home\/|node_modules/);
     expect(body.error.message).not.toMatch(/UPSTASH|REDIS_REST_TOKEN/i);
+  });
+});
+
+describe("attachRateLimitHeaders", () => {
+  it("adds RateLimit-* headers derived from the outcome to an allowed response, preserving status/body/existing headers", async () => {
+    const now = Date.now();
+    const inner = new Response("ok", { status: 200, headers: { "X-Test": "1" } });
+
+    const response = attachRateLimitHeaders(
+      inner,
+      { limit: 60, remaining: 59, reset: now + 30_000 },
+      now,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Test")).toBe("1");
+    expect(response.headers.get("RateLimit-Limit")).toBe("60");
+    expect(response.headers.get("RateLimit-Remaining")).toBe("59");
+    expect(response.headers.get("RateLimit-Reset")).toBe("30");
+    // Retry-After is only meaningful once a caller is actually blocked
+    // (buildRateLimitExceededResponse) — an allowed response has nothing to
+    // retry, so this header is deliberately not added here.
+    expect(response.headers.get("Retry-After")).toBeNull();
+    await expect(response.text()).resolves.toBe("ok");
+  });
+
+  it("clamps a negative remaining to 0, same as the 429 builder", () => {
+    const now = Date.now();
+    const response = attachRateLimitHeaders(
+      new Response("ok"),
+      { limit: 60, remaining: -3, reset: now + 1000 },
+      now,
+    );
+
+    expect(response.headers.get("RateLimit-Remaining")).toBe("0");
   });
 });

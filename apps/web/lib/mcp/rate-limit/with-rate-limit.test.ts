@@ -33,7 +33,7 @@ describe("withRateLimit", () => {
     vi.restoreAllMocks();
   });
 
-  it("passes an under-limit request through to the wrapped handler unchanged", async () => {
+  it("passes an under-limit request's status/body/existing headers through unchanged, tagged with RateLimit-* headers (#69: a normal request must carry sane, inspectable rate-limit headers, not just the 429 path)", async () => {
     const limiter = createFakeLimiter(5, 60_000);
     const innerResponse = new Response("ok", { status: 200, headers: { "X-Test": "1" } });
     const handler = vi.fn(async () => innerResponse);
@@ -42,9 +42,15 @@ describe("withRateLimit", () => {
     const response = await wrapped(makeRequest());
 
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(response).toBe(innerResponse);
     expect(response.status).toBe(200);
     expect(response.headers.get("X-Test")).toBe("1");
+    await expect(response.text()).resolves.toBe("ok");
+    expect(response.headers.get("RateLimit-Limit")).toBe("5");
+    expect(response.headers.get("RateLimit-Remaining")).toBe("4");
+    expect(response.headers.get("RateLimit-Reset")).toBeTruthy();
+    // An allowed response has nothing to retry, so Retry-After (only
+    // meaningful once actually blocked) is deliberately absent here.
+    expect(response.headers.get("Retry-After")).toBeNull();
   });
 
   it("returns a 429 with headers and a parseable body once a low limit is exceeded, without calling the handler", async () => {
@@ -116,6 +122,10 @@ describe("withRateLimit", () => {
 
     expect(response).toBe(innerResponse);
     expect(warnSpy).toHaveBeenCalled();
+    // No outcome was ever obtained (the limiter threw), so there's nothing
+    // to derive RateLimit-* headers from — the response passes through with
+    // no rate-limit headers at all, same as before this behavior existed.
+    expect(response.headers.get("RateLimit-Limit")).toBeNull();
   });
 
   it("uses identifyCaller's precedence to key the limiter", async () => {
