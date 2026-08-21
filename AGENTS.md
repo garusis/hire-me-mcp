@@ -1,5 +1,67 @@
 # AGENTS.md
 
+This file has two audiences, clearly separated below: an agent **exploring** this repo (a
+recruiter's assistant, a curious visitor, anything just answering questions about the project) and
+an agent **contributing code** to it (under this project's TDD rules). Read the section that
+matches what you're doing — the orientation layer below is prose to help you answer questions
+quickly, not a rulebook, and the contributor rules after the divider are the opposite.
+
+## If you are just exploring this repo
+
+**What this is.** `hire-me-mcp` is Marcos Alvarez's portfolio built as a queryable API instead of a
+static page: one Zod-typed body of real career data (profile, work history, projects, skills)
+backs a portfolio site, an embedded chat where visitors can "interview" an AI agent grounded in
+that data, and a public, anonymous Model Context Protocol (MCP) server that any MCP-compatible
+assistant can connect to directly and query with citations back to the source record.
+
+### Key directories
+
+| Path | What's there |
+| --- | --- |
+| `packages/career-data/content/` | Career data source of truth — profile, experience, skills, projects, and gaps as Zod-validated JSON/MDX. Everything else derives from this. |
+| `packages/core/` | Framework-free domain layer — the repository and search engine over `career-data`, and the domain services (`get-profile`, `get-experience`, `search-projects`, `get-skill-evidence`) every interface below calls. |
+| `packages/agent/` | The embedded Mastra interview agent (system prompt, model provider) that powers the on-site chat, plus its eval suite. |
+| `apps/web/app/api/mcp/`, `apps/web/lib/mcp/` | The MCP tool implementations — registration, citation/error handling, and rate limiting that expose `packages/core`'s domain services as public MCP tools. |
+| `apps/web/app/` | The Next.js 15 App Router site itself — portfolio pages, the embedded chat UI, and the MCP route above. |
+| `apps/web/e2e/`, `packages/agent/src/evals/` | Tests that exercise the whole stack rather than a single unit: Playwright end-to-end specs and the Mastra eval suite that grades the chat agent's groundedness. |
+
+(Unit tests are co-located next to the source they cover throughout the repo — see
+["If you are contributing code"](#if-you-are-contributing-code) below for that convention.)
+
+### Read this first, in order
+
+1. This section — you're already here.
+2. [`README.md`](README.md) — the pitch, and the "Add this CV to your AI assistant" section.
+3. [`docs/mcp.md`](docs/mcp.md) — the canonical MCP connection guide: per-client setup, the tool
+   reference, rate limits, and troubleshooting.
+4. `packages/career-data/content/` — the real data everything downstream is grounded in and cited
+   against.
+5. `packages/core/src/` — the domain services that read that data.
+6. `apps/web/app/api/mcp/route.ts` and `apps/web/lib/mcp/` — how those services become MCP tools.
+
+### Try this first
+
+Don't just read the code — talk to it. Connect any MCP-capable client (Claude, Cursor, or another
+Streamable HTTP client) to the live server using the copy-paste snippets in README's
+["Add this CV to your AI assistant"](README.md) section (the single place those snippets are
+generated from, per #17) or the fuller [`docs/mcp.md`](docs/mcp.md), then ask something like *"Has
+Marcos worked with event-driven architectures? Show me the evidence."* No API key, OAuth, or
+account is required. If you'd rather watch than connect, the live `/mcp` page linked from both docs
+has a demo transcript.
+
+### How the pieces relate
+
+One domain model, three interfaces. `packages/career-data` is the data; `packages/core` is the
+single domain layer that reads it and produces cited answers. Three separate front doors call that
+same domain layer and never re-implement it: the portfolio site (`apps/web/app`), the embedded chat
+agent (`packages/agent`, mounted into `apps/web`), and the public MCP server
+(`apps/web/app/api/mcp`). Whichever interface you're looking at, an answer to "has he done X"
+always traces back through `packages/core` to a citation in `packages/career-data/content`.
+
+---
+
+## If you are contributing code
+
 Instructions for Codex and any other coding agent working in this repo. Claude Code additionally
 enforces the same rules mechanically via `.claude/hooks` — see "Three layers of enforcement"
 below for why both exist and why bypassing one still fails at the next.
