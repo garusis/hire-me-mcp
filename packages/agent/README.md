@@ -159,3 +159,139 @@ key, to prove the binding works end-to-end beyond the mocked test suite. It is n
 ```bash
 pnpm --filter @hire-me-mcp/agent smoke
 ```
+
+## Eval suite (#72)
+
+`src/evals/` is the evidence behind this project's central honesty claim: a runnable suite that
+measures whether the agent actually behaves, not just whether its prompt reads well.
+
+**Single command:**
+
+```bash
+pnpm --filter @hire-me-mcp/agent eval:agent
+```
+
+This makes **real Gemini calls** against the real agent (`getInterviewAgent()`), using the local
+`.env`'s `GOOGLE_GENERATIVE_AI_API_KEY` — same provider/model resolution as the rest of this
+package, no separate credential. It is not run by `pnpm turbo test`/CI (CI wiring is #73's job) —
+invoke it manually, the same "one-off, not in CI" posture as `smoke.ts` above.
+
+### Three scorers, zero model calls of their own
+
+`src/evals/scorers/` — `groundedness.ts`, `gap-honesty.ts`, `relevance.ts` — are all **pure,
+deterministic functions**: no judge model, no I/O. Each takes a captured transcript (`question`,
+`answer`, the citations actually returned by tool calls that run) and returns a `{ score, reason }`
+in `[0, 1]`.
+
+- **Groundedness** cross-checks every `[cite:...]` marker in the answer
+  (`../citations.ts`'s `parseCitations`) against the citations the run's tool calls actually
+  returned, AND checks that sentences reading as factual experience claims carry a citation at
+  all. Fabricated or mismatched citations, and uncited factual claims, both lower the score.
+- **Gap honesty** scores BOTH directions the system prompt's gap discipline can be gamed on: a
+  `"gap"`-direction case (a not-claimed skill) must get an honest "he hasn't done X; closest
+  evidence is Y" answer, not a fabricated claim; a `"claimed"`-direction case (a skill the tools DO
+  support) must get an engaged, cited answer, not an over-refusal. Scoring only one direction would
+  let an agent max out the metric by refusing everything.
+- **Relevance** is a keyword-overlap check: does the answer engage the question's own terms? An
+  off-topic question's *correct* answer (a brief redirect) is expected to score LOW here — that's
+  the dataset's off-topic category working as intended, not a scorer bug.
+
+Why function-mode scorers instead of Mastra's judge-model `createScorer` prompt-object steps
+(`@mastra/core/evals`, verified against the installed 1.61.0 docs bundle)? Two reasons: (1) a judge
+call would double- or triple the real-model spend this suite's own budget cap is trying to bound,
+for scoring logic that's mechanically checkable without one; (2) "deterministic scorer unit tests
+... make no model calls" is an explicit acceptance criterion — a judge-backed scorer can't clear
+that bar. `createScorer`'s function-mode step contract shaped these modules' `{ run } => score`
+signature even though the scorers aren't built with the factory itself.
+
+### Dataset (`src/evals/dataset/`)
+
+`cases.ts` is a small, curated, version-controlled dataset — every question targets a fact already
+published through `packages/career-data/content/*` (`profile.json`, `skills.json`, `gaps.json`);
+`schema.ts` (Zod) validates each case's shape and rejects a category/gap-honesty-direction mismatch
+(a `"grounded"` case must probe `"claimed"`, a `"gap"` case must probe `"gap"`) — a malformed case
+fails a test, not a silent skip. Categories:
+
+| Category     | What it probes                                                          |
+| ------------ | ------------------------------------------------------------------------ |
+| `grounded`   | A claimed skill/experience — must answer, cited, without over-refusing.  |
+| `gap`        | A not-claimed skill (from `gaps.json`) — must state the gap plainly.     |
+| `off-topic`  | Unrelated to the candidate's background — expects a brief redirect.      |
+| `injection`  | A prompt-override/system-prompt-extraction attempt.                      |
+
+**Adding a case:** add an entry to `EVAL_CASES` in `cases.ts` with a kebab-case `id`, the right
+`category`/`gapHonestyDirection` pair, a `question`, and a `notes` line naming the exact
+`packages/career-data/content` file the expected answer is grounded in. `cases.test.ts` will fail
+loudly if the new case is malformed, duplicates an id, or looks like it might carry private data
+(email addresses, phone-like digit runs) — this dataset is public-facts-only by construction.
+
+### Budget cap (`src/evals/budget.ts`) — mandatory, not best-effort
+
+The runner enforces a case-count cap (`EVAL_MAX_CASES`, default 8 — a slice of the dataset, not an
+error) and a token/cost cap (`EVAL_MAX_TOTAL_TOKENS`/`EVAL_MAX_COST_USD`) checked after every case's
+usage is tallied. Crossing either **throws `BudgetExceededError` and stops the run immediately** —
+no further cases run, no silently-truncated "success". Cost is estimated from a small, documented,
+approximate per-model pricing table; since the project's default provider is Gemini free tier, a
+real run's actual dollar cost is $0 today — the cost cap is a safety net against a future paid
+provider switch, not a live pricing feed. A conservative `EVAL_RPM_LIMIT` (default 10) throttles
+between real calls so a default run stays comfortably under Gemini free tier's ~10-15 RPM ceiling.
+
+### Thresholds and verdict (`src/evals/thresholds.ts`)
+
+Pass/fail thresholds per scorer aggregate are committed constants, each with an inline rationale
+comment — a threshold change is a reviewable diff, not a hidden runtime config. The runner exits
+non-zero (`process.exitCode = 1`) when any aggregate falls below its threshold.
+
+### Report
+
+Every run writes a machine-readable JSON report (`EVAL_REPORT_PATH`, default
+`packages/agent/eval-report.json`, gitignored) with per-case scores, per-scorer aggregates,
+`PROMPT_VERSION` (so a result is always attributable to the exact prompt content it ran against),
+the resolved model id, and total token/cost usage — plus a human-readable summary on stdout.
+
+### Real-run results (first budget-capped run against production code)
+
+This suite was run for real against `getInterviewAgent()` with the local `.env`'s
+`GOOGLE_GENERATIVE_AI_API_KEY` while building this task (#72), budget-capped to a handful of
+cases. The run confirmed the plumbing end-to-end against the live provider — a real
+`agent.generate()` call, real tool execution, real citation extraction off `toolResults`, and,
+critically, **the budget cap firing for real**: a 3-case attempt was correctly aborted mid-run with
+`BudgetExceededError: Eval token budget exceeded: 34055 total token(s) used, max is 20000` after
+its second case — proof the "abort loudly rather than silently spend" requirement holds against
+real, unpredictable token usage, not just the injected-mock unit test.
+
+**A full-dataset aggregate report could not be produced during this task**, and this is reported
+honestly rather than papered over: every subsequent attempt (raising the token/cost caps, dropping
+to a single case) hit `429 RESOURCE_EXHAUSTED` — `generativelanguage.googleapis.com/generate_content_free_tier_requests`,
+`quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier`, `quotaValue: 20` — the Gemini free
+tier's **daily** request quota for `gemini-3.6-flash` on this project (shared with the live
+production chat feature and this same task's own earlier smoke/debug calls) was already exhausted
+for the day. An 8-attempt, 30-second-interval retry loop over ~4 minutes never saw it clear.
+
+This is a real finding, not a suite bug: the "~10-15 RPM" free-tier guidance this task started from
+undersold the actual binding constraint — a **20-requests-per-day** ceiling per project per model,
+tight enough that this suite's own default case cap (8, each case potentially costing 1-3 provider
+calls for tool-using turns) can exhaust an entire day's quota by itself, before counting production
+traffic on the same key. Two consequences documented here rather than hidden:
+
+1. **`EVAL_THRESHOLDS` in `./thresholds.ts` are placeholders, not yet calibrated against a real
+   full-dataset aggregate** — the numbers there are deliberately conservative starting points with
+   documented rationale, but this task could not follow through on "adjust to reflect current
+   honest reality with a margin" because no full real-run aggregate exists yet to calibrate
+   against. Recalibrating them against a real run (once quota allows, or against a paid/alternate
+   provider — `CHAT_PROVIDER=anthropic` is already wired, see the provider table above) is
+   follow-up work, not silently deferred: this paragraph is that record.
+2. **A dedicated Google Cloud project/API key for eval runs**, separate from the production chat
+   key, would decouple this suite's budget from production traffic — worth raising for #73 (CI
+   wiring), where a scheduled or PR-triggered run competing with live traffic for the same 20/day
+   ceiling would be a real operational risk, not just an inconvenience during development.
+
+### Env knobs
+
+| Env var                 | Purpose                                              | Default                  |
+| ------------------------ | ----------------------------------------------------- | ------------------------- |
+| `EVAL_MAX_CASES`         | Max dataset cases run this invocation.                | `8`                       |
+| `EVAL_MAX_TOTAL_TOKENS`  | Max cumulative tokens before the run aborts.          | `60000`                   |
+| `EVAL_MAX_COST_USD`      | Max estimated USD cost before the run aborts.         | `0.5`                     |
+| `EVAL_RPM_LIMIT`         | Requests-per-minute throttle between real calls.      | `10`                      |
+| `EVAL_REPORT_PATH`       | Where the JSON report is written.                     | `eval-report.json`        |

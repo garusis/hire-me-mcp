@@ -33,6 +33,9 @@ pnpm-debug.log*
 # Testing
 coverage/
 
+# Eval suite (#72) report artifact — generated per-run, never committed.
+packages/agent/eval-report.json
+
 # Playwright
 /test-results/
 /playwright-report/
