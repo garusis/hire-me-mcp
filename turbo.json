@@ -44,6 +44,15 @@
     "lint:content": {
       "dependsOn": ["validate"],
       "outputs": []
+    },
+    "generate:connect": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": []
+    },
+    "generate:connect:check": {
+      "dependsOn": ["^build"],
+      "outputs": []
     }
   }
 }

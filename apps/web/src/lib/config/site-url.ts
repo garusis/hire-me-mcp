@@ -31,6 +31,22 @@
 /** The MCP server's mounted path — must match `apps/web/app/api/mcp/route.ts`. */
 export const MCP_ROUTE_PATH = "/api/mcp";
 
+/**
+ * The one hardcoded production origin in the repo (#17) — every
+ * connection-metadata surface (`apps/web/lib/mcp/connection-metadata.ts`,
+ * and through it `docs/mcp.md`'s and the root `README.md`'s generated
+ * regions) derives the fixed production MCP endpoint URL from this
+ * constant plus `MCP_ROUTE_PATH`, rather than re-typing the domain. This
+ * is deliberately distinct from `getSiteUrl()`, which resolves per-deploy
+ * (production, preview, or local) from environment variables — the
+ * generator that writes docs runs outside any Vercel deploy context, so it
+ * needs a value that doesn't depend on `VERCEL_ENV` being set at all.
+ */
+export const PRODUCTION_SITE_URL = "https://hire-me-mcp-web.vercel.app";
+
+/** The fixed production MCP endpoint URL — `PRODUCTION_SITE_URL` + `MCP_ROUTE_PATH`. */
+export const PRODUCTION_MCP_ENDPOINT_URL = `${PRODUCTION_SITE_URL}${MCP_ROUTE_PATH}`;
+
 function stripTrailingSlash(url: string): string {
   return url.endsWith("/") ? url.slice(0, -1) : url;
 }

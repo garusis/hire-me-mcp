@@ -28,7 +28,9 @@
     "typecheck": "turbo run typecheck",
     "validate": "turbo run validate",
     "lint:content": "turbo run lint:content",
-    "validate:lefthook": "node scripts/lefthook/validate-config.mjs"
+    "validate:lefthook": "node scripts/lefthook/validate-config.mjs",
+    "generate:connect": "turbo run generate:connect --filter=@hire-me-mcp/web",
+    "generate:connect:check": "turbo run generate:connect:check --filter=@hire-me-mcp/web"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

@@ -20,9 +20,11 @@ a live demo transcript.
 
 The public production endpoint, Streamable HTTP transport, no authentication required:
 
+<!-- BEGIN GENERATED: mcp-endpoint-url -->
 ```
 https://hire-me-mcp-web.vercel.app/api/mcp
 ```
+<!-- END GENERATED: mcp-endpoint-url -->
 
 That URL is defined once, right above — every snippet in this document that needs it (for
 genuine copy-paste use in a client config) uses this exact string. If you ever see a different
@@ -53,9 +55,11 @@ https://hire-me-mcp-web.vercel.app/api/mcp
 
 Run from a terminal with the Claude Code CLI installed:
 
+<!-- BEGIN GENERATED: mcp-claude-code-snippet -->
 ```bash
 claude mcp add --transport http hire-me-mcp https://hire-me-mcp-web.vercel.app/api/mcp
 ```
+<!-- END GENERATED: mcp-claude-code-snippet -->
 
 ### Cursor
 
@@ -63,6 +67,7 @@ claude mcp add --transport http hire-me-mcp https://hire-me-mcp-web.vercel.app/a
 
 Add this to `.cursor/mcp.json` (project-level) or `~/.cursor/mcp.json` (global):
 
+<!-- BEGIN GENERATED: mcp-cursor-vscode-snippet -->
 ```json
 {
   "mcpServers": {
@@ -72,6 +77,7 @@ Add this to `.cursor/mcp.json` (project-level) or `~/.cursor/mcp.json` (global):
   }
 }
 ```
+<!-- END GENERATED: mcp-cursor-vscode-snippet -->
 
 No `type` field is required for a remote HTTP/streamable-HTTP server.
 
@@ -98,12 +104,14 @@ Every tool response includes citations back to the specific profile, role, or pr
 was drawn from — an assistant relaying an answer can (and should) point to that source rather
 than asserting it from nowhere.
 
+<!-- BEGIN GENERATED: mcp-tool-table -->
 | Tool | What it answers | Example question |
 | --- | --- | --- |
-| `get-profile` | Marcos's single profile record — name, headline, location, availability, and a short bio. | "Who is Marcos Alvarez, and is he currently open to new roles?" |
-| `get-experience` | Work history, optionally filtered by company, technology, date range, or current/past status. | "What has Marcos worked on since 2022? Walk me through his recent roles." |
-| `search-projects` | Ranked keyword/tag search over his project portfolio. | "Show me projects where Marcos used TypeScript or Kubernetes." |
-| `get-skill-evidence` | Whether a specific named skill or technology is claimed, with supporting evidence, an honest gap, or "unknown" if it doesn't match anything tracked. | "Has Marcos worked with event-driven architectures? Show me the evidence." |
+| `get-profile` | Returns Marcos Alvarez's single profile record — name, headline, location, availability and a short bio — as one object, with citations backing it. Use this to answer 'who is this person' or 'what is their current availability/location' at a glance. Do not use it for role-by-role work history (use get-experience), specific project details (use search-projects), or to check whether a particular skill or technology is claimed (use get-skill-evidence). Takes no input. There is no 'no result' outcome in normal operation — this server's dataset always has exactly one profile. | "Who is Marcos Alvarez, and is he currently open to new roles?" |
+| `get-experience` | Returns every entry from Marcos Alvarez's work history matching an optional structured filter — company, technology tags, a YYYY-MM date range, and current/past status — as a list ordered most recent first, each entry with a citation. Use this to answer 'what did they do at company X', 'what did they work on in year Y', or 'what are they doing now'. Called with no filter fields, it returns the full history. Do not use it for the single profile summary (use get-profile), to search project descriptions by keyword (use search-projects), or to check whether one named skill is claimed (use get-skill-evidence). A filter matching no roles returns a successful result with an empty list, not an error. | "What has Marcos worked on since 2022? Walk me through his recent roles." |
+| `search-projects` | Searches Marcos Alvarez's project portfolio by keyword and/or technology tag and returns ranked matches, each with a relevance score, a matched-field explanation, and a citation. Matching is deterministic keyword/tag search against project names, summaries, bodies and tech tags — there is no semantic or embedding-based understanding of the query today. Use this when asked to find or describe specific projects, e.g. 'show me projects that used React' or 'what did they build with Kubernetes'. Do not use it for a chronological work history (use get-experience) or to check whether a skill is claimed at all, evidence or gap (use get-skill-evidence). A query matching no projects returns a successful result with an empty list, not an error; an empty or whitespace-only query behaves the same way. | "Show me projects where Marcos used TypeScript or Kubernetes." |
+| `get-skill-evidence` | Looks up a single named skill or technology and reports one of three honest outcomes: 'claimed' (the skill with its supporting evidence), 'not-claimed' (an explicit, acknowledged gap with its own statement and related skills), or 'unknown' (the term matches neither). Use this when asked 'do you know X' or 'have you worked with Y' about one specific technology. Do not use it to browse the full skill list (there is no such tool in this server) or to search project descriptions for a keyword (use search-projects instead), and it is not a substitute for get-experience when the question is about a role or company rather than a single skill. A 'not-claimed' or 'unknown' result is a normal, successful answer, not an error — relay it honestly rather than retrying or hallucinating around it. | "Has Marcos worked with event-driven architectures? Show me the evidence." |
+<!-- END GENERATED: mcp-tool-table -->
 
 (A fifth tool, `ping`, exists purely as a connectivity diagnostic — it returns `pong` and has no
 dependency on career data.)
@@ -138,12 +146,14 @@ connection problem.
 **How to check the endpoint is up.**
 Run a raw JSON-RPC `initialize` call against it:
 
+<!-- BEGIN GENERATED: mcp-curl-jsonrpc-snippet -->
 ```bash
 curl -s https://hire-me-mcp-web.vercel.app/api/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"healthcheck","version":"1.0"}}}'
 ```
+<!-- END GENERATED: mcp-curl-jsonrpc-snippet -->
 
 A healthy endpoint replies `HTTP 200` with a `result.serverInfo.name` of `"hire-me-mcp"`. Anything
 else (connection refused, a 5xx, or no `result` field) means the endpoint itself is down — that's

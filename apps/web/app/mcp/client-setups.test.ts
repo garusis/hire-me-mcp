@@ -1,4 +1,6 @@
+import { renderClaudeCodeSnippet, renderMcpServersJson } from "@hire-me-mcp/connect-metadata";
 import { describe, expect, it } from "vitest";
+import { buildConnectionMetadata } from "../../lib/mcp/connection-metadata";
 import { buildClientSetups } from "./client-setups";
 
 const ENDPOINT_URL = "https://example.vercel.app/api/mcp";
@@ -48,5 +50,16 @@ describe("buildClientSetups (#43 per-client setup snippets)", () => {
     };
     const [server] = Object.values(parsed.mcpServers);
     expect(server?.url).toBe(ENDPOINT_URL);
+  });
+
+  it("delegates to @hire-me-mcp/connect-metadata's shared renderers (#17) instead of re-deriving snippets of its own", () => {
+    const metadata = buildConnectionMetadata(ENDPOINT_URL);
+    const setups = buildClientSetups(ENDPOINT_URL);
+
+    const claudeCode = setups.find((setup) => setup.id === "claude-code");
+    expect(claudeCode?.snippet).toBe(renderClaudeCodeSnippet(metadata));
+
+    const cursor = setups.find((setup) => setup.id === "cursor");
+    expect(cursor?.snippet).toBe(renderMcpServersJson(metadata));
   });
 });

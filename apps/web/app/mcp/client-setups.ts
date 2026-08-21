@@ -5,6 +5,14 @@
  * every snippet interpolates that same string, so there is exactly one
  * place the URL is ever written down, not four.
  *
+ * As of #17, this module is a thin adapter: it builds this server's
+ * `ConnectionMetadata` (`lib/mcp/connection-metadata.ts`, which derives its
+ * tool list from the real registry) for the given endpoint URL, then reads
+ * each snippet straight off `@hire-me-mcp/connect-metadata`'s shared
+ * renderers — the same functions `docs/mcp.md`'s and the root `README.md`'s
+ * generated regions render from (`scripts/generate-connect-cli.ts`). No
+ * snippet format is defined twice.
+ *
  * Formats verified 2026-08-20 (this server needs no auth, so every snippet
  * below omits headers/OAuth):
  * - Claude web/desktop custom connector — Settings/Customize → Connectors →
@@ -28,6 +36,9 @@
  *   definition isn't one specific client.
  */
 
+import { renderClaudeCodeSnippet, renderMcpServersJson } from "@hire-me-mcp/connect-metadata";
+import { buildConnectionMetadata } from "../../lib/mcp/connection-metadata";
+
 export interface ClientSetup {
   id: "claude-web-desktop" | "claude-code" | "cursor" | "generic";
   label: string;
@@ -36,6 +47,8 @@ export interface ClientSetup {
 }
 
 export function buildClientSetups(endpointUrl: string): ClientSetup[] {
+  const metadata = buildConnectionMetadata(endpointUrl);
+
   return [
     {
       id: "claude-web-desktop",
@@ -43,19 +56,19 @@ export function buildClientSetups(endpointUrl: string): ClientSetup[] {
       instructions:
         'In Claude, go to Settings (or Customize) → Connectors → "+" → "Add custom connector", ' +
         "paste the URL below, skip Advanced settings (no auth is required), then click Add.",
-      snippet: endpointUrl,
+      snippet: metadata.endpointUrl,
     },
     {
       id: "claude-code",
       label: "Claude Code",
       instructions: "Run this from a terminal with the Claude Code CLI installed:",
-      snippet: `claude mcp add --transport http hire-me-mcp ${endpointUrl}`,
+      snippet: renderClaudeCodeSnippet(metadata),
     },
     {
       id: "cursor",
       label: "Cursor",
       instructions: "Add this to .cursor/mcp.json (project) or ~/.cursor/mcp.json (global):",
-      snippet: JSON.stringify({ mcpServers: { "hire-me-mcp": { url: endpointUrl } } }, null, 2),
+      snippet: renderMcpServersJson(metadata),
     },
     {
       id: "generic",
@@ -64,7 +77,7 @@ export function buildClientSetups(endpointUrl: string): ClientSetup[] {
         "Any client that supports the MCP Streamable HTTP transport can connect directly — " +
         'look for a "remote server" or "Streamable HTTP" option and give it this URL. No ' +
         "authentication, API key, or header is required.",
-      snippet: endpointUrl,
+      snippet: metadata.endpointUrl,
     },
   ];
 }
