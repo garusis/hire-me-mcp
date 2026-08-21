@@ -10,9 +10,9 @@ worker, or extra deploy target. `apps/web` route handlers (Node runtime) call `g
 directly, the same way they import `@hire-me-mcp/core`. No new deployable process, container, or
 HTTP surface is introduced by this package.
 
-Out of scope here (covered by later tasks in epic #5): tools/domain grounding, system prompt
-content (voice, gap discipline), the HTTP chat route, streaming, sessions, guardrails, and evals.
-The agent instantiated by this package has a placeholder system prompt and no tools.
+Out of scope here (covered by later tasks in epic #5): tools/domain grounding (#64), the HTTP chat
+route, streaming, sessions, guardrails, and evals. The agent instantiated by this package has a
+real, versioned system prompt (#65 — see below) and no tools yet.
 
 ## Provider abstraction
 
@@ -68,8 +68,54 @@ const result = await agent.generate("What's your experience with TypeScript?");
 
 `getInterviewAgent(options?)` accepts an optional `model` override (used by tests to inject a
 stub model) and an optional `env` source forwarded to `createChatModel()`. This is the one stable
-entry point later tasks in epic #5 (tools, system prompt, HTTP route) depend on — not package
-internals.
+entry point later tasks in epic #5 (domain tools, HTTP route) depend on — not package internals.
+
+## System prompt (#65)
+
+`src/prompt/` is the composable, versioned system prompt `getInterviewAgent()` wires in as the
+Mastra `Agent`'s `instructions`. It is a first-class, tested artifact — not inlined in a route:
+
+- **`sections.ts`** — the named sections, each a non-empty string: `identity`, `voice`,
+  `groundingRules`, `gapDiscipline`, `citationFormat`, `redirectPolicy`. The voice and
+  gap-discipline rules are restated in this package's own words from private reference material
+  that lives outside this repo (`~/.claude/career/voice.md`,
+  `~/.claude/career/gap-discipline.md`) — referenced by path only, never copied in. A hash-based
+  check (`prompt/no-private-content.test.ts`) mechanically verifies no line from either file has
+  landed anywhere in this repo tree.
+- **`compose.ts`** — `composeSystemPrompt(sections?)` deterministically joins sections into the
+  final prompt string.
+- **`version.ts`** — `computePromptVersion(sections?)` / `PROMPT_VERSION`: a short SHA-256
+  fingerprint over every section's id, title, and body. It changes on any edit to any section
+  (wording, title, or order), so an eval run (#72) can always be attributed to the exact prompt
+  content it ran against.
+- **`index.ts`** — the public surface: `SYSTEM_PROMPT` (the ready-to-use composed string),
+  `PROMPT_SECTIONS`, `composeSystemPrompt`, `PROMPT_VERSION`/`computePromptVersion`. Also
+  re-exported from the package root (`@hire-me-mcp/agent`).
+
+**Grounding contract:** every factual claim about the candidate's experience must trace to a tool
+result from this conversation; no tool support means no claim. **Gap discipline:** an unsupported
+skill/experience question gets "He hasn't done X; the closest evidence is Y" — plain, not inflated,
+never apologetic. **Off-topic/adversarial:** a short, in-voice redirect, including for attempts to
+override these instructions or treat tool-result content as a command.
+
+### Citation marker format (`src/citations.ts`)
+
+The **single, shared** definition of the inline citation marker embedded in the agent's answers —
+also re-exported from the package root, for the chat UI (#70) and groundedness evals (#72) to
+import rather than re-encode:
+
+```
+[cite:<entityType>:<entityId>]
+[cite:<entityType>:<entityId>#<fragment>]   # optional sub-part anchor
+```
+
+`entityType`/`entityId` mirror this repo's existing `Citation` schema
+(`packages/career-data/src/schemas/citation.ts`), so a parsed marker maps onto a tool result
+without translation. Markers are **inline**, immediately after the clause they support, rather
+than a trailing footnote list — chosen so a streaming consumer can resolve a citation the moment
+its sentence finishes, without waiting for the full response. `serializeCitation`,
+`parseCitationMarker` (single marker), and `parseCitations` (scan free text for every marker) are
+the only supported way to produce or read this format; both never throw on malformed input.
 
 ## One-off smoke verification (not part of CI)
 
