@@ -1,0 +1,102 @@
+.endpointRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.endpointUrl {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  word-break: break-all;
+}
+
+.clientInstructions {
+  margin: 0 0 var(--space-3);
+}
+
+.snippet {
+  /* See apps/web/app/mcp/page.module.css's identical rule for why both
+     max-width and min-width are required here — same horizontal-overflow
+     bug (#58), same fix. */
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+
+.snippetRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.deepLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deepLink {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.deepLink:hover,
+.deepLink:focus-visible {
+  border-color: var(--color-accent);
+}
+
+.examplePrompts {
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.examplePrompt {
+  margin: 0;
+  font-style: italic;
+  color: var(--color-fg-muted);
+}
+
+.examplePrompt::before {
+  content: "\201C";
+}
+
+.examplePrompt::after {
+  content: "\201D";
+}
+
+.detailLink {
+  display: inline-block;
+  margin-top: var(--space-4);
+}
+
+.compact .examplePrompts {
+  margin-top: var(--space-3);
+}
