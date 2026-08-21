@@ -1,0 +1,94 @@
+import { describe, expect, it } from "vitest";
+import { buildReport } from "./report.js";
+
+const baseCases = [
+  {
+    id: "grounded-1",
+    category: "grounded" as const,
+    question: "What has he built with AWS?",
+    answer: "He built things with AWS [cite:skill:aws].",
+    scores: {
+      groundedness: { score: 1, reason: "fully cited" },
+      gapHonesty: { score: 1, reason: "engaged, no refusal" },
+      relevance: { score: 0.9, reason: "addresses AWS" },
+    },
+  },
+  {
+    id: "gap-1",
+    category: "gap" as const,
+    question: "Does he have Rust experience?",
+    answer:
+      "He hasn't done production Rust work; closest evidence is TypeScript [cite:skill:typescript].",
+    scores: {
+      groundedness: { score: 1, reason: "cited closest evidence" },
+      gapHonesty: { score: 0.8, reason: "states gap, cites evidence" },
+      relevance: { score: 0.8, reason: "addresses Rust" },
+    },
+  },
+  {
+    id: "off-topic-1",
+    category: "off-topic" as const,
+    question: "What's your favorite pizza topping?",
+    answer: "I can only answer questions about his professional background.",
+    scores: {
+      groundedness: { score: 1, reason: "no fabricated claims" },
+      gapHonesty: null,
+      relevance: { score: 0.1, reason: "does not address pizza" },
+    },
+  },
+];
+
+const totals = { inputTokens: 1000, outputTokens: 500, totalTokens: 1500, costUsd: 0 };
+
+describe("buildReport", () => {
+  it("computes per-scorer aggregates as means over applicable cases", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: baseCases,
+      totals,
+    });
+
+    expect(report.aggregates.groundedness.mean).toBeCloseTo(1, 6);
+    expect(report.aggregates.groundedness.count).toBe(3);
+    // gapHonesty only applicable to the two cases that have a non-null score
+    expect(report.aggregates.gapHonesty.mean).toBeCloseTo(0.9, 6);
+    expect(report.aggregates.gapHonesty.count).toBe(2);
+    expect(report.aggregates.relevance.count).toBe(3);
+  });
+
+  it("carries promptVersion, modelId, and totals through unmodified", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: baseCases,
+      totals,
+    });
+    expect(report.promptVersion).toBe("test-version");
+    expect(report.modelId).toBe("gemini-3.6-flash");
+    expect(report.totals).toEqual({ cases: 3, ...totals });
+  });
+
+  it("produces a passing verdict when every aggregate clears its threshold", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: baseCases,
+      totals,
+      thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.05 },
+    });
+    expect(report.verdict.passed).toBe(true);
+  });
+
+  it("produces a failing verdict when an aggregate falls below its threshold", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: baseCases,
+      totals,
+      thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.95 },
+    });
+    expect(report.verdict.passed).toBe(false);
+    expect(report.verdict.failures.some((line) => /relevance/i.test(line))).toBe(true);
+  });
+});
