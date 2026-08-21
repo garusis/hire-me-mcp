@@ -43,6 +43,10 @@ export function generateMetadata(): Metadata {
       apple: "/apple-icon",
     },
     manifest: "/manifest.webmanifest",
+    // `<link rel="alternate" type="text/markdown" href="/llms.txt">` (#37)
+    // — points agents at the curated llms.txt entry point without them
+    // needing to guess the path.
+    alternates: { types: { "text/markdown": "/llms.txt" } },
     robots: {
       index: indexable,
       follow: indexable,

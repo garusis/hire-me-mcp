@@ -17,4 +17,10 @@ describe("SiteFooter", () => {
     const year = new Date().getFullYear().toString();
     expect(screen.getByText(new RegExp(year))).toBeDefined();
   });
+
+  it("links to /llms.txt, the curated MCP-agent entry point (#37)", () => {
+    render(<SiteFooter />);
+    const link = screen.getByRole("link", { name: /llms\.txt/i });
+    expect(link).toHaveAttribute("href", "/llms.txt");
+  });
 });

@@ -83,6 +83,17 @@ describe("generateMetadata", () => {
     expect(metadata.robots).toMatchObject({ index: false, follow: false });
   });
 
+  it("links to /llms.txt as an alternate text/markdown representation (#37)", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
+    getRobotsIndexable.mockReturnValue(true);
+    const { generateMetadata } = await import("./layout.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.alternates?.types?.["text/markdown"]).toBe("/llms.txt");
+  });
+
   it("changing the stub profile changes the emitted title, description and OG site name", async () => {
     const view = profileView();
     view.profile.name = "Changed Name";
