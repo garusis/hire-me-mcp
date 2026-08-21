@@ -339,6 +339,78 @@ Two earlier follow-ups from the pre-swap run remain relevant:
 2. Threshold recalibration against a different provider (`CHAT_PROVIDER=anthropic` is already
    wired) remains available if a future task needs to compare model quality, not just quota.
 
+### Real-run results (17/17-case run, post-#143 fixes)
+
+#72's two flagged findings above (`grounded-nodejs-experience`'s citation miss, and the relevance
+scorer's strictness) were investigated for real in #143, not just patched blind. Diagnosis
+methodology: an `EVAL_CASE_IDS` env filter (`./cli.ts`) was added first so a single failing case
+could be re-run in isolation, cheaply, against the real model — reproduced `grounded-nodejs-experience`
+4/4 times before touching anything, confirming the failure was systematic, not stochastic.
+
+**Root cause, fix 1 (groundedness)**: `packages/core`'s `getSkillEvidence` claimed-skill outcome
+returned only its evidence citations (the experience entries), never a citation for the skill
+entity itself. The model, entirely reasonably, cited `[cite:skill:nodejs]` — the exact skill the
+tool call resolved — and the groundedness scorer correctly flagged it as unbacked, because it
+genuinely wasn't in that run's tool citations. Neither the scorer nor its citation extraction
+(`./cli.ts`'s `extractCitationsFromToolResults`) was broken; this was a real asymmetry versus the
+`not-claimed` gap branch, which already self-cites the gap entity. Fixed in `getSkillEvidence`
+(mirrors the gap branch now); confirmed 3/3 clean single-case runs post-fix. The system prompt's
+`groundingRules`/`citationFormat` sections were also strengthened (bumping `PROMPT_VERSION`) as
+defense-in-depth, though empirically the model kept citing the skill entity even with the
+strengthened wording — the core-layer fix, not the prompt, is what actually closed the loop.
+
+**A second scorer bug, found by re-running the full suite after fix 1**: every off-topic/injection
+case scored groundedness 0 — not one, as the #142 narrative ("16/17 clean") reported; the real
+number was 13/17. `FACTUAL_INDICATOR_REGEX` matched generic domain nouns ("experience", "skills",
+"engineer"...) inside a correct `redirectPolicy` decline/redirect sentence that makes no claim
+about the candidate at all (e.g. "Questions can focus on his experience, skills, and projects.").
+Fixed with a `redirectPolicy`-aware sentence exclusion, regression-tested against the real captured
+transcripts. **Honestly flagged**: this exclusion is a bounded phrase allowlist, not a structural
+fix — a second full-suite run during calibration still caught 2 of 4 off-topic cases on wording the
+first pattern set didn't anticipate ("Questions can be asked about...", "This conversation is
+limited to..."). Widened and regression-tested again, but NOT re-verified with a fresh live run
+before this calibration landed — a future paraphrase this allowlist doesn't cover remains a real,
+open risk. `#73`'s category-aware scoring (using the dataset's own `category` field instead of
+free-text pattern matching) is the structural fix this points at, flagged as follow-up.
+
+**Fix 2 (relevance)**: `scoreRelevance` was rewritten to tokenize both question and answer through
+`packages/core`'s shared `tokenize()`, drop an extended interview-specific stopword list
+(interrogatives like "where"/"how"/"why", pronouns, fillers) on top of `tokenize`'s own, and match
+through a small conservative suffix stripper (plural/verb-inflection tolerance) instead of a raw
+substring check. This measurably fixed real per-case false negatives — e.g.
+`grounded-typescript-house-numbers` and `grounded-nodejs-experience` now score a clean 1.0
+(previously 0.6667), `grounded-llm-ai-agents` recovered the "LLMs" (question) / "LLM" (answer)
+plural mismatch, `grounded-mentoring` recovered "mentored"/"engineers" vs. "mentoring"/"engineer".
+
+**Full 17/17-case run after both fixes** (`EVAL_MAX_CASES=17`, budget raised to cover the full
+run, same `gemini-3.5-flash-lite` default):
+
+| Scorer | #142 (pre-#143) | #143 (post-fix) |
+| --- | ---: | ---: |
+| groundedness | 0.7647 | **0.8824** |
+| gap honesty | 1.0000 | 1.0000 |
+| relevance | 0.5520 | 0.5279 |
+
+Totals: 111,137 tokens (109,400 in / 1,737 out), $0 (free tier).
+
+**The relevance aggregate barely moved despite a real per-case improvement — flagged, not
+smoothed over**: roughly a quarter of the dataset (the `off-topic`/`injection` categories)
+legitimately scores near-zero on this metric BY DESIGN, and that structural drag caps how high a
+whole-dataset average can go regardless of scorer quality. One `gap` case (`gap-golang`) also
+surfaced a residual false-negative: a correct, fully-grounded, terse honest-gap answer ("He hasn't
+done Go; the closest evidence is Node.js") scored 0/3 relevance because its brevity never restates
+"production"/"experience"/"Golang" in full — the same over-strictness class as before, reduced but
+not eliminated by this pass.
+
+`EVAL_THRESHOLDS` (`./thresholds.ts`) recalibrated per this run, each with margin below the
+observed number and an inline rationale documenting the residual risks above:
+
+| Scorer | Old | New | Honest aggregate |
+| --- | ---: | ---: | ---: |
+| groundedness | 0.70 | **0.75** | 0.8824 |
+| gapHonesty | 0.85 | **0.90** | 1.0000 (perfect on two separate full runs now) |
+| relevance | 0.45 | **0.48** | 0.5279 |
+
 ### Env knobs
 
 | Env var                 | Purpose                                              | Default                  |

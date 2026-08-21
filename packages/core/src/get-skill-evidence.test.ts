@@ -91,7 +91,27 @@ describe("getSkillEvidence", () => {
       expect(citation.entityId).toBe("fixture-role");
       expect(citation.label).toBe("Fixture Role, Fixture Co");
     }
-    expect(result.citations).toEqual(result.data.evidence);
+    expect(result.data.evidence.every((citation) => citation.entityType === "experience")).toBe(
+      true,
+    );
+  });
+
+  it("'claimed' citations lead with a citation to the skill entity itself, then its evidence citations (#143)", () => {
+    // Regression test for #143's grounded-nodejs-experience groundedness=0 finding: the model
+    // naturally cites the skill entity a tool call resolved (e.g. `[cite:skill:nodejs]`), not just
+    // its evidence — a claimed skill's `citations` must include a citation to the skill itself
+    // (entityType "skill", the resolved skill's own id), the same way the "not-claimed" gap branch
+    // below already leads its own `citations` with a citation to the gap entity itself.
+    const result = getSkillEvidence(fixtureRepository(), "typescript");
+
+    if (result.data.kind !== "claimed") throw new Error("expected claimed");
+    expect(result.citations[0]).toEqual({
+      entityType: "skill",
+      entityId: "typescript",
+      label: "TypeScript",
+    });
+    expect(result.citations.slice(1)).toEqual(result.data.evidence);
+    expect(result.citations.length).toBe(result.data.evidence.length + 1);
   });
 
   it("never returns 'claimed' or an empty result for a gap term — returns 'not-claimed' with the verbatim statement", () => {
@@ -187,7 +207,12 @@ describe("getSkillEvidence", () => {
       if (result.data.kind !== "claimed") throw new Error("expected claimed");
       expect(result.data.skill.id).toBe("typescript");
       expect(result.data.evidence.length).toBeGreaterThan(0);
-      expect(result.citations.length).toBe(result.data.evidence.length);
+      expect(result.citations.length).toBe(result.data.evidence.length + 1);
+      expect(result.citations[0]).toEqual({
+        entityType: "skill",
+        entityId: "typescript",
+        label: result.data.skill.name,
+      });
     });
 
     it("resolves a real gap (golang) to a 'not-claimed' outcome with the verbatim statement and relatedSkills", () => {

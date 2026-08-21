@@ -104,8 +104,14 @@ function resolveRelatedSkills(
  * matching) against `repository`'s dataset of `Skill`s and `Gap`s, and
  * returns exactly one of three outcomes:
  *
- * - **`claimed`** — `skill` resolves to a claimed `Skill`. `citations` is the
- *   skill's own evidence, resolved fresh against the dataset.
+ * - **`claimed`** — `skill` resolves to a claimed `Skill`. `citations` is a
+ *   citation to the skill entity itself, followed by its own evidence,
+ *   resolved fresh against the dataset. The self-citation (#143) exists
+ *   because a caller (the interview agent) legitimately cites the skill
+ *   entity a lookup resolved, not just the experience entries backing it —
+ *   omitting it left `[cite:skill:<id>]` unbacked by this result's own
+ *   `citations`, a real citation-validity gap a downstream consumer would
+ *   otherwise have to work around.
  * - **`not-claimed`** — `skill` resolves to a recorded `Gap` instead. Never
  *   `claimed`, never empty. `citations` is a citation to the gap itself
  *   followed by every resolved related skill's evidence citations, in order.
@@ -133,7 +139,8 @@ export function getSkillEvidence(
     if (skillRecord !== undefined) {
       const evidence = resolveEvidence(repository, skillRecord.evidence);
       const outcome: ClaimedSkillOutcome = { kind: "claimed", skill: skillRecord, evidence };
-      return createDomainResult(outcome, evidence);
+      const skillCitation = buildCitation(repository, "skill", skillRecord.id);
+      return createDomainResult(outcome, [skillCitation, ...evidence]);
     }
   }
 

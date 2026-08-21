@@ -176,8 +176,13 @@ interface RelatedSkillEvidence {
   proficiency, and its authored `evidence`). `evidence` is that skill's evidence citations,
   resolved fresh against the repository's current dataset via `buildCitation` (so a stale label on
   the content record can never leak through, and a dangling citation throws
-  `UnknownEntityError` rather than being silently returned). `result.citations` is exactly this
-  `evidence` array.
+  `UnknownEntityError` rather than being silently returned). `result.citations` **leads with a
+  citation to the skill entity itself** (entityType `"skill"`, the resolved skill's own id), then
+  every entry of the `evidence` array, in that order — mirroring how `not-claimed` below leads its
+  own `citations` with a citation to the gap entity. This self-citation was added for #143: the
+  interview agent legitimately cites the skill entity a lookup resolved (e.g.
+  `[cite:skill:nodejs]`), not only the experience entries backing it, and the citations list must
+  back whatever a caller is entitled to cite.
 
 - **`not-claimed`** — `skill` resolves to a `Gap` instead of a `Skill`. This is the locked
   behavior the whole gap-discipline data model (#47, #50, #51) exists for: a term Marcos has

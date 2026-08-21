@@ -40,6 +40,18 @@ describe("PROMPT_SECTIONS", () => {
     expect(citationFormat?.body).toContain("[cite:");
   });
 
+  it("restricts a citable id to a tool result's own citations list, not any id found elsewhere in its data (#143)", () => {
+    const citationFormat = PROMPT_SECTIONS.find((section) => section.id === "citationFormat");
+    expect(citationFormat?.body).toMatch(/citations (list|array|field)/i);
+    expect(citationFormat?.body).toMatch(/not.*(merely|just).*(appear|present).*(elsewhere|data)/i);
+  });
+
+  it("tells the model not to claim a fact it has no tool citation for this turn (#143)", () => {
+    const grounding = PROMPT_SECTIONS.find((section) => section.id === "groundingRules");
+    expect(grounding?.body).toMatch(/this conversation|this turn/i);
+    expect(grounding?.body).toMatch(/call (the tool|it)|do not (make|state) (that )?claim/i);
+  });
+
   it("states an off-topic/adversarial redirect policy", () => {
     const redirectPolicy = PROMPT_SECTIONS.find((section) => section.id === "redirectPolicy");
     expect(redirectPolicy?.body).toMatch(/redirect|decline/i);
