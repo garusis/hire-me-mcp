@@ -363,6 +363,29 @@ jobs:
           echo "Running Lighthouse against: ${BASE_URL}"
           node scripts/lighthouse/build-config.mjs .lighthouserc.local.json
 
+      # #58/#128 stabilization: a Vercel preview lambda that hasn't served a
+      # request yet eats a cold-start penalty on whichever URL Lighthouse
+      # happens to hit first (observed: home scored 0.88 vs 1.00 for the
+      # other two URLs in run 32409684979, job 96556951552, on the very
+      # first request of the run). One throwaway request per audited URL
+      # here means Lighthouse's own runs never pay that penalty — paired
+      # with `lighthouserc.cjs`'s `numberOfRuns: 3` (median-of-3) and the
+      # calibrated 0.90 `performance` threshold for defense in depth.
+      - name: Warm up preview URLs
+        if: steps.preview.outputs.found == 'true'
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          # Reads the same URL list the Lighthouse run is about to use —
+          # already resolved by the previous step's build-config.mjs, so
+          # there's no second copy of the slug-resolution logic to drift.
+          for url in $(node -p "require('./.lighthouserc.local.json').ci.collect.url.join('\n')"); do
+            echo "Warming up: ${url}"
+            curl -sS -o /dev/null -w "  -> %{http_code}\n" \
+              -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
+              "${url}" || echo "  -> warm-up request failed (non-fatal, Lighthouse will still run)"
+          done
+
       - name: Run Lighthouse CI
         if: steps.preview.outputs.found == 'true'
         run: pnpm exec lhci autorun --config=.lighthouserc.local.json
