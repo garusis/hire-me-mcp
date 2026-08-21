@@ -43,10 +43,6 @@ export function generateMetadata(): Metadata {
       apple: "/apple-icon",
     },
     manifest: "/manifest.webmanifest",
-    // `<link rel="alternate" type="text/markdown" href="/llms.txt">` (#37)
-    // — points agents at the curated llms.txt entry point without them
-    // needing to guess the path.
-    alternates: { types: { "text/markdown": "/llms.txt" } },
     robots: {
       index: indexable,
       follow: indexable,
@@ -82,6 +78,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${displayFont.variable} ${bodyFont.variable} ${monoFont.variable}`}>
       <body className={bodyFont.className}>
+        {/*
+          `<link rel="alternate" type="text/markdown" href="/llms.txt">`
+          (#37) — points agents at the curated llms.txt entry point.
+          Rendered as a plain element (React 19 hoists <link> into <head>
+          automatically) rather than through `generateMetadata`'s
+          `alternates.types`, because Next.js replaces the whole
+          `alternates` object wholesale whenever a page's own
+          `generateMetadata` sets `alternates.canonical` (as most pages
+          here do) — this way it survives on every route regardless.
+        */}
+        <link rel="alternate" type="text/markdown" href="/llms.txt" />
         <Script
           id="theme-script"
           strategy="beforeInteractive"

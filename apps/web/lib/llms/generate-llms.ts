@@ -12,18 +12,20 @@
  * example prompt, or career fact.
  *
  * Serving decision (documented per the issue's request): `app/llms.txt/route.ts`
- * and `app/llms-full.txt/route.ts` call these functions at request time with
- * `getSiteUrl()`/`getMcpEndpointUrl()`. Because Next statically renders a
- * route handler with no dynamic request data, this still ships as a static
- * asset on every build (the AC's "build-time generator") — but with *zero*
- * drift by construction: there is no committed output file that can go
- * stale, because there is no committed output file at all. The generated
- * text is derived fresh from the same sources every time the route runs.
- * `scripts/generate-llms-cli.ts`'s `--check` mode (also required by the AC)
- * exists for a different failure mode than "stale committed file": it
- * catches generation itself throwing or drifting from the documented
- * conventions (size budget, tool coverage, absolute URLs) in CI, without a
- * Next.js build.
+ * and `app/llms-full.txt/route.ts` call these functions with
+ * `getSiteUrl()`/`getMcpEndpointUrl()` — the same per-deploy URL resolution
+ * `/mcp`, `sitemap.ts` and `robots.ts` already use. Next renders both routes
+ * dynamically (confirmed by `next build`'s route summary marking them `ƒ`,
+ * the same as `/api/mcp`) because that resolution reads `process.env` at
+ * request time; this is *more* fresh than static generation, not less —
+ * every request recomputes the text from the live sources below. Either
+ * way there is *zero* drift by construction: there is no committed output
+ * file that can go stale, because there is no committed output file at
+ * all. `scripts/generate-llms-cli.ts`'s `--check` mode (also required by
+ * the AC) exists for a different failure mode than "stale committed file":
+ * it catches generation itself throwing or drifting from the documented
+ * conventions (size budget, tool coverage, absolute URLs) in CI, against
+ * real production data, without a Next.js build.
  */
 
 import "server-only";

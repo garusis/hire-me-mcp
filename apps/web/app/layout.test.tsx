@@ -83,17 +83,6 @@ describe("generateMetadata", () => {
     expect(metadata.robots).toMatchObject({ index: false, follow: false });
   });
 
-  it("links to /llms.txt as an alternate text/markdown representation (#37)", async () => {
-    getProfileView.mockReturnValue(profileView());
-    getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
-    getRobotsIndexable.mockReturnValue(true);
-    const { generateMetadata } = await import("./layout.js");
-
-    const metadata = generateMetadata();
-
-    expect(metadata.alternates?.types?.["text/markdown"]).toBe("/llms.txt");
-  });
-
   it("changing the stub profile changes the emitted title, description and OG site name", async () => {
     const view = profileView();
     view.profile.name = "Changed Name";
@@ -148,5 +137,12 @@ describe("RootLayout", () => {
   it("renders the chat widget launcher, reachable from every page", () => {
     render(<RootLayout>{<p>page content</p>}</RootLayout>);
     expect(screen.getByRole("button", { name: /ask about marcos/i })).toBeDefined();
+  });
+
+  it("links to /llms.txt as an alternate text/markdown representation, on every page (#37)", () => {
+    render(<RootLayout>{<p>page content</p>}</RootLayout>);
+    const link = document.querySelector('link[rel="alternate"][type="text/markdown"]');
+    expect(link).not.toBeNull();
+    expect(link).toHaveAttribute("href", "/llms.txt");
   });
 });

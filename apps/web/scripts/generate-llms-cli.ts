@@ -6,7 +6,7 @@
  * committed marked regions in `docs/mcp.md`/`README.md`), `/llms.txt` and
  * `/llms-full.txt` are served by `app/llms.txt/route.ts` and
  * `app/llms-full.txt/route.ts` — route handlers that call
- * `lib/mcp/generate-llms.ts`'s pure render functions at request/build time,
+ * `lib/llms/generate-llms.ts`'s pure render functions at request time,
  * straight off the content layer and the live MCP tool registry. There is
  * no committed output file, so there is nothing that can drift out of sync
  * with a stale copy on disk — the AC's "fails when the output is stale" has
