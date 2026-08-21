@@ -398,6 +398,15 @@ describe("Home", () => {
       const jsonLd = JSON.parse(script?.textContent ?? "{}");
       expect(jsonLd.name).toBe("Different Name");
     });
+
+    it("renders exactly one JSON-LD script, with knowsAbout listing every authored skill (not just the highlighted subset)", () => {
+      const { container } = render(<Home />);
+
+      const scripts = container.querySelectorAll('script[type="application/ld+json"]');
+      expect(scripts).toHaveLength(1);
+      const jsonLd = JSON.parse(scripts[0]?.textContent ?? "{}");
+      expect(jsonLd.knowsAbout).toEqual(["skill-one-name", "skill-two-name", "skill-three-name"]);
+    });
   });
 });
 
