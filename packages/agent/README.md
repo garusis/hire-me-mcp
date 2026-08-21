@@ -36,12 +36,35 @@ value is ever logged or included in an error message.
 
 Issue #63 as originally scoped named Anthropic Claude Haiku 4.5 as the default provider with
 Gemini as the alternate binding. The repo owner overrode that ahead of implementation: the
-**default** provider is **Google Gemini free tier** (`gemini-3.6-flash` — a free-tier-eligible
-model per the Gemini Developer API, verified against a real API call during this task; older
-`gemini-2.x-flash` ids have since been retired for new users), because it costs nothing to run
-during development and early production. **Anthropic Claude Haiku 4.5** (`claude-haiku-4-5`) is
-wired as the swappable alternate — fully constructible and covered by tests — so the project can
-move to it (or another provider) later by changing `CHAT_PROVIDER`, without touching agent code.
+**default** provider is **Google Gemini free tier**, because it costs nothing to run during
+development and early production. **Anthropic Claude Haiku 4.5** (`claude-haiku-4-5`) is wired as
+the swappable alternate — fully constructible and covered by tests — so the project can move to it
+(or another provider) later by changing `CHAT_PROVIDER`, without touching agent code.
+
+#### Model swap: `gemini-3.6-flash` -> `gemini-3.5-flash-lite` (#72-adjacent)
+
+The package originally defaulted to `gemini-3.6-flash` (a free-tier-eligible model per the Gemini
+Developer API, verified against a real API call while building #63; older `gemini-2.x-flash` ids
+have since been retired for new users). Building #72's eval suite exposed a real operational
+problem — see "Real-run results" below — which prompted a real quota check against the AI Studio
+dashboard. The default is now **`gemini-3.5-flash-lite`** (a pinned id, not the `-latest` alias,
+so an upstream model swap can't silently change behavior):
+
+| Model                   | Free tier RPM | Free tier RPD | Notes                                  |
+| ------------------------ | -------------: | -------------: | --------------------------------------- |
+| `gemini-3.6-flash`      | 5              | 20             | former default; retired from this role |
+| `gemini-3.7-flash`      | 5              | 20             | same tight daily cap                   |
+| `gemini-3.5-flash-lite` | 15             | 500            | **current default** (pinned id)        |
+| `gemini-3.1-flash-lite` | 15             | 500            | swappable alternate via `CHAT_MODEL_ID` |
+
+Verified against the owner's AI Studio dashboard and corroborated by this same repo's own
+evidence: #141's real eval run recorded a `429 RESOURCE_EXHAUSTED` naming
+`quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier`, `quotaValue: 20` for
+`gemini-3.6-flash` — a **20-requests-per-day** ceiling shared between production chat traffic and
+any eval run on the same key, tight enough for a single eval run to exhaust by itself (see below).
+The lite tier's 500 RPD gives both room to coexist on the free tier without a dedicated eval
+project (#73 follow-up, still worth doing, but no longer blocking). `CHAT_MODEL_ID` remains the
+override seam if a future task needs a different model id without a code change.
 
 ### Swapping providers
 
@@ -234,7 +257,8 @@ no further cases run, no silently-truncated "success". Cost is estimated from a 
 approximate per-model pricing table; since the project's default provider is Gemini free tier, a
 real run's actual dollar cost is $0 today — the cost cap is a safety net against a future paid
 provider switch, not a live pricing feed. A conservative `EVAL_RPM_LIMIT` (default 10) throttles
-between real calls so a default run stays comfortably under Gemini free tier's ~10-15 RPM ceiling.
+between real calls so a default run stays a polite margin under `gemini-3.5-flash-lite`'s 15 RPM
+free-tier ceiling (see the quota rationale table above).
 
 ### Thresholds and verdict (`src/evals/thresholds.ts`)
 

@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 import { InvalidChatProviderError, MissingEnvVarError, resolveChatModelConfig } from "./config.js";
 
 describe("resolveChatModelConfig", () => {
-  it("defaults to the google provider with the Gemini free-tier flash model id", () => {
+  it("defaults to the google provider with the Gemini free-tier lite flash model id", () => {
     const config = resolveChatModelConfig({
       GOOGLE_GENERATIVE_AI_API_KEY: "fake-google-key",
     });
 
     expect(config).toEqual({
       provider: "google",
-      modelId: "gemini-3.6-flash",
+      modelId: "gemini-3.5-flash-lite",
       apiKey: "fake-google-key",
     });
   });
@@ -17,10 +17,10 @@ describe("resolveChatModelConfig", () => {
   it("allows CHAT_MODEL_ID to override the default google model id", () => {
     const config = resolveChatModelConfig({
       GOOGLE_GENERATIVE_AI_API_KEY: "fake-google-key",
-      CHAT_MODEL_ID: "gemini-3.5-flash-lite",
+      CHAT_MODEL_ID: "gemini-3.6-flash",
     });
 
-    expect(config.modelId).toBe("gemini-3.5-flash-lite");
+    expect(config.modelId).toBe("gemini-3.6-flash");
   });
 
   it("resolves the anthropic binding when CHAT_PROVIDER=anthropic, using a fake key with no network call", () => {
