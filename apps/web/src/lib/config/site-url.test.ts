@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getMcpEndpointUrl, getRobotsIndexable, getSiteUrl, MCP_ROUTE_PATH } from "./site-url";
+import {
+  getMcpEndpointUrl,
+  getRobotsIndexable,
+  getSiteUrl,
+  MCP_ROUTE_PATH,
+  PRODUCTION_MCP_ENDPOINT_URL,
+  PRODUCTION_SITE_URL,
+} from "./site-url";
 
 const ENV_KEYS = ["SITE_URL", "VERCEL_ENV", "VERCEL_URL", "VERCEL_PROJECT_PRODUCTION_URL"] as const;
 
@@ -74,5 +81,14 @@ describe("site-url", () => {
   it("is indexable only on a production deploy (VERCEL_ENV=production)", () => {
     process.env.VERCEL_ENV = "production";
     expect(getRobotsIndexable()).toBe(true);
+  });
+
+  it("exposes the fixed production site URL — the one hardcoded literal for docs/README generation (#17), independent of any env var", () => {
+    expect(PRODUCTION_SITE_URL).toBe("https://hire-me-mcp-web.vercel.app");
+  });
+
+  it("derives the fixed production MCP endpoint URL from PRODUCTION_SITE_URL + MCP_ROUTE_PATH, matching the value docs/mcp.md and README.md's generated regions must never diverge from", () => {
+    expect(PRODUCTION_MCP_ENDPOINT_URL).toBe(`${PRODUCTION_SITE_URL}${MCP_ROUTE_PATH}`);
+    expect(PRODUCTION_MCP_ENDPOINT_URL).toBe("https://hire-me-mcp-web.vercel.app/api/mcp");
   });
 });

@@ -53,6 +53,9 @@ importers:
       '@hire-me-mcp/career-data':
         specifier: workspace:*
         version: link:../../packages/career-data
+      '@hire-me-mcp/connect-metadata':
+        specifier: workspace:*
+        version: link:../../packages/connect-metadata
       '@hire-me-mcp/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -129,6 +132,9 @@ importers:
       happy-dom:
         specifier: 20.11.2
         version: 20.11.2
+      tsx:
+        specifier: 4.23.12
+        version: 4.23.12
       typescript:
         specifier: 5.9.3
         version: 5.9.3

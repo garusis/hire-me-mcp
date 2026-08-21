@@ -15,12 +15,15 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:mcp": "vitest run --config vitest.mcp.config.ts"
+    "test:mcp": "vitest run --config vitest.mcp.config.ts",
+    "generate:connect": "tsx scripts/generate-connect-cli.ts",
+    "generate:connect:check": "tsx scripts/generate-connect-cli.ts --check"
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.74",
     "@hire-me-mcp/agent": "workspace:*",
     "@hire-me-mcp/career-data": "workspace:*",
+    "@hire-me-mcp/connect-metadata": "workspace:*",
     "@hire-me-mcp/core": "workspace:*",
     "@mastra/ai-sdk": "1.9.1",
     "@modelcontextprotocol/server": "2.0.0",
@@ -48,6 +51,7 @@
     "@vitejs/plugin-react": "6.0.5",
     "@vitest/coverage-v8": "4.1.11",
     "happy-dom": "20.11.2",
+    "tsx": "4.23.12",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
   }
