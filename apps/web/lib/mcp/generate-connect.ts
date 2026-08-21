@@ -31,7 +31,7 @@ function findSnippet(snippets: ReturnType<typeof buildClientSnippets>, id: Clien
   return entry.snippet;
 }
 
-/** The tool reference table docs/mcp.md renders — every registered tool except the `ping` diagnostic. */
+/** The tool reference table docs/mcp.md and README.md render — every registered tool except the `ping` diagnostic. */
 function renderToolTable(tools: ToolInfo[]): string {
   const header = "| Tool | What it answers | Example question |\n| --- | --- | --- |";
   const rows = tools
@@ -39,6 +39,14 @@ function renderToolTable(tools: ToolInfo[]): string {
     .map((tool) => `| \`${tool.name}\` | ${tool.description} | "${tool.examplePrompt}" |`)
     .join("\n");
   return `${header}\n${rows}`;
+}
+
+/** README.md's "What you can ask it" bullet list — one line per tool's real example prompt. */
+function renderExamplePrompts(tools: ToolInfo[]): string {
+  return tools
+    .filter((tool) => tool.name !== "ping")
+    .map((tool) => `- "${tool.examplePrompt}"`)
+    .join("\n");
 }
 
 /** Regions for `docs/mcp.md`'s marked sections: endpoint, three client snippets, and the tool table. */
@@ -65,11 +73,31 @@ export function computeDocsMcpRegions(endpointUrl: string): GeneratedRegion[] {
 }
 
 /**
- * Regions for the root `README.md`'s marked section: just the endpoint URL
- * — README.md links out to `docs/mcp.md` for the full per-client setup
- * rather than duplicating it (out of scope for #17 to rewrite its prose).
+ * Regions for the root `README.md`'s marked sections (#23): the endpoint
+ * URL, the two copy-paste snippets README's "Connect your agent in one
+ * step" section leads with (Claude Code CLI, then the Cursor/VS Code JSON
+ * shape), the example-prompts bullet list, and the tool table — all
+ * derived from the same `ConnectionMetadata` docs/mcp.md renders from, so
+ * README and docs/mcp.md can never disagree about what this server does.
+ * README links to docs/mcp.md for the remaining per-client instructions
+ * (Claude web/desktop, Claude Desktop JSON, curl JSON-RPC, troubleshooting)
+ * rather than duplicating every renderer here.
  */
 export function computeReadmeRegions(endpointUrl: string): GeneratedRegion[] {
   const metadata = buildConnectionMetadata(endpointUrl);
-  return [{ id: "mcp-endpoint-url", content: fenced("", metadata.endpointUrl) }];
+  const snippets = buildClientSnippets(metadata);
+
+  return [
+    { id: "mcp-endpoint-url", content: fenced("", metadata.endpointUrl) },
+    {
+      id: "mcp-claude-code-snippet",
+      content: fenced("bash", findSnippet(snippets, "claude-code")),
+    },
+    {
+      id: "mcp-cursor-vscode-snippet",
+      content: fenced("json", findSnippet(snippets, "vscode-cursor")),
+    },
+    { id: "mcp-example-prompts", content: renderExamplePrompts(metadata.tools) },
+    { id: "mcp-tool-table", content: renderToolTable(metadata.tools) },
+  ];
 }

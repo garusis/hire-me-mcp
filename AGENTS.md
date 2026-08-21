@@ -31,7 +31,7 @@ assistant can connect to directly and query with citations back to the source re
 ### Read this first, in order
 
 1. This section — you're already here.
-2. [`README.md`](README.md) — the pitch, and the "Add this CV to your AI assistant" section.
+2. [`README.md`](README.md) — the pitch, and the "Connect your agent in one step" section.
 3. [`docs/mcp.md`](docs/mcp.md) — the canonical MCP connection guide: per-client setup, the tool
    reference, rate limits, and troubleshooting.
 4. `packages/career-data/content/` — the real data everything downstream is grounded in and cited
@@ -43,7 +43,7 @@ assistant can connect to directly and query with citations back to the source re
 
 Don't just read the code — talk to it. Connect any MCP-capable client (Claude, Cursor, or another
 Streamable HTTP client) to the live server using the copy-paste snippets in README's
-["Add this CV to your AI assistant"](README.md) section (the single place those snippets are
+["Connect your agent in one step"](README.md) section (the single place those snippets are
 generated from, per #17) or the fuller [`docs/mcp.md`](docs/mcp.md), then ask something like *"Has
 Marcos worked with event-driven architectures? Show me the evidence."* No API key, OAuth, or
 account is required. If you'd rather watch than connect, the live `/mcp` page linked from both docs
