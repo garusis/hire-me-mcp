@@ -189,6 +189,13 @@ jobs:
   # `e2e` (no `needs:`) and only meaningful for `pull_request` — a push to
   # `main` produces a Production deploy, not a Preview one, and this suite
   # is specifically about gating what merges into `main`.
+  #
+  # `pnpm test:e2e:preview` also runs apps/web/e2e-preview/specs/mcp.spec.ts
+  # (#69) — the MCP endpoint smoke suite (real SDK client, initialize/
+  # tools-list/tools-call/error-path/rate-limit-header checks against the
+  # deployed /api/mcp) — in the same run, deliberately reusing this job/config
+  # rather than a separate one so preview-targeting reporting stays in one
+  # place. See apps/web/README.md and the root README's preview-gates section.
   preview-e2e:
     name: preview-e2e
     if: github.event_name == 'pull_request'

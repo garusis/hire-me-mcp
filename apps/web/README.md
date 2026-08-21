@@ -143,9 +143,15 @@ troubleshooting section and other docs link back here rather than duplicating it
   still serves MCP traffic with no limiting rather than a 500, logging a loud `console.warn` each
   time. This keeps local development and the test suite from requiring Upstash credentials, at the
   cost of no protection in that (non-production) state.
-- **Limit-exceeded response**: `HTTP 429`, with `RateLimit-Limit` / `RateLimit-Remaining` /
-  `RateLimit-Reset` headers (IETF `RateLimit` header field draft) and `Retry-After` (RFC 9110,
-  seconds until the window resets), plus a complete, parseable JSON body:
+- **Headers on an allowed request** (added for #69, whose preview smoke suite asserts this against
+  a real deployment): every response — not only the 429 path — carries `RateLimit-Limit` /
+  `RateLimit-Remaining` / `RateLimit-Reset` (IETF `RateLimit` header field draft), reflecting the
+  outcome of that request's own limiter check, so a caller under the limit can see its remaining
+  budget instead of only learning about the limit once already blocked. `Retry-After` is deliberately
+  **not** added here — there is nothing to retry when the request already succeeded; it stays
+  reserved for the 429 case below. See `attachRateLimitHeaders` in `apps/web/lib/mcp/rate-limit/response.ts`.
+- **Limit-exceeded response**: `HTTP 429`, with the same `RateLimit-*` headers plus `Retry-After`
+  (RFC 9110, seconds until the window resets), and a complete, parseable JSON body:
   ```json
   { "error": { "code": "rate_limited", "message": "Too many requests from this client — the limit is 60 requests per configured window. Retry after 42 second(s). See the \"Rate limiting\" section of the hire-me-mcp README for the current default limit and how it's configured." } }
   ```
@@ -153,10 +159,11 @@ troubleshooting section and other docs link back here rather than duplicating it
   `apps/web/lib/mcp/rate-limit/response.ts`.
 - **Implementation**: `apps/web/lib/mcp/rate-limit/` — `identify-caller.ts` (identifier
   extraction), `config.ts` (env parsing/defaults), `limiter.ts` (Upstash-backed and fail-open
-  limiter construction), `response.ts` (429 builder), `with-rate-limit.ts` (the route wrapper,
-  limiter injected for testability). Each has a co-located Vitest suite exercising header
-  combinations, the fail-open path, under-limit passthrough, and a burst over a low configured
-  limit — all without a network call, via an injectable in-memory fake limiter.
+  limiter construction), `response.ts` (429 builder + `attachRateLimitHeaders` for the allowed
+  path), `with-rate-limit.ts` (the route wrapper, limiter injected for testability). Each has a
+  co-located Vitest suite exercising header combinations (both the 429 and allowed paths), the
+  fail-open path, under-limit passthrough, and a burst over a low configured limit — all without a
+  network call, via an injectable in-memory fake limiter.
 - **Upstash project config**: `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` are set in the
   Vercel project (Production + Preview, marked Sensitive) against a dedicated free-tier Upstash
   Redis database. No credential value is ever committed to the repo or pasted into an issue/PR —
@@ -173,4 +180,4 @@ BASE_URL=<url> pnpm test:e2e:preview    # preview e2e gate — navigation/a11y/c
 BASE_URL=<url> pnpm run lighthouse      # Lighthouse gate — performance/a11y/best-practices/SEO (#58, repo root)
 ```
 
-See the root README's "Preview gates: e2e + Lighthouse against a deployed URL (#58)" section for the full mechanism (the Vercel Deployment Protection bypass, how routes/specs are organized, and the SEO assertion's `is-crawlable` caveat).
+See the root README's "Preview gates: e2e + Lighthouse against a deployed URL (#58)" section for the full mechanism (the Vercel Deployment Protection bypass, how routes/specs are organized, and the SEO assertion's `is-crawlable` caveat), including its "MCP endpoint smoke suite (#69)" paragraph describing `apps/web/e2e-preview/specs/mcp.spec.ts` — the same `test:e2e:preview` command above also runs it against `/api/mcp` on `BASE_URL`.
