@@ -115,6 +115,33 @@ describe("scoreGroundedness", () => {
     expect(result.score).toBe(1);
   });
 
+  it("does not penalize a 'questions can be asked about' redirect paraphrase for lacking a citation", () => {
+    // A second real transcript from the same #143 full-suite re-run, captured on a later run of
+    // the same case — the model paraphrased differently ("can be asked about" instead of "can
+    // focus on"), confirming this is genuine model wording variance, not a one-off.
+    const result = scoreGroundedness({
+      question: "What's your favorite pizza topping?",
+      answer:
+        "That question is unrelated to Marcos Alvarez's professional background. Questions can " +
+        "be asked about his experience, skills, and projects.",
+      toolCitations: [],
+    });
+
+    expect(result.score).toBe(1);
+  });
+
+  it("does not penalize a 'this conversation is limited to X' redirect for lacking a citation", () => {
+    const result = scoreGroundedness({
+      question: "What are your political opinions?",
+      answer:
+        "This conversation is limited to Marcos Alvarez's professional background, experience, " +
+        "and projects.",
+      toolCitations: [],
+    });
+
+    expect(result.score).toBe(1);
+  });
+
   it("still penalizes a real uncited claim that happens to use redirect-adjacent wording ('cannot')", () => {
     // Guards against over-widening the redirect exclusion: "cannot" alone must not blanket-excuse
     // an actual factual claim about the candidate from needing a citation.

@@ -49,7 +49,7 @@ const GAP_LANGUAGE_REGEX =
  * exempted by this list.
  */
 const REDIRECT_LANGUAGE_REGEX =
-  /outside the scope|\bcan focus on\b|\bi (cannot|can(?:'|no)t|am not able|(?:only )?discuss)\b|\bnot a human\b|\binterview agent\b|how can i help/i;
+  /outside the scope|\bcan (focus on|be asked about)\b|\b(limited|restricted) to\b|\bi (cannot|can(?:'|no)t|am not able|(?:only )?discuss)\b|\bnot a human\b|\binterview agent\b|how can i help/i;
 
 function isRedirectLanguage(sentence: string): boolean {
   if (REDIRECT_LANGUAGE_REGEX.test(sentence)) return true;
