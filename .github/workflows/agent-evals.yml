@@ -164,6 +164,26 @@ jobs:
         if: steps.secrets-check.outputs.available == 'true'
         run: pnpm turbo run build --filter=@hire-me-mcp/core --filter=@hire-me-mcp/career-data --filter=@hire-me-mcp/agent
 
+      # Safe diagnostic — never echoes the secret's value, only a SHA-256
+      # fingerprint (first 16 hex chars) and its length. Exists to
+      # distinguish two very different failure classes for "the eval step
+      # says the API key isn't valid": (a) secret DELIVERY is broken (a
+      # stale secrets snapshot on a re-run, a trailing-newline/whitespace
+      # corruption at set-time, ...) — the fingerprint printed here won't
+      # match the known-good local value; or (b) the key genuinely reaches
+      # the runner correctly but Google rejects the call anyway (e.g. a
+      # free-tier key rejecting the runner's region/IP) — the fingerprint
+      # matches, and the eval step's own error is the real, environmental
+      # signal. Known-good fingerprint for the current key (computed
+      # locally the same way, verified once against this exact command):
+      # `2ae3654173e92d09`, length `53`.
+      - name: Diagnose provided key (fingerprint only — never the value)
+        if: steps.secrets-check.outputs.available == 'true'
+        env:
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+        run: |
+          echo "key fingerprint: $(printf '%s' "$GOOGLE_GENERATIVE_AI_API_KEY" | sha256sum | cut -c1-16) length: ${#GOOGLE_GENERATIVE_AI_API_KEY}"
+
       - name: Run eval suite (real model calls, budget-capped)
         if: steps.secrets-check.outputs.available == 'true'
         env:
