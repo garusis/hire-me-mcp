@@ -44,3 +44,40 @@ describe("createRateLimiter — fail-open path (no credentials)", () => {
     expect(outcome.limit).toBe(42);
   });
 });
+
+describe("createRateLimiter — namespace prefix (#68, mocked Upstash SDK)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.resetModules();
+    vi.doUnmock("@upstash/redis");
+    vi.doUnmock("@upstash/ratelimit");
+  });
+
+  it("gives a caller-supplied namespace its own Ratelimit key prefix, distinct from the default MCP prefix — so /api/chat (#68) can share this same Upstash-backed mechanism without its session/IP counters colliding with the MCP route's (#39)", async () => {
+    vi.resetModules();
+    const ctorCalls: Array<{ prefix: string }> = [];
+    vi.doMock("@upstash/redis", () => ({ Redis: { fromEnv: () => ({}) } }));
+    vi.doMock("@upstash/ratelimit", () => {
+      class FakeRatelimit {
+        constructor(options: { prefix: string }) {
+          ctorCalls.push(options);
+        }
+        limit = vi.fn();
+      }
+      return { Ratelimit: Object.assign(FakeRatelimit, { slidingWindow: () => "sliding-window" }) };
+    });
+
+    const { createRateLimiter: createRateLimiterMocked } = await import("./limiter");
+    const env = {
+      UPSTASH_REDIS_REST_URL: "https://example.upstash.io",
+      UPSTASH_REDIS_REST_TOKEN: "token",
+    };
+    createRateLimiterMocked({ limit: 5, windowSeconds: 60 }, env, "chat-session");
+    createRateLimiterMocked({ limit: 5, windowSeconds: 60 }, env, "chat-ip");
+    createRateLimiterMocked({ limit: 5, windowSeconds: 60 }, env);
+
+    expect(ctorCalls[0]?.prefix).toBe("hire-me-mcp/ratelimit/chat-session");
+    expect(ctorCalls[1]?.prefix).toBe("hire-me-mcp/ratelimit/chat-ip");
+    expect(ctorCalls[2]?.prefix).toBe("hire-me-mcp/ratelimit");
+  });
+});
