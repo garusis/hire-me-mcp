@@ -70,7 +70,20 @@ function createFailOpenLimiter(config: RateLimitConfig): RateLimiter {
   };
 }
 
-function createUpstashLimiter(config: RateLimitConfig): RateLimiter {
+/**
+ * Builds this limiter's Ratelimit key prefix. `namespace`, when given,
+ * scopes the whole caller (#68's per-session and per-IP chat limiters) into
+ * its own Redis key space — `hire-me-mcp/ratelimit/<namespace>` — so its
+ * counters can never collide with the MCP route's (#39) or another chat
+ * limiter's, even when two limiters happen to see the same identifier
+ * string. Omitting it (the MCP route's call site, unchanged) keeps the
+ * original `"hire-me-mcp/ratelimit"` prefix exactly as before.
+ */
+function ratelimitPrefix(namespace: string | undefined): string {
+  return namespace ? `hire-me-mcp/ratelimit/${namespace}` : "hire-me-mcp/ratelimit";
+}
+
+function createUpstashLimiter(config: RateLimitConfig, namespace?: string): RateLimiter {
   // Must be created once, outside any per-request handler, per the
   // library's own ephemeral-cache guidance referenced above.
   const ephemeralCache = new Map();
@@ -78,7 +91,7 @@ function createUpstashLimiter(config: RateLimitConfig): RateLimiter {
     redis: Redis.fromEnv(),
     limiter: Ratelimit.slidingWindow(config.limit, `${config.windowSeconds} s`),
     ephemeralCache,
-    prefix: "hire-me-mcp/ratelimit",
+    prefix: ratelimitPrefix(namespace),
   });
 
   return {
@@ -94,13 +107,21 @@ function createUpstashLimiter(config: RateLimitConfig): RateLimiter {
   };
 }
 
-/** Builds the limiter for `config`, reading Upstash credentials from `env` (defaults to `process.env`). */
+/**
+ * Builds the limiter for `config`, reading Upstash credentials from `env`
+ * (defaults to `process.env`). `namespace` (#68) scopes the Redis key
+ * prefix — see {@link ratelimitPrefix} — so a second caller (e.g. `/api/chat`'s
+ * per-session and per-IP limiters) can share this exact mechanism/store
+ * without its counters colliding with the MCP route's (#39) or each
+ * other's. Omit it for the original, unnamespaced MCP behaviour.
+ */
 export function createRateLimiter(
   config: RateLimitConfig,
   env: UpstashEnv = process.env,
+  namespace?: string,
 ): RateLimiter {
   if (!hasUpstashCredentials(env)) {
     return createFailOpenLimiter(config);
   }
-  return createUpstashLimiter(config);
+  return createUpstashLimiter(config, namespace);
 }
