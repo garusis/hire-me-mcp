@@ -3,6 +3,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { MissingEnvVarError } from "./config.js";
 import { getInterviewAgent } from "./interview-agent.js";
+import { PROMPT_SECTIONS, SYSTEM_PROMPT } from "./prompt/index.js";
 
 function stubModel(text: string): MockLanguageModelV4 {
   return new MockLanguageModelV4({
@@ -34,5 +35,16 @@ describe("getInterviewAgent", () => {
 
   it("falls back to the env-driven createChatModel() factory when no model override is given", () => {
     expect(() => getInterviewAgent({ env: {} })).toThrow(MissingEnvVarError);
+  });
+
+  it("wires the real, versioned system prompt as its instructions — not a placeholder", async () => {
+    const agent = getInterviewAgent({ model: stubModel("hi") });
+
+    const instructions = await agent.getInstructions();
+
+    expect(instructions).toBe(SYSTEM_PROMPT);
+    for (const section of PROMPT_SECTIONS) {
+      expect(instructions).toContain(section.body);
+    }
   });
 });

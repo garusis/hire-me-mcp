@@ -2,19 +2,10 @@ import { Agent } from "@mastra/core/agent";
 import type { EnvSource } from "./config.js";
 import type { ChatModel } from "./model-provider.js";
 import { createChatModel } from "./model-provider.js";
+import { SYSTEM_PROMPT } from "./prompt/index.js";
 
 const AGENT_ID = "interview-agent";
 const AGENT_NAME = "Interview Agent";
-
-/**
- * Placeholder instructions only — voice, gap discipline, and grounding
- * content are covered by a later task in epic #5 (v0.5 Interview Chat
- * Agent). This task wires the runtime, not the prompt.
- */
-const PLACEHOLDER_INSTRUCTIONS =
-  "You are an interview assistant answering questions about a candidate's " +
-  "background. Detailed voice, grounding tools, and gap-handling rules will " +
-  "be added in a later task.";
 
 /** Options for {@link getInterviewAgent}. */
 export interface GetInterviewAgentOptions {
@@ -30,9 +21,13 @@ export interface GetInterviewAgentOptions {
 
 /**
  * The stable public entry point of this package: build the embedded
- * interview Mastra `Agent`. No tools yet (domain-tools task), no HTTP
- * surface (chat API route task) — just an agent bound to a provider-agnostic
- * model, ready for a stubbed or real call.
+ * interview Mastra `Agent`. Instructions are the versioned system prompt
+ * from `./prompt/` (identity, voice, grounding rules, gap discipline,
+ * citation format, off-topic/adversarial redirect policy — see
+ * `PROMPT_VERSION` for the content-hash version identifier evals attribute
+ * their results to). No tools yet (domain-tools task, #64), no HTTP surface
+ * (chat API route task) — just an agent bound to a provider-agnostic model,
+ * ready for a stubbed or real call.
  */
 export function getInterviewAgent(options: GetInterviewAgentOptions = {}): Agent {
   const model = options.model ?? createChatModel({ env: options.env });
@@ -40,7 +35,7 @@ export function getInterviewAgent(options: GetInterviewAgentOptions = {}): Agent
   return new Agent({
     id: AGENT_ID,
     name: AGENT_NAME,
-    instructions: PLACEHOLDER_INSTRUCTIONS,
+    instructions: SYSTEM_PROMPT,
     model,
   });
 }

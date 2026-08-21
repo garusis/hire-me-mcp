@@ -6,9 +6,20 @@
  * chat model provider.
  */
 
+export type { CitableEntityType, CitationMarker } from "./citations.js";
+export { parseCitationMarker, parseCitations, serializeCitation } from "./citations.js";
 export type { ChatModelConfig, ChatProvider, EnvSource } from "./config.js";
 export { InvalidChatProviderError, MissingEnvVarError, resolveChatModelConfig } from "./config.js";
 export type { GetInterviewAgentOptions } from "./interview-agent.js";
 export { getInterviewAgent } from "./interview-agent.js";
 export type { ChatModel, CreateChatModelOptions } from "./model-provider.js";
 export { createChatModel } from "./model-provider.js";
+export type { PromptSection, PromptSectionId } from "./prompt/index.js";
+export {
+  composeSystemPrompt,
+  computePromptVersion,
+  PROMPT_SECTION_ORDER,
+  PROMPT_SECTIONS,
+  PROMPT_VERSION,
+  SYSTEM_PROMPT,
+} from "./prompt/index.js";

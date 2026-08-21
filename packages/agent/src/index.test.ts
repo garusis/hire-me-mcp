@@ -6,7 +6,13 @@ import {
   getInterviewAgent,
   InvalidChatProviderError,
   MissingEnvVarError,
+  PROMPT_SECTIONS,
+  PROMPT_VERSION,
+  parseCitationMarker,
+  parseCitations,
   resolveChatModelConfig,
+  SYSTEM_PROMPT,
+  serializeCitation,
 } from "./index.js";
 
 describe("public entry point", () => {
@@ -46,5 +52,19 @@ describe("public entry point", () => {
     expect(() => resolveChatModelConfig({ CHAT_PROVIDER: "bogus" })).toThrow(
       InvalidChatProviderError,
     );
+  });
+
+  it("re-exports the versioned system prompt: SYSTEM_PROMPT, PROMPT_SECTIONS, PROMPT_VERSION", () => {
+    expect(SYSTEM_PROMPT.length).toBeGreaterThan(0);
+    expect(PROMPT_SECTIONS.length).toBeGreaterThan(0);
+    expect(PROMPT_VERSION).toMatch(/^[0-9a-f]+$/);
+  });
+
+  it("re-exports the shared citation marker parser/serializer for the UI and evals to consume", () => {
+    const marker = serializeCitation({ entityType: "project", entityId: "cowork" });
+    expect(parseCitationMarker(marker)).toEqual({ entityType: "project", entityId: "cowork" });
+    expect(parseCitations(`see ${marker} for details`)).toEqual([
+      { entityType: "project", entityId: "cowork" },
+    ]);
   });
 });
