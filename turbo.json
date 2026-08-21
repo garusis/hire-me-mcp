@@ -53,6 +53,15 @@
     "generate:connect:check": {
       "dependsOn": ["^build"],
       "outputs": []
+    },
+    "generate:llms": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": []
+    },
+    "generate:llms:check": {
+      "dependsOn": ["^build"],
+      "outputs": []
     }
   }
 }
