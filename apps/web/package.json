@@ -18,6 +18,7 @@
     "test:mcp": "vitest run --config vitest.mcp.config.ts"
   },
   "dependencies": {
+    "@ai-sdk/react": "4.0.74",
     "@hire-me-mcp/agent": "workspace:*",
     "@hire-me-mcp/career-data": "workspace:*",
     "@hire-me-mcp/core": "workspace:*",
