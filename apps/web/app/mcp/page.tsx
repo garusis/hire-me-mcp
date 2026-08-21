@@ -14,14 +14,14 @@ import { DemoTranscript } from "./demo-transcript";
 import styles from "./page.module.css";
 
 /**
- * README.md anchor for the rate-limiting/troubleshooting subsection this
- * page links to (#43). Deliberately a link to prose, not a hardcoded number
- * or a claim about current behavior: rate limiting itself lands in #39 and
- * is documented at that anchor once it ships, so this page never needs to
- * change (or go stale) when that happens.
+ * Canonical rate-limiting documentation this page links to (#43, #71).
+ * Deliberately a link to prose, not a hardcoded number: the limit and the
+ * limit-exceeded response are documented once, in `apps/web/README.md`'s
+ * "Rate limiting" section (#39), so this page never needs to change (or go
+ * stale) if the numbers do.
  */
 const RATE_LIMIT_DOC_URL =
-  "https://github.com/garusis/hire-me-mcp/blob/main/README.md#rate-limiting-and-troubleshooting";
+  "https://github.com/garusis/hire-me-mcp/blob/main/apps/web/README.md#rate-limiting";
 
 /** Description names the profile and the live tool catalogue, so it changes with either. */
 export function generateMetadata(): Metadata {
@@ -142,7 +142,7 @@ export default function McpPage() {
               connect, double check it supports the MCP Streamable HTTP transport and that the URL
               above was copied in full. For current rate-limit behavior, see{" "}
               <Link href={RATE_LIMIT_DOC_URL}>
-                the &quot;Rate limiting and troubleshooting&quot; section of the project README
+                the &quot;Rate limiting&quot; section of the app README
               </Link>
               .
             </p>

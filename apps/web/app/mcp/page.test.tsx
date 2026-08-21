@@ -121,6 +121,19 @@ describe("MCP page (#43)", () => {
     const link = screen.getByRole("link", { name: /rate limit|troubleshoot/i });
     expect(link).toHaveAttribute("href", expect.stringContaining("#rate-limiting"));
   });
+
+  it("points that link at the canonical apps/web/README.md#rate-limiting section (#71), not the stale root-README anchor", async () => {
+    getMcpEndpointUrl.mockReturnValue("https://stub-deploy.vercel.app/api/mcp");
+    const { default: McpPage } = await import("./page.js");
+
+    render(await McpPage());
+
+    const link = screen.getByRole("link", { name: /rate limit|troubleshoot/i });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://github.com/garusis/hire-me-mcp/blob/main/apps/web/README.md#rate-limiting",
+    );
+  });
 });
 
 describe("MCP page metadata", () => {
