@@ -28,7 +28,7 @@ describe("public entry point", () => {
     const model = createChatModel({ env: { GOOGLE_GENERATIVE_AI_API_KEY: "fake-google-key" } }) as {
       modelId: string;
     };
-    expect(model.modelId).toBe("gemini-3.6-flash");
+    expect(model.modelId).toBe("gemini-3.5-flash-lite");
   });
 
   it("re-exports getInterviewAgent, producing a Mastra Agent that responds via a stubbed model", async () => {

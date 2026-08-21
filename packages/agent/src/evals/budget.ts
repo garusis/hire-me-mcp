@@ -74,7 +74,8 @@ export interface TokenPricing {
 
 /** Small, approximate, documented-at-build-time pricing table (see module docs) — not a live feed. */
 const MODEL_PRICING: Readonly<Record<string, TokenPricing>> = {
-  "gemini-3.6-flash": { inputPerMillion: 0, outputPerMillion: 0 }, // free tier — the project's default
+  "gemini-3.5-flash-lite": { inputPerMillion: 0, outputPerMillion: 0 }, // free tier — the project's default
+  "gemini-3.6-flash": { inputPerMillion: 0, outputPerMillion: 0 }, // free tier — former default, still swappable via CHAT_MODEL_ID
   "claude-haiku-4-5": { inputPerMillion: 1, outputPerMillion: 5 },
 };
 

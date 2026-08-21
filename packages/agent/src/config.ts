@@ -3,9 +3,21 @@
  *
  * Owner decision (documented in the package README, inverting the original
  * issue text): the DEFAULT provider is Google Gemini free tier
- * (`gemini-3.6-flash`), with Anthropic Claude Haiku 4.5 wired as the
- * swappable alternate. Neither this module nor its errors ever include an
- * API key's value — only the name of the environment variable involved.
+ * (`gemini-3.5-flash-lite`, a pinned id — not the `-latest` alias), with
+ * Anthropic Claude Haiku 4.5 wired as the swappable alternate. Neither this
+ * module nor its errors ever include an API key's value — only the name of
+ * the environment variable involved.
+ *
+ * Model swap (#72-adjacent, superseding the `gemini-3.6-flash` default set
+ * while building #72): AI Studio dashboard quota data, corroborated by
+ * #141's recorded `429 RESOURCE_EXHAUSTED` (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`,
+ * quotaValue 20), showed the full flash models (`gemini-3.6-flash`,
+ * `gemini-3.7-flash`) are capped at 5 RPM / 20 requests-per-DAY on the free
+ * tier — a ceiling a single eval run can exhaust by itself, before counting
+ * production chat traffic on the same key. The `-lite` flash models
+ * (`gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`) get 15 RPM / 500 RPD —
+ * enough headroom for both production chat and eval runs to share the free
+ * tier. See `README.md`'s quota rationale table for the full comparison.
  */
 
 /** The two AI SDK provider bindings this package knows how to construct. */
@@ -22,7 +34,7 @@ export interface ChatModelConfig {
 export type EnvSource = Readonly<Record<string, string | undefined>>;
 
 const DEFAULT_PROVIDER: ChatProvider = "google";
-const GOOGLE_DEFAULT_MODEL_ID = "gemini-3.6-flash";
+const GOOGLE_DEFAULT_MODEL_ID = "gemini-3.5-flash-lite";
 const ANTHROPIC_DEFAULT_MODEL_ID = "claude-haiku-4-5";
 
 /** Thrown when a required environment variable is missing or blank. Never carries a value. */

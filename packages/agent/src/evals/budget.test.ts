@@ -70,4 +70,10 @@ describe("getModelPricing", () => {
     expect(pricing.inputPerMillion).toBeGreaterThan(0);
     expect(pricing.outputPerMillion).toBeGreaterThan(0);
   });
+
+  it("prices the default google model, gemini-3.5-flash-lite, as free tier ($0)", () => {
+    const pricing = getModelPricing("gemini-3.5-flash-lite");
+    expect(pricing.inputPerMillion).toBe(0);
+    expect(pricing.outputPerMillion).toBe(0);
+  });
 });

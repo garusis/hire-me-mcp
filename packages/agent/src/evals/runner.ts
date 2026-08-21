@@ -32,11 +32,13 @@
  *
  * ## RPM throttle
  *
- * Gemini's free tier allows roughly 10-15 requests per minute
- * (`packages/agent/README.md`). `rpmLimit` (default 10, conservative)
- * converts to a minimum delay between calls; the throttle sleeps BEFORE
- * every case after the first, never after the last (no pointless trailing
- * wait once the run is done).
+ * Verified against the AI Studio dashboard (`packages/agent/README.md`'s
+ * quota rationale table): the default model, `gemini-3.5-flash-lite`, gets
+ * 15 RPM / 500 RPD on the free tier. `rpmLimit` (default 10) stays a
+ * polite margin under that 15 RPM ceiling rather than running right up
+ * against it; it converts to a minimum delay between calls, and the
+ * throttle sleeps BEFORE every case after the first, never after the last
+ * (no pointless trailing wait once the run is done).
  */
 
 import {

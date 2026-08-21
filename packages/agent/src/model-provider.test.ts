@@ -19,7 +19,7 @@ describe("createChatModel", () => {
       env: { GOOGLE_GENERATIVE_AI_API_KEY: "fake-google-key" },
     }) as InstalledLanguageModel;
 
-    expect(model.modelId).toBe("gemini-3.6-flash");
+    expect(model.modelId).toBe("gemini-3.5-flash-lite");
     expect(model.provider).toContain("google");
   });
 
