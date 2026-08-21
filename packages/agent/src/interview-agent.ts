@@ -3,6 +3,7 @@ import type { EnvSource } from "./config.js";
 import type { ChatModel } from "./model-provider.js";
 import { createChatModel } from "./model-provider.js";
 import { SYSTEM_PROMPT } from "./prompt/index.js";
+import { AGENT_TOOLS } from "./tools/index.js";
 
 const AGENT_ID = "interview-agent";
 const AGENT_NAME = "Interview Agent";
@@ -25,9 +26,10 @@ export interface GetInterviewAgentOptions {
  * from `./prompt/` (identity, voice, grounding rules, gap discipline,
  * citation format, off-topic/adversarial redirect policy — see
  * `PROMPT_VERSION` for the content-hash version identifier evals attribute
- * their results to). No tools yet (domain-tools task, #64), no HTTP surface
+ * their results to), and it is grounded on the full `packages/core`
+ * domain-service tool set (`./tools/index.js`, #64). No HTTP surface yet
  * (chat API route task) — just an agent bound to a provider-agnostic model,
- * ready for a stubbed or real call.
+ * its system prompt, and its tools, ready for a stubbed or real call.
  */
 export function getInterviewAgent(options: GetInterviewAgentOptions = {}): Agent {
   const model = options.model ?? createChatModel({ env: options.env });
@@ -37,5 +39,6 @@ export function getInterviewAgent(options: GetInterviewAgentOptions = {}): Agent
     name: AGENT_NAME,
     instructions: SYSTEM_PROMPT,
     model,
+    tools: AGENT_TOOLS,
   });
 }

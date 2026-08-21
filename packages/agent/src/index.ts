@@ -23,3 +23,4 @@ export {
   PROMPT_VERSION,
   SYSTEM_PROMPT,
 } from "./prompt/index.js";
+export { AGENT_TOOL_CORE_FUNCTIONS, AGENT_TOOL_NAMES, AGENT_TOOLS } from "./tools/index.js";

@@ -2,6 +2,9 @@ import { Agent } from "@mastra/core/agent";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import {
+  AGENT_TOOL_CORE_FUNCTIONS,
+  AGENT_TOOL_NAMES,
+  AGENT_TOOLS,
   createChatModel,
   getInterviewAgent,
   InvalidChatProviderError,
@@ -66,5 +69,16 @@ describe("public entry point", () => {
     expect(parseCitations(`see ${marker} for details`)).toEqual([
       { entityType: "project", entityId: "cowork" },
     ]);
+  });
+
+  it("re-exports the domain-grounded tool registry (#64)", () => {
+    expect(AGENT_TOOL_NAMES).toEqual([
+      "get-profile",
+      "get-experience",
+      "search-projects",
+      "get-skill-evidence",
+    ]);
+    expect(Object.keys(AGENT_TOOLS)).toEqual(AGENT_TOOL_NAMES);
+    expect(Object.keys(AGENT_TOOL_CORE_FUNCTIONS).sort()).toEqual([...AGENT_TOOL_NAMES].sort());
   });
 });
