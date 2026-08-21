@@ -296,19 +296,48 @@ This is a real finding, not a suite bug: the "~10-15 RPM" free-tier guidance thi
 undersold the actual binding constraint — a **20-requests-per-day** ceiling per project per model,
 tight enough that this suite's own default case cap (8, each case potentially costing 1-3 provider
 calls for tool-using turns) can exhaust an entire day's quota by itself, before counting production
-traffic on the same key. Two consequences documented here rather than hidden:
+traffic on the same key. This directly motivated the model swap documented above (the `gemini-3.6-flash`
+-> `gemini-3.5-flash-lite` default change, 20 RPD -> 500 RPD), which unblocked the full-dataset run
+below.
 
-1. **`EVAL_THRESHOLDS` in `./thresholds.ts` are placeholders, not yet calibrated against a real
-   full-dataset aggregate** — the numbers there are deliberately conservative starting points with
-   documented rationale, but this task could not follow through on "adjust to reflect current
-   honest reality with a margin" because no full real-run aggregate exists yet to calibrate
-   against. Recalibrating them against a real run (once quota allows, or against a paid/alternate
-   provider — `CHAT_PROVIDER=anthropic` is already wired, see the provider table above) is
-   follow-up work, not silently deferred: this paragraph is that record.
-2. **A dedicated Google Cloud project/API key for eval runs**, separate from the production chat
-   key, would decouple this suite's budget from production traffic — worth raising for #73 (CI
-   wiring), where a scheduled or PR-triggered run competing with live traffic for the same 20/day
-   ceiling would be a real operational risk, not just an inconvenience during development.
+### Real-run results (full 17/17-case run, `gemini-3.5-flash-lite`, post-model-swap)
+
+With the model swap in place, the suite ran the **entire 17-case dataset for real** (`EVAL_MAX_CASES=17`,
+budget caps raised to accommodate a full run) — no `BudgetExceededError`, no quota exhaustion.
+
+**Aggregates:** groundedness 0.7647, gap honesty 1.0000, relevance 0.5520. **Totals:** 91,728 tokens
+(90,088 input / 1,640 output), $0 estimated cost (free tier). `EVAL_THRESHOLDS` (`./thresholds.ts`)
+are now calibrated against these real numbers, each with a documented margin — see that file's
+inline rationale for the exact reasoning per scorer. Two findings from this run are flagged here
+rather than smoothed over by the calibration:
+
+1. **A real per-case groundedness miss**: `grounded-nodejs-experience` (a claimed-skill question)
+   scored 0 on groundedness — the answer's `[cite:skill:nodejs]` markers (a syntactically valid
+   citation; `nodejs` is a real skill id in `career-data`) didn't match any citation the run's tool
+   calls actually returned. Read plainly: the model asserted a citation for a fact without that
+   citation being backed by a tool call in that specific run — a real grounding gap, not a scorer
+   bug. It's one case out of 17, but worth tracking across future runs rather than dismissing as
+   noise.
+2. **The relevance aggregate (0.5520) is below what the original placeholder threshold (0.6)
+   expected**, and the run's own report legitimately failed that check before recalibration.
+   Per-case data shows this isn't concentrated in the off-topic/injection categories (expected to
+   score low by design — see "Three scorers" above): several `grounded`/`gap` cases that scored a
+   perfect 1.0 on both groundedness and gap honesty still scored as low as 0.33 on relevance. That
+   pattern — correct, cited, honest answers scoring low on a keyword-overlap heuristic — points at
+   the relevance scorer's own strictness (it doesn't credit paraphrase, synonyms, or citation
+   markers as "addressing" a question's keywords) more than an actual agent relevance problem, but
+   this project is calibrating to the honest number rather than asserting that conclusion without
+   scorer changes to back it. Improving `../scorers/relevance.ts` (stemming/synonym-aware overlap)
+   is flagged as follow-up work, not silently deferred.
+
+Two earlier follow-ups from the pre-swap run remain relevant:
+
+1. **A dedicated Google Cloud project/API key for eval runs**, separate from the production chat
+   key, would decouple this suite's budget from production traffic entirely — worth raising for #73
+   (CI wiring). Less urgent now that the default model's 500 RPD gives real headroom, but still the
+   more robust long-term posture for a scheduled/PR-triggered run.
+2. Threshold recalibration against a different provider (`CHAT_PROVIDER=anthropic` is already
+   wired) remains available if a future task needs to compare model quality, not just quota.
 
 ### Env knobs
 

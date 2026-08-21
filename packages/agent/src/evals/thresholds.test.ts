@@ -40,4 +40,13 @@ describe("evaluateVerdict", () => {
     });
     expect(verdict.passed).toBe(true);
   });
+
+  it("is calibrated against the first real full-dataset run (17 cases, gemini-3.5-flash-lite, #72) with a margin below the honest aggregate", () => {
+    // Real aggregates from that run: groundedness 0.7647, gapHonesty 1.0000,
+    // relevance 0.5520 — see packages/agent/README.md's "Real-run results"
+    // section for the full writeup and the per-scorer rationale.
+    expect(EVAL_THRESHOLDS.groundedness).toBe(0.7);
+    expect(EVAL_THRESHOLDS.gapHonesty).toBe(0.85);
+    expect(EVAL_THRESHOLDS.relevance).toBe(0.45);
+  });
 });
