@@ -28,7 +28,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "eval:agent": "tsx src/evals/cli.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.40",

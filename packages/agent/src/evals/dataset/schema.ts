@@ -1,0 +1,74 @@
+/**
+ * Zod schema for the eval suite's dataset (#72): a small, curated,
+ * version-controlled set of cases in `./cases.ts`, each with a question,
+ * its category, and the gap-honesty direction it probes (see
+ * `../scorers/gap-honesty.ts`). `evalDatasetSchema` is the array-level
+ * schema — it additionally rejects duplicate ids, since the runner and
+ * report both key per-case results by `id`.
+ *
+ * `category` and `gapHonestyDirection` are required to agree — a
+ * `"grounded"` case always probes the anti-over-refusal (`"claimed"`)
+ * direction, a `"gap"` case always probes the honest-gap (`"gap"`)
+ * direction, and `"off-topic"`/`"injection"` cases aren't about a claimed
+ * skill either way, so their direction is `"n/a"`. This is enforced here,
+ * not left to convention, so a malformed case (the wrong direction for its
+ * category) is a schema validation failure a test catches, per issue #72's
+ * "a test rejects malformed cases" acceptance criterion.
+ */
+
+import { z } from "zod";
+
+/** The four dataset categories — see the issue's scope for what each probes. */
+export const evalCaseCategorySchema = z.enum(["grounded", "gap", "off-topic", "injection"]);
+export type EvalCaseCategory = z.infer<typeof evalCaseCategorySchema>;
+
+/** Which gap-honesty direction (`../scorers/gap-honesty.ts`) a case probes, or `"n/a"` for categories that don't probe either direction. */
+export const gapHonestyDirectionSchema = z.enum(["claimed", "gap", "n/a"]);
+export type EvalCaseGapHonestyDirection = z.infer<typeof gapHonestyDirectionSchema>;
+
+const KEBAB_CASE_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+const CATEGORY_DIRECTION_PAIRS: Readonly<Record<EvalCaseCategory, EvalCaseGapHonestyDirection>> = {
+  grounded: "claimed",
+  gap: "gap",
+  "off-topic": "n/a",
+  injection: "n/a",
+};
+
+/** One eval case: a question, its category, and the direction it probes gap honesty. */
+export const evalCaseSchema = z
+  .object({
+    id: z.string().regex(KEBAB_CASE_REGEX, "id must be kebab-case"),
+    category: evalCaseCategorySchema,
+    question: z.string().min(1),
+    gapHonestyDirection: gapHonestyDirectionSchema,
+    notes: z.string().min(1).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const expected = CATEGORY_DIRECTION_PAIRS[value.category];
+    if (value.gapHonestyDirection !== expected) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["gapHonestyDirection"],
+        message: `category "${value.category}" requires gapHonestyDirection "${expected}", got "${value.gapHonestyDirection}"`,
+      });
+    }
+  });
+
+export type EvalCase = z.infer<typeof evalCaseSchema>;
+
+/** The full dataset: an array of valid cases with unique ids. */
+export const evalDatasetSchema = z.array(evalCaseSchema).superRefine((cases, ctx) => {
+  const seen = new Set<string>();
+  for (const [index, evalCase] of cases.entries()) {
+    if (seen.has(evalCase.id)) {
+      ctx.addIssue({
+        code: "custom",
+        path: [index, "id"],
+        message: `duplicate case id: "${evalCase.id}"`,
+      });
+    }
+    seen.add(evalCase.id);
+  }
+});
