@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { MCP_TOOL_CATALOGUE } from "../../lib/mcp/tool-catalogue";
 import { getMcpEndpointUrl } from "../../src/lib/config/site-url";
 import { getProfileView } from "../../src/lib/content";
+import { buildPageMetadata } from "../../src/lib/seo/page-metadata";
 import { Container } from "../design-system/primitives/container";
 import { CopyToClipboard } from "../design-system/primitives/copy-to-clipboard";
 import { Heading } from "../design-system/primitives/heading";
@@ -27,11 +28,11 @@ const RATE_LIMIT_DOC_URL =
 export function generateMetadata(): Metadata {
   const { profile } = getProfileView();
   const toolNames = MCP_TOOL_CATALOGUE.map((tool) => tool.name).join(", ");
-  return {
+  return buildPageMetadata({
     title: "Add me to your AI",
     description: `Connect any MCP-compatible AI assistant directly to ${profile.name}'s real career data: ${toolNames}.`,
-    alternates: { canonical: "/mcp" },
-  };
+    path: "/mcp",
+  });
 }
 
 /**

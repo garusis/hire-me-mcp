@@ -4,6 +4,7 @@ import { compileMDX } from "next-mdx-remote/rsc";
 import { getProfileView, getWritingEntryView, listWritingSlugs } from "../../../src/lib/content";
 import { buildArticleJsonLd } from "../../../src/lib/seo/json-ld";
 import { JsonLdScript } from "../../../src/lib/seo/json-ld-script";
+import { buildPageMetadata } from "../../../src/lib/seo/page-metadata";
 import { Container } from "../../design-system/primitives/container";
 import { Heading } from "../../design-system/primitives/heading";
 import { Prose } from "../../design-system/primitives/prose";
@@ -22,11 +23,12 @@ export async function generateMetadata({ params }: WritingDetailPageProps): Prom
     return {};
   }
   const { entry } = view.value;
-  return {
+  return buildPageMetadata({
     title: entry.title,
     description: entry.summary,
-    alternates: { canonical: `/writing/${slug}` },
-  };
+    path: `/writing/${slug}`,
+    type: "article",
+  });
 }
 
 /**
