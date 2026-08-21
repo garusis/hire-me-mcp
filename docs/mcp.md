@@ -164,4 +164,4 @@ misconfiguration.
 
 - [`apps/web/README.md` § "Rate limiting"](https://github.com/garusis/hire-me-mcp/blob/main/apps/web/README.md#rate-limiting) — canonical rate-limit documentation.
 - The site's [`/mcp` page](https://hire-me-mcp-web.vercel.app/mcp) — the same setup content with a live demo transcript.
-- Root [`README.md`](../README.md) — project overview and the "Add this CV to your AI assistant" section.
+- Root [`README.md`](../README.md) — project overview and the "Connect your agent in one step" section.

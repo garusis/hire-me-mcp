@@ -74,6 +74,9 @@ jobs:
       - name: Check llms.txt / llms-full.txt generation is valid (#37)
         run: pnpm generate:llms:check
 
+      - name: Verify README local-development commands (#23)
+        run: node scripts/ci/verify-readme-local-dev.mjs
+
   # No `needs: quality` — e2e runs in parallel with quality so a broken page
   # is reported as an e2e failure (not skipped because quality also failed)
   # and both are independently required status checks on main.
