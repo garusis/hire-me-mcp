@@ -24,6 +24,7 @@
     "test:e2e:preview:ui": "playwright test -c playwright.preview.config.ts --ui",
     "lighthouse": "node scripts/lighthouse/build-config.mjs .lighthouserc.local.json && lhci autorun --config=.lighthouserc.local.json",
     "test:mcp": "pnpm --filter @hire-me-mcp/web test:mcp",
+    "eval:agent": "pnpm --filter @hire-me-mcp/agent eval:agent",
     "typecheck": "turbo run typecheck",
     "validate": "turbo run validate",
     "lint:content": "turbo run lint:content",
