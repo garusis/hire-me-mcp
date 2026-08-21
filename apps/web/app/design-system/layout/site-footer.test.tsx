@@ -17,4 +17,16 @@ describe("SiteFooter", () => {
     const year = new Date().getFullYear().toString();
     expect(screen.getByText(new RegExp(year))).toBeDefined();
   });
+
+  it("links to /llms.txt, the curated MCP-agent entry point (#37)", () => {
+    render(<SiteFooter />);
+    const link = screen.getByRole("link", { name: /llms\.txt/i });
+    expect(link).toHaveAttribute("href", "/llms.txt");
+  });
+
+  it("styles the /llms.txt link with the muted-ink treatment, not the plain accent link color (a11y: the default accent link color fails WCAG AA contrast against this footer's subtle background)", () => {
+    render(<SiteFooter />);
+    const link = screen.getByRole("link", { name: /llms\.txt/i });
+    expect(link.className).toMatch(/mutedLink/);
+  });
 });

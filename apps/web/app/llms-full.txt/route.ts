@@ -1,0 +1,16 @@
+import { renderLlmsFullTxt } from "../../lib/llms/generate-llms";
+import { getMcpEndpointUrl, getSiteUrl } from "../../src/lib/config/site-url";
+
+/**
+ * `GET /llms-full.txt` (#37) — the expanded llms.txt entry point (full tool
+ * list, parameters, example prompts, career summary, architecture and
+ * connection instructions), rendered fresh from the content layer and the
+ * live MCP tool registry on every request. See `lib/llms/generate-llms.ts`'s
+ * module doc for the serving/drift decision this route is part of.
+ */
+export async function GET(): Promise<Response> {
+  const text = renderLlmsFullTxt({ siteUrl: getSiteUrl(), endpointUrl: getMcpEndpointUrl() });
+  return new Response(text, {
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
+  });
+}

@@ -71,6 +71,9 @@ jobs:
       - name: Check generated connect regions are up to date (#17)
         run: pnpm generate:connect:check
 
+      - name: Check llms.txt / llms-full.txt generation is valid (#37)
+        run: pnpm generate:llms:check
+
       - name: Verify README local-development commands (#23)
         run: node scripts/ci/verify-readme-local-dev.mjs
 

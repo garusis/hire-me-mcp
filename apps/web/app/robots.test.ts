@@ -37,4 +37,19 @@ describe("robots", () => {
     expect(rules?.userAgent).toBe("*");
     expect(rules?.disallow).toBe("/");
   });
+
+  it("does not disallow /llms.txt or /llms-full.txt on an indexable deploy (#37)", async () => {
+    getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
+    getRobotsIndexable.mockReturnValue(true);
+    const { default: robots } = await import("./robots.js");
+
+    const output = robots();
+    const rules = Array.isArray(output.rules) ? output.rules[0] : output.rules;
+    const disallow = rules?.disallow;
+    const disallowed =
+      disallow === undefined ? [] : Array.isArray(disallow) ? disallow : [disallow];
+
+    expect(disallowed).not.toContain("/llms.txt");
+    expect(disallowed).not.toContain("/llms-full.txt");
+  });
 });

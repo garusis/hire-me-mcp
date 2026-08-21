@@ -30,7 +30,9 @@
     "lint:content": "turbo run lint:content",
     "validate:lefthook": "node scripts/lefthook/validate-config.mjs",
     "generate:connect": "turbo run generate:connect --filter=@hire-me-mcp/web",
-    "generate:connect:check": "turbo run generate:connect:check --filter=@hire-me-mcp/web"
+    "generate:connect:check": "turbo run generate:connect:check --filter=@hire-me-mcp/web",
+    "generate:llms": "turbo run generate:llms --filter=@hire-me-mcp/web",
+    "generate:llms:check": "turbo run generate:llms:check --filter=@hire-me-mcp/web"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
