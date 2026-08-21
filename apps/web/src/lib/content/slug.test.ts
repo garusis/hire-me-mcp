@@ -1,5 +1,9 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { findBySlug, listSlugs, toSlug } from "./slug";
+
+const SOURCE_PATH = path.join(process.cwd(), "src", "lib", "content", "slug.ts");
 
 interface FixtureEntity {
   id: string;
@@ -18,6 +22,12 @@ describe("toSlug", () => {
 
   it("normalizes an id that is not already clean kebab-case", () => {
     expect(toSlug("  Senior Engineer -- Acme!! ")).toBe("senior-engineer-acme");
+  });
+
+  it("imports slugify from @hire-me-mcp/core/slugify, not the default barrel — so this module (reused client-side, via app/skills/citation-href.ts, by #70's chat surface) never pulls in @hire-me-mcp/core's node:fs-dependent repository code into a client bundle", () => {
+    const source = readFileSync(SOURCE_PATH, "utf-8");
+    expect(source).toMatch(/from\s+"@hire-me-mcp\/core\/slugify"/);
+    expect(source).not.toMatch(/from\s+"@hire-me-mcp\/core"/);
   });
 });
 

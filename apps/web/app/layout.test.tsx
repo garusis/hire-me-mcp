@@ -3,8 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProfileView } from "../src/lib/content";
 import RootLayout from "./layout.js";
 
-const { getProfileView } = vi.hoisted(() => ({ getProfileView: vi.fn() }));
-vi.mock("../src/lib/content", () => ({ getProfileView }));
+const { getProfileView, getWritingListView } = vi.hoisted(() => ({
+  getProfileView: vi.fn(),
+  getWritingListView: vi.fn(() => ({ items: [], citations: [] })),
+}));
+vi.mock("../src/lib/content", () => ({ getProfileView, getWritingListView }));
 
 const { getSiteUrl, getRobotsIndexable } = vi.hoisted(() => ({
   getSiteUrl: vi.fn(),
@@ -129,5 +132,10 @@ describe("RootLayout", () => {
   it("renders the theme toggle in the header", () => {
     render(<RootLayout>{<p>page content</p>}</RootLayout>);
     expect(screen.getByRole("button", { name: /theme/i })).toBeDefined();
+  });
+
+  it("renders the chat widget launcher, reachable from every page", () => {
+    render(<RootLayout>{<p>page content</p>}</RootLayout>);
+    expect(screen.getByRole("button", { name: /ask about marcos/i })).toBeDefined();
   });
 });

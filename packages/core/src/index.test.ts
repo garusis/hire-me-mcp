@@ -31,6 +31,11 @@ describe("slugify", () => {
   it("returns an empty string when there is nothing alphanumeric to keep", () => {
     expect(slugify("!!!")).toBe("");
   });
+
+  it("re-exports the same function from the ./slugify.js leaf module, rather than duplicating it — the client-safe subpath (@hire-me-mcp/core/slugify) `apps/web`'s citation-href.ts relies on", async () => {
+    const leafModule = await import("./slugify.js");
+    expect(slugify).toBe(leafModule.slugify);
+  });
 });
 
 describe("public entry point", () => {

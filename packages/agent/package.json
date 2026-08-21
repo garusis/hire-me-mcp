@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./citations": {
+      "types": "./dist/citations.d.ts",
+      "default": "./dist/citations.js"
     }
   },
   "files": [

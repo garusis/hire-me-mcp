@@ -2,8 +2,9 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import type { ReactNode } from "react";
 import { getRobotsIndexable, getSiteUrl } from "../src/lib/config/site-url";
-import { getProfileView } from "../src/lib/content";
+import { getProfileView, getWritingListView } from "../src/lib/content";
 import { COLOR_BG_DARK, COLOR_BG_LIGHT } from "../src/lib/seo/site-colors";
+import { ChatWidget } from "./chat/chat-widget";
 import { SiteFooter } from "./design-system/layout/site-footer";
 import { SiteHeader } from "./design-system/layout/site-header";
 import { MAIN_CONTENT_ID, SkipLink } from "./design-system/layout/skip-link";
@@ -71,6 +72,9 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  const { items: writingItems } = getWritingListView();
+  const writingEntries = writingItems.map((item) => item.entry);
+
   return (
     <html lang="en" className={`${displayFont.variable} ${bodyFont.variable} ${monoFont.variable}`}>
       <body className={bodyFont.className}>
@@ -84,6 +88,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <SiteHeader />
         <main id={MAIN_CONTENT_ID}>{children}</main>
         <SiteFooter />
+        <ChatWidget writingEntries={writingEntries} />
       </body>
     </html>
   );

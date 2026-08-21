@@ -21,7 +21,17 @@
  */
 
 import type { Citation } from "@hire-me-mcp/core";
-import { toSlug, type WritingEntry } from "../../src/lib/content";
+import type { WritingEntry } from "../../src/lib/content";
+// `toSlug` comes from its own leaf module, not the `../../src/lib/content`
+// barrel: that barrel's `index.ts` (and `writing.ts`, which re-exports
+// `WritingEntry`) starts with `import "server-only"`, so a *value* import
+// of anything from it — unlike the `import type` above, which is erased at
+// compile time — pulls that whole module graph into any bundle that
+// reaches this file. This module is reused client-side by the chat
+// surface's `resolve-chat-citation-href.ts` (#70), which fails to build if
+// this file value-imports from the barrel. See
+// `citation-href.test.ts`'s "has no runtime dependency on..." case.
+import { toSlug } from "../../src/lib/content/slug";
 
 export function resolveCitationHref(
   citation: Citation,
