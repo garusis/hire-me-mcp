@@ -42,22 +42,11 @@ export { search } from "./search/engine.js";
 export { normalizeTerm, tokenize } from "./search/normalize.js";
 export type { ProjectSearchResult, SearchProjectsOptions } from "./search-projects.js";
 export { searchProjects } from "./search-projects.js";
+// Re-exported from its own leaf module — see slugify.ts's doc comment —
+// rather than defined inline, so `@hire-me-mcp/core/slugify` can be
+// imported without pulling in this barrel's `repository.js`
+// (`node:fs`/`node:path`) dependency.
+export { slugify } from "./slugify.js";
 
 /** Name of this package, exported as a trivial placeholder value. */
 export const CORE_PACKAGE_NAME = "@hire-me-mcp/core";
-
-/**
- * Convert arbitrary text into a URL-safe slug: lowercased, trimmed,
- * non-alphanumeric runs collapsed to a single hyphen, no leading/trailing
- * hyphens.
- *
- * A small but real piece of domain-agnostic logic — used to prove the
- * Vitest pipeline exercises actual exported behavior, not a placeholder.
- */
-export function slugify(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}

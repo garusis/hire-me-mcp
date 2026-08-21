@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./slugify": {
+      "types": "./dist/slugify.d.ts",
+      "default": "./dist/slugify.js"
     }
   },
   "files": [
