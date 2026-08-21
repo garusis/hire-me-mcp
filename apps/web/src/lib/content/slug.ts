@@ -6,9 +6,17 @@
  * documented derivation step (rather than using `entry.id` directly)
  * so a future id format change can't silently produce unsafe route
  * segments.
+ *
+ * Imports `slugify` from `@hire-me-mcp/core`'s `./slugify` subpath, not its
+ * default `.` export: the default barrel also re-exports
+ * `createContentCareerDataRepository`, whose `node:fs`/`node:path` file
+ * reads break a Next.js client-component build. This module is reused
+ * client-side by `app/skills/citation-href.ts` (#30), which the chat
+ * surface's `resolve-chat-citation-href.ts` (#70) imports from a "use
+ * client" component tree — see `slug.test.ts`'s regression test for this.
  */
 
-import { slugify } from "@hire-me-mcp/core";
+import { slugify } from "@hire-me-mcp/core/slugify";
 
 /** Derives a stable, URL-safe slug from a career-data entity's own `id`. */
 export function toSlug(id: string): string {

@@ -1,5 +1,9 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveCitationHref } from "./citation-href";
+
+const SOURCE_PATH = path.join(process.cwd(), "app", "skills", "citation-href.ts");
 
 describe("resolveCitationHref", () => {
   it("points an experience citation at the matching anchor on /experience", () => {
@@ -93,5 +97,27 @@ describe("resolveCitationHref", () => {
     );
 
     expect(href).toBe("/");
+  });
+
+  it("has no runtime dependency on the \"server-only\"-tagged content barrel, so it's safe to import from a client component (#70's chat surface reuses it via resolve-chat-citation-href.ts)", () => {
+    // `../../src/lib/content`'s index.ts (and every module it re-exports,
+    // e.g. `writing.ts`) starts with `import "server-only"` — a value
+    // import of anything from that barrel pulls the whole module graph,
+    // "server-only" included, into any bundle that reaches this file. A
+    // Next.js client-component build fails hard the moment that happens.
+    // `toSlug` must therefore come from its own leaf module
+    // (`../../src/lib/content/slug`), never from the barrel; `WritingEntry`
+    // may still come from the barrel because a `import type` is erased
+    // entirely at compile time and carries no runtime import.
+    const source = readFileSync(SOURCE_PATH, "utf-8");
+    expect(source).toMatch(
+      /import\s+type\s*\{[^}]*WritingEntry[^}]*\}\s*from\s*"\.\.\/\.\.\/src\/lib\/content"/,
+    );
+    expect(source).toMatch(
+      /import\s*\{\s*toSlug\s*\}\s*from\s*"\.\.\/\.\.\/src\/lib\/content\/slug"/,
+    );
+    expect(source).not.toMatch(
+      /import\s*\{[^}]*\btoSlug\b[^}]*\}\s*from\s*"\.\.\/\.\.\/src\/lib\/content"/,
+    );
   });
 });
