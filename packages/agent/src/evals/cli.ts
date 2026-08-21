@@ -25,6 +25,7 @@ import { writeFile } from "node:fs/promises";
 import { resolveChatModelConfig } from "../config.js";
 import { getInterviewAgent, PROMPT_VERSION } from "../index.js";
 import { EVAL_CASES } from "./dataset/index.js";
+import type { EvalCase } from "./dataset/schema.js";
 import { runEvalSuite } from "./runner.js";
 import type { ReturnedCitation } from "./scorers/types.js";
 import { EVAL_THRESHOLDS } from "./thresholds.js";
@@ -38,6 +39,16 @@ export interface RunnerEnvConfig {
   maxCostUsd: number;
   rpmLimit: number;
   reportPath: string;
+  /**
+   * Optional dataset-case-id filter (`EVAL_CASE_IDS`, comma-separated) — the
+   * `--case` seam this module didn't have before #143: reproducing a single
+   * failing case (e.g. `grounded-nodejs-experience`) a few times to check
+   * whether a failure is systematic or stochastic previously required
+   * burning the full dataset's budget/quota on every attempt. `undefined`
+   * (the default — env unset or blank) means "run everything", same as
+   * before this option existed.
+   */
+  caseIds?: string[];
 }
 
 /**
@@ -60,15 +71,50 @@ function readPositiveNumber(env: RunnerEnv, name: string, fallback: number): num
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+/** Parse `EVAL_CASE_IDS` (comma-separated) into a trimmed, non-empty id list, or `undefined` when unset/blank. */
+function readCaseIds(env: RunnerEnv): string[] | undefined {
+  const raw = env.EVAL_CASE_IDS?.trim();
+  if (!raw) return undefined;
+  const ids = raw
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+  return ids.length > 0 ? ids : undefined;
+}
+
 /** Resolve the eval runner's env-configurable knobs, falling back to conservative defaults for anything unset or malformed. */
 export function resolveRunnerEnvConfig(env: RunnerEnv = process.env): RunnerEnvConfig {
+  const caseIds = readCaseIds(env);
   return {
     maxCases: readPositiveNumber(env, "EVAL_MAX_CASES", DEFAULTS.maxCases),
     maxTotalTokens: readPositiveNumber(env, "EVAL_MAX_TOTAL_TOKENS", DEFAULTS.maxTotalTokens),
     maxCostUsd: readPositiveNumber(env, "EVAL_MAX_COST_USD", DEFAULTS.maxCostUsd),
     rpmLimit: readPositiveNumber(env, "EVAL_RPM_LIMIT", DEFAULTS.rpmLimit),
     reportPath: env.EVAL_REPORT_PATH?.trim() || DEFAULTS.reportPath,
+    ...(caseIds ? { caseIds } : {}),
   };
+}
+
+/**
+ * Filter `cases` down to just the ids in `caseIds`, preserving dataset order
+ * (not filter-argument order) — `undefined` (no filter) returns every case
+ * unchanged. Throws loudly on an id that doesn't exist in the dataset rather
+ * than silently running nothing for it, since a typo'd `--case`/env value
+ * should fail fast, not produce a quietly-empty report.
+ */
+export function filterCasesByIds(
+  cases: readonly EvalCase[],
+  caseIds: string[] | undefined,
+): readonly EvalCase[] {
+  if (!caseIds) return cases;
+  const requested = new Set(caseIds);
+  const found = cases.filter((evalCase) => requested.has(evalCase.id));
+  const foundIds = new Set(found.map((evalCase) => evalCase.id));
+  const missing = caseIds.filter((id) => !foundIds.has(id));
+  if (missing.length > 0) {
+    throw new Error(`Unknown eval case id(s): ${missing.join(", ")}`);
+  }
+  return found;
 }
 
 function isReturnedCitation(value: unknown): value is ReturnedCitation {
@@ -117,16 +163,18 @@ export function extractCitationsFromToolResults(
 async function main(): Promise<void> {
   const envConfig = resolveRunnerEnvConfig();
   const modelId = resolveChatModelConfig().modelId;
+  const cases = filterCasesByIds(EVAL_CASES, envConfig.caseIds);
 
   console.log(
-    `Running eval suite: up to ${envConfig.maxCases} case(s), ` +
-      `max ${envConfig.maxTotalTokens} tokens / $${envConfig.maxCostUsd} budget, ` +
+    `Running eval suite: up to ${envConfig.maxCases} case(s)` +
+      (envConfig.caseIds ? ` (filtered to: ${envConfig.caseIds.join(", ")})` : "") +
+      `, max ${envConfig.maxTotalTokens} tokens / $${envConfig.maxCostUsd} budget, ` +
       `${envConfig.rpmLimit} RPM throttle, model ${modelId}.`,
   );
 
   const report = await runEvalSuite(
     {
-      cases: EVAL_CASES,
+      cases,
       budget: {
         maxCases: envConfig.maxCases,
         maxTotalTokens: envConfig.maxTotalTokens,
