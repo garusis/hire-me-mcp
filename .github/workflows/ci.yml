@@ -252,9 +252,15 @@ jobs:
         with:
           sha: ${{ github.event.pull_request.head.sha }}
 
-      - name: Build packages/core and packages/career-data
+      # @hire-me-mcp/agent is included here (in addition to core/career-data)
+      # because the chat e2e specs (#73 — chat-grounded.spec.ts,
+      # chat-gap.spec.ts) import @hire-me-mcp/agent/citations at the top
+      # level, which resolves to its compiled dist/citations.js — without
+      # building this package first, the whole preview-e2e Playwright run
+      # fails to even load with "Cannot find module .../agent/dist/citations.js".
+      - name: Build packages/core, packages/career-data and packages/agent
         if: steps.preview.outputs.found == 'true'
-        run: pnpm turbo run build --filter=@hire-me-mcp/core --filter=@hire-me-mcp/career-data
+        run: pnpm turbo run build --filter=@hire-me-mcp/core --filter=@hire-me-mcp/career-data --filter=@hire-me-mcp/agent
 
       - name: Resolve installed Playwright version
         id: playwright-version

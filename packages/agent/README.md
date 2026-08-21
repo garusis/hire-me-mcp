@@ -420,3 +420,70 @@ observed number and an inline rationale documenting the residual risks above:
 | `EVAL_MAX_COST_USD`      | Max estimated USD cost before the run aborts.         | `0.5`                     |
 | `EVAL_RPM_LIMIT`         | Requests-per-minute throttle between real calls.      | `10`                      |
 | `EVAL_REPORT_PATH`       | Where the JSON report is written.                     | `eval-report.json`        |
+| `EVAL_CASE_IDS`          | Comma-separated dataset case ids to run instead of the full/sliced dataset (#143 — cheap single-case reproduction while debugging). | unset (runs the normal `budget.maxCases`-sliced dataset) |
+
+## Running evals in CI (#73)
+
+`.github/workflows/agent-evals.yml` runs this suite in CI — see the root `README.md`'s
+"Continuous integration and branch protection" section for the full trigger/required-check
+rationale. This section covers the three things that section points back here for: running
+locally, expected cost, and what to do when a threshold fails.
+
+### Running locally
+
+```bash
+pnpm eval:agent                          # root proxy — same as the filtered command below
+pnpm --filter @hire-me-mcp/agent eval:agent
+
+# A full-dataset run, matching what CI runs (default local run is budget-capped to 8 cases):
+EVAL_MAX_CASES=17 EVAL_MAX_TOTAL_TOKENS=200000 EVAL_MAX_COST_USD=1 pnpm eval:agent
+
+# Re-run a single case while debugging a specific failure (see #143's methodology above):
+EVAL_CASE_IDS=grounded-nodejs-experience pnpm eval:agent
+```
+
+Requires a real `GOOGLE_GENERATIVE_AI_API_KEY` in your environment (the local `.env`'s value is
+picked up automatically the same way the rest of this package resolves its provider — see
+"Provider abstraction" above). The command prints a summary to stdout and writes the full report
+to `EVAL_REPORT_PATH` (default `packages/agent/eval-report.json`, gitignored); a threshold breach
+exits non-zero.
+
+### Expected cost
+
+**$0** against the default `gemini-3.5-flash-lite` free tier — see "Budget cap" above for the
+per-token pricing safety net that exists for a future paid-provider switch, not because this
+model costs anything today. The real, non-monetary cost is **shared free-tier request quota**:
+15 RPM / 500 RPD, shared with production chat traffic, the two live-model Playwright chat specs
+(`apps/web/e2e-preview/specs/chat-grounded.spec.ts`/`chat-gap.spec.ts`, #73), and anyone running
+this suite locally against the same key. A full 17-case run costs ~110K tokens (per the real run
+recorded in "Real-run results" above) and roughly one call per case (more for a multi-tool-call
+turn) — budget accordingly if running locally the same day CI or another contributor might also
+run it. `EVAL_RPM_LIMIT` (default 10) throttles between calls to stay a polite margin under the
+15 RPM ceiling regardless.
+
+### Procedure when a threshold fails
+
+1. **Read the failure(s) first** — the report's `verdict.failures` (also printed to stdout and
+   the CI job summary) names exactly which scorer aggregate fell below which threshold, with both
+   numbers.
+2. **Reproduce cheaply**: use `EVAL_CASE_IDS` to re-run just the case(s) whose per-case score
+   looks like the culprit (`report.cases[].scores`), not the whole dataset, to confirm the failure
+   is real/reproducible rather than a one-off model variance blip — see #143's methodology section
+   above for the exact pattern (it reproduced a real bug 4/4 times before touching anything).
+3. **Diagnose the layer, don't patch the number**: is this a real agent regression (a prompt
+   change, a `packages/core` domain-service change) or a scorer/threshold calibration issue? #143
+   is the worked example of both: one real `packages/core` bug (a missing self-citation) and one
+   real scorer bug (a regex false-positive), diagnosed and fixed at their actual layer rather than
+   raising the threshold to paper over either.
+4. **If it's a real regression**: fix the underlying code, re-run, confirm the aggregate recovers.
+   Do not raise the threshold to make a real regression pass.
+5. **If it's a legitimate model-variance or calibration issue** (the honest aggregate has
+   genuinely shifted and the prior threshold no longer reflects reality): recalibrate
+   `EVAL_THRESHOLDS` (`./src/evals/thresholds.ts`) against a fresh full-dataset run, with an
+   inline rationale comment recording the old/new numbers and why — a threshold change is a
+   reviewable diff in a PR, per this file's own module doc, never a silent runtime override.
+6. **A temporary threshold bump to DEMONSTRATE the gate working** (the #73 acceptance-criteria
+   pattern: "a temporary threshold bump or an equivalent documented reproduction") is a legitimate,
+   deliberate exercise of steps 4-5 in reverse — raise a threshold above the honest number on a
+   throwaway branch/commit, confirm `agent-evals` goes red, then revert. Never land that bump on
+   `main`.

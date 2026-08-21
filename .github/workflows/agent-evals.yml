@@ -1,0 +1,209 @@
+name: Agent Evals
+
+# Gates the interview agent's honesty guarantees on real, budget-capped
+# model output (#73 — final task of the v0.5 Interview Chat Agent epic,
+# #5). `pnpm eval:agent` (`packages/agent/src/evals/cli.ts`) makes REAL
+# Gemini calls against `getInterviewAgent()` and fails the build
+# (non-zero exit) when a scorer aggregate drops below its committed
+# threshold (`packages/agent/src/evals/thresholds.ts`).
+#
+# ## Why a SEPARATE workflow file, not a job in ci.yml
+#
+# GitHub Actions `paths:` filters apply at the whole-workflow level, not
+# per-job — putting this job inside `ci.yml` would either gate every job
+# in that file (quality/e2e/mcp-integration/preview-e2e/lighthouse) on
+# these paths, which is wrong, or drop the path filter and run the eval
+# suite (real model spend, shared quota) on every single PR regardless of
+# what it touches, which is exactly what this gate is trying to avoid.
+# A standalone workflow gets its own `on:` block.
+#
+# ## Trigger strategy — path-filtered, not "every PR"
+#
+# The model is `gemini-3.5-flash-lite` free tier: 15 RPM / 500 RPD, SHARED
+# with live production chat traffic (see `packages/agent/README.md`'s
+# quota rationale table — the prior default's 20 RPD ceiling was already
+# exhausted by a single eval run plus incidental debug traffic). Running
+# a ~17-case eval suite (~110K tokens per #143's real full-dataset run) on
+# every PR — including PRs touching docs, unrelated packages, or CI config
+# — would burn real, shared quota for no signal. Restricting to `pull_request`
+# runs whose diff touches a path that can actually change agent behavior
+# (the agent package itself, the shared `core` domain layer the agent's
+# tools call into, the career-data content the agent's answers are
+# grounded in, or the chat route wiring) keeps the gate meaningful without
+# spending on PRs it has nothing to say about. `workflow_dispatch` covers
+# an on-demand full run (e.g. re-verifying after a quota reset, or a
+# manual threshold-bump demonstration per #73's acceptance criteria).
+# `push` to `main` on the same paths keeps main's own history gated too,
+# since a merge can combine changes that individually passed review but
+# regress in combination.
+#
+# ## Required-check decision: NOT a required status check (documented here per #73)
+#
+# A path-filtered job never RUNS on a PR outside its paths, and GitHub
+# reports a required check that never ran as pending/blocking, not
+# "skipped, so pass" — making this job required would block every PR that
+# doesn't touch these paths (docs, apps/web UI-only changes, workflow
+# config, etc.) on a check that will never fire. The gate is still REAL
+# on the paths that matter (a threshold breach fails this job red, and
+# the job is clearly visible on any PR it does run on), just not through
+# branch-protection's required-check mechanism, which GitHub does not
+# support cleanly for a path-filtered job on the "run only when relevant,
+# but block when relevant" pattern (there is no native "required-if-
+# triggered" status). See `packages/agent/README.md`'s "Running evals in
+# CI" section for the same rationale in the docs a PR reviewer reads.
+#
+# ## No-secrets / fork-PR behaviour
+#
+# `GOOGLE_GENERATIVE_AI_API_KEY` is a repository secret and is NEVER
+# provided to a workflow run triggered by a fork PR (GitHub withholds all
+# repo secrets from fork PRs by design). The `secrets-check` step below
+# detects that and the job exits early with an explicit `::notice::`
+# instead of failing red on an unauthenticated/misconfigured provider call
+# — same pattern as `ci.yml`'s `preview-e2e`/`lighthouse` jobs.
+on:
+  pull_request:
+    paths:
+      - "packages/agent/**"
+      - "packages/core/**"
+      - "packages/career-data/content/**"
+      - "apps/web/app/api/chat/**"
+      - ".github/workflows/agent-evals.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/agent/**"
+      - "packages/core/**"
+      - "packages/career-data/content/**"
+      - "apps/web/app/api/chat/**"
+      - ".github/workflows/agent-evals.yml"
+  workflow_dispatch:
+    inputs:
+      max_cases:
+        description: "Override EVAL_MAX_CASES for this run (default: full 17-case dataset)"
+        required: false
+        default: "17"
+
+concurrency:
+  group: agent-evals-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agent-evals:
+    name: agent-evals
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Budget caps below cover a full 17-case dataset run (#143's real
+    # full-dataset run: 111,137 tokens, $0 on the free tier) with margin,
+    # not an unbounded run — `assertWithinBudget` (`packages/agent/src/evals/budget.ts`)
+    # still aborts loudly if a run genuinely exceeds them. EVAL_RPM_LIMIT
+    # stays at the package default (10) — a polite margin under the
+    # model's 15 RPM ceiling, shared with production chat traffic.
+    # EVAL_REPORT_PATH is intentionally left at its default ("eval-report.json",
+    # resolved relative to `pnpm eval:agent`'s own working directory,
+    # `packages/agent`) rather than overridden here — `pnpm --filter
+    # @hire-me-mcp/agent eval:agent` (what the root `eval:agent` script
+    # below runs) executes with `packages/agent` as its cwd, so the
+    # default already lands at `packages/agent/eval-report.json` relative
+    # to the repo root, which is exactly the path the later steps
+    # (summary render, artifact upload) reference.
+    env:
+      EVAL_MAX_CASES: ${{ github.event.inputs.max_cases || '17' }}
+      EVAL_MAX_TOTAL_TOKENS: "200000"
+      EVAL_MAX_COST_USD: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Cache Turborepo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ github.job }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Fork PRs never carry repo secrets, so GOOGLE_GENERATIVE_AI_API_KEY
+      # is empty here — skip with an explicit notice instead of failing on
+      # an unauthenticated provider call. See the module header above.
+      - name: Check for required secrets (skips on fork PRs)
+        id: secrets-check
+        run: |
+          if [ -z "${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping agent-evals — GOOGLE_GENERATIVE_AI_API_KEY is unavailable (expected for fork PRs, which never receive repo secrets)."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build workspace packages the agent depends on
+        if: steps.secrets-check.outputs.available == 'true'
+        run: pnpm turbo run build --filter=@hire-me-mcp/core --filter=@hire-me-mcp/career-data --filter=@hire-me-mcp/agent
+
+      # Safe diagnostic — never echoes the secret's value, only a SHA-256
+      # fingerprint (first 16 hex chars) and its length. Exists to
+      # distinguish two very different failure classes for "the eval step
+      # says the API key isn't valid": (a) secret DELIVERY is broken (a
+      # stale secrets snapshot on a re-run, a trailing-newline/whitespace
+      # corruption at set-time, ...) — the fingerprint printed here won't
+      # match the known-good local value; or (b) the key genuinely reaches
+      # the runner correctly but Google rejects the call anyway (e.g. a
+      # free-tier key rejecting the runner's region/IP) — the fingerprint
+      # matches, and the eval step's own error is the real, environmental
+      # signal. Known-good fingerprint for the current key (computed
+      # locally the same way, verified once against this exact command):
+      # `2ae3654173e92d09`, length `53`.
+      - name: Diagnose provided key (fingerprint only — never the value)
+        if: steps.secrets-check.outputs.available == 'true'
+        env:
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+        run: |
+          echo "key fingerprint: $(printf '%s' "$GOOGLE_GENERATIVE_AI_API_KEY" | sha256sum | cut -c1-16) length: ${#GOOGLE_GENERATIVE_AI_API_KEY}"
+
+      - name: Run eval suite (real model calls, budget-capped)
+        if: steps.secrets-check.outputs.available == 'true'
+        env:
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+        run: pnpm eval:agent
+
+      - name: Render job summary (per-scorer aggregates, verdict, totals)
+        # always(), not tied to the previous step's outcome: a threshold
+        # breach makes the eval step exit non-zero (this job red, correctly),
+        # but the report it wrote is exactly what a reviewer needs to see —
+        # same "summarize regardless of pass/fail" pattern as ci.yml's
+        # `lighthouse` job's "Print Lighthouse scores" step.
+        if: always() && steps.secrets-check.outputs.available == 'true'
+        run: node scripts/ci/eval-summary.mjs packages/agent/eval-report.json
+
+      - name: Upload eval report artifact
+        if: always() && steps.secrets-check.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-eval-report
+          path: packages/agent/eval-report.json
+          retention-days: 30
+          if-no-files-found: warn

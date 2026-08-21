@@ -16,6 +16,25 @@ describe("parseChatErrorText", () => {
     const parsed = parseChatErrorText('{"foo":"bar"}');
     expect(parsed.code).toBe("unknown");
   });
+
+  // #73: the pre-stream 4xx guardrail responses (rate-limit-response.ts's
+  // buildChatRateLimitExceededResponse, validation-response.ts's
+  // buildValidationErrorResponse) both wrap the payload as
+  // `{ error: { code, message } }` via error-codes.ts's buildChatErrorPayload
+  // — a different shape than the mid-stream `{ code, message }` this parser
+  // was originally built against. Before this fix, every guardrail 4xx
+  // (session/IP rate limit, conversation-size caps, ...) fell through to the
+  // "unknown"-code branch and the UI showed a generic fallback message
+  // instead of the guardrail's own honest, specific one.
+  it("also unwraps the nested {error:{code,message}} shape the pre-stream 4xx guardrail responses use", () => {
+    const parsed = parseChatErrorText(
+      '{"error":{"code":"session_rate_limited","message":"You\'ve hit the message limit for this session. Please wait and try again."}}',
+    );
+    expect(parsed).toEqual({
+      code: "session_rate_limited",
+      message: "You've hit the message limit for this session. Please wait and try again.",
+    });
+  });
 });
 
 describe("describeChatError", () => {
@@ -59,5 +78,34 @@ describe("describeChatError", () => {
     const description = describeChatError("some-future-code-from-#68" as never);
     expect(description.title.length).toBeGreaterThan(0);
     expect(description.retryable).toBe(true);
+  });
+
+  // #73: these are #68's REAL guardrail codes (apps/web/lib/chat/error-codes.ts's
+  // ChatErrorCode) — session_rate_limited/ip_rate_limited/message_count_exceeded/
+  // etc. were never added here when #68 landed, so every one of them fell
+  // through to the generic FALLBACK_ERROR_DESCRIPTION ("An unexpected error
+  // occurred") in the UI instead of an honest, guardrail-specific message.
+  it("renders a distinct, honest message for the session_rate_limited guardrail code", () => {
+    const description = describeChatError("session_rate_limited");
+    expect(description.title).not.toBe(describeChatError("unknown").title);
+    expect(description.retryable).toBe(true);
+  });
+
+  it("renders a distinct, honest message for the ip_rate_limited guardrail code", () => {
+    const description = describeChatError("ip_rate_limited");
+    expect(description.title).not.toBe(describeChatError("unknown").title);
+    expect(description.retryable).toBe(true);
+  });
+
+  it("renders a distinct, honest, non-retryable message for the conversation_size_exceeded guardrail code", () => {
+    const description = describeChatError("conversation_size_exceeded");
+    expect(description.title).not.toBe(describeChatError("unknown").title);
+    expect(description.retryable).toBe(false);
+  });
+
+  it("renders a distinct, honest, non-retryable message for the message_count_exceeded guardrail code", () => {
+    const description = describeChatError("message_count_exceeded");
+    expect(description.title).not.toBe(describeChatError("unknown").title);
+    expect(description.retryable).toBe(false);
   });
 });

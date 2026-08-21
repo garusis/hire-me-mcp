@@ -100,7 +100,7 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
     question: evalCase.question,
     answer: run.answer,
     scores: {
-      groundedness: scoreGroundedness(transcript),
+      groundedness: scoreGroundedness(transcript, evalCase.category),
       gapHonesty,
       relevance: scoreRelevance(transcript),
     },
