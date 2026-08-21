@@ -1,0 +1,37 @@
+{
+  "name": "@hire-me-mcp/connect-metadata",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Single source of truth for MCP connection metadata, per-client snippet renderers, and the marked-region injector (#17)",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "bash ../../scripts/biome-check.sh check .",
+    "format": "bash ../../scripts/biome-check.sh format --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "@vitest/coverage-v8": "4.1.11",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}
