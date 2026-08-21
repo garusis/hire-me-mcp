@@ -1,4 +1,7 @@
+import { buildClientSnippets } from "@hire-me-mcp/connect-metadata";
 import type { Metadata } from "next";
+import { buildConnectionMetadata } from "../lib/mcp/connection-metadata";
+import { getMcpEndpointUrl } from "../src/lib/config/site-url";
 import {
   type ExperienceListItemView,
   getExperienceListView,
@@ -18,6 +21,8 @@ import { Container } from "./design-system/primitives/container";
 import { Heading } from "./design-system/primitives/heading";
 import { Prose } from "./design-system/primitives/prose";
 import { Section } from "./design-system/primitives/section";
+import { getDeepLinksForClient } from "./mcp/client-deep-links";
+import { ConnectPanel } from "./mcp/connect-panel";
 import styles from "./page.module.css";
 
 /** Canonical for the home route — title/description fall back to `app/layout.tsx`'s site-wide default, which is already sourced from this same profile view. */
@@ -81,6 +86,16 @@ export default function Home() {
   const projects = getProjectsListView().items.slice(0, HIGHLIGHT_PROJECT_COUNT);
   const skills = getSkillsListView().items.slice(0, HIGHLIGHT_SKILL_COUNT);
   const [primaryContact] = profile.contacts;
+
+  const endpointUrl = getMcpEndpointUrl();
+  const connectionMetadata = buildConnectionMetadata(endpointUrl);
+  const clientSnippets = buildClientSnippets(connectionMetadata);
+  const deepLinksByClientId = Object.fromEntries(
+    clientSnippets.map((snippet) => [
+      snippet.id,
+      getDeepLinksForClient(snippet.id, endpointUrl, connectionMetadata.serverName),
+    ]),
+  );
 
   return (
     <>
@@ -183,6 +198,16 @@ export default function Home() {
             <Button href="/mcp" variant="solid">
               Explore the MCP endpoint
             </Button>
+
+            <ConnectPanel
+              snippets={clientSnippets}
+              examplePrompts={connectionMetadata.examplePrompts}
+              endpointUrl={endpointUrl}
+              deepLinksByClientId={deepLinksByClientId}
+              compact
+              detailHref="/mcp"
+              detailLabel="Explore the full setup, tools, and demo"
+            />
           </RevealOnScroll>
         </Container>
       </Section>
