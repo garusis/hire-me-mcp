@@ -448,6 +448,37 @@ picked up automatically the same way the rest of this package resolves its provi
 to `EVAL_REPORT_PATH` (default `packages/agent/eval-report.json`, gitignored); a threshold breach
 exits non-zero.
 
+### Known constraint: Google rejects the free-tier key from GitHub Actions runners (#73)
+
+**The real, operative gate is this local run, done before a release, plus the v1.0 certification
+pass (#76) — not a green `agent-evals` check on every PR.** `agent-evals.yml` runs in CI (see the
+root README), but Google's free-tier Gemini API key policy rejects `generateContent` calls
+specifically when they originate from a GitHub Actions runner IP, even though the exact same key
+works everywhere else. This was investigated for real on #73, not assumed:
+
+1. A CI run of `agent-evals` failed the eval step with an "API key not valid" error.
+2. The workflow's "Diagnose provided key" step (kept permanently — see its inline comment) prints
+   a SHA-256 fingerprint (never the value) of the delivered `GOOGLE_GENERATIVE_AI_API_KEY`. Its
+   output, `2ae3654173e92d09`, length `53`, matched the LOCAL key's fingerprint (computed with the
+   identical command) exactly, across a fresh `workflow_dispatch` run with a guaranteed-fresh
+   secrets snapshot — ruling out secret delivery/corruption as the cause.
+3. The identical key, called locally with `curl` against the same `generateContent` endpoint,
+   returned `200`.
+4. The identical key already succeeds in production and in `preview-e2e`'s deployed-preview chat
+   specs (#73's `chat-grounded.spec.ts`/`chat-gap.spec.ts`) — both running server-side on **Vercel**
+   infrastructure, not a GitHub-hosted runner.
+5. Conclusion: the key is delivered correctly and is genuinely valid; Google's free-tier API key
+   policy specifically rejects (or deprioritizes) some GitHub Actions runner IP ranges — an
+   environmental constraint outside this repo's control, not a code regression.
+
+`agent-evals.yml`'s "Pre-check" step probes this with a minimal one-token `generateContent` call
+before ever touching the real eval dataset. When Google rejects the probe, the job concludes as an
+explicit, loud **SKIP** (`::warning::` notice, green job — not a red failure) rather than staying
+red on every relevant PR indefinitely for a reason no workflow change here can fix. Both
+`workflow_dispatch` and the real eval step stay fully wired: if a billed key (or a different
+runner network) ever makes the pre-check pass, the job goes green-for-real automatically, no
+workflow change needed.
+
 ### Expected cost
 
 **$0** against the default `gemini-3.5-flash-lite` free tier — see "Budget cap" above for the
