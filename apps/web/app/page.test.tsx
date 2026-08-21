@@ -329,6 +329,40 @@ describe("Home", () => {
     });
   });
 
+  describe("connect panel (#45)", () => {
+    it("renders a client tablist with a copy-ready snippet for the selected client", () => {
+      render(<Home />);
+
+      const tablist = screen.getByRole("tablist");
+      expect(within(tablist).getAllByRole("tab").length).toBeGreaterThan(0);
+    });
+
+    it("renders an endpoint URL copy button", () => {
+      render(<Home />);
+
+      expect(screen.getByRole("button", { name: /copy.*endpoint|copy.*url/i })).toBeInTheDocument();
+    });
+
+    it("shows at least 3 example prompts sourced from the connection metadata module", () => {
+      render(<Home />);
+
+      const heading = screen.getByRole("heading", { name: /try asking/i });
+      const promptsList = heading.nextElementSibling;
+      if (promptsList === null) {
+        throw new Error("expected an example-prompts list after the 'Try asking' heading");
+      }
+      expect(
+        within(promptsList as HTMLElement).getAllByRole("listitem").length,
+      ).toBeGreaterThanOrEqual(3);
+    });
+
+    it("links to /mcp for the full setup, tools, and demo", () => {
+      render(<Home />);
+
+      expect(screen.getByRole("link", { name: /full setup/i })).toHaveAttribute("href", "/mcp");
+    });
+  });
+
   describe("heading structure", () => {
     it("renders exactly one h1", () => {
       render(<Home />);
