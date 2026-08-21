@@ -45,6 +45,17 @@ const nextConfig: NextConfig = {
   // Next also uses to prerender the static images) and continues to pass.
   outputFileTracingIncludes: {
     "/api/mcp": ["../../packages/career-data/content/**/*"],
+    // `/llms.txt` and `/llms-full.txt` (#37) render dynamically (`ƒ` in
+    // `next build`'s route table, confirmed locally) and read career-data
+    // content through the exact same content-layer -> packages/core ->
+    // fs.readFileSync/readdirSync path as `/api/mcp` — the same opacity to
+    // output file tracing that #113 fixed there. Included proactively
+    // rather than after a production 500, per that fix's own lesson
+    // ("local NFT output isn't a reliable proxy for what Vercel's own
+    // build pipeline actually ships for this route type" — see the
+    // opengraph-image entries below and #119).
+    "/llms.txt": ["../../packages/career-data/content/**/*"],
+    "/llms-full.txt": ["../../packages/career-data/content/**/*"],
     "/projects/[slug]/opengraph-image": [
       "../../packages/career-data/content/**/*",
       "./assets/fonts/**/*",
