@@ -34,6 +34,14 @@ name: Retrieval Eval
 # GitHub blocks a PR on.
 on:
   workflow_dispatch: {}
+  # workflow_dispatch only resolves once the file exists on the default
+  # branch, so a path-filtered pull_request trigger covers PRs that change
+  # the eval workflow itself (like the one introducing it). Same-repo PRs
+  # receive the repo secrets this job needs; fork PRs would not, and the
+  # secrets guard below skips loudly in that case.
+  pull_request:
+    paths:
+      - ".github/workflows/retrieval-eval.yml"
 
 concurrency:
   group: retrieval-eval-${{ github.workflow }}-${{ github.ref }}
