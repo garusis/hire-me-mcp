@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { ChunkCitation } from "./chunks-repository.js";
 import { getChunkById, upsertChunk } from "./chunks-repository.js";
 import { runMigrations } from "./migrate.js";
 import type { NeonBranchConfig } from "./neon-branch.js";
@@ -115,11 +116,12 @@ describe.runIf(neonConfig !== undefined)("Neon pgvector store (real branch)", ()
       sourceId: "proj-1",
       chunkIndex: 0,
       citation: {
-        sourceType: "project",
-        sourceId: "proj-1",
+        entityType: "project",
+        entityId: "proj-1",
         label: "Project One",
-        anchor: "#overview",
-      },
+        fragment: "chunk-0",
+        url: "https://example.com/proj-1",
+      } satisfies ChunkCitation,
       content: "Built a thing.",
       contentHash: "hash-1",
       tokenCount: 4,
@@ -131,10 +133,11 @@ describe.runIf(neonConfig !== undefined)("Neon pgvector store (real branch)", ()
     expect(record?.content).toBe("Built a thing.");
     expect(record?.contentHash).toBe("hash-1");
     expect(record?.citation).toEqual({
-      sourceType: "project",
-      sourceId: "proj-1",
+      entityType: "project",
+      entityId: "proj-1",
       label: "Project One",
-      anchor: "#overview",
+      fragment: "chunk-0",
+      url: "https://example.com/proj-1",
     });
     expect(record?.embedding).toHaveLength(768);
     expect(record?.embedding[0]).toBeCloseTo(1, 5);
@@ -148,7 +151,11 @@ describe.runIf(neonConfig !== undefined)("Neon pgvector store (real branch)", ()
       sourceType: "project",
       sourceId: "proj-2",
       chunkIndex: 0,
-      citation: { sourceType: "project", sourceId: "proj-2", label: "Project Two" },
+      citation: {
+        entityType: "project",
+        entityId: "proj-2",
+        label: "Project Two",
+      } satisfies ChunkCitation,
       content: "Original content.",
       contentHash: "hash-original",
       embedding: embeddingWithSpike(768, 1),
@@ -188,7 +195,11 @@ describe.runIf(neonConfig !== undefined)("Neon pgvector store (real branch)", ()
         sourceType: "project",
         sourceId: fixture.id,
         chunkIndex: 0,
-        citation: { sourceType: "project", sourceId: fixture.id, label: fixture.id },
+        citation: {
+          entityType: "project",
+          entityId: fixture.id,
+          label: fixture.id,
+        } satisfies ChunkCitation,
         content: `fixture ${fixture.id}`,
         contentHash: `hash-${fixture.id}`,
         embedding: fixture.embedding,
