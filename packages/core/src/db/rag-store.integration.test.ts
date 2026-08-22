@@ -16,6 +16,15 @@ import { createNeonTestBranch, deleteNeonTestBranch, loadNeonBranchConfig } from
  * Skips cleanly (not silently, not a hard failure) when NEON_API_KEY /
  * NEON_PROJECT_ID aren't set — see README.md "Running the DB integration
  * suite locally".
+ *
+ * Test branches are created as children of the project's default Neon
+ * branch (#165). Once that parent branch has migrations applied (which it
+ * does in practice, ahead of real ingestion), every child branch inherits
+ * `schema_migrations` + `career_chunks` already present — so this suite
+ * can't assume it's starting from an empty database. It resets the schema
+ * inside the (disposable, per-test) branch right after connecting, which
+ * is safe because the branch itself is thrown away in `afterAll` and
+ * nothing outside it is affected.
  */
 const neonConfig: NeonBranchConfig | undefined = loadNeonBranchConfig();
 
@@ -43,6 +52,14 @@ describe.runIf(neonConfig !== undefined)("Neon pgvector store (real branch)", ()
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
+
+    // Reset the schema inside this disposable branch (#165): the parent
+    // branch this was forked from may already be migrated, and child
+    // branches inherit that schema. Dropping it here makes the suite's
+    // "fresh migration" assertions hold regardless of parent-branch state,
+    // without touching the migration runner itself.
+    await sql`DROP TABLE IF EXISTS career_chunks, schema_migrations`;
+    await sql`DROP EXTENSION IF EXISTS vector CASCADE`;
   }, 60_000);
 
   afterAll(async () => {
