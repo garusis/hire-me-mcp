@@ -1,0 +1,82 @@
+/**
+ * Plain-SQL migrations for the Neon Postgres + pgvector career-chunk store
+ * (#14), plus the pure "which migrations still need to run" logic the
+ * runner (`migrate.ts`) applies against the real database.
+ *
+ * Each migration is a small, independently-runnable list of SQL statements
+ * (not one multi-statement blob) so the runner can execute them one at a
+ * time via the driver's parameterless `sql.unsafe()` inside a single
+ * transaction per migration — see `migrate.ts` for why.
+ */
+
+export interface Migration {
+  /** Stable, lexicographically ordered id (e.g. `001_init_pgvector_chunks`). */
+  id: string;
+  /** SQL statements applied in order, each already terminated with `;`. */
+  statements: string[];
+}
+
+/**
+ * ADR: embedding dimension and distance metric (#14, referenced by #34).
+ *
+ * - Dimension: 768. The chat/agent LLM default (see root `.env.example`) is
+ *   Google's free tier; embeddings come from `gemini-embedding-001`, which
+ *   supports Matryoshka Representation Learning (MRL) truncation — the
+ *   model's native 3072-dim output can be safely truncated to a smaller,
+ *   still-meaningful vector. 768 is the chosen truncation: well inside the
+ *   free tier, a supported MRL size, and a common pgvector HNSW dimension
+ *   with plenty of prior art.
+ * - Distance metric: cosine. Embeddings from this model family are meant to
+ *   be compared by cosine similarity (not raw L2 or dot product), so the
+ *   pgvector column uses `vector_cosine_ops` for both the HNSW index and any
+ *   query using the `<=>` (cosine distance) operator — `searchCareer` (#34)
+ *   must use the same operator for the query plan to actually hit this
+ *   index. Similarity is derived as `1 - cosine_distance`.
+ * - Index: HNSW over IVFFlat — no training/list-count tuning required, good
+ *   recall out of the box, and works well on Neon's free tier at the small
+ *   corpus size this project's career content produces.
+ */
+const EMBEDDING_DIMENSION = 768;
+
+const initPgvectorChunks: Migration = {
+  id: "001_init_pgvector_chunks",
+  statements: [
+    "CREATE EXTENSION IF NOT EXISTS vector;",
+    `CREATE TABLE IF NOT EXISTS career_chunks (
+      id text PRIMARY KEY,
+      source_type text NOT NULL,
+      source_id text NOT NULL,
+      chunk_index integer NOT NULL DEFAULT 0,
+      citation jsonb NOT NULL,
+      content text NOT NULL,
+      content_hash text NOT NULL,
+      token_count integer,
+      embedding vector(${EMBEDDING_DIMENSION}) NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT career_chunks_source_chunk_unique UNIQUE (source_type, source_id, chunk_index)
+    );`,
+    // HNSW + vector_cosine_ops: see the ADR note above. IF NOT EXISTS keeps a
+    // second run of this migration a no-op, satisfying the idempotent
+    // "running it a second time is a no-op" acceptance criterion.
+    `CREATE INDEX IF NOT EXISTS career_chunks_embedding_hnsw_idx
+      ON career_chunks USING hnsw (embedding vector_cosine_ops);`,
+  ],
+};
+
+/** Every migration, in the order they must be applied. */
+export const migrations: Migration[] = [initPgvectorChunks];
+
+/**
+ * Pure diff: which of `all` are not yet represented in `appliedIds`, in
+ * `all`'s original order. No I/O — the runner (`migrate.ts`) is the only
+ * caller that touches the database, which is what makes this testable
+ * without one.
+ */
+export function selectPendingMigrations(
+  all: readonly Migration[],
+  appliedIds: readonly string[],
+): Migration[] {
+  const applied = new Set(appliedIds);
+  return all.filter((migration) => !applied.has(migration.id));
+}
