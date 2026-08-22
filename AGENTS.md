@@ -49,6 +49,12 @@ Marcos worked with event-driven architectures? Show me the evidence."* No API ke
 account is required. If you'd rather watch than connect, the live `/mcp` page linked from both docs
 has a demo transcript.
 
+If you're wondering whether this orientation section actually works on a fresh session with no
+other context — that's exactly what
+[`docs/agent-onboarding-verification.md`](docs/agent-onboarding-verification.md) checks: two
+scripted scenarios (repo URL only, site URL only), a pass/fail rubric, and a run log from
+executing them for real.
+
 ### How the pieces relate
 
 One domain model, three interfaces. `packages/career-data` is the data; `packages/core` is the
