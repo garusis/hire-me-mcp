@@ -29,6 +29,10 @@ Next.js-shaped by the time they reach here.
   `CareerDataset` into an ordered list of retrieval `Chunk`s — stable id, content hash, citation,
   and filtering metadata each — for the RAG ingestion pipeline (#24) to embed and upsert. See "The
   career-data chunker" below.
+- **`searchCareer` — semantic retrieval.** `createSearchCareer({ sql, embedder })` (#34, epic #6)
+  builds the single semantic-retrieval entry point for the whole project: embed a query with the
+  ingestion-time model, ANN-search the pgvector store, return ranked, plain-JSON chunks with scores
+  and citations. See "`searchCareer` — semantic retrieval" below.
 
 ## Domain services
 
@@ -516,6 +520,97 @@ the full insert -> zero-call re-run -> edit -> delete -> `--dry-run` -> `--full`
 permanent-failure cycle against a throwaway Neon branch, using a faked (deterministic, spy-asserted,
 no real network) embedder — see "Running the DB integration suite locally" above for the
 `NEON_API_KEY`/`NEON_PROJECT_ID` gating, which this suite shares.
+
+## `searchCareer` — semantic retrieval (`@hire-me-mcp/core/search-career`, #34)
+
+`createSearchCareer({ sql, embedder, modelId? })` builds a `searchCareer(query, options?) =>
+Promise<SearchCareerResult>` function — the single semantic-retrieval entry point for the whole
+project. It embeds `query` with the same model used at ingestion, runs an ANN cosine-similarity
+query against the `career_chunks` pgvector store (#14), and returns ranked chunks with scores and
+citations as **plain, JSON-serializable data** — no class instances, no DB row leakage — so the
+future MCP tool (`search_career`, epic #3) and the chat agent (epic #5) can pass a `searchCareer`
+result straight through their own response shapes. Exported as its own subpath,
+**`@hire-me-mcp/core/search-career`** — mirroring `./db` and `./embedding` — since it necessarily
+pulls in the `postgres` driver for a live query, not just types.
+
+`searchCareer` never answers questions or synthesizes prose — it returns evidence for a caller (the
+agent layer) to reason about. Deterministic career-data lookups (`getExperience`, `searchProjects`,
+`getSkillEvidence`) stay the primary path for exact questions; `searchCareer` covers fuzzy,
+cross-cutting questions those can't answer.
+
+```ts
+import { createDbClient, loadDbConfig } from "@hire-me-mcp/core/db";
+import { createGoogleEmbeddingClient, loadEmbeddingApiKey } from "@hire-me-mcp/core/embedding";
+import { createSearchCareer } from "@hire-me-mcp/core/search-career";
+
+const { sql } = createDbClient(loadDbConfig());
+const embedder = createGoogleEmbeddingClient({ apiKey: loadEmbeddingApiKey() });
+const searchCareer = createSearchCareer({ sql, embedder });
+
+const result = await searchCareer("event-driven architecture experience", { topK: 5 });
+// { query, results: [{ text, score, citation, sourceType, sourceId, chunkIndex }, ...], tookMs }
+```
+
+### Score semantics
+
+`score` is **cosine similarity**, `1 - cosine_distance`, computed with pgvector's `<=>` operator
+against the `career_chunks.embedding` column's `vector_cosine_ops` HNSW index — the same metric and
+operator `findSimilarChunks` uses (see the ADR in "Database (Neon pgvector store)" above). For
+unit-magnitude vectors this is mathematically bounded to `[-1, 1]`, `1` meaning identical direction,
+`0` orthogonal (no discernible relationship), negative meaning opposed; the embedding provider
+(`gemini-embedding-001`) returns effectively unit-normalized vectors, so in practice scores cluster
+in a narrower positive band. Higher is always more similar, and `results` is always sorted by
+`score` descending.
+
+### Options and defaults
+
+`SearchCareerOptions`:
+
+- **`topK?: number`** — max results to return. Defaults to **10**. Must be an integer in `[1, 50]`
+  (`MIN_TOP_K`/`MAX_TOP_K`) — anything else throws `InvalidTopKError` before any embedding call.
+- **`minScore?: number`** — minimum cosine-similarity score a result must meet. Defaults to **0**
+  (no filtering) — cosine similarity of `0` means "no discernible relationship", so the default
+  leaves everything the ANN index returns in place and lets a caller raise the bar explicitly.
+- **`sourceTypes?: readonly string[]`** — restricts results to the given `sourceType`s (e.g.
+  `["project", "experience"]`), pushed into the SQL `WHERE` clause (not filtered after the fact) so
+  `topK` is still applied to the filtered set. Omitted/empty imposes no constraint.
+
+### Validation, empty store, and the embedding-model guard
+
+- An empty/whitespace-only query, or one longer than `MAX_QUERY_LENGTH` (2000 characters), throws
+  `InvalidSearchCareerQueryError`. An out-of-range/non-integer `topK` throws `InvalidTopKError`.
+  Both are checked **before** the embedder is ever called — no wasted embedding API call for
+  invalid input.
+- Querying an empty store returns `{ query, results: [], tookMs }` — never throws.
+- Every result's stored `embedding_model` is checked against the configured model id (`modelId`
+  option, defaulting to `EMBEDDING_MODEL_ID`). Comparing vectors from two different embedding
+  models produces meaningless similarity scores, so a mismatch throws
+  `StoredEmbeddingModelMismatchError` — naming both the configured model and the offending
+  stored one(s) — rather than silently returning garbage-ranked results. This is the reason a model
+  change requires re-running ingestion (see "a configured model-id change triggers a full re-embed"
+  above) before searching again.
+
+### Query-embedding cache
+
+`createSearchCareer` closes over a small `Map<trimmedQuery, embedding>` cache scoped to that one
+call's lifetime (i.e. one process/one run) — an identical repeated query (after `.trim()`) reuses
+the cached vector instead of re-embedding, which matters for eval harnesses and chat sessions that
+legitimately re-ask the same question. A different query string always re-embeds.
+
+### Testing
+
+`search-career.test.ts` unit-tests validation, defaults, caching, filtering (`topK`/`minScore`/
+`sourceTypes`), the model-mismatch guard, and the plain-JSON round-trip, against a fake
+`postgres`-shaped `sql` tag function (no database, no network) — the same fake-`sql` convention
+`db/migrate.test.ts` established. `search-career.integration.test.ts` is the real-Neon counterpart:
+it seeds a throwaway branch with several hundred synthetic fixture rows (large enough that the
+query planner has a real reason to prefer the HNSW index) plus targeted fixtures, using a fake,
+deterministic embedder (never a real embedding API call — see "Running the DB integration suite
+locally" above), and asserts real ANN score-descending ordering with citations, a fuzzy
+cross-cutting query ranking a conceptually related chunk above an unrelated decoy, the
+model-mismatch error against a real stale row, and — via `EXPLAIN` with `SET LOCAL enable_seqscan =
+off` — that the query plan actually uses `career_chunks_embedding_hnsw_idx` rather than a
+sequential scan.
 
 ## Testing conventions specific to this package
 
