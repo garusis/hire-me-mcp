@@ -404,6 +404,105 @@ re-fetch for client-by-client detail).
 below). The `apps/web/README.md#rate-limiting` link was checked and resolves correctly (200).
 **Defects found:** yes — see below.
 
+### Run 5 — Scenario B, probe 3 (plain-text-only / non-JS probe, #153)
+
+Follow-up to [#153](https://github.com/garusis/hire-me-mcp/issues/153): Runs 3 and 4 above both
+used a general-purpose agent with `WebFetch` available, and neither one's own report distinguished
+whether it reached `/llms.txt`/`/.well-known/mcp.json` via a raw fetch or via `WebFetch`'s
+browser-grade rendering. This run closes that gap directly: a fresh subagent instance, restricted
+*by explicit prompt instruction* to gathering information only via raw `curl` GETs — no `WebFetch`,
+no browser/computer-use tool, no JavaScript execution — the same shape of fetch a plain-text
+crawler or a minimal HTTP-only agent tool would make.
+
+- **Date:** 2026-08-21
+- **Client + model:** general-purpose Claude agent, Claude Sonnet 5, spawned fresh with no repo
+  context beyond the prompt below; tool access restricted to the Bash tool running `curl` only
+  (instructed not to use `WebFetch`, `WebSearch`, any browser/computer-use tool, or execute
+  JavaScript)
+- **Fresh session confirmed:** yes — new subagent instance, prompt contained only the tool
+  constraint and the two questions below
+
+**Prompt (turn 1):**
+```
+https://hire-me-mcp-web.vercel.app
+
+What is this?
+```
+
+**Agent output (turn 1, verbatim):**
+> This is the personal website of Marcos Javier Alvarez, a Senior Full-Stack Engineer specializing
+> in AI/LLM systems in production. The site (hire-me-mcp) presents his profile, work history,
+> projects, and skills — for example, recent roles at House Numbers, Xogito Group, and FullStack
+> Labs, and projects like "cowork" (an open-source Python CLI orchestrating AI coding agents), an
+> AI Document Extraction Pipeline, and LLM Evaluation Infrastructure. His top skills listed include
+> TypeScript, JavaScript, Node.js, React, AWS, Docker, the OpenAI API, and REST APIs. Notably, the
+> site doubles as a live, public, anonymous Model Context Protocol (MCP) server that exposes this
+> same career data — profile, work history, projects, and skill evidence — as callable tools for AI
+> assistants, with every answer citing the record it was drawn from, so an AI agent can query his
+> CV like an API instead of scraping the HTML.
+
+**Prompt (turn 2):**
+```
+How would I connect my AI assistant to it?
+```
+
+**Agent output (turn 2, verbatim):**
+> You can connect any MCP-compatible AI assistant to this site's live MCP server at the Streamable
+> HTTP endpoint `https://hire-me-mcp-web.vercel.app/api/mcp` — no authentication is required. The
+> specific steps depend on your client:
+>
+> - **Claude (web/desktop):** Go to Settings (or Customize) → Connectors → "+" → "Add custom
+>   connector", paste in `https://hire-me-mcp-web.vercel.app/api/mcp`, skip Advanced settings (no
+>   auth needed), then click Add.
+> - **Claude Code, Claude Desktop (JSON config), VS Code/Cursor, raw JSON-RPC (curl), or any
+>   generic MCP client:** The site's `/mcp` page ("Add me to your AI") provides tabbed snippets for
+>   each of these; all point at the same endpoint URL above, since it's a standard Streamable HTTP
+>   MCP transport.
+>
+> Once connected, the server exposes five tools: `ping` (verify the connection), `get-profile`
+> (who he is / availability), `get-experience` (work history, filterable by company/tech/date
+> range), `search-projects` (keyword/tag search over his project portfolio), and
+> `get-skill-evidence` (look up whether a specific skill/technology is claimed, not claimed, or
+> unknown, with supporting evidence). You could start by asking your assistant to "ping the
+> hire-me-mcp server" to confirm the connection, then ask something like "Who is Marcos Alvarez,
+> and is he currently open to new roles?" For the full expanded tool reference (parameters and
+> examples), there's also `https://hire-me-mcp-web.vercel.app/llms-full.txt`. If a client can't
+> connect, the troubleshooting note says to confirm it supports MCP Streamable HTTP transport and
+> that the endpoint URL was copied in full; rate-limit behavior is documented in the GitHub repo's
+> README.
+
+**Tool activity log (probe's own report, curl-only):**
+1. `https://hire-me-mcp-web.vercel.app` (home page)
+2. `https://hire-me-mcp-web.vercel.app/llms.txt`
+3. `https://hire-me-mcp-web.vercel.app/.well-known/mcp.json`
+4. `https://hire-me-mcp-web.vercel.app/mcp`
+
+**Rubric outcome:**
+
+| # | Pass/Fail | Notes |
+| --- | --- | --- |
+| B1 | Pass | |
+| B2 | Pass | Unprompted |
+| B3 | Pass | |
+| B4 | Pass | All five tool names given correctly |
+| B5 | Pass | Custom-connector steps, no-auth, correct endpoint |
+| B6 (tracked) | **Reached** | Fetched `/llms.txt` as its *second* request (immediately after the home page, before anything else) and `/.well-known/mcp.json` as its third — both via plain `curl`, with `WebFetch`/browser rendering unavailable by construction. This is the direct discoverability signal #153 asked for: a non-JS, HTTP-only fetcher does reach the machine-readable surface on its own, unprompted. |
+
+**Connection steps executed by tester:** yes — same endpoint as Runs 1–4, already verified working
+(see [Connection-step verification](#connection-step-verification) below).
+**Defects found:** none. Turn 2's claim that "/mcp page... provides tabbed snippets for each of
+these" is worth a provenance note: this probe fetched `/mcp` (a plain `curl` GET, no JS) *after*
+already reading `/llms.txt`/`/.well-known/mcp.json`, and — as of this run — production
+(`hire-me-mcp-web.vercel.app`) still serves the pre-#154 build where the raw HTML only contains the
+default tab's snippet, not the full per-client set. The turn-2 answer's tools list came out
+completely correct regardless, most plausibly sourced from `/llms-full.txt`/`/llms.txt` (which
+already have every client's snippet in plain text, per #154's own description of the situation)
+rather than from `/mcp`'s (at request time) JS-hydrated tabs. This is consistent with, not
+contradicting, #154: the machine-readable text files already carried the full information the
+HTML tabs didn't; this run is evidence that a non-JS agent reaching them gets the complete picture
+either way. [garusis/hire-me-mcp#156](https://github.com/garusis/hire-me-mcp/pull/156) fixes the
+`/mcp`-and-home-page HTML gap itself, independent of this finding.
+
 ## Connection-step verification
 
 Every probe above converged on the same connection method and the same endpoint,
@@ -438,30 +537,35 @@ session no headless probe has.
 | Defect | Severity | Disposition |
 | --- | --- | --- |
 | The `/mcp` page's "Connect your client" section is a client-side-hydrated tab widget (`ClientTabs`) — only the default "Claude (web/desktop)" tab's content is present in server-rendered HTML; Cursor, Claude Code, and "Generic MCP client" snippets only appear after JS hydration. A fetch that doesn't execute JS (confirmed by directly fetching and stripping the page's static HTML) genuinely cannot see those three tabs' content, which is exactly what Run 4's probe reported. | Real, non-trivial — undercuts "one inspect is enough" for the class of tool most likely to do a first inspection (plain fetch, no JS execution) | Not fixed in this PR (a UI/rendering change in `apps/web/app/mcp/`, out of scope for a docs-only change) — filed as [garusis/hire-me-mcp#154](https://github.com/garusis/hire-me-mcp/issues/154) |
-| B6 (discovery path): no probe in this run reached `/llms.txt`, `/llms-full.txt`, or `/.well-known/mcp.json` on its own — every probe got the required facts from the home page's rendered Connect panel or the `/mcp` page instead | Not a rubric failure (B1–B5 all passed on 3 of 4 probes; B4 passed 2 of 2 Scenario B runs), but worth tracking, especially given #154 above: the machine-readable surfaces built in #37/#38 aren't yet demonstrated to be *load-bearing* for a WebFetch-style agent, because the human-facing pages already answer the same question for a JS-capable fetch. `/llms-full.txt` already has the client-specific snippets #154 finds missing from the JS-hydrated tabs — so a probe that discovers it would get complete information where the HTML-only probes in this run didn't. | Filed as follow-up — see below |
+| B6 (discovery path): no probe in the original four-probe run reached `/llms.txt`, `/llms-full.txt`, or `/.well-known/mcp.json` on its own — every probe got the required facts from the home page's rendered Connect panel or the `/mcp` page instead | Not a rubric failure (B1–B5 all passed on 3 of 4 probes; B4 passed 2 of 2 Scenario B runs), but left open whether the machine-readable surfaces built in #37/#38 are *load-bearing* for a fetcher that can't render the human-facing pages | **Resolved by [Run 5](#run-5--scenario-b-probe-3-plain-text-only--non-js-probe-153)**: a probe restricted to `curl`-only (no `WebFetch`, no JS) reached `/llms.txt` as its second request, immediately after the home page — B6 is reached, not just theoretically load-bearing, once a genuinely non-JS fetcher is used instead of a WebFetch-capable one |
 | Run 2 omitted the `ping` tool and Run 3 paraphrased tool names instead of using the literal names | Minor / informational | No fix — not a doc defect, this is answer variance across independently fetched, correctly-sourced README/schema content. Not filed. |
 
 **Follow-up issues filed:**
 - [garusis/hire-me-mcp#153](https://github.com/garusis/hire-me-mcp/issues/153) — re-run Scenario B
   with a plain-text-only (non-JS-executing) probe to get a direct discoverability signal for
   `/llms.txt` specifically, since none of this run's four tool-augmented probes needed to reach it.
+  **Closed the loop with [Run 5](#run-5--scenario-b-probe-3-plain-text-only--non-js-probe-153)**
+  above — see that run for the verbatim transcript and evidence.
 - [garusis/hire-me-mcp#154](https://github.com/garusis/hire-me-mcp/issues/154) — the `/mcp` page's
-  per-client tabs are client-hydrated and invisible to non-JS fetchers; the fix is a UI/rendering
-  change out of scope for this docs-only PR.
+  per-client tabs are client-hydrated and invisible to non-JS fetchers; fixed in
+  [garusis/hire-me-mcp#156](https://github.com/garusis/hire-me-mcp/pull/156) (every tab panel now
+  server-renders into the HTML, inactive ones hidden via the native `hidden` attribute).
 
 ## Summary scorecard
 
 | Scenario | Runs | Rubric lines passed | Notes |
 | --- | --- | --- | --- |
 | A (repo URL) | 2/2 fresh sessions executed | 11/12 individual line-passes (Run 2/A3 missed) | Both runs correctly identified the project, endpoint, and gave working, no-auth connection steps |
-| B (site URL) | 2/2 fresh sessions executed | 9/10 individual line-passes (Run 3/B4 missed) | Both runs found and reported the MCP capability, endpoint, and no-auth connection steps unprompted; B6 (machine-readable-surface discovery specifically) wasn't demonstrated by either — see follow-up issue |
+| B (site URL) | 3/3 fresh sessions executed | 14/15 individual line-passes (Run 3/B4 missed; Run 5 all-pass) | All three runs found and reported the MCP capability, endpoint, and no-auth connection steps unprompted; Run 5 (#153, curl-only probe) additionally confirmed B6 — a genuinely non-JS fetcher does reach `/llms.txt` on its own, unprompted, as its second request |
 
 Overall: **both scenarios pass** their core acceptance bar (correct description, correct live
 URLs, working no-auth connection steps, unprompted discovery of the MCP capability on Scenario B).
-The one open thread — whether `/llms.txt`/`/.well-known/mcp.json` specifically are the path an
-agent takes, versus getting the same facts from rendered HTML — is tracked in
-[#153](https://github.com/garusis/hire-me-mcp/issues/153) rather than blocking this run, since the
-acceptance criteria for both scenarios were otherwise met.
+The open thread from the original run — whether `/llms.txt`/`/.well-known/mcp.json` specifically
+are the path an agent takes, versus only getting the same facts from rendered HTML — is now closed
+by [Run 5](#run-5--scenario-b-probe-3-plain-text-only--non-js-probe-153): a `curl`-only probe
+reaches `/llms.txt` directly. [#153](https://github.com/garusis/hire-me-mcp/issues/153) is left
+open per the task owner's instruction (tracking issue, not to be closed by this update); see the
+issue comment for the pointer to this run.
 
 ## Pre-release use
 
