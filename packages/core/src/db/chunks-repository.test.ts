@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ChunkCitation } from "./chunks-repository.js";
 import {
   InvalidEmbeddingDimensionError,
   parseCitation,
@@ -11,17 +12,33 @@ describe("parseCitation", () => {
   // as the raw JSON string) — this must handle both shapes so a round-trip
   // (insert -> select) never surfaces a stringified citation to callers.
   it("parses a JSON string into a citation object", () => {
-    const raw = '{"sourceType":"project","sourceId":"proj-1","label":"Project One"}';
+    const raw = '{"entityType":"project","entityId":"proj-1","label":"Project One"}';
     expect(parseCitation(raw)).toEqual({
-      sourceType: "project",
-      sourceId: "proj-1",
+      entityType: "project",
+      entityId: "proj-1",
       label: "Project One",
     });
   });
 
   it("passes an already-parsed citation object through unchanged", () => {
-    const citation = { sourceType: "project", sourceId: "proj-1", label: "Project One" };
+    const citation: ChunkCitation = {
+      entityType: "project",
+      entityId: "proj-1",
+      label: "Project One",
+    };
     expect(parseCitation(citation)).toEqual(citation);
+  });
+
+  it("parses a citation carrying the optional fragment and url fields", () => {
+    const raw =
+      '{"entityType":"project","entityId":"proj-1","label":"Project One","fragment":"chunk-0","url":"https://example.com/proj-1"}';
+    expect(parseCitation(raw)).toEqual({
+      entityType: "project",
+      entityId: "proj-1",
+      label: "Project One",
+      fragment: "chunk-0",
+      url: "https://example.com/proj-1",
+    });
   });
 });
 
