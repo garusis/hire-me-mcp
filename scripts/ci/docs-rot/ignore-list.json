@@ -1,0 +1,15 @@
+{
+  "$comment": [
+    "#59 — link-checker ignore list. A HOST listed here still gets checked",
+    "(its result is printed) but a 4xx/5xx or network failure against it is",
+    "logged as a WARNING instead of failing the job — reserved for hosts",
+    "that are independently known to rate-limit or intermittently block",
+    "automated checkers, not a place to silence a link that is actually",
+    "broken. Every entry must be reviewed in the PR that adds it and carry",
+    "a `reason` explaining the observed flakiness (host, date, symptom).",
+    "As of #59 landing, no entry was needed — every external link this repo",
+    "documents returned 200 to a browser-like User-Agent when this ignore",
+    "list was authored. Add entries here, with review, if that changes."
+  ],
+  "hosts": []
+}
