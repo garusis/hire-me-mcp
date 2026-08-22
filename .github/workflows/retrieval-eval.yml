@@ -1,0 +1,134 @@
+name: Retrieval Eval
+
+# Runs `pnpm eval:retrieval` (#41, epic #6) for real: `searchCareer` (#34)
+# scored against the golden dataset's recall@k/precision@k/MRR thresholds
+# (`packages/core/src/eval-retrieval/thresholds.ts`), on a database this
+# workflow itself provisions, migrates, and populates.
+#
+# ## Why a dedicated, disposable Neon branch per run
+#
+# Unlike `db-integration` (`ci.yml`), which only needs an empty, migrated
+# schema, this workflow needs a REAL populated store — `pnpm ingest` (#24)
+# run against the branch before the eval queries it. Sharing the project's
+# main database would mean every run's ingest either mutates production
+# data or silently no-ops against already-current content, neither of which
+# is what "run the eval for real" should mean. `scripts/ci/retrieval-eval/neon-branch.mjs`
+# creates a fresh branch, exposes it as `DATABASE_URL` for the rest of the
+# job via `$GITHUB_ENV`, and an `always()` step deletes it afterward —
+# mirroring `packages/core/src/db/neon-branch.ts`'s create/delete pair the
+# integration test suites use, but as a standalone pre-build script (see
+# that file's own docstring for why it doesn't import `packages/core`).
+#
+# ## workflow_dispatch only — not pull_request/push (yet)
+#
+# Provisioning a Neon branch, running a real ingest, and making ~25
+# embedding calls on every PR would be real, unbounded cost for a still-new
+# eval suite with no re-ranking or caching across runs beyond one process's
+# lifetime. #52 (pipeline automation, tracked separately in epic #6) is
+# where this becomes an automatic merge gate; until then it's triggered
+# on-demand (`gh workflow run retrieval-eval.yml --ref <branch>`) — same
+# "manual today, automated once the pipeline task lands" posture
+# `agent-evals.yml` documents for its own `workflow_dispatch` trigger, and
+# the reason this job is NOT in `docs/development.md`'s required-status-
+# checks list: a manually triggered workflow can never be a required check
+# GitHub blocks a PR on.
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: retrieval-eval-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  retrieval-eval:
+    name: retrieval-eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Required secrets check — never fails red for a missing secret, so a
+      # misconfigured environment produces a clear notice instead of a
+      # confusing downstream failure several steps later.
+      - name: Check for required secrets
+        id: secrets-check
+        run: |
+          if [ -z "${{ secrets.NEON_API_KEY }}" ] || [ -z "${{ vars.NEON_PROJECT_ID }}" ] || [ -z "${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}" ]; then
+            echo "::error::retrieval-eval requires NEON_API_KEY, NEON_PROJECT_ID, and GOOGLE_GENERATIVE_AI_API_KEY to be configured."
+            exit 1
+          fi
+
+      # packages/core/src/repository.ts imports @hire-me-mcp/career-data at
+      # the top level, which resolves via that package's own "exports" field
+      # to its compiled dist/ — db:migrate/ingest/eval:retrieval all fail
+      # with "Failed to resolve entry for package @hire-me-mcp/career-data"
+      # without this, same as db-integration's equivalent step in ci.yml.
+      - name: Build packages/career-data
+        run: pnpm turbo run build --filter=@hire-me-mcp/career-data
+
+      - name: Create disposable Neon branch
+        id: neon-branch
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+        run: node scripts/ci/retrieval-eval/neon-branch.mjs create
+
+      - name: Run migrations
+        run: pnpm --filter @hire-me-mcp/core db:migrate
+
+      # Full ingest (not --dry-run): the branch starts empty, so this is
+      # always a full initial population, not an incremental no-op.
+      - name: Ingest career data (real embeddings)
+        env:
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+        run: pnpm ingest
+
+      - name: Run retrieval eval (real embeddings, real thresholds)
+        env:
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+        run: pnpm --filter @hire-me-mcp/core eval:retrieval
+
+      - name: Upload retrieval eval report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrieval-eval-report
+          path: packages/core/retrieval-eval-report.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      # always(): the branch must be deleted whether the eval passed,
+      # failed its thresholds, or the job errored earlier — never leak a
+      # Neon branch on a failed run.
+      - name: Delete disposable Neon branch
+        if: always() && steps.neon-branch.outcome == 'success'
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          NEON_BRANCH_ID: ${{ steps.neon-branch.outputs.branch-id }}
+        run: node scripts/ci/retrieval-eval/neon-branch.mjs delete
