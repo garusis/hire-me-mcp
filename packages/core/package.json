@@ -15,6 +15,10 @@
     "./slugify": {
       "types": "./dist/slugify.d.ts",
       "default": "./dist/slugify.js"
+    },
+    "./db": {
+      "types": "./dist/db/index.d.ts",
+      "default": "./dist/db/index.js"
     }
   },
   "files": [
@@ -27,14 +31,17 @@
     "format": "bash ../../scripts/biome-check.sh format --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "db:migrate": "tsx src/db/migrate-cli.ts"
   },
   "dependencies": {
-    "@hire-me-mcp/career-data": "workspace:*"
+    "@hire-me-mcp/career-data": "workspace:*",
+    "postgres": "3.4.9"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
     "@vitest/coverage-v8": "4.1.11",
+    "tsx": "4.23.12",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
   }
