@@ -55,7 +55,10 @@ describe.runIf(neonConfig !== undefined)("Neon pgvector store (real branch)", ()
   it("runs the initial migration against an empty database: extension, table, HNSW index", async () => {
     if (sql === undefined) throw new Error("sql not initialized");
     const result = await runMigrations(sql);
-    expect(result.appliedMigrationIds).toEqual(["001_init_pgvector_chunks"]);
+    expect(result.appliedMigrationIds).toEqual([
+      "001_init_pgvector_chunks",
+      "002_add_embedding_model",
+    ]);
 
     const [extension] = await sql`SELECT extname FROM pg_extension WHERE extname = 'vector'`;
     expect(extension).toBeDefined();

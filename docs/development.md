@@ -73,23 +73,64 @@ pnpm --filter web test:coverage  # coverage for a single package
 
 ## Database integration tests (Neon pgvector, real branch)
 
-`packages/core/src/db/rag-store.integration.test.ts` (#14, epic #6) is part of the normal
-`pnpm test` / `pnpm turbo test` suite — Vitest picks it up like any other `*.test.ts` — but it's
-gated on Neon API credentials rather than always running against a shared database. Full writeup,
-including the embedding-dimension/distance-metric ADR and driver choice, lives in
+`packages/core/src/db/rag-store.integration.test.ts` (#14, epic #6) and
+`packages/core/src/ingest/run.integration.test.ts` (#24, epic #6) are part of the normal
+`pnpm test` / `pnpm turbo test` suite — Vitest picks them up like any other `*.test.ts` — but
+they're gated on Neon API credentials rather than always running against a shared database. Full
+writeup, including the embedding-dimension/distance-metric ADR and driver choice, lives in
 [`packages/core/README.md`](../packages/core/README.md#database-neon-pgvector-store); the short
 version:
 
 - Set `NEON_API_KEY` and `NEON_PROJECT_ID` (a personal Neon API key with access to the project) to
-  run it for real — it creates a throwaway Neon branch, runs migrations against it, and deletes it
-  on teardown (including on failure).
-- Either missing (the default for local dev and most CI jobs) makes the suite skip with a clear
+  run them for real — each creates its own throwaway Neon branch, runs migrations against it, and
+  deletes it on teardown (including on failure).
+- Either missing (the default for local dev and most CI jobs) makes the suites skip with a clear
   console message — never silently, never a hard failure for contributors without Neon
   credentials.
-- CI runs it in its own job, `db-integration` (`.github/workflows/ci.yml`), separate from
+- CI runs both in the same job, `db-integration` (`.github/workflows/ci.yml`), separate from
   `quality` so a slow/flaky Neon branch-provisioning call never blocks the required checks. Like
   `preview-e2e`/`lighthouse`, it skips (rather than fails red) when the required secrets aren't
   available — the case for fork PRs, which never receive repo secrets.
+- The ingestion integration suite embeds with a faked, deterministic, no-network embedder (spied
+  on to assert the "unchanged content -> zero embedding calls" incremental path) rather than the
+  real Google API — it doesn't need `GOOGLE_GENERATIVE_AI_API_KEY`, only the Neon credentials
+  above. To run `pnpm ingest` for real (with real embeddings) locally, see "Ingestion pipeline
+  (`pnpm ingest`)" below.
+
+## Ingestion pipeline (`pnpm ingest`)
+
+`pnpm ingest` (#24, epic #6) reads the typed career corpus
+(`@hire-me-mcp/career-data`), chunks it (`chunkCareerData`, #21), embeds new/changed chunks with
+Google's `gemini-embedding-001` (truncated to 768 dimensions — see
+`packages/core/src/embedding/config.ts`, the single place both ingestion and the future
+`searchCareer` (#34) read the model id/dimension from), and upserts them into the Neon + pgvector
+store (#14) — incrementally: re-running it with no content changes makes **zero** embedding API
+calls and zero writes.
+
+```bash
+pnpm ingest                    # incremental: only embeds/writes new or changed chunks, deletes orphans
+pnpm ingest -- --dry-run       # reports the insert/update/delete/unchanged diff, no embedding calls, no writes
+pnpm ingest -- --full          # re-embeds every chunk regardless of content-hash match
+```
+
+(The `--` before the flag is required — it's `pnpm`'s own arg-passthrough separator for a root
+script that forwards into `pnpm --filter @hire-me-mcp/core ingest`.)
+
+Requires both `DATABASE_URL` and `GOOGLE_GENERATIVE_AI_API_KEY` (see `.env.example`) — missing
+either fails fast with a message naming the variable, never its value. On completion it prints a
+one-line summary (`inserted: N, updated: N, deleted: N, unchanged: N, embedding calls: N, wall
+time: Nms`) so re-index behavior is visible in CI logs once this is wired into a deploy step
+(#41, out of scope for #24). A permanent embedding failure (retries exhausted, or a non-retryable
+error) aborts the whole run with a non-zero exit code and makes no database writes at all — see
+`packages/core/src/ingest/run.ts`'s docstring for why ordering (embed everything needed, then
+write) makes that guarantee free rather than requiring a rollback.
+
+Changing the embedding model id (`EMBEDDING_MODEL_ID` in `embedding/config.ts`) triggers a full
+re-embed on the next run: each row stores the model id it was embedded with
+(`career_chunks.embedding_model`, migration `002_add_embedding_model`), and any row whose stored
+model id doesn't match the currently configured one is treated as stale — the same mechanism a
+brand-new column default (`''`, never a real model id) uses to make every pre-#24 row look stale
+on its first run.
 
 ## End-to-end tests (Playwright)
 
@@ -299,8 +340,8 @@ push to `main`, with five jobs:
 - **`mcp-integration`** — also runs in parallel with `quality`. A single step, `pnpm test:mcp`.
 - **`preview-e2e`** and **`lighthouse`** (`pull_request` only) — the real product e2e suite and the
   Lighthouse gate, both run against the PR's actual Vercel preview deployment.
-- **`db-integration`** (#14) — runs `packages/core`'s real-Neon integration suite (see "Database
-  integration tests" above) with `NEON_API_KEY`/`NEON_PROJECT_ID` available. Not in the
+- **`db-integration`** (#14, #24) — runs `packages/core`'s real-Neon integration suites (see
+  "Database integration tests" above) with `NEON_API_KEY`/`NEON_PROJECT_ID` available. Not in the
   required-status-checks list: like `agent-evals`/the `docs-rot-*` jobs, a Neon API hiccup or a
   fork PR (no repo secrets) skipping shouldn't block every unrelated PR from merging.
 

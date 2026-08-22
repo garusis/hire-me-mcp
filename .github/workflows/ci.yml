@@ -190,9 +190,11 @@ jobs:
       - name: Run protocol-level MCP integration tests
         run: pnpm test:mcp
 
-  # Real-Neon integration suite for packages/core's pgvector store (#14):
-  # creates a throwaway Neon branch, runs migrations against it, exercises
-  # upsert idempotency + ANN ordering, deletes the branch on teardown. Its
+  # Real-Neon integration suite for packages/core's pgvector store (#14) and
+  # ingestion pipeline (#24): creates a throwaway Neon branch, runs
+  # migrations against it, exercises upsert idempotency + ANN ordering, and
+  # the full insert/no-op-rerun/edit/delete/--full/model-change ingest cycle
+  # (with a faked, no-network embedder), deletes the branch on teardown. Its
   # own job (not folded into `quality`) so a slow/flaky Neon branch-create
   # call never blocks that required check — see docs/development.md
   # "Database integration tests". Not in the required-status-checks list,
@@ -258,7 +260,7 @@ jobs:
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
-        run: pnpm --filter @hire-me-mcp/core exec vitest run src/db/rag-store.integration.test.ts
+        run: pnpm --filter @hire-me-mcp/core exec vitest run src/db/rag-store.integration.test.ts src/ingest/run.integration.test.ts
 
   # Runs against the PR's real Vercel preview deployment (#58), not
   # localhost — resolved via .github/actions/resolve-vercel-preview, a
