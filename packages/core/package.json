@@ -19,6 +19,10 @@
     "./db": {
       "types": "./dist/db/index.d.ts",
       "default": "./dist/db/index.js"
+    },
+    "./embedding": {
+      "types": "./dist/embedding/index.d.ts",
+      "default": "./dist/embedding/index.js"
     }
   },
   "files": [
@@ -35,7 +39,9 @@
     "db:migrate": "tsx src/db/migrate-cli.ts"
   },
   "dependencies": {
+    "@ai-sdk/google": "4.0.48",
     "@hire-me-mcp/career-data": "workspace:*",
+    "ai": "7.0.71",
     "postgres": "3.4.9"
   },
   "devDependencies": {

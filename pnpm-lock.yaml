@@ -225,9 +225,15 @@ importers:
 
   packages/core:
     dependencies:
+      '@ai-sdk/google':
+        specifier: 4.0.48
+        version: 4.0.48(zod@4.4.3)
       '@hire-me-mcp/career-data':
         specifier: workspace:*
         version: link:../career-data
+      ai:
+        specifier: 7.0.71
+        version: 7.0.71(zod@4.4.3)
       postgres:
         specifier: 3.4.9
         version: 3.4.9

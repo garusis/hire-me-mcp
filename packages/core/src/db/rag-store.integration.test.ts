@@ -126,6 +126,7 @@ describe.runIf(neonConfig !== undefined)("Neon pgvector store (real branch)", ()
       contentHash: "hash-1",
       tokenCount: 4,
       embedding: embeddingWithSpike(768, 0),
+      embeddingModel: "test-model",
     });
 
     const record = await getChunkById(sql, "chunk-roundtrip-1");
@@ -159,6 +160,7 @@ describe.runIf(neonConfig !== undefined)("Neon pgvector store (real branch)", ()
       content: "Original content.",
       contentHash: "hash-original",
       embedding: embeddingWithSpike(768, 1),
+      embeddingModel: "test-model",
     };
 
     await upsertChunk(sql, baseChunk);
@@ -203,6 +205,7 @@ describe.runIf(neonConfig !== undefined)("Neon pgvector store (real branch)", ()
         content: `fixture ${fixture.id}`,
         contentHash: `hash-${fixture.id}`,
         embedding: fixture.embedding,
+        embeddingModel: "test-model",
       });
     }
 

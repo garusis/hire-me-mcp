@@ -12,16 +12,20 @@ export type {
   CareerChunkInput,
   CareerChunkRecord,
   ChunkCitation,
+  ChunkFingerprint,
   FindSimilarChunksOptions,
   SimilarChunkMatch,
 } from "./chunks-repository.js";
 export {
+  deleteChunksByIds,
   EMBEDDING_DIMENSION,
   findSimilarChunks,
   getChunkById,
   InvalidEmbeddingDimensionError,
+  listChunkFingerprints,
   parseCitation,
   toVectorLiteral,
+  UNSET_EMBEDDING_MODEL,
   upsertChunk,
 } from "./chunks-repository.js";
 export type { DbClient } from "./client.js";

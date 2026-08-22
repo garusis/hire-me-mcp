@@ -4,6 +4,7 @@ import {
   InvalidEmbeddingDimensionError,
   parseCitation,
   toVectorLiteral,
+  UNSET_EMBEDDING_MODEL,
 } from "./chunks-repository.js";
 
 describe("parseCitation", () => {
@@ -39,6 +40,15 @@ describe("parseCitation", () => {
       fragment: "chunk-0",
       url: "https://example.com/proj-1",
     });
+  });
+});
+
+describe("UNSET_EMBEDDING_MODEL", () => {
+  // Matches migration 002's `ADD COLUMN ... DEFAULT ''` — an empty string
+  // never matches a real `EMBEDDING_MODEL_ID`, so any row still at this
+  // sentinel is always treated as needing (re-)embedding.
+  it("is the empty string, matching the embedding_model column's default", () => {
+    expect(UNSET_EMBEDDING_MODEL).toBe("");
   });
 });
 
