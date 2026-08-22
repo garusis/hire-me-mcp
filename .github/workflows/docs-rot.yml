@@ -1,0 +1,140 @@
+name: docs-rot
+
+# #59 — CI docs-rot guards: execute the documented MCP connection snippets
+# against a LIVE deployment, and check every link in the repo's Markdown
+# plus the deployed site. Two independent jobs (AC: "external-link failures
+# and snippet failures are separate jobs, so one cannot mask the other") —
+# neither job's steps run inside the other.
+#
+# Target resolution (mirrors `preview-e2e`/`lighthouse` in ci.yml, reusing
+# the shared `resolve-vercel-preview` composite action per the review note
+# on #58/#59 rather than a third copy of the polling logic):
+# - `pull_request`: the PR's own Vercel preview deployment (bypass header
+#   applied). Skips with a clear message (not a failure) on fork PRs
+#   (secrets withheld) or when no preview is ready yet within the timeout.
+# - `push` to `main`, the daily `schedule`, and manual `workflow_dispatch`:
+#   the fixed production URL — the same constant
+#   `apps/web/src/lib/config/site-url.ts#PRODUCTION_SITE_URL` uses for doc
+#   generation.
+#
+# Both scripts are plain Node (no npm dependencies — see
+# `scripts/ci/docs-rot/`'s module docs), so neither job needs a `pnpm
+# install` step; only Node itself, pinned via `.nvmrc` like every other job.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "17 6 * * *" # daily
+  workflow_dispatch:
+
+concurrency:
+  group: docs-rot-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs-rot-snippets:
+    name: docs-rot-snippets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # Best-effort: `check-claude-cli.mjs` already falls back to
+      # structural-only validation (a documented deviation, per the issue's
+      # own allowance) when `claude` isn't on PATH, so a failed/blocked
+      # install here must never fail the job.
+      - name: Install Claude Code CLI (best-effort)
+        continue-on-error: true
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Check for required secrets (skips on fork PRs)
+        id: secrets-check
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ -z "${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping docs-rot-snippets — VERCEL_AUTOMATION_BYPASS_SECRET is unavailable (expected for fork PRs, which never receive repo secrets)."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve Vercel preview URL
+        id: preview
+        if: github.event_name == 'pull_request' && steps.secrets-check.outputs.available == 'true'
+        uses: ./.github/actions/resolve-vercel-preview
+        with:
+          sha: ${{ github.event.pull_request.head.sha }}
+
+      - name: Run snippet checks against the PR preview
+        if: github.event_name == 'pull_request' && steps.preview.outputs.found == 'true'
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node scripts/ci/docs-rot/check-snippets.mjs --target-url="${{ steps.preview.outputs.url }}"
+
+      - name: No ready preview deployment found
+        if: github.event_name == 'pull_request' && steps.secrets-check.outputs.available == 'true' && steps.preview.outputs.found != 'true'
+        run: |
+          echo "::warning::No ready Vercel preview deployment was found for ${{ github.event.pull_request.head.sha }} within the timeout — skipping docs-rot-snippets rather than failing red. Re-run this job once the Vercel preview check on this PR is green."
+
+      - name: Run snippet checks against production
+        if: github.event_name != 'pull_request'
+        run: node scripts/ci/docs-rot/check-snippets.mjs --target-url=https://hire-me-mcp-web.vercel.app
+
+  docs-rot-links:
+    name: docs-rot-links
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Check for required secrets (skips on fork PRs)
+        id: secrets-check
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ -z "${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping docs-rot-links — VERCEL_AUTOMATION_BYPASS_SECRET is unavailable (expected for fork PRs, which never receive repo secrets)."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve Vercel preview URL
+        id: preview
+        if: github.event_name == 'pull_request' && steps.secrets-check.outputs.available == 'true'
+        uses: ./.github/actions/resolve-vercel-preview
+        with:
+          sha: ${{ github.event.pull_request.head.sha }}
+
+      - name: Run link checks against the PR preview
+        if: github.event_name == 'pull_request' && steps.preview.outputs.found == 'true'
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node scripts/ci/docs-rot/check-links.mjs --target-url="${{ steps.preview.outputs.url }}"
+
+      - name: No ready preview deployment found
+        if: github.event_name == 'pull_request' && steps.secrets-check.outputs.available == 'true' && steps.preview.outputs.found != 'true'
+        run: |
+          echo "::warning::No ready Vercel preview deployment was found for ${{ github.event.pull_request.head.sha }} within the timeout — skipping docs-rot-links rather than failing red. Re-run this job once the Vercel preview check on this PR is green."
+
+      - name: Run link checks against production
+        if: github.event_name != 'pull_request'
+        run: node scripts/ci/docs-rot/check-links.mjs --target-url=https://hire-me-mcp-web.vercel.app
