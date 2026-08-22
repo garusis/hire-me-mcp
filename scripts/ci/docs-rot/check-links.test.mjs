@@ -45,6 +45,17 @@ test("extractHrefsFromHtml resolves relative hrefs and skips mailto/tel/#", () =
   assert.deepEqual(hrefs.sort(), ["https://example.com/x", "https://site.test/about"]);
 });
 
+test("extractHrefsFromHtml skips non-http(s) scheme deep links (cursor://, vscode:, mailto:)", () => {
+  const html = `
+    <a href="cursor://anysphere.cursor-deeplink/mcp/install?name=hire-me&config=abc">cursor</a>
+    <a href="vscode:mcp/install?config=abc">vscode</a>
+    <a href="mailto:someone@example.com">mail</a>
+    <a href="https://example.com/real">real</a>
+  `;
+  const hrefs = extractHrefsFromHtml(html, "https://site.test");
+  assert.deepEqual(hrefs.sort(), ["https://example.com/real"]);
+});
+
 test("checkUrl reports ok:true for a 200 response", async () => {
   const server = createServer((_req, res) => {
     res.writeHead(200);

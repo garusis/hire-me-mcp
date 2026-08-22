@@ -62,6 +62,17 @@ export function extractMarkdownLinks(markdownText) {
   return [...found];
 }
 
+/**
+ * Only `http:`/`https:` URLs are fetchable by this checker. Everything else —
+ * `mailto:`, `tel:`, and custom-protocol editor deep links like
+ * `cursor://...` or `vscode:...` (the /mcp page's "Add to Cursor/VS Code"
+ * buttons, #160) — can't be HTTP-fetched, so skipping them is correct, not
+ * a failure to be worked around.
+ */
+function isHttpUrl(url) {
+  return url.protocol === "http:" || url.protocol === "https:";
+}
+
 /** Extracts every `href="..."` from rendered HTML, resolved to absolute URLs against `baseUrl`. */
 export function extractHrefsFromHtml(html, baseUrl) {
   const pattern = /href="([^"]+)"/g;
@@ -69,15 +80,20 @@ export function extractHrefsFromHtml(html, baseUrl) {
   let match = pattern.exec(html);
   while (match !== null) {
     const raw = match[1];
-    if (raw.startsWith("mailto:") || raw.startsWith("tel:") || raw.startsWith("#")) {
+    if (raw.startsWith("#")) {
       match = pattern.exec(html);
       continue;
     }
     try {
-      const resolved = new URL(raw, baseUrl).toString();
-      if (!isTemplatePlaceholder(resolved)) {
-        found.add(resolved);
+      const resolved = new URL(raw, baseUrl);
+      if (isHttpUrl(resolved)) {
+        const resolvedString = resolved.toString();
+        if (!isTemplatePlaceholder(resolvedString)) {
+          found.add(resolvedString);
+        }
       }
+      // else: non-http(s) scheme (mailto:, tel:, cursor:, vscode:, ...) —
+      // not fetchable, skip rather than fail the check.
     } catch {
       // Not a resolvable URL (e.g. a malformed href) — skip rather than crash the crawl.
     }
