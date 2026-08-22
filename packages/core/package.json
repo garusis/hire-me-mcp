@@ -23,6 +23,10 @@
     "./embedding": {
       "types": "./dist/embedding/index.d.ts",
       "default": "./dist/embedding/index.js"
+    },
+    "./search-career": {
+      "types": "./dist/search-career.d.ts",
+      "default": "./dist/search-career.js"
     }
   },
   "files": [

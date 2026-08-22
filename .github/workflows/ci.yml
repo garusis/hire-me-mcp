@@ -273,7 +273,7 @@ jobs:
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
-        run: pnpm --filter @hire-me-mcp/core exec vitest run src/db/rag-store.integration.test.ts src/ingest/run.integration.test.ts
+        run: pnpm --filter @hire-me-mcp/core exec vitest run src/db/rag-store.integration.test.ts src/ingest/run.integration.test.ts src/search-career.integration.test.ts
 
   # Runs against the PR's real Vercel preview deployment (#58), not
   # localhost — resolved via .github/actions/resolve-vercel-preview, a
