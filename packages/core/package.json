@@ -41,13 +41,15 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "db:migrate": "tsx src/db/migrate-cli.ts",
-    "ingest": "tsx src/ingest/cli.ts"
+    "ingest": "tsx src/ingest/cli.ts",
+    "eval:retrieval": "tsx src/eval-retrieval/cli.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "4.0.48",
     "@hire-me-mcp/career-data": "workspace:*",
     "ai": "7.0.71",
-    "postgres": "3.4.9"
+    "postgres": "3.4.9",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
