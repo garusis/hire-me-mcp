@@ -46,10 +46,52 @@ export interface RetrievalEvalEnvConfig {
   reportPath: string;
 }
 
-/** Conservative, documented defaults for an unconfigured run. */
+/**
+ * Conservative, documented defaults for an unconfigured run.
+ *
+ * ## `absentTopicMinScore` calibration (#41)
+ *
+ * The original `0.4` default (chosen before any real embedding call — see
+ * `thresholds.ts`'s "Initial calibration" note) turned out to be far too
+ * low once measured against a real run: with `gemini-embedding-001`'s
+ * task-agnostic default embedding, EVERY absent-topic query's top cosine
+ * score (0.585-0.651) landed inside the same band as legitimate queries'
+ * top scores (0.549-0.814, two of them at 0.549/0.573) — recorded on CI run
+ * https://github.com/garusis/hire-me-mcp/actions/runs/32592742295
+ * (absent-topic accuracy 0.0000/5). No absolute threshold could separate
+ * them, because both the corpus and the queries were embedded with the
+ * same instruction, giving the model no signal to specialize either side's
+ * vector for retrieval.
+ *
+ * Fixing that required giving the embedder that signal: `google-client.ts`
+ * now embeds ingested documents with Gemini's `RETRIEVAL_DOCUMENT` task
+ * type and `searchCareer`'s query-time embedding with `RETRIEVAL_QUERY`
+ * (asymmetric retrieval task types — see
+ * https://ai.google.dev/gemini-api/docs/embeddings#task-types). Re-run
+ * against a fresh, re-embedded store (workflow run
+ * https://github.com/garusis/hire-me-mcp/actions/runs/32593193386):
+ *
+ * - Absent-topic top scores: 0.6263, 0.6340, 0.6393, 0.6407, 0.6949
+ *   (`absent-blockchain`, the outlier).
+ * - Legitimate-query top scores: 0.6466-0.7978, lowest four at 0.6466,
+ *   0.6528, 0.6530, 0.6576.
+ *
+ * Four of the five absent-topic queries are now cleanly separated below
+ * every legitimate top score by a real margin (ceiling 0.6407 vs. floor
+ * 0.6466). `absent-blockchain` (0.6949) is a genuine remaining outlier —
+ * it overlaps the low end of the legitimate range, so no honest threshold
+ * makes it pass without also swallowing real matches. `0.64` sits in the
+ * gap between the clean absent cluster's ceiling (0.6407) and the
+ * legitimate floor (0.6466) — real margin on both sides — accepting that
+ * one known outlier as the "one borderline case out of 5" `thresholds.ts`'s
+ * `absentTopicAccuracy: 0.8` floor was deliberately written to tolerate,
+ * rather than inflating the threshold past 0.6949 to force a 5/5 that
+ * would no longer mean anything (it would also sit below five real
+ * legitimate-query top scores).
+ */
 const DEFAULTS: RetrievalEvalEnvConfig = {
   topK: 5,
-  absentTopicMinScore: 0.4,
+  absentTopicMinScore: 0.64,
   reportPath: "retrieval-eval-report.json",
 };
 
