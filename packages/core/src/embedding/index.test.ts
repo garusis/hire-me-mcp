@@ -6,6 +6,8 @@ import {
   EMBEDDING_MODEL_ID,
   EMBEDDING_PROVIDER,
   EmbeddingFailureError,
+  loadEmbeddingApiKey,
+  MissingEmbeddingApiKeyError,
 } from "./index.js";
 
 describe("embedding module entry point", () => {
@@ -16,5 +18,10 @@ describe("embedding module entry point", () => {
     expect(typeof createEmbeddingClient).toBe("function");
     expect(typeof createGoogleEmbeddingClient).toBe("function");
     expect(new EmbeddingFailureError("x")).toBeInstanceOf(Error);
+  });
+
+  it("re-exports the api key loader", () => {
+    expect(typeof loadEmbeddingApiKey).toBe("function");
+    expect(new MissingEmbeddingApiKeyError()).toBeInstanceOf(Error);
   });
 });

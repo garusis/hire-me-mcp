@@ -15,5 +15,7 @@ export type {
 } from "./client.js";
 export { createEmbeddingClient, EmbeddingFailureError } from "./client.js";
 export { EMBEDDING_DIMENSION, EMBEDDING_MODEL_ID, EMBEDDING_PROVIDER } from "./config.js";
+export type { EmbeddingEnvSource } from "./env.js";
+export { loadEmbeddingApiKey, MissingEmbeddingApiKeyError } from "./env.js";
 export type { CreateGoogleEmbeddingClientOptions } from "./google-client.js";
 export { createGoogleEmbeddingClient } from "./google-client.js";
