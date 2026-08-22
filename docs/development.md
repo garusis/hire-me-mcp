@@ -289,6 +289,57 @@ in the required-status-checks list below (a path-filtered job that never runs wo
 every unrelated PR) — see `packages/agent/README.md`'s "Running evals in CI" section for the full
 rationale.
 
+A SEVENTH workflow, [`.github/workflows/docs-rot.yml`](../.github/workflows/docs-rot.yml) (#59),
+makes documentation rot impossible to merge or leave running unnoticed: two independent jobs,
+`docs-rot-snippets` and `docs-rot-links`, run on every pull request (against the PR's Vercel
+preview), on every push to `main`, and on a daily `06:17 UTC` schedule (both also accept
+`workflow_dispatch`) — always against a real, currently-deployed origin, never localhost.
+
+- **`docs-rot-snippets`** — parses the generated regions already published in `README.md` and
+  `docs/mcp.md` (the endpoint URL, the Claude Code CLI command, the Cursor/VS Code JSON config, the
+  tool table, and the raw curl healthcheck) and executes what they describe: a real JSON-RPC
+  `initialize` + `tools/list` handshake, a real `claude mcp add`/`list`/`remove` round trip when the
+  `claude` CLI is available (installed best-effort in CI; falls back to structural-only validation,
+  documented as a deviation, when it isn't), and a parse + endpoint/transport cross-check for the
+  JSON client config. It also fetches `/.well-known/mcp.json` and `/llms-full.txt` **from the target
+  deployment itself** (not a checked-in copy) and cross-checks their tool lists against the live
+  `tools/list` response. Every URL any of this touches comes from parsing one of those documents —
+  none is re-typed in the workflow or the script — so a stale/bogus documented endpoint fails the
+  job instead of silently passing (proved by a fixture-server test,
+  `scripts/ci/docs-rot/extract-artifacts.test.mjs`).
+- **`docs-rot-links`** — crawls every Markdown file in the repo plus every page of the deployed site
+  (breadth-first from `/`, seeded with `/llms.txt`'s own links), checking every discovered URL (HEAD
+  falling back to GET, retried with exponential backoff) and failing on 4xx/5xx. A documented,
+  reviewed ignore list (`scripts/ci/docs-rot/ignore-list.json`, currently empty) exempts
+  known-flaky/rate-limiting hosts from failing the job without silencing them entirely (a hit still
+  prints as a warning). Deliberately a separate job from `docs-rot-snippets` so a dead external link
+  can never mask a broken MCP snippet, or vice versa.
+
+Both scripts are plain Node with no npm dependencies, so — unlike every other job in this file —
+neither needs a `pnpm install` step; only `.nvmrc`-pinned Node itself. Both are runnable locally
+against **any** deployment (a preview, production, or a local dev/production server) with one
+command each:
+
+```bash
+pnpm docs-rot:snippets --target-url=https://hire-me-mcp-web.vercel.app
+pnpm docs-rot:links --target-url=https://hire-me-mcp-web.vercel.app
+
+# Against a Vercel Deployment-Protection-guarded preview, same bypass convention as preview-e2e:
+VERCEL_AUTOMATION_BYPASS_SECRET=<secret> pnpm docs-rot:snippets --target-url=https://<preview>.vercel.app
+VERCEL_AUTOMATION_BYPASS_SECRET=<secret> pnpm docs-rot:links --target-url=https://<preview>.vercel.app
+
+# Unit tests for the extraction/checking logic itself (no network target needed):
+pnpm docs-rot:test
+```
+
+Both jobs use the same `resolve-vercel-preview` composite action and fork-PR/no-ready-preview
+skip-with-message pattern as `preview-e2e`/`lighthouse` above, per the shared-infrastructure review
+note on #58/#59 — no third copy of the preview-polling logic. Neither job is in the
+required-status-checks list below yet: they're a docs-rot **guard** (loud, actionable failures on
+`main`/schedule/every PR), not a merge gate, so a preview that hasn't warmed up yet within the
+timeout skips rather than blocking a PR — see the note on `agent-evals` above for the same
+reasoning applied to a path-filtered job.
+
 - Node is pinned via `.nvmrc`; pnpm is installed via `pnpm/action-setup`, reading the version from
   the root `packageManager` field.
 - Dependencies install with `pnpm install --frozen-lockfile`, so a stale lockfile fails CI instead
