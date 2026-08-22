@@ -80,7 +80,7 @@ export interface RetrievalEvalEnvConfig {
  * every legitimate top score by a real margin (ceiling 0.6407 vs. floor
  * 0.6466). `absent-blockchain` (0.6949) is a genuine remaining outlier —
  * it overlaps the low end of the legitimate range, so no honest threshold
- * makes it pass without also swallowing real matches. `0.64` sits in the
+ * makes it pass without also swallowing real matches. `0.644` sits in the
  * gap between the clean absent cluster's ceiling (0.6407) and the
  * legitimate floor (0.6466) — real margin on both sides — accepting that
  * one known outlier as the "one borderline case out of 5" `thresholds.ts`'s
@@ -91,7 +91,7 @@ export interface RetrievalEvalEnvConfig {
  */
 const DEFAULTS: RetrievalEvalEnvConfig = {
   topK: 5,
-  absentTopicMinScore: 0.64,
+  absentTopicMinScore: 0.644,
   reportPath: "retrieval-eval-report.json",
 };
 
