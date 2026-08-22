@@ -71,6 +71,26 @@ pnpm test:coverage        # turbo run test:coverage — vitest run --coverage ev
 pnpm --filter web test:coverage  # coverage for a single package
 ```
 
+## Database integration tests (Neon pgvector, real branch)
+
+`packages/core/src/db/rag-store.integration.test.ts` (#14, epic #6) is part of the normal
+`pnpm test` / `pnpm turbo test` suite — Vitest picks it up like any other `*.test.ts` — but it's
+gated on Neon API credentials rather than always running against a shared database. Full writeup,
+including the embedding-dimension/distance-metric ADR and driver choice, lives in
+[`packages/core/README.md`](../packages/core/README.md#database-neon-pgvector-store); the short
+version:
+
+- Set `NEON_API_KEY` and `NEON_PROJECT_ID` (a personal Neon API key with access to the project) to
+  run it for real — it creates a throwaway Neon branch, runs migrations against it, and deletes it
+  on teardown (including on failure).
+- Either missing (the default for local dev and most CI jobs) makes the suite skip with a clear
+  console message — never silently, never a hard failure for contributors without Neon
+  credentials.
+- CI runs it in its own job, `db-integration` (`.github/workflows/ci.yml`), separate from
+  `quality` so a slow/flaky Neon branch-provisioning call never blocks the required checks. Like
+  `preview-e2e`/`lighthouse`, it skips (rather than fails red) when the required secrets aren't
+  available — the case for fork PRs, which never receive repo secrets.
+
 ## End-to-end tests (Playwright)
 
 [Playwright](https://playwright.dev) is the e2e runner, fully separate from Vitest: it owns its
@@ -279,6 +299,10 @@ push to `main`, with five jobs:
 - **`mcp-integration`** — also runs in parallel with `quality`. A single step, `pnpm test:mcp`.
 - **`preview-e2e`** and **`lighthouse`** (`pull_request` only) — the real product e2e suite and the
   Lighthouse gate, both run against the PR's actual Vercel preview deployment.
+- **`db-integration`** (#14) — runs `packages/core`'s real-Neon integration suite (see "Database
+  integration tests" above) with `NEON_API_KEY`/`NEON_PROJECT_ID` available. Not in the
+  required-status-checks list: like `agent-evals`/the `docs-rot-*` jobs, a Neon API hiccup or a
+  fork PR (no repo secrets) skipping shouldn't block every unrelated PR from merging.
 
 A SIXTH, separate workflow, [`.github/workflows/agent-evals.yml`](../.github/workflows/agent-evals.yml)
 (`agent-evals`) gates the interview agent's honesty guarantees on real, budget-capped model output

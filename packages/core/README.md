@@ -268,17 +268,87 @@ This is enforced two ways, not by convention:
 
 ### This list will grow — on purpose
 
-**#34** (epic #6, the RAG/embeddings work) is expected to deliberately extend
-`allowed-dependencies.json` with a vector-DB or embedding-client dependency once that epic lands —
-that is the intended way to evolve this boundary. The allowlist exists to make that decision
-visible and reviewable in a diff, not to freeze `packages/core` forever. If you're adding a
-dependency here: edit `allowed-dependencies.json` in the same PR, and explain why in the PR
-description — don't work around the check.
+**#14** (epic #6) already extended `allowed-dependencies.json` once, with `postgres` (the Neon
+pgvector store's driver) and `tsx` (to run the migration CLI) — see "Database (Neon pgvector
+store)" below. **#34** (epic #6, `searchCareer`) is expected to extend it again with an
+embedding-client dependency once that lands. That is the intended way to evolve this boundary: the
+allowlist exists to make the decision visible and reviewable in a diff, not to freeze
+`packages/core` forever. If you're adding a dependency here: edit `allowed-dependencies.json` in
+the same PR, and explain why in the PR description — don't work around the check.
 
 What should never be added, regardless of the allowlist: `react`, `next`, or any HTTP-framework
 package. Biome's `noRestrictedImports` override exists specifically because the dependency
 allowlist alone wouldn't stop someone from importing a *transitive* framework dependency that
 another allowed package happens to pull in.
+
+## Database (Neon pgvector store)
+
+`src/db/` (#14, epic #6) is the Neon Postgres + pgvector store backing the future ingestion
+pipeline (#24) and `searchCareer` (#34). It's exported as its own subpath,
+**`@hire-me-mcp/core/db`** — separate from the package's main entry point (mirroring `./slugify`)
+— so consumers that never touch a database (e.g. `apps/web`'s client-safe code) don't pull in the
+`postgres` driver just by importing `@hire-me-mcp/core`.
+
+### Driver choice
+
+[`postgres`](https://github.com/porsager/postgres) (porsager/postgres), not `pg` or
+`@neondatabase/serverless`: a single dependency-free package with built-in TypeScript types,
+tagged-template queries (parameterized by default), a built-in connection pool, and graceful
+shutdown (`sql.end()`) — all over the same plain TCP connection string Neon's pooled `DATABASE_URL`
+already is. `@neondatabase/serverless` pulls in a WebSocket transport (`ws`) this project doesn't
+need, since nothing here runs on an edge runtime without TCP sockets.
+
+### ADR: embedding dimension and distance metric
+
+Recorded in full as a comment in `src/db/migrations.ts` (the migration itself), summarized here:
+
+- **Dimension: 768.** The chat/agent LLM default is Google's free tier (see root `.env.example`);
+  embeddings come from `gemini-embedding-001`, which supports Matryoshka Representation Learning
+  (MRL) truncation. 768 is the chosen truncation — comfortably inside the free tier, a supported
+  MRL size, and a common pgvector/HNSW dimension.
+- **Distance metric: cosine.** The `career_chunks.embedding` column's HNSW index uses
+  `vector_cosine_ops`; any query against it must use the `<=>` (cosine distance) operator for the
+  query planner to actually use the index. Similarity is `1 - cosine_distance`.
+- **Index: HNSW**, not IVFFlat — no list-count tuning required, good recall out of the box, fine
+  at this project's small corpus size.
+
+### Migrations
+
+Plain SQL, authored as an array of statements per migration (`src/db/migrations.ts`) rather than
+one multi-statement blob, so the runner (`src/db/migrate.ts`) can execute each one individually via
+`sql.unsafe()` without depending on the driver's simple-query protocol mode. Applied migrations are
+tracked in a `schema_migrations` table; running the same migration set twice is a no-op.
+
+```bash
+# Requires DATABASE_URL — see .env.example.
+pnpm --filter @hire-me-mcp/core db:migrate
+```
+
+### Repository
+
+`upsertChunk`/`getChunkById`/`findSimilarChunks` (`src/db/chunks-repository.ts`) are the only way
+callers read/write `career_chunks`. `upsertChunk` is an `ON CONFLICT (id) DO UPDATE` — inserting a
+chunk with an existing stable `id` updates it in place rather than duplicating a row, which is what
+lets the future ingestion pipeline re-index changed content idempotently. `findSimilarChunks` runs
+the ANN query using the `<=>` cosine-distance operator matching the HNSW index above.
+
+### Running the DB integration suite locally
+
+`src/db/rag-store.integration.test.ts` creates a throwaway Neon branch via the Neon API, runs
+migrations against it, exercises upsert idempotency and ANN ordering with seeded fixture vectors,
+and deletes the branch on teardown (including on failure — the `afterAll` runs regardless of which
+`it` failed). It's part of the normal `src/**/*.test.ts` suite `pnpm test` picks up, but **skips
+with a console message** — never silently, never a hard failure — when `NEON_API_KEY` and
+`NEON_PROJECT_ID` aren't both set:
+
+```bash
+# Set these in an untracked .env.local (or export them directly) — never commit real values.
+NEON_API_KEY=... NEON_PROJECT_ID=... pnpm --filter @hire-me-mcp/core test
+```
+
+A personal Neon API key with access to the project is required (`console.neon.tech` -> Account
+Settings -> API Keys). The suite only ever creates/deletes its own throwaway branch — it never
+touches the project's real (`production`) branch or `DATABASE_URL`.
 
 ## Testing conventions specific to this package
 

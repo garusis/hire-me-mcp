@@ -113,6 +113,8 @@ each is consulted; real values are never committed):
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Required when `CHAT_PROVIDER=google` (the default). |
 | `ANTHROPIC_API_KEY` | Required only when `CHAT_PROVIDER=anthropic`. |
 | `CHAT_SESSION_RATELIMIT_MAX_REQUESTS`, `CHAT_SESSION_RATELIMIT_WINDOW_SECONDS`, `CHAT_IP_RATELIMIT_MAX_REQUESTS`, `CHAT_IP_RATELIMIT_WINDOW_SECONDS`, `CHAT_AGENT_MAX_STEPS` | Chat guardrail tuning — see `apps/web/README.md` "Chat guardrails". |
+| `DATABASE_URL` | Neon Postgres connection string for the `@hire-me-mcp/core/db` module (migrations, ingestion, `searchCareer`). See `packages/core/README.md`. |
+| `NEON_API_KEY`, `NEON_PROJECT_ID` | Create/delete a throwaway Neon branch for the DB integration test suite only — never used against the main database. |
 
 None are required for `pnpm turbo lint typecheck test build` to pass on a clean checkout.
 
