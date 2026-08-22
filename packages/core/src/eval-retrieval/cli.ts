@@ -157,7 +157,7 @@ async function main(): Promise<void> {
   try {
     const searchCareer = createSearchCareer({
       sql: client.sql,
-      embedder: createGoogleEmbeddingClient({ apiKey }),
+      embedder: createGoogleEmbeddingClient({ apiKey, taskType: "RETRIEVAL_QUERY" }),
     });
 
     const exitCode = await runRetrievalEvalCli(
