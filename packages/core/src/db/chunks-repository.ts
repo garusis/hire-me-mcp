@@ -10,6 +10,13 @@
  */
 
 import type { Sql } from "postgres";
+// `ChunkCitation` is owned by the chunker (#21) — `{ entityType, entityId, label,
+// fragment?, url? }`, matching the agent's `[cite:entityType:entityId#fragment]`
+// marker format (packages/agent/src/citations.ts). Re-exported here so callers
+// of this repository don't need a second import for the same shape (#159).
+import type { ChunkCitation } from "../chunking/types.js";
+
+export type { ChunkCitation };
 
 /** Embedding dimension enforced by the `career_chunks.embedding` column — see migrations.ts. */
 export const EMBEDDING_DIMENSION = 768;
@@ -31,14 +38,6 @@ export function toVectorLiteral(embedding: readonly number[]): string {
     throw new InvalidEmbeddingDimensionError(embedding.length);
   }
   return `[${embedding.join(",")}]`;
-}
-
-/** Citation metadata stored alongside a chunk (see #34's `Citation` shape). */
-export interface ChunkCitation {
-  sourceType: string;
-  sourceId: string;
-  label: string;
-  anchor?: string;
 }
 
 export interface CareerChunkInput {
