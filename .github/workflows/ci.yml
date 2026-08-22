@@ -190,9 +190,11 @@ jobs:
       - name: Run protocol-level MCP integration tests
         run: pnpm test:mcp
 
-  # Real-Neon integration suite for packages/core's pgvector store (#14):
-  # creates a throwaway Neon branch, runs migrations against it, exercises
-  # upsert idempotency + ANN ordering, deletes the branch on teardown. Its
+  # Real-Neon integration suite for packages/core's pgvector store (#14) and
+  # ingestion pipeline (#24): creates a throwaway Neon branch, runs
+  # migrations against it, exercises upsert idempotency + ANN ordering, and
+  # the full insert/no-op-rerun/edit/delete/--full/model-change ingest cycle
+  # (with a faked, no-network embedder), deletes the branch on teardown. Its
   # own job (not folded into `quality`) so a slow/flaky Neon branch-create
   # call never blocks that required check — see docs/development.md
   # "Database integration tests". Not in the required-status-checks list,
@@ -253,12 +255,25 @@ jobs:
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # src/ingest/run.integration.test.ts (#24) imports packages/core's
+      # repository.js, which imports @hire-me-mcp/career-data at the top
+      # level — that resolves to its compiled dist/index.js (see this
+      # package's own "exports" field), so without building it first this
+      # job fails with "Failed to resolve entry for package
+      # @hire-me-mcp/career-data" even though the plain db/rag-store suite
+      # (no career-data import) worked fine without it. Same pattern as
+      # preview-e2e/lighthouse's "Build packages/core, packages/career-data
+      # ..." step below.
+      - name: Build packages/career-data
+        if: steps.secrets-check.outputs.available == 'true'
+        run: pnpm turbo run build --filter=@hire-me-mcp/career-data
+
       - name: Run the Neon pgvector integration suite
         if: steps.secrets-check.outputs.available == 'true'
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
-        run: pnpm --filter @hire-me-mcp/core exec vitest run src/db/rag-store.integration.test.ts
+        run: pnpm --filter @hire-me-mcp/core exec vitest run src/db/rag-store.integration.test.ts src/ingest/run.integration.test.ts
 
   # Runs against the PR's real Vercel preview deployment (#58), not
   # localhost — resolved via .github/actions/resolve-vercel-preview, a

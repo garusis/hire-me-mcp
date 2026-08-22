@@ -357,10 +357,11 @@ This is enforced two ways, not by convention:
 
 ### This list will grow — on purpose
 
-**#14** (epic #6) already extended `allowed-dependencies.json` once, with `postgres` (the Neon
-pgvector store's driver) and `tsx` (to run the migration CLI) — see "Database (Neon pgvector
-store)" below. **#34** (epic #6, `searchCareer`) is expected to extend it again with an
-embedding-client dependency once that lands. That is the intended way to evolve this boundary: the
+**#14** (epic #6) extended `allowed-dependencies.json` once, with `postgres` (the Neon pgvector
+store's driver) and `tsx` (to run the migration CLI) — see "Database (Neon pgvector store)" below.
+**#24** extended it again with `@ai-sdk/google` and `ai` (the embedding client, see "Embedding
+client and shared config" below) — `searchCareer` (#34) is expected to reuse the same two rather
+than adding a third. That is the intended way to evolve this boundary: the
 allowlist exists to make the decision visible and reviewable in a diff, not to freeze
 `packages/core` forever. If you're adding a dependency here: edit `allowed-dependencies.json` in
 the same PR, and explain why in the PR description — don't work around the check.
@@ -372,8 +373,8 @@ another allowed package happens to pull in.
 
 ## Database (Neon pgvector store)
 
-`src/db/` (#14, epic #6) is the Neon Postgres + pgvector store backing the future ingestion
-pipeline (#24) and `searchCareer` (#34). It's exported as its own subpath,
+`src/db/` (#14, epic #6) is the Neon Postgres + pgvector store backing the ingestion pipeline
+(#24, see below) and the future `searchCareer` (#34). It's exported as its own subpath,
 **`@hire-me-mcp/core/db`** — separate from the package's main entry point (mirroring `./slugify`)
 — so consumers that never touch a database (e.g. `apps/web`'s client-safe code) don't pull in the
 `postgres` driver just by importing `@hire-me-mcp/core`.
@@ -438,6 +439,83 @@ NEON_API_KEY=... NEON_PROJECT_ID=... pnpm --filter @hire-me-mcp/core test
 A personal Neon API key with access to the project is required (`console.neon.tech` -> Account
 Settings -> API Keys). The suite only ever creates/deletes its own throwaway branch — it never
 touches the project's real (`production`) branch or `DATABASE_URL`.
+
+## Embedding client and shared config (`@hire-me-mcp/core/embedding`)
+
+`src/embedding/` (#24, epic #6) is the single source of the embedding model identifier, provider,
+and dimension — `EMBEDDING_MODEL_ID` (`gemini-embedding-001`), `EMBEDDING_PROVIDER` (`"google"`),
+`EMBEDDING_DIMENSION` (768, matching the `vector(768)` column ADR above). Both the ingestion
+pipeline below and the future `searchCareer` (#34) import these constants rather than repeating
+the literal, so a query embedded at search time is guaranteed to use the same model/dimension as
+what's stored. Exported as its own subpath, **`@hire-me-mcp/core/embedding`** — separate from the
+main entry point, mirroring `./db` — so consumers that never embed anything don't pull in
+`@ai-sdk/google`/`ai` just by importing `@hire-me-mcp/core`.
+
+`createEmbeddingClient` (`src/embedding/client.ts`) wraps a low-level `embedBatch` function with:
+
+- **Batching** — fixed-size groups (`batchSize`, default 16), sequential (not concurrent) to keep
+  the free-tier request rate low.
+- **Retry with exponential backoff** on retryable failures (HTTP 429 rate-limit, 5xx transient
+  errors) — `maxRetries` attempts (default 4), doubling the delay each time (`initialDelayMs`,
+  default 500ms).
+- **Deterministic ordering** — `embed(texts)[i]` is always the embedding for `texts[i]`, regardless
+  of batch boundaries, since batches are processed in order and their results concatenated.
+- **Abort on permanent failure** — a non-retryable error, or retries exhausted, throws
+  `EmbeddingFailureError` rather than silently returning partial/wrong-length results (also thrown
+  if a provider ever returns a different vector count than the batch it was given).
+
+This is fully unit tested (`client.test.ts`) with a faked `embedBatch` and an injectable `sleep` —
+no network, no real timers. `createGoogleEmbeddingClient` (`google-client.ts`) is the only module
+that imports `@ai-sdk/google`/`ai`; it supplies the real `embedBatch` via `embedMany`, passing
+`providerOptions.google.outputDimensionality: EMBEDDING_DIMENSION` so Google's MRL truncation
+produces exactly 768-dimensional vectors.
+
+## Ingestion pipeline (`pnpm ingest`, #24)
+
+`src/ingest/` orchestrates: load the career dataset (`CareerDataRepository`) -> chunk it
+(`chunkCareerData`, #21) -> diff against the store's fingerprints -> embed only what's needed ->
+write. See `docs/development.md` "Ingestion pipeline (`pnpm ingest`)" for how to run it; this
+section covers the module layout.
+
+- **`diff.ts` — `computeIngestDiff`.** Pure, no I/O: compares fresh `Chunk[]` against
+  `ChunkFingerprint[]` (`{ id, contentHash, embeddingModel }`, from
+  `listChunkFingerprints` — a cheap scan that never fetches `embedding`/`content`) and classifies
+  each into `toInsert` / `toUpdate` / `unchanged`, plus stale store ids into `toDelete`. A chunk is
+  `unchanged` only when both its `contentHash` **and** the row's `embeddingModel` match the
+  currently configured `EMBEDDING_MODEL_ID` — a model-id mismatch (including migration 002's `''`
+  default on any row that predates this column) is treated as needing re-embedding, which is the
+  mechanism a configured model change uses to trigger a full re-embed without a separate code
+  path. `--full` (`options.full`) skips the match check entirely. Unit tested with hand-built
+  `Chunk`/`ChunkFingerprint` fixtures — no network, no database.
+- **`run.ts` — `runIngest`.** Orchestrates repository -> chunker -> diff -> embed -> write, taking
+  the `CareerDataRepository`, chunker function, an `IngestEmbedder` (`{ embed(texts) }`), and an
+  `IngestStore` all as injected options — which is what makes it unit testable
+  (`run.test.ts`) against fakes for all four, asserting (via `vi.spyOn`) that an unchanged re-run
+  makes zero `embed()`/`upsertMany()`/`deleteMany()` calls. **Ordering matters**: `embedder.embed()`
+  is awaited — and can throw — before any `store` write happens, so a permanent embedding failure
+  propagates out having made zero writes, with no rollback needed. `--dry-run` returns the diff
+  counts without ever calling the embedder or the store.
+- **`store.ts` — `IngestStore` / `createDbIngestStore`.** The storage seam: `listFingerprints`,
+  `upsertMany`, `deleteMany`. `createDbIngestStore` is the real adapter over
+  `chunks-repository.ts`, running each of `upsertMany`/`deleteMany` inside its own `sql.begin`
+  transaction.
+- **`args.ts` / `summary.ts`.** Pure CLI flag parsing (`parseIngestArgs` — `--dry-run`, `--full`,
+  tolerant of a leading `--` passthrough separator since `pnpm ingest -- --dry-run` forwards one)
+  and a one-line summary formatter (`formatIngestSummary`) for CI-log-friendly output.
+- **`cli.ts`.** The `pnpm --filter @hire-me-mcp/core ingest` entry point (root `pnpm ingest`
+  forwards to it) — reads `DATABASE_URL`/`GOOGLE_GENERATIVE_AI_API_KEY`, wires the real
+  `createContentCareerDataRepository`/`chunkCareerData`/`createGoogleEmbeddingClient`/
+  `createDbIngestStore` together, prints the summary, and exits non-zero (naming the missing
+  variable, never its value) on any misconfiguration or failure. Tested as a subprocess
+  (`cli.test.ts`, mirroring `db/migrate-cli.test.ts`) for the network-free misconfigured-env and
+  bad-flag paths only — importing it directly would run its real top-level side effects at test
+  collection time.
+
+`src/ingest/run.integration.test.ts` is the real-Neon counterpart to the unit tests above: it runs
+the full insert -> zero-call re-run -> edit -> delete -> `--dry-run` -> `--full` -> model-change ->
+permanent-failure cycle against a throwaway Neon branch, using a faked (deterministic, spy-asserted,
+no real network) embedder — see "Running the DB integration suite locally" above for the
+`NEON_API_KEY`/`NEON_PROJECT_ID` gating, which this suite shares.
 
 ## Testing conventions specific to this package
 

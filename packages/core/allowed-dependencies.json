@@ -1,5 +1,5 @@
 {
   "$comment": "Explicit allowlist for packages/core's package.json, enforced by src/dependency-allowlist.test.ts. See README.md 'Dependency allowlist' for what may be added and why. #34 (epic #6, RAG index) is expected to deliberately extend the dependencies list with a DB/embedding client — edit this file, don't work around it.",
-  "dependencies": ["@hire-me-mcp/career-data", "postgres"],
+  "dependencies": ["@ai-sdk/google", "@hire-me-mcp/career-data", "ai", "postgres"],
   "devDependencies": ["@types/node", "@vitest/coverage-v8", "tsx", "typescript", "vitest"]
 }

@@ -64,8 +64,29 @@ const initPgvectorChunks: Migration = {
   ],
 };
 
+/**
+ * Adds `embedding_model` to `career_chunks` (#24): the id of the embedding
+ * model that produced each row's `embedding` vector. The ingestion pipeline
+ * (#24) compares this against the currently configured model id
+ * (`@hire-me-mcp/core/embedding`'s `EMBEDDING_MODEL_ID`) to detect a model
+ * change and re-embed affected rows rather than silently mixing vector
+ * spaces in the same HNSW index. `NOT NULL DEFAULT ''` rather than
+ * nullable: an empty string never matches a real model id, so pre-#24 rows
+ * (there are none in practice — this ships alongside #24 — but the
+ * `IF NOT EXISTS`/default keeps the migration safe to run against a
+ * database that already has rows some other way) are treated as needing
+ * re-embedding rather than requiring a NULL-aware comparison everywhere
+ * else in the codebase.
+ */
+const addEmbeddingModel: Migration = {
+  id: "002_add_embedding_model",
+  statements: [
+    "ALTER TABLE career_chunks ADD COLUMN IF NOT EXISTS embedding_model text NOT NULL DEFAULT '';",
+  ],
+};
+
 /** Every migration, in the order they must be applied. */
-export const migrations: Migration[] = [initPgvectorChunks];
+export const migrations: Migration[] = [initPgvectorChunks, addEmbeddingModel];
 
 /**
  * Pure diff: which of `all` are not yet represented in `appliedIds`, in

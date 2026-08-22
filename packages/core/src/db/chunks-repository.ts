@@ -32,6 +32,14 @@ export class InvalidEmbeddingDimensionError extends Error {
   }
 }
 
+/**
+ * Sentinel `embedding_model` value for a row that predates the column
+ * (migration 002's `DEFAULT ''`). Never equal to a real
+ * `EMBEDDING_MODEL_ID`, so such a row is always treated by the ingestion
+ * diff (#24) as needing (re-)embedding.
+ */
+export const UNSET_EMBEDDING_MODEL = "";
+
 /** Renders a numeric embedding as a pgvector input literal, e.g. `[0.1,0.2,...]`. */
 export function toVectorLiteral(embedding: readonly number[]): string {
   if (embedding.length !== EMBEDDING_DIMENSION) {
@@ -51,6 +59,8 @@ export interface CareerChunkInput {
   contentHash: string;
   tokenCount?: number;
   embedding: readonly number[];
+  /** Id of the model that produced `embedding` — see migration 002 and `@hire-me-mcp/core/embedding`. */
+  embeddingModel: string;
 }
 
 export interface CareerChunkRecord extends Omit<CareerChunkInput, "embedding"> {
@@ -74,6 +84,7 @@ interface CareerChunkRow {
   content_hash: string;
   token_count: number | null;
   embedding: string | number[];
+  embedding_model: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -110,6 +121,7 @@ function mapRow(row: CareerChunkRow): CareerChunkRecord {
     contentHash: row.content_hash,
     tokenCount: row.token_count ?? undefined,
     embedding: parseEmbedding(row.embedding),
+    embeddingModel: row.embedding_model,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -124,7 +136,7 @@ export async function upsertChunk(sql: Sql, chunk: CareerChunkInput): Promise<vo
   const vectorLiteral = toVectorLiteral(chunk.embedding);
   await sql`
     INSERT INTO career_chunks (
-      id, source_type, source_id, chunk_index, citation, content, content_hash, token_count, embedding
+      id, source_type, source_id, chunk_index, citation, content, content_hash, token_count, embedding, embedding_model
     ) VALUES (
       ${chunk.id},
       ${chunk.sourceType},
@@ -134,7 +146,8 @@ export async function upsertChunk(sql: Sql, chunk: CareerChunkInput): Promise<vo
       ${chunk.content},
       ${chunk.contentHash},
       ${chunk.tokenCount ?? null},
-      ${vectorLiteral}::vector
+      ${vectorLiteral}::vector,
+      ${chunk.embeddingModel}
     )
     ON CONFLICT (id) DO UPDATE SET
       source_type = EXCLUDED.source_type,
@@ -145,6 +158,7 @@ export async function upsertChunk(sql: Sql, chunk: CareerChunkInput): Promise<vo
       content_hash = EXCLUDED.content_hash,
       token_count = EXCLUDED.token_count,
       embedding = EXCLUDED.embedding,
+      embedding_model = EXCLUDED.embedding_model,
       updated_at = now()
   `;
 }
@@ -153,7 +167,7 @@ export async function upsertChunk(sql: Sql, chunk: CareerChunkInput): Promise<vo
 export async function getChunkById(sql: Sql, id: string): Promise<CareerChunkRecord | undefined> {
   const rows = await sql<CareerChunkRow[]>`
     SELECT id, source_type, source_id, chunk_index, citation, content, content_hash,
-           token_count, embedding::text AS embedding, created_at, updated_at
+           token_count, embedding::text AS embedding, embedding_model, created_at, updated_at
     FROM career_chunks
     WHERE id = ${id}
   `;
@@ -181,11 +195,46 @@ export async function findSimilarChunks(
   const vectorLiteral = toVectorLiteral(queryEmbedding);
   const rows = await sql<(CareerChunkRow & { score: number })[]>`
     SELECT id, source_type, source_id, chunk_index, citation, content, content_hash,
-           token_count, embedding::text AS embedding, created_at, updated_at,
+           token_count, embedding::text AS embedding, embedding_model, created_at, updated_at,
            1 - (embedding <=> ${vectorLiteral}::vector) AS score
     FROM career_chunks
     ORDER BY embedding <=> ${vectorLiteral}::vector
     LIMIT ${topK}
   `;
   return rows.map((row) => ({ ...mapRow(row), score: Number(row.score) }));
+}
+
+/** Cheap `(id, contentHash, embeddingModel)` view of every stored chunk — the ingestion diff's (#24) read side. */
+export interface ChunkFingerprint {
+  id: string;
+  contentHash: string;
+  embeddingModel: string;
+}
+
+/**
+ * Lists every stored chunk's id, content hash, and embedding model —
+ * deliberately excludes `embedding`/`content`/`citation` so a full-corpus
+ * diff stays cheap even as the store grows, which is what makes the
+ * "unchanged content -> zero embedding calls" incremental path fast rather
+ * than requiring a full row (and vector) fetch just to compare hashes.
+ */
+export async function listChunkFingerprints(sql: Sql): Promise<ChunkFingerprint[]> {
+  const rows = await sql<{ id: string; content_hash: string; embedding_model: string }[]>`
+    SELECT id, content_hash, embedding_model FROM career_chunks
+  `;
+  return rows.map((row) => ({
+    id: row.id,
+    contentHash: row.content_hash,
+    embeddingModel: row.embedding_model,
+  }));
+}
+
+/**
+ * Deletes chunks by id — the orphan-cleanup side of the ingestion pipeline
+ * (#24), for source records that disappeared from the career-data corpus.
+ * A no-op (no query issued) for an empty `ids` array.
+ */
+export async function deleteChunksByIds(sql: Sql, ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await sql`DELETE FROM career_chunks WHERE id IN ${sql(ids as string[])}`;
 }

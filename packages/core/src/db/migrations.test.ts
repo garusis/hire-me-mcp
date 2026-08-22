@@ -28,6 +28,14 @@ describe("migrations registry", () => {
     expect(sql).toMatch(/USING hnsw/);
     expect(sql).toMatch(/vector_cosine_ops/);
   });
+
+  it("the second migration adds an embedding_model column to career_chunks (#24)", () => {
+    const second = migrations.find((m) => m.id === "002_add_embedding_model");
+    expect(second).toBeDefined();
+    const sql = second?.statements.join("\n") ?? "";
+    expect(sql).toMatch(/ALTER TABLE career_chunks/);
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS embedding_model text NOT NULL DEFAULT ''/);
+  });
 });
 
 describe("selectPendingMigrations", () => {
