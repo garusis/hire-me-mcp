@@ -255,6 +255,19 @@ jobs:
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # src/ingest/run.integration.test.ts (#24) imports packages/core's
+      # repository.js, which imports @hire-me-mcp/career-data at the top
+      # level — that resolves to its compiled dist/index.js (see this
+      # package's own "exports" field), so without building it first this
+      # job fails with "Failed to resolve entry for package
+      # @hire-me-mcp/career-data" even though the plain db/rag-store suite
+      # (no career-data import) worked fine without it. Same pattern as
+      # preview-e2e/lighthouse's "Build packages/core, packages/career-data
+      # ..." step below.
+      - name: Build packages/career-data
+        if: steps.secrets-check.outputs.available == 'true'
+        run: pnpm turbo run build --filter=@hire-me-mcp/career-data
+
       - name: Run the Neon pgvector integration suite
         if: steps.secrets-check.outputs.available == 'true'
         env:
