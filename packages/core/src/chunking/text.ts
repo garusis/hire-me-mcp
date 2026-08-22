@@ -129,23 +129,38 @@ function toLines(paragraph: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-/** Separator to place before one hard-split piece of one line within one paragraph. */
-function separatorFor(paragraphIndex: number, lineIndex: number, pieceIndex: number): Unit["sep"] {
+/**
+ * Separator to place before one hard-split piece of one line within one
+ * paragraph. `interLineSep` is `"\n"` between bullet lines (preserves the
+ * list layout) or `" "` between sentences of ordinary prose — the two
+ * "same paragraph, next line" cases `toLines` can produce.
+ */
+function separatorFor(
+  lineIndex: number,
+  pieceIndex: number,
+  interLineSep: "\n" | " ",
+): Unit["sep"] {
   const isFirstOfParagraph = lineIndex === 0 && pieceIndex === 0;
   if (isFirstOfParagraph) {
-    return paragraphIndex > 0 ? "\n\n" : "\n";
+    // A new paragraph break — irrelevant when this is also the very first
+    // unit overall (the caller skips any separator for an empty `current`).
+    return "\n\n";
   }
-  return pieceIndex > 0 ? " " : "\n";
+  return pieceIndex > 0 ? " " : interLineSep;
 }
 
 /** Flattens one paragraph into its constituent units (see {@link toUnits}). */
-function paragraphToUnits(paragraph: string, paragraphIndex: number, maxChars: number): Unit[] {
+function paragraphToUnits(paragraph: string, maxChars: number): Unit[] {
   const units: Unit[] = [];
+  const interLineSep: "\n" | " " = isBulletParagraph(paragraph) ? "\n" : " ";
   const lines = toLines(paragraph);
   for (const [lineIndex, line] of lines.entries()) {
     const pieces = hardSplit(line, maxChars);
     for (const [pieceIndex, piece] of pieces.entries()) {
-      units.push({ text: piece, sep: separatorFor(paragraphIndex, lineIndex, pieceIndex) });
+      units.push({
+        text: piece,
+        sep: separatorFor(lineIndex, pieceIndex, interLineSep),
+      });
     }
   }
   return units;
@@ -155,8 +170,8 @@ function paragraphToUnits(paragraph: string, paragraphIndex: number, maxChars: n
 function toUnits(text: string, maxChars: number): Unit[] {
   const paragraphs = splitParagraphs(text);
   const units: Unit[] = [];
-  for (const [paragraphIndex, paragraph] of paragraphs.entries()) {
-    units.push(...paragraphToUnits(paragraph, paragraphIndex, maxChars));
+  for (const paragraph of paragraphs) {
+    units.push(...paragraphToUnits(paragraph, maxChars));
   }
   return units;
 }
