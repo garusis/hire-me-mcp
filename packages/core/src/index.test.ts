@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAliasIndex,
   buildCitation,
+  chunkCareerData,
   createDomainResult,
   createInMemoryCareerDataRepository,
   emptyCareerDataset,
@@ -161,5 +162,30 @@ describe("public entry point", () => {
 
     const result = getSkillEvidence(repository, "ts");
     expect(result.data.kind).toBe("claimed");
+  });
+
+  it("re-exports chunkCareerData from ./chunking/index.js", () => {
+    const dataset = {
+      ...emptyCareerDataset(),
+      skills: [
+        {
+          id: "typescript",
+          name: "TypeScript",
+          aliases: ["ts"],
+          category: "language",
+          proficiency: "expert" as const,
+          evidence: [],
+        },
+      ],
+    };
+
+    const chunks = chunkCareerData(dataset);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toMatchObject({
+      sourceType: "skill",
+      sourceId: "typescript",
+      chunkIndex: 0,
+      citation: { entityType: "skill", entityId: "typescript", label: "TypeScript" },
+    });
   });
 });
