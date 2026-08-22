@@ -6,6 +6,7 @@ import {
   createDomainResult,
   createInMemoryCareerDataRepository,
   emptyCareerDataset,
+  evaluateContactSubmission,
   getExperience,
   getProfile,
   getSkillEvidence,
@@ -187,5 +188,15 @@ describe("public entry point", () => {
       chunkIndex: 0,
       citation: { entityType: "skill", entityId: "typescript", label: "TypeScript" },
     });
+  });
+
+  it("re-exports evaluateContactSubmission from ./contact/index.js", () => {
+    const result = evaluateContactSubmission({
+      name: "Jamie Recruiter",
+      contact: "jamie@example.com",
+      message: "Hello, I would like to talk about an opportunity.",
+    });
+
+    expect(result.status).toBe("accepted");
   });
 });
