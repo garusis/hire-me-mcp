@@ -25,6 +25,10 @@ Next.js-shaped by the time they reach here.
   options?)` (#55), and now `getSkillEvidence(skill)` (#56) — the four query services built on the
   spine above and the complete public API of this package. See "Domain services" below for their
   signatures and documented semantics.
+- **The career-data chunker.** `chunkCareerData(dataset, options?)` (#21, epic #6) turns a
+  `CareerDataset` into an ordered list of retrieval `Chunk`s — stable id, content hash, citation,
+  and filtering metadata each — for the RAG ingestion pipeline (#24) to embed and upsert. See "The
+  career-data chunker" below.
 
 ## Domain services
 
@@ -208,6 +212,91 @@ so real-content-unreachable) case of a citation that fails to resolve against th
 **Determinism:** alias resolution and evidence-citation building are both pure lookups against the
 repository's dataset — no randomness, no wall-clock dependency. The same `skill` string against the
 same dataset, called any number of times, returns byte-identical output.
+
+## The career-data chunker (`chunkCareerData`)
+
+`chunkCareerData(dataset: CareerDataset, options?: ChunkingOptions): Chunk[]` (#21, epic #6) turns
+every entity in a `CareerDataset` into an ordered list of retrieval `Chunk`s — the input the RAG
+ingestion pipeline (#24) embeds and upserts into the pgvector store defined by #14. Like the domain
+services above, it is a **pure function**: no I/O, no network, no `process.env` access — its tests
+need no database or API key. Unlike them, it does not take a `CareerDataRepository`; it takes an
+already-loaded `CareerDataset` directly, since chunking has no need for the repository's lazy-load
+memoization. Per-entity helpers (`chunkProfile`, `chunkExperience`, `chunkProject`, `chunkSkill`,
+`chunkGap`, `chunkEducation`, `chunkWriting`) are also exported for chunking a single entity.
+
+**`Chunk` shape**, chosen to map cleanly onto #14's pgvector table (camelCase here, snake_case
+there — see `src/chunking/types.ts`'s doc comment for the full column mapping):
+
+| Field         | Meaning                                                                 |
+| ------------- | ------------------------------------------------------------------------ |
+| `id`          | Deterministic `sha256(sourceType:sourceId:chunkIndex)` — see below.       |
+| `sourceType`  | The entity-type schema `sourceId` belongs to (`profile`, `experience`, …). |
+| `sourceId`    | The source entity's own stable `id`.                                     |
+| `chunkIndex`  | 0-based index among chunks produced from the same source entity.         |
+| `text`        | The chunk's normalized, ready-to-embed text.                             |
+| `contentHash` | `sha256` of `text` (already normalized).                                 |
+| `tokenCount`  | Estimated token count of `text` (see the token estimator below).         |
+| `citation`    | `{ entityType, entityId, label, fragment?, url? }` — resolves the chunk back to its source record. |
+| `metadata`    | Filtering metadata: `{ company?, tags?, dateFrom?, dateTo? }`, entity-type-dependent. |
+
+`embedding` and any timestamps are deliberately **not** part of `Chunk` — those are added by the
+ingestion pipeline (#24) when a chunk is actually embedded and upserted; chunking itself never
+talks to an embedding model or a database.
+
+**Strategy.** Every entity renders to a short, self-contained `header` (title/company/dates/tags)
+plus an optional long-form `body` (project/writing prose). The two are joined, whitespace-normalized
+(see below), and fed through one shared, token-budgeted splitter regardless of entity type:
+
+- **Short structured records** (experience, skill, gap, education, profile) almost always produce
+  exactly one chunk, because their rendered text comfortably fits under the token budget — but this
+  is never hard-coded to one chunk; an unusually long highlights/evidence list would still split
+  rather than silently exceed the budget.
+- **Long-prose records** (project, writing) split on paragraph, sentence, and Markdown bullet-line
+  boundaries — never mid-word — into as many chunks as the body needs, each overlapping the next by
+  a configurable amount so a claim spanning a chunk boundary still reads in full in at least one
+  chunk.
+
+**Token estimator and defaults.** Token budgets are expressed in *estimated* tokens using a simple,
+dependency-free heuristic — `estimateTokens(text) = Math.ceil(text.length / CHARS_PER_TOKEN)` with
+`CHARS_PER_TOKEN = 4`, the commonly cited average for English prose under BPE-family tokenizers.
+This is intentionally approximate, not an exact count for any specific embedding model's tokenizer
+— the real token count fed to the embedding model is the ingestion pipeline's (#24) concern.
+Defaults, both overridable via `ChunkingOptions`:
+
+- `maxTokens`: **320** — no chunk exceeds this (estimated) token count.
+- `overlapTokens`: **48** (~15% of `maxTokens`) — the estimated overlap between consecutive
+  long-prose chunks from the same source. If including the full overlap would itself push a chunk
+  over `maxTokens`, the overlap is dropped for that boundary — the max-token invariant always wins.
+
+**Determinism and hashing.** `id` is `sha256(sourceType:sourceId:chunkIndex)` — a hash of the
+triple named by #21, computed via `node:crypto`'s `createHash` (a Node builtin, not an npm
+dependency — no allowlist entry needed, consistent with `repository.ts`'s existing `node:fs`
+usage). `contentHash` is `sha256` of the chunk's own already-normalized `text`. Neither depends on
+wall-clock time or randomness: running `chunkCareerData` twice on the same dataset produces
+byte-identical output, and editing one source record changes only that record's chunk(s) — every
+other entity's chunks are computed independently.
+
+**Normalization.** Before splitting or hashing, text is normalized — CRLF/CR unified to LF, trailing
+line whitespace stripped, runs of horizontal whitespace collapsed, runs of 3+ blank lines collapsed
+to one — so a whitespace-only edit to a source record (trailing spaces, an extra blank line, tabs
+vs. spaces) never changes a chunk's stored text or its `contentHash`. This is what lets the
+ingestion pipeline (#24) safely skip chunks whose `contentHash` is unchanged.
+
+**Citations.** A chunk's `citation` uses the same `{ entityType, entityId, fragment?, label }` shape
+as `@hire-me-mcp/career-data`'s `Citation` (see `./citation-builder.ts`), so `entityType`/`entityId`
+line up 1:1 with the interview agent's `[cite:<entityType>:<entityId>#<fragment>]` marker format
+(`packages/agent/src/citations.ts`). `fragment` is populated only when an entity produced more than
+one chunk (`chunk-<chunkIndex>`); a single-chunk entity's citation addresses the whole record. `url`
+is populated from the source record's own canonical link when it has one (a `Project`'s first link,
+a `WritingEntry`'s `url`).
+
+See `src/chunking/` for the implementation: `text.ts` (normalization, the token estimator, the
+splitter), `hash.ts` (id/content-hash derivation), `render.ts` (per-entity-type text rendering),
+`types.ts` (the `Chunk`/`ChunkCitation`/`ChunkMetadata`/`ChunkingOptions` types), and `index.ts`
+(`chunkCareerData` and the per-entity helpers). `src/chunking/index.test.ts` covers determinism,
+isolation, per-entity-type coverage, the max-token-budget/overlap invariants, citation
+cross-checking against the input dataset, whitespace-only-edit hash stability, and a committed
+snapshot fixture.
 
 ## The response envelope in detail
 

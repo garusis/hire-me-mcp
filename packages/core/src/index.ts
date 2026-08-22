@@ -6,6 +6,29 @@
  * README.md for the enforced dependency/import boundary.
  */
 
+export type {
+  Chunk,
+  ChunkCitation,
+  ChunkingOptions,
+  ChunkMetadata,
+} from "./chunking/index.js";
+export {
+  CHARS_PER_TOKEN,
+  chunkCareerData,
+  chunkEducation,
+  chunkExperience,
+  chunkGap,
+  chunkProfile,
+  chunkProject,
+  chunkSkill,
+  chunkWriting,
+  computeChunkId,
+  computeContentHash,
+  DEFAULT_MAX_TOKENS,
+  DEFAULT_OVERLAP_TOKENS,
+  estimateTokens,
+  normalizeText,
+} from "./chunking/index.js";
 export type { BuildCitationOptions } from "./citation-builder.js";
 export { buildCitation, UnknownEntityError } from "./citation-builder.js";
 export type { DependencyAllowlist } from "./dependency-allowlist.js";

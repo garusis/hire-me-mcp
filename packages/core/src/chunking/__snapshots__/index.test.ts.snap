@@ -1,0 +1,344 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`chunkCareerData — snapshot > matches the committed snapshot fixture 1`] = `
+[
+  {
+    "chunkIndex": 0,
+    "citation": {
+      "entityId": "jane-doe",
+      "entityType": "profile",
+      "label": "Jane Doe",
+    },
+    "contentHash": "27cc0bcc46e5ee24f25dfc566a018033f8ca3bd777b6418a42f2dbfa403b3855",
+    "id": "ada7ed4533562e1a63c697a434a31980d2e85157c66d2fc154679b1bd6a74fcd",
+    "metadata": {},
+    "sourceId": "jane-doe",
+    "sourceType": "profile",
+    "text": "Jane Doe — Senior Engineer
+Location: Remote (open)
+
+Builds reliable systems.
+
+Contact:
+- Email: mailto:jane@example.com",
+    "tokenCount": 30,
+  },
+  {
+    "chunkIndex": 0,
+    "citation": {
+      "entityId": "acme-role",
+      "entityType": "experience",
+      "label": "Engineer, Acme",
+    },
+    "contentHash": "e7a8b95fdd76e4e7aa1c9678c7e7dc444d8009db0babcc3b3e98d3309d5655de",
+    "id": "308cd18ec6fecab8317248a6c43c1f4070261e59a4e374621d6179fb6ab38d23",
+    "metadata": {
+      "company": "Acme",
+      "dateFrom": "2020-01",
+      "dateTo": "2021-01",
+      "tags": [
+        "typescript",
+      ],
+    },
+    "sourceId": "acme-role",
+    "sourceType": "experience",
+    "text": "Engineer, Acme
+2020-01 – 2021-01
+
+Did engineering work at Acme.
+
+Highlights:
+- Shipped feature X
+- Reduced latency by 30%
+
+Tech: typescript",
+    "tokenCount": 35,
+  },
+  {
+    "chunkIndex": 0,
+    "citation": {
+      "entityId": "globex-role",
+      "entityType": "experience",
+      "label": "Senior Engineer, Globex",
+    },
+    "contentHash": "838a2300654236126450fc1d24a5cde1f4a0a806b8e0a5485839ac457211b25e",
+    "id": "ec6b1b919e11089e45783e7ed2c967c1496aa9472fc1e62976932635270862c0",
+    "metadata": {
+      "company": "Globex",
+      "dateFrom": "2021-02",
+      "dateTo": undefined,
+      "tags": [
+        "nodejs",
+        "aws",
+      ],
+    },
+    "sourceId": "globex-role",
+    "sourceType": "experience",
+    "text": "Senior Engineer, Globex
+2021-02 – Present
+
+Leads the platform team at Globex.
+
+Highlights:
+- Rebuilt the deploy pipeline
+
+Tech: nodejs, aws",
+    "tokenCount": 35,
+  },
+  {
+    "chunkIndex": 0,
+    "citation": {
+      "entityId": "cool-project",
+      "entityType": "project",
+      "fragment": "chunk-0",
+      "label": "Cool Project",
+      "url": "https://github.com/example/cool",
+    },
+    "contentHash": "8d386ebad728d648dc6a8e60f2ff31a25293f8bb823798d2312bf247eaba8ed3",
+    "id": "e52be2139feaa9f1070c4315e8cb34a729245eeedb0f31b051600c3095ac2038",
+    "metadata": {
+      "tags": [
+        "python",
+      ],
+    },
+    "sourceId": "cool-project",
+    "sourceType": "project",
+    "text": "Cool Project — Creator
+A cool open-source project. Tech: python
+
+This is sentence number 0 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 1 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 2 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 3 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 4 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 5 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 6 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 7 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 8 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 9 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 10 describing an aspect of the cool project's design and impact in reasonable detail.",
+    "tokenCount": 316,
+  },
+  {
+    "chunkIndex": 1,
+    "citation": {
+      "entityId": "cool-project",
+      "entityType": "project",
+      "fragment": "chunk-1",
+      "label": "Cool Project",
+      "url": "https://github.com/example/cool",
+    },
+    "contentHash": "4d684ec31d09c7f07dede2cc3691d4656bf0ccb928a5f208c810bfa6c2654c18",
+    "id": "0f36bdf3ced5fa06eb6f8ee8604bf8db6d4cc6d9e3bf4036276a097485e096fb",
+    "metadata": {
+      "tags": [
+        "python",
+      ],
+    },
+    "sourceId": "cool-project",
+    "sourceType": "project",
+    "text": "an aspect of the cool project's design and impact in reasonable detail. This is sentence number 10 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 11 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 12 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 13 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 14 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 15 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 16 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 17 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 18 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 19 describing an aspect of the cool project's design and impact in reasonable detail.",
+    "tokenCount": 293,
+  },
+  {
+    "chunkIndex": 2,
+    "citation": {
+      "entityId": "cool-project",
+      "entityType": "project",
+      "fragment": "chunk-2",
+      "label": "Cool Project",
+      "url": "https://github.com/example/cool",
+    },
+    "contentHash": "c180f53a51e83d445e51069639834aa52f7e54cd9715b430329e09793d844ffe",
+    "id": "2fa1a3bc2cdf3bd7bb4984669445fc9eaac87304e6b6e88b3543e2c6c7b488d7",
+    "metadata": {
+      "tags": [
+        "python",
+      ],
+    },
+    "sourceId": "cool-project",
+    "sourceType": "project",
+    "text": "an aspect of the cool project's design and impact in reasonable detail. This is sentence number 19 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 20 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 21 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 22 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 23 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 24 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 25 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 26 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 27 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 28 describing an aspect of the cool project's design and impact in reasonable detail.",
+    "tokenCount": 293,
+  },
+  {
+    "chunkIndex": 3,
+    "citation": {
+      "entityId": "cool-project",
+      "entityType": "project",
+      "fragment": "chunk-3",
+      "label": "Cool Project",
+      "url": "https://github.com/example/cool",
+    },
+    "contentHash": "9a4028b3f1ff7cec164e089756658c02b1354db1896ffe57b388bfc8dca11009",
+    "id": "2c1b201d57a95544479beb42f0c7627af93010197e61795c25e8d3cbd00c78ff",
+    "metadata": {
+      "tags": [
+        "python",
+      ],
+    },
+    "sourceId": "cool-project",
+    "sourceType": "project",
+    "text": "an aspect of the cool project's design and impact in reasonable detail. This is sentence number 28 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 29 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 30 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 31 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 32 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 33 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 34 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 35 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 36 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 37 describing an aspect of the cool project's design and impact in reasonable detail.",
+    "tokenCount": 293,
+  },
+  {
+    "chunkIndex": 4,
+    "citation": {
+      "entityId": "cool-project",
+      "entityType": "project",
+      "fragment": "chunk-4",
+      "label": "Cool Project",
+      "url": "https://github.com/example/cool",
+    },
+    "contentHash": "0bbe903efb2c79d3be0b4108ea0758159ebb294b2f821f7a3ecbfc4f4ff84f88",
+    "id": "39dbfb72ae6776812c97edfddb7d0ac896061af177cccfc4ab5253d48b7bf135",
+    "metadata": {
+      "tags": [
+        "python",
+      ],
+    },
+    "sourceId": "cool-project",
+    "sourceType": "project",
+    "text": "an aspect of the cool project's design and impact in reasonable detail. This is sentence number 37 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 38 describing an aspect of the cool project's design and impact in reasonable detail. This is sentence number 39 describing an aspect of the cool project's design and impact in reasonable detail.",
+    "tokenCount": 101,
+  },
+  {
+    "chunkIndex": 0,
+    "citation": {
+      "entityId": "typescript",
+      "entityType": "skill",
+      "label": "TypeScript",
+    },
+    "contentHash": "e6ae5f1d96d45f91430873358ca62b57ac377e80a577119844f23ad82e9b4516",
+    "id": "7ebec1c36278bef33384350b926739f37ab2780a0c62e702e57c8ee38c768a87",
+    "metadata": {
+      "tags": [
+        "language",
+        "expert",
+      ],
+    },
+    "sourceId": "typescript",
+    "sourceType": "skill",
+    "text": "TypeScript (language, expert)
+Also known as: ts
+
+Evidence:
+- Engineer, Acme",
+    "tokenCount": 19,
+  },
+  {
+    "chunkIndex": 0,
+    "citation": {
+      "entityId": "rust",
+      "entityType": "gap",
+      "label": "Rust",
+    },
+    "contentHash": "67a30bcdafbc32c9f359c15675ea9fe0ab85f6706fb0a42f65139cd4e7cf8e63",
+    "id": "4ea7f92b6eab5237da69d90b032a336a6f87d04cdd691f69a8d32f59b3a651c3",
+    "metadata": {
+      "tags": [
+        "typescript",
+      ],
+    },
+    "sourceId": "rust",
+    "sourceType": "gap",
+    "text": "Rust — not claimed
+
+No production Rust experience.
+
+Related skills: typescript",
+    "tokenCount": 20,
+  },
+  {
+    "chunkIndex": 0,
+    "citation": {
+      "entityId": "some-degree",
+      "entityType": "education",
+      "label": "B.S. Engineering, Some University",
+    },
+    "contentHash": "81e4f4c1bb1072015b96dcc714c09ca8c919886b9d73135aade79427fdcd25d6",
+    "id": "683ced38c8950c98a6f5007365579289556aebbb3f5c805f5f150650cd360fce",
+    "metadata": {
+      "company": "Some University",
+      "dateFrom": "2015-01",
+      "dateTo": "2019-01",
+    },
+    "sourceId": "some-degree",
+    "sourceType": "education",
+    "text": "B.S. Engineering, Some University
+2015-01 – 2019-01",
+    "tokenCount": 13,
+  },
+  {
+    "chunkIndex": 0,
+    "citation": {
+      "entityId": "some-article",
+      "entityType": "writing",
+      "fragment": "chunk-0",
+      "label": "Some Article",
+      "url": "https://example.com/article",
+    },
+    "contentHash": "97b51746d1aaf67d04fa0104774cf59f165232541711fd45a755b4a7770d4f7b",
+    "id": "9f56b69e228c6bfe8df11eac40ead426d97e3d399a9bc64664b6a65cce9e5917",
+    "metadata": {
+      "dateFrom": "2023-05-01",
+    },
+    "sourceId": "some-article",
+    "sourceType": "writing",
+    "text": "Some Article
+Published: 2023-05-01
+A short summary of the article.
+
+Paragraph point number 0 makes a distinct claim about the subject matter of the article. Paragraph point number 1 makes a distinct claim about the subject matter of the article. Paragraph point number 2 makes a distinct claim about the subject matter of the article. Paragraph point number 3 makes a distinct claim about the subject matter of the article. Paragraph point number 4 makes a distinct claim about the subject matter of the article. Paragraph point number 5 makes a distinct claim about the subject matter of the article. Paragraph point number 6 makes a distinct claim about the subject matter of the article. Paragraph point number 7 makes a distinct claim about the subject matter of the article. Paragraph point number 8 makes a distinct claim about the subject matter of the article. Paragraph point number 9 makes a distinct claim about the subject matter of the article. Paragraph point number 10 makes a distinct claim about the subject matter of the article. Paragraph point number 11 makes a distinct claim about the subject matter of the article. Paragraph point number 12 makes a distinct claim about the subject matter of the article.",
+    "tokenCount": 307,
+  },
+  {
+    "chunkIndex": 1,
+    "citation": {
+      "entityId": "some-article",
+      "entityType": "writing",
+      "fragment": "chunk-1",
+      "label": "Some Article",
+      "url": "https://example.com/article",
+    },
+    "contentHash": "fbbfa824c08641a76bee69902ef2f85b9ab042ba590a40cf7e704d45e9f878ce",
+    "id": "74bf625226048692398efc42bb8ab2389ac93f6df2bb51e3eafa7b624092b94d",
+    "metadata": {
+      "dateFrom": "2023-05-01",
+    },
+    "sourceId": "some-article",
+    "sourceType": "writing",
+    "text": "article. Paragraph point number 11 makes a distinct claim about the subject matter of the article. Paragraph point number 12 makes a distinct claim about the subject matter of the article. Paragraph point number 13 makes a distinct claim about the subject matter of the article. Paragraph point number 14 makes a distinct claim about the subject matter of the article. Paragraph point number 15 makes a distinct claim about the subject matter of the article. Paragraph point number 16 makes a distinct claim about the subject matter of the article. Paragraph point number 17 makes a distinct claim about the subject matter of the article. Paragraph point number 18 makes a distinct claim about the subject matter of the article. Paragraph point number 19 makes a distinct claim about the subject matter of the article. Paragraph point number 20 makes a distinct claim about the subject matter of the article. Paragraph point number 21 makes a distinct claim about the subject matter of the article. Paragraph point number 22 makes a distinct claim about the subject matter of the article. Paragraph point number 23 makes a distinct claim about the subject matter of the article. Paragraph point number 24 makes a distinct claim about the subject matter of the article.",
+    "tokenCount": 317,
+  },
+  {
+    "chunkIndex": 2,
+    "citation": {
+      "entityId": "some-article",
+      "entityType": "writing",
+      "fragment": "chunk-2",
+      "label": "Some Article",
+      "url": "https://example.com/article",
+    },
+    "contentHash": "c2ce2d655ed9386ea50543e79c605985a11d2ddccfcac40528f54ff9ea477c98",
+    "id": "133386c6796fc780136a3e137206d85ff2ec09b17ba321ab1e744eea0a82183d",
+    "metadata": {
+      "dateFrom": "2023-05-01",
+    },
+    "sourceId": "some-article",
+    "sourceType": "writing",
+    "text": "article. Paragraph point number 23 makes a distinct claim about the subject matter of the article. Paragraph point number 24 makes a distinct claim about the subject matter of the article. Paragraph point number 25 makes a distinct claim about the subject matter of the article. Paragraph point number 26 makes a distinct claim about the subject matter of the article. Paragraph point number 27 makes a distinct claim about the subject matter of the article. Paragraph point number 28 makes a distinct claim about the subject matter of the article. Paragraph point number 29 makes a distinct claim about the subject matter of the article. Paragraph point number 30 makes a distinct claim about the subject matter of the article. Paragraph point number 31 makes a distinct claim about the subject matter of the article. Paragraph point number 32 makes a distinct claim about the subject matter of the article. Paragraph point number 33 makes a distinct claim about the subject matter of the article. Paragraph point number 34 makes a distinct claim about the subject matter of the article. Paragraph point number 35 makes a distinct claim about the subject matter of the article. Paragraph point number 36 makes a distinct claim about the subject matter of the article.",
+    "tokenCount": 317,
+  },
+  {
+    "chunkIndex": 3,
+    "citation": {
+      "entityId": "some-article",
+      "entityType": "writing",
+      "fragment": "chunk-3",
+      "label": "Some Article",
+      "url": "https://example.com/article",
+    },
+    "contentHash": "acc08e4d962afd8d02b7a9d8a0aaa4958ee0b4e3403f1ab5f06006b903062d06",
+    "id": "43f0ea8cb71b97e135ed744f90269ee5e81c8c38b3b783910630e3ece7843117",
+    "metadata": {
+      "dateFrom": "2023-05-01",
+    },
+    "sourceId": "some-article",
+    "sourceType": "writing",
+    "text": "article. Paragraph point number 35 makes a distinct claim about the subject matter of the article. Paragraph point number 36 makes a distinct claim about the subject matter of the article. Paragraph point number 37 makes a distinct claim about the subject matter of the article. Paragraph point number 38 makes a distinct claim about the subject matter of the article. Paragraph point number 39 makes a distinct claim about the subject matter of the article.",
+    "tokenCount": 115,
+  },
+]
+`;

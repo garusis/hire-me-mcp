@@ -27,7 +27,9 @@ describe("ClientTabs (#43 per-client setup)", () => {
   it("shows only the selected tab's panel, associated via aria-controls/aria-labelledby, and hides the rest from the accessibility tree", () => {
     render(<ClientTabs items={ITEMS} />);
     expect(screen.getByText("Claude setup instructions")).toBeVisible();
-    expect(screen.queryByText("Claude Code CLI command")).not.toBeInTheDocument();
+    // Not selected, but per #154 still present in the DOM (just hidden) —
+    // see the dedicated no-JS-visibility test below for the full contract.
+    expect(screen.getByText("Claude Code CLI command")).not.toBeVisible();
 
     const tabs = screen.getAllByRole("tab");
     const panel = screen.getByRole("tabpanel");
@@ -46,8 +48,36 @@ describe("ClientTabs (#43 per-client setup)", () => {
     await user.click(screen.getByRole("tab", { name: "Cursor" }));
 
     expect(screen.getByText("Cursor mcp.json snippet")).toBeVisible();
-    expect(screen.queryByText("Claude setup instructions")).not.toBeInTheDocument();
+    expect(screen.getByText("Claude setup instructions")).not.toBeVisible();
     expect(screen.getByRole("tab", { name: "Cursor" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("renders every panel's content into the DOM up front — not just the selected one — so non-active clients' snippets are present in server-rendered/no-JS HTML (#154)", () => {
+    render(<ClientTabs items={ITEMS} />);
+
+    // All four panels' distinctive text exist in the DOM, regardless of
+    // which tab is selected...
+    expect(screen.getByText("Claude setup instructions")).toBeInTheDocument();
+    expect(screen.getByText("Claude Code CLI command")).toBeInTheDocument();
+    expect(screen.getByText("Cursor mcp.json snippet")).toBeInTheDocument();
+    expect(screen.getByText("Generic client instructions")).toBeInTheDocument();
+
+    // ...but only the selected one is visible/exposed to assistive tech.
+    expect(screen.getByText("Claude setup instructions")).toBeVisible();
+    expect(screen.getByText("Claude Code CLI command")).not.toBeVisible();
+    expect(screen.getByText("Cursor mcp.json snippet")).not.toBeVisible();
+    expect(screen.getByText("Generic client instructions")).not.toBeVisible();
+  });
+
+  it("hides every non-active panel via the native `hidden` attribute, so a screen reader or accessibility-tree query never surfaces it even though the markup is present", () => {
+    render(<ClientTabs items={ITEMS} />);
+
+    // getByRole("tabpanel") excludes inaccessible elements by default —
+    // exactly one panel (the selected one) should be reachable this way.
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+
+    const inactivePanel = screen.getByText("Claude Code CLI command").closest('[role="tabpanel"]');
+    expect(inactivePanel).toHaveAttribute("hidden");
   });
 
   it("is keyboard operable — ArrowRight moves to and activates the next tab, wrapping from the last to the first", async () => {

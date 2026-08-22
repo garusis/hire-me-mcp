@@ -22,13 +22,20 @@ export interface ClientTabsProps {
  * a `tablist` of `tab` buttons with roving `tabindex` (only the selected tab
  * is in the default tab order), Left/Right arrow keys move focus *and*
  * activate the newly focused tab (wrapping at both ends), and each `tab` is
- * associated with its `tabpanel` via `aria-controls`/`aria-labelledby` so
- * only the active panel is present for assistive tech.
+ * associated with its `tabpanel` via `aria-controls`/`aria-labelledby`.
+ *
+ * Every panel is rendered into the DOM up front (issue 154) — non-selected ones
+ * carry the native `hidden` attribute rather than being conditionally
+ * mounted. `hidden` removes them from the accessibility tree and from
+ * layout (browsers default `[hidden]` to `display: none`) exactly like the
+ * old conditional-mount approach did for assistive tech and sighted users,
+ * but the underlying text is still real markup — so a non-JS fetch of the
+ * server-rendered HTML (a plain `curl`, a WebFetch-style agent, a crawler)
+ * sees every client's setup snippet, not just the default tab's.
  */
 export function ClientTabs({ items }: ClientTabsProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const baseId = useId();
-  const selected = items[selectedIndex];
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") {
@@ -67,16 +74,21 @@ export function ClientTabs({ items }: ClientTabsProps) {
           );
         })}
       </div>
-      {selected ? (
-        <div
-          role="tabpanel"
-          id={`${baseId}-panel-${selected.id}`}
-          aria-labelledby={`${baseId}-tab-${selected.id}`}
-          className={styles.panel}
-        >
-          {selected.panel}
-        </div>
-      ) : null}
+      {items.map((item, index) => {
+        const isSelected = index === selectedIndex;
+        return (
+          <div
+            key={item.id}
+            role="tabpanel"
+            id={`${baseId}-panel-${item.id}`}
+            aria-labelledby={`${baseId}-tab-${item.id}`}
+            hidden={!isSelected}
+            className={styles.panel}
+          >
+            {item.panel}
+          </div>
+        );
+      })}
     </div>
   );
 }
