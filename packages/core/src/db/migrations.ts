@@ -85,8 +85,61 @@ const addEmbeddingModel: Migration = {
   ],
 };
 
+/**
+ * Adds the two anonymized usage-analytics event tables (#79):
+ * `analytics_tool_events` (one row per MCP tool call, or per tool the chat
+ * agent invokes) and `analytics_question_events` (one row per chat
+ * question). Both tables store only coarse, taxonomy-constrained labels —
+ * never raw question text, raw tool arguments, IPs, or user agents; see
+ * `packages/core/src/analytics/scrubber.ts`, which every write to these
+ * tables must go through (`analytics-repository.ts`).
+ *
+ * No per-session/per-caller grouping key: the locked decision for #79 was
+ * to omit session/caller grouping entirely rather than add a rotating
+ * salted hash, since nothing this pipeline needs to answer (theme
+ * distribution, tool outcome counts, latency) requires linking rows back
+ * to the same visitor — see `packages/core/README.md`'s "Usage analytics"
+ * section for the documented rationale.
+ *
+ * Indexes: `created_at` alone supports the retention job's "delete rows
+ * older than the window" range scan and any "events in the last N days"
+ * query; the composite `(tool_name, created_at)` / `(theme, created_at)`
+ * indexes support the group-by-then-filter-by-time queries a stats view
+ * needs ("tool_name counts over the last 90 days") without a full scan.
+ */
+const addAnalyticsEvents: Migration = {
+  id: "003_add_analytics_events",
+  statements: [
+    `CREATE TABLE IF NOT EXISTS analytics_tool_events (
+      id bigserial PRIMARY KEY,
+      surface text NOT NULL,
+      tool_name text NOT NULL,
+      outcome text NOT NULL,
+      latency_bucket text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );`,
+    `CREATE INDEX IF NOT EXISTS analytics_tool_events_created_at_idx
+      ON analytics_tool_events (created_at);`,
+    `CREATE INDEX IF NOT EXISTS analytics_tool_events_tool_name_created_at_idx
+      ON analytics_tool_events (tool_name, created_at);`,
+    `CREATE INDEX IF NOT EXISTS analytics_tool_events_surface_outcome_idx
+      ON analytics_tool_events (surface, outcome);`,
+    `CREATE TABLE IF NOT EXISTS analytics_question_events (
+      id bigserial PRIMARY KEY,
+      theme text NOT NULL,
+      latency_bucket text NOT NULL,
+      used_retrieval boolean NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );`,
+    `CREATE INDEX IF NOT EXISTS analytics_question_events_created_at_idx
+      ON analytics_question_events (created_at);`,
+    `CREATE INDEX IF NOT EXISTS analytics_question_events_theme_created_at_idx
+      ON analytics_question_events (theme, created_at);`,
+  ],
+};
+
 /** Every migration, in the order they must be applied. */
-export const migrations: Migration[] = [initPgvectorChunks, addEmbeddingModel];
+export const migrations: Migration[] = [initPgvectorChunks, addEmbeddingModel, addAnalyticsEvents];
 
 /**
  * Pure diff: which of `all` are not yet represented in `appliedIds`, in

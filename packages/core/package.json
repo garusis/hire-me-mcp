@@ -20,6 +20,10 @@
       "types": "./dist/db/index.d.ts",
       "default": "./dist/db/index.js"
     },
+    "./analytics": {
+      "types": "./dist/analytics/index.d.ts",
+      "default": "./dist/analytics/index.js"
+    },
     "./embedding": {
       "types": "./dist/embedding/index.d.ts",
       "default": "./dist/embedding/index.js"

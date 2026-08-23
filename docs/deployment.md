@@ -8,10 +8,17 @@ all ship inside this same Next.js app.
 
 ## Project settings (reproduce by hand in the Vercel dashboard)
 
-These are dashboard/Project Settings, not `vercel.json` — a monorepo root directory, install
-command, and build command are all expressible through Project Settings, so no `vercel.json` is
-committed. If a future requirement genuinely can't be expressed that way (e.g. custom headers,
-rewrites), add a minimal `vercel.json` then and document why here.
+Most of these are dashboard/Project Settings, not `vercel.json` — a monorepo root directory,
+install command, and build command are all expressible through Project Settings. One exception:
+**`apps/web/vercel.json` is committed**, containing only a `crons` entry — scheduled cron jobs are
+a `vercel.json`-only feature with no Project Settings equivalent, needed for the anonymized
+usage-analytics retention sweep (#79, `docs/analytics.md`). It schedules
+`GET /api/cron/analytics-retention` (`app/api/cron/analytics-retention/route.ts`) once daily; the
+route authenticates the request via `Authorization: Bearer $CRON_SECRET`, which Vercel signs cron
+invocations with automatically — set `CRON_SECRET` in Project Settings → Environment Variables for
+Preview and Production (see `.env.example`). If another requirement genuinely can't be expressed
+through Project Settings either (custom headers, rewrites), extend this same file and document why
+here.
 
 | Setting | Value |
 | --- | --- |

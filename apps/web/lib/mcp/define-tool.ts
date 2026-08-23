@@ -16,6 +16,7 @@
 import type { DomainResult } from "@hire-me-mcp/core";
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { z } from "zod";
+import { recordMcpToolEvent } from "../analytics/record";
 import { buildToolSuccessResult, type ToolSuccessResult } from "./envelope";
 import { buildToolErrorResult, mapThrownError, type ToolErrorResult } from "./errors";
 
@@ -56,13 +57,23 @@ function formatValidationIssues(error: z.ZodError): string {
  * `DomainResult` on success, or map any thrown error to a sanitized
  * `{ code, message }` result. Never throws — every outcome, including a
  * bug in `handler`, resolves to a `ToolExecutorResult`.
+ *
+ * Also the single instrumentation point for the anonymized usage-analytics
+ * pipeline (#79): every resolution path — success, invalid input, a
+ * thrown {@link ToolDomainError}, or an unexpected error — records exactly
+ * one `recordMcpToolEvent` call with the tool's name, the matching
+ * outcome, and the elapsed latency, before returning. Because this is the
+ * only function every `ToolDefinition` is executed through, no future
+ * tool can add itself without being instrumented.
  */
 export function createToolExecutor<InputSchema extends z.ZodTypeAny, Output>(
   definition: ToolDefinition<InputSchema, Output>,
 ): (rawArgs: unknown) => Promise<ToolExecutorResult<Output>> {
   return async (rawArgs: unknown) => {
+    const startedAt = Date.now();
     const parsed = definition.inputSchema.safeParse(rawArgs ?? {});
     if (!parsed.success) {
+      recordMcpToolEvent(definition.name, "invalid_input", Date.now() - startedAt);
       return buildToolErrorResult({
         code: "invalid_input",
         message: formatValidationIssues(parsed.error),
@@ -70,9 +81,12 @@ export function createToolExecutor<InputSchema extends z.ZodTypeAny, Output>(
     }
     try {
       const domainResult = await definition.handler(parsed.data);
+      recordMcpToolEvent(definition.name, "success", Date.now() - startedAt);
       return buildToolSuccessResult(domainResult);
     } catch (error) {
-      return buildToolErrorResult(mapThrownError(error));
+      const payload = mapThrownError(error);
+      recordMcpToolEvent(definition.name, payload.code, Date.now() - startedAt);
+      return buildToolErrorResult(payload);
     }
   };
 }
