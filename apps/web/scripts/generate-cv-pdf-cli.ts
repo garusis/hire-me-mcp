@@ -11,11 +11,15 @@
  * here). `public/cv/` is cleared first so a stale file under a previous
  * name never lingers after a profile-name change.
  *
- * Wired into `@hire-me-mcp/web#build` in turbo.json, so every build
- * (local, CI, and the Vercel deploy that serves `/cv/<filename>.pdf` as a
- * static asset with the `Content-Disposition` header `next.config.ts`
- * attaches) regenerates the PDF from whatever `packages/career-data`
- * content is checked out — there is no committed PDF to go stale.
+ * Deliberately NOT wired into Vercel's own build: that build only
+ * builds/deploys the Next.js app and doesn't ship headless-Chromium
+ * system dependencies (see `next.config.ts`'s doc comment on the `/cv`
+ * headers, and `reindex-production.yml`'s doc comment for the same "don't
+ * couple an unrelated, environment-dependent step to the deploy build"
+ * rationale applied elsewhere in this repo). Run this locally (or in CI)
+ * whenever `packages/career-data` content changes and commit the
+ * resulting `public/cv/<filename>.pdf` — the same convention
+ * `pnpm generate:connect`'s generated regions already follow.
  */
 
 import { mkdirSync, rmSync } from "node:fs";
