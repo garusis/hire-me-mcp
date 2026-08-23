@@ -59,6 +59,26 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      // Every spec except latency.spec.ts — see the "chromium-latency"
+      // project below for why that one file is split out.
+      testIgnore: ["**/latency.spec.ts"],
+    },
+    {
+      name: "chromium-latency",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: ["**/latency.spec.ts"],
+      // Runs strictly after every other spec in the "chromium" project has
+      // finished (#62 incident: latency.spec.ts's own MCP tools/call probes
+      // — run interleaved with mcp.spec.ts's calls under the default
+      // alphabetical file ordering — combined to exceed the shared
+      // per-minute Upstash rate-limit budget every preview-e2e request
+      // shares from the same CI runner IP, 429ing mcp.spec.ts's and
+      // security-headers.spec.ts's own MCP assertions). A `dependencies`
+      // edge, not a delay/sleep: with `workers: 1` in CI this guarantees
+      // latency.spec.ts's MCP calls never overlap any other spec's, so its
+      // own budgeted sample size is the only consumer of the limit at that
+      // point — never a reason to weaken mcp.spec.ts's own burst assertion.
+      dependencies: ["chromium"],
     },
   ],
 });

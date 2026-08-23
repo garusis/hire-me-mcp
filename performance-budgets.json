@@ -4,16 +4,16 @@
   "lighthouse": {
     "configFile": "lighthouserc.json",
     "pages": ["/", "/projects/<first project slug>", "/privacy", "/cv/print", "/mcp"],
-    "baselineMeasuredAgainst": "Vercel preview deployment for PR #62 (garusis/hire-me-mcp), run 1",
+    "baselineMeasuredAgainst": "Vercel preview deployment for PR #182 / issue #62 (garusis/hire-me-mcp), CI run 32666601249, job 97260847781",
     "baselineMeasuredAt": "2026-08-23",
     "baselines": {
-      "/": { "performance": 100, "accessibility": 100, "bestPractices": 100 },
-      "/projects/<slug>": { "performance": 90, "accessibility": 100, "bestPractices": 100 },
-      "/privacy": { "performance": 100, "accessibility": 100, "bestPractices": 100 },
-      "/cv/print": { "performance": 100, "accessibility": 95, "bestPractices": 100 },
-      "/mcp": { "performance": 96, "accessibility": 100, "bestPractices": 100 }
+      "/": { "performance": 99, "accessibility": 100, "bestPractices": 96 },
+      "/projects/<slug>": { "performance": 100, "accessibility": 100, "bestPractices": 96 },
+      "/privacy": { "performance": 100, "accessibility": 100, "bestPractices": 96 },
+      "/cv/print": { "performance": 100, "accessibility": 100, "bestPractices": 93 },
+      "/mcp": { "performance": 100, "accessibility": 100, "bestPractices": 96 }
     },
-    "note": "Category scores only — CWV/resource-byte baselines will be added from the first PR #62 lighthouse-report artifact once the deployed preview's numbers are read back; see the PR #62 comment recording the full measurement."
+    "note": "Category scores (0-100) as printed by scripts/lighthouse/print-scores.mjs / GITHUB_STEP_SUMMARY for the run cited above. lighthouserc.json's thresholds are set below these with margin (performance >= 0.88-0.90, accessibility >= 0.95, best-practices >= 0.9 — best-practices deliberately kept below the measured 93-96 rather than at 95, since a single-point regression on a real preview run must not be indistinguishable from noise). Core Web Vitals (LCP/CLS/TBT) and resource-byte thresholds in lighthouserc.json were not yet individually re-measured against this run (the assert step errored on an unrelated assertMatrix/top-level-assertions config conflict before evaluating them — fixed in a follow-up commit on this PR) but are set generously relative to this app's ~101-107kB first-load JS (apps/web build output) and sub-3s performance category scores; they will be tightened once a clean run's per-audit numericValue data is available."
   },
 
   "latency": {
