@@ -41,7 +41,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "db:migrate": "tsx src/db/migrate-cli.ts",
-    "ingest": "tsx src/ingest/cli.ts"
+    "ingest": "tsx src/ingest/cli.ts",
+    "eval:retrieval": "tsx src/eval-retrieval/cli.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "4.0.48",

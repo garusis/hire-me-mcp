@@ -45,4 +45,38 @@ describe("createGoogleEmbeddingClient", () => {
 
     expect(embeddingModel).toHaveBeenCalledWith("custom-model");
   });
+
+  it("passes an explicit taskType through to embedMany's providerOptions", async () => {
+    embedMany.mockResolvedValueOnce({ embeddings: [[0.1, 0.2]] });
+    const { createGoogleEmbeddingClient } = await import("./google-client.js");
+
+    const client = createGoogleEmbeddingClient({
+      apiKey: "test-key",
+      taskType: "RETRIEVAL_DOCUMENT",
+    });
+    await client.embed(["doc"]);
+
+    expect(embedMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        values: ["doc"],
+        providerOptions: {
+          google: { outputDimensionality: 768, taskType: "RETRIEVAL_DOCUMENT" },
+        },
+      }),
+    );
+  });
+
+  it("omits taskType from providerOptions when not given", async () => {
+    embedMany.mockResolvedValueOnce({ embeddings: [[0.1]] });
+    const { createGoogleEmbeddingClient } = await import("./google-client.js");
+
+    const client = createGoogleEmbeddingClient({ apiKey: "test-key" });
+    await client.embed(["x"]);
+
+    expect(embedMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerOptions: { google: { outputDimensionality: 768 } },
+      }),
+    );
+  });
 });

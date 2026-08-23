@@ -33,7 +33,7 @@
 import type { Sql } from "postgres";
 import type { ChunkCitation } from "./chunking/types.js";
 import { EMBEDDING_DIMENSION, parseCitation, toVectorLiteral } from "./db/chunks-repository.js";
-import { EMBEDDING_MODEL_ID } from "./embedding/config.js";
+import { STORED_EMBEDDING_MODEL_ID } from "./embedding/config.js";
 
 /** Default number of results when `topK` is omitted — enough for a useful evidence set without over-fetching. */
 export const DEFAULT_TOP_K = 10;
@@ -132,7 +132,7 @@ export interface CreateSearchCareerOptions {
   sql: Sql;
   /** Query embedder — reuse `createEmbeddingClient`/`createGoogleEmbeddingClient` from `@hire-me-mcp/core/embedding` in production; tests inject a fake. */
   embedder: SearchCareerEmbedder;
-  /** The configured embedding model id, compared against each result's stored `embedding_model`. Defaults to `EMBEDDING_MODEL_ID`. */
+  /** The configured embedding model id, compared against each result's stored `embedding_model`. Defaults to `STORED_EMBEDDING_MODEL_ID`. */
   modelId?: string;
   /** Injectable clock for deterministic `tookMs` in tests. Defaults to `Date.now`. */
   now?: () => number;
@@ -206,7 +206,7 @@ async function runAnnQuery(
  */
 export function createSearchCareer(options: CreateSearchCareerOptions): SearchCareer {
   const { sql, embedder } = options;
-  const modelId = options.modelId ?? EMBEDDING_MODEL_ID;
+  const modelId = options.modelId ?? STORED_EMBEDDING_MODEL_ID;
   const now = options.now ?? Date.now;
   const embeddingCache = new Map<string, number[]>();
 

@@ -365,7 +365,11 @@ This is enforced two ways, not by convention:
 store's driver) and `tsx` (to run the migration CLI) — see "Database (Neon pgvector store)" below.
 **#24** extended it again with `@ai-sdk/google` and `ai` (the embedding client, see "Embedding
 client and shared config" below) — `searchCareer` (#34) is expected to reuse the same two rather
-than adding a third. That is the intended way to evolve this boundary: the
+than adding a third. **#41** extended it once more with `zod` (already a dependency of
+`@hire-me-mcp/career-data`/`@hire-me-mcp/agent` elsewhere in the monorepo, same version) — the
+golden retrieval dataset's schema (`src/eval-retrieval/dataset/schema.ts`) validates entries the
+same way `packages/career-data`'s own content schemas do. That is the intended way to evolve this
+boundary: the
 allowlist exists to make the decision visible and reviewable in a diff, not to freeze
 `packages/core` forever. If you're adding a dependency here: edit `allowed-dependencies.json` in
 the same PR, and explain why in the PR description — don't work around the check.
@@ -611,6 +615,94 @@ cross-cutting query ranking a conceptually related chunk above an unrelated deco
 model-mismatch error against a real stale row, and — via `EXPLAIN` with `SET LOCAL enable_seqscan =
 off` — that the query plan actually uses `career_chunks_embedding_hnsw_idx` rather than a
 sequential scan.
+
+## Retrieval evals (`pnpm eval:retrieval`, #41)
+
+`src/eval-retrieval/` scores `searchCareer` (#34) against a committed, typed golden dataset of
+query -> expected-source-id pairs (`src/eval-retrieval/dataset/cases.ts`) — recall@k, precision@k,
+and mean reciprocal rank become a measured, regression-guarded property of retrieval quality
+rather than a vibe. It mirrors `packages/agent/src/evals/`'s pure-runner/injected-real-call shape:
+`metrics.ts` (pure), `dataset/schema.ts` + `dataset/cases.ts` (the dataset), `runner.ts` (executes
+the dataset against an injected `searchCareer`-shaped function), `report.ts` (assembles the
+machine-readable report and verdict), `thresholds.ts` (the committed pass/fail bars), and `cli.ts`
+(wires it all to the real database + embedding client).
+
+```bash
+pnpm eval:retrieval   # runs the golden dataset against a populated store, writes retrieval-eval-report.json
+```
+
+Requires `DATABASE_URL` and `GOOGLE_GENERATIVE_AI_API_KEY` (see `.env.example`), and a store
+already populated by `pnpm ingest` (#24) — this command only queries, it never ingests. Locally,
+the checked-in `.env`'s `GOOGLE_GENERATIVE_AI_API_KEY` is a known-invalid placeholder, so a real
+run happens via `.github/workflows/retrieval-eval.yml`'s `workflow_dispatch` job against a
+disposable Neon branch (created, migrated, ingested, evaluated, and deleted in one job run) — see
+that workflow file for the exact steps, and `docs/development.md`'s CI section for why it's a
+separate, manually-triggered workflow rather than a job in `ci.yml` (same path-filtered/on-demand
+reasoning `agent-evals.yml` documents, plus #52 — pipeline automation, tracked separately — is
+where this becomes an automatic merge gate rather than a manual check).
+
+### The dataset: categories and target size
+
+Every entry (`src/eval-retrieval/dataset/schema.ts`) has an `id`, a recruiter/hiring-manager
+phrased `query`, a `category`, and `expectedSources` — an array of `{ sourceType, sourceId }`
+pointers into the SAME source-id space `chunkCareerData` (#21) and `searchCareer`'s own
+`sourceType`/`sourceId` result fields use, never a chunk id (chunk ids churn whenever chunking is
+retuned; source ids don't). Four categories, weighted toward the two semantic search has to "earn":
+
+- **`exact`** — a deterministic single-fact question (an exact skill, an exact role/company). A
+  sanity floor; semantic search should find these trivially.
+- **`fuzzy`** — recruiter phrasing with no literal wording overlap with the source content (e.g.
+  "Does he have experience with event-driven architecture?" against content that never uses that
+  exact phrase together).
+- **`cross-cutting`** — a thematic question whose answer legitimately spans several source records
+  (multiple skills, multiple experience entries, multiple projects).
+- **`absent-topic`** — a plausible recruiter question about something genuinely absent from the
+  corpus (e.g. blockchain, SAP, penetration testing). Requires `expectEmpty: true` and an empty
+  `expectedSources` array (enforced by the schema); the runner passes these only when nothing comes
+  back at or above `absentTopicMinScore` (default `0.4`, `EVAL_RETRIEVAL_ABSENT_MIN_SCORE` env
+  override) — matching `searchCareer`'s own inclusive (`>=`) `minScore` semantics.
+
+25 entries as of #41 (6 exact / 10 fuzzy / 4 cross-cutting / 5 absent-topic) — the target is "many
+enough that one flaky/borderline query can't single-handedly swing the aggregate metrics by more
+than a few percentage points," not an exact count. `src/eval-retrieval/dataset/validate-sources.ts`
++ its test resolve every `expectedSources` pointer against the REAL, current
+`@hire-me-mcp/career-data` content (no fixtures) — a typo'd or renamed source id in the dataset
+fails that test immediately, offline, rather than silently under-scoring a real eval run.
+
+### Adding a golden query
+
+1. Pick a `category` (see above) and write the query the way a recruiter/hiring manager would
+   actually ask it — public-portfolio phrasing only, no private data (this is a public repo).
+2. Find the real source id(s) the answer should resolve to in `packages/career-data/content/*`
+   (the entity's own `id` field — for `profile`, that's `profile.json`'s `id`; for everything else,
+   the filename doubles as the id). Use the exact `sourceType` the entity's own citation would use:
+   `profile`, `experience`, `project`, `skill`, `gap`, `education`, or `writing`.
+3. Add the entry to `src/eval-retrieval/dataset/cases.ts` with a `notes` field citing the exact
+   content file(s) it's grounded in (or absent from, for `absent-topic`).
+4. Run `pnpm --filter @hire-me-mcp/core test src/eval-retrieval` — `cases.test.ts` and
+   `validate-sources.test.ts` catch a malformed entry or a dangling source id immediately, with no
+   database needed.
+
+### Interpreting a failure
+
+`pnpm eval:retrieval`'s console output prints one `[PASS]`/`[FAIL]` line per query (with its
+recall/precision/MRR, or its `expectEmpty` result for `absent-topic`), followed by the aggregate
+metrics and, on failure, which aggregate(s) missed their threshold. The full detail — every
+retrieved source and score per query — is in the written JSON report
+(`retrieval-eval-report.json` by default, `EVAL_RETRIEVAL_REPORT_PATH` override). A single failing
+query usually means one of: the expected source's content genuinely doesn't support the query as
+phrased (fix the dataset entry), a real regression in `searchCareer`/ingestion/chunking (fix the
+code), or the query is more ambiguous than intended (rephrase it). An aggregate-threshold failure
+with most individual queries passing usually means a handful of genuinely harder `cross-cutting`
+queries are dragging the mean down — check the per-query table for which ones.
+
+### Threshold-change policy
+
+Thresholds are committed in `src/eval-retrieval/thresholds.ts`, each with a one-line rationale in
+that file's own doc comment. **Raising** a threshold may be done casually, in the same PR as the
+change that earned the improvement. **Lowering** a threshold requires a written justification in
+the PR description — what real run produced the number that no longer clears the old bar, and why
+that's an honest new floor rather than moving the goalposts to hide a regression.
 
 ## Testing conventions specific to this package
 

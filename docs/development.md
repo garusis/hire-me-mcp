@@ -132,6 +132,18 @@ model id doesn't match the currently configured one is treated as stale — the 
 brand-new column default (`''`, never a real model id) uses to make every pre-#24 row look stale
 on its first run.
 
+## Retrieval evals (`pnpm eval:retrieval`)
+
+`pnpm eval:retrieval` (#41, epic #6) scores `searchCareer` (#34) — recall@k, precision@k, mean
+reciprocal rank — against a committed golden dataset of recruiter-phrased query -> expected-source
+pairs (`packages/core/src/eval-retrieval/dataset/cases.ts`), printing a per-query pass/fail table
+plus aggregate metrics and writing a machine-readable JSON report. Full write-up — dataset
+categories, how to add a golden query, how to interpret a failure, and the threshold-change policy
+— lives in [`packages/core/README.md`](../packages/core/README.md#retrieval-evals-pnpm-evalretrieval-41).
+Like `pnpm ingest`, it needs `DATABASE_URL` and `GOOGLE_GENERATIVE_AI_API_KEY` and a populated
+store; a real run against the local (known-invalid) API key isn't possible, so it's run for real
+via `.github/workflows/retrieval-eval.yml`'s `workflow_dispatch` job (see the CI section below).
+
 ## End-to-end tests (Playwright)
 
 [Playwright](https://playwright.dev) is the e2e runner, fully separate from Vitest: it owns its
@@ -404,6 +416,20 @@ required-status-checks list below yet: they're a docs-rot **guard** (loud, actio
 `main`/schedule/every PR), not a merge gate, so a preview that hasn't warmed up yet within the
 timeout skips rather than blocking a PR — see the note on `agent-evals` above for the same
 reasoning applied to a path-filtered job.
+
+An EIGHTH workflow, [`.github/workflows/retrieval-eval.yml`](../.github/workflows/retrieval-eval.yml)
+(#41, epic #6), runs `pnpm eval:retrieval` (see "Retrieval evals" above) for real: it provisions its
+own throwaway Neon branch (`NEON_API_KEY`/`NEON_PROJECT_ID`, same helper `db-integration` and the
+`search-career`/`ingest` integration suites use), runs migrations and `pnpm ingest` against it with
+the real `GOOGLE_GENERATIVE_AI_API_KEY` secret, runs the eval, uploads the JSON report as a build
+artifact, and deletes the branch in an `always()` step regardless of outcome. Deliberately
+`workflow_dispatch`-only for now, not `pull_request`/`push` — provisioning a Neon branch and running
+a real ingest plus ~25 embedding calls on every PR would be real, unbounded cost for a still-new
+eval suite; #52 (pipeline automation, tracked separately in this epic) is where this becomes an
+automatic merge gate, matching the same "manual today, automated once the pipeline task lands"
+posture `agent-evals.yml` documents for its own `workflow_dispatch` trigger. Not in the
+required-status-checks list for the same reason `agent-evals`/`db-integration` aren't: a manually
+triggered workflow can't be a required check GitHub blocks a PR on.
 
 - Node is pinned via `.nvmrc`; pnpm is installed via `pnpm/action-setup`, reading the version from
   the root `packageManager` field.
