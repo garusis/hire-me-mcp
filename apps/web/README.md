@@ -234,6 +234,20 @@ window (currently 90 days, `RETENTION_WINDOW_DAYS` in `packages/core/src/analyti
   /api/cron/analytics-retention` (`app/api/cron/analytics-retention/`) daily, authenticated via
   `Authorization: Bearer $CRON_SECRET` — see `docs/deployment.md`.
 
+### Surfacing analytics (#81)
+
+- `app/api/stats/` — a private, `noindex` stats view (`GET /api/stats?token=$STATS_SECRET`)
+  rendering aggregate counts by tool, surface, outcome and question theme over the retention
+  window. Gated fail-closed: a missing/wrong token both return 404, never 401, and the route is
+  never listed in `app/sitemap.ts`. See `docs/analytics.md` "Surfacing the data" and
+  `.env.example` for `STATS_SECRET`.
+- `app/design-system/analytics/site-analytics.tsx` mounts Vercel Analytics (`@vercel/analytics`)
+  for page views/web vitals, production-only — nothing loads in local dev, unit tests, or the
+  `e2e-preview` suite.
+- `app/privacy/page.tsx` — the public privacy note, linked from the site footer, the chat widget's
+  first-run disclosure, and the MCP server's `instructions`. Its retention window and field list
+  are built from this module's exports, not hand-copied — see `app/privacy/privacy-content.test.ts`.
+
 ## Commands
 
 ```bash

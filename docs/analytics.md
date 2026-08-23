@@ -104,8 +104,10 @@ is covered by a test with a store forced to throw
 ## Retention
 
 `RETENTION_WINDOW_DAYS = 90` (`packages/core/src/analytics/retention.ts`) is the single exported
-constant every reference to the retention window reads from — this doc, the code, and (once built)
-the public-facing privacy note all cite the same number, so they cannot drift out of sync.
+constant every reference to the retention window reads from — this doc, the code, and the public
+privacy note (`apps/web/app/privacy/page.tsx`, #81, via `privacy-content.ts`, whose drift test
+binds the note's rendered number back to this constant) all cite the same value, so they cannot
+drift out of sync.
 
 90 days: long enough to see monthly-ish usage trends across a full quarter, short enough that this
 pipeline never becomes a long-term store of anything.
@@ -115,6 +117,33 @@ A daily Vercel cron job (`apps/web/vercel.json`'s `crons` entry, hitting `GET
 event row older than the window, leaving newer rows untouched. The route authenticates the request
 via `Authorization: Bearer $CRON_SECRET` (Vercel signs its own cron invocations with this header);
 see `.env.example` and `docs/deployment.md`.
+
+## Surfacing the data (#81)
+
+- **Aggregation queries**: `getUsageStats` (`packages/core/src/analytics/stats.ts`) runs grouped
+  `COUNT(*)` queries over both tables for a given `[since, until)` range — counts by tool+surface,
+  by surface, by outcome, and by question theme. Every result is a count; no raw row, no
+  per-visitor data, can come back from this module, because the tables store nothing else.
+- **Private stats route**: `GET /api/stats` (`apps/web/app/api/stats/`) renders those aggregates as
+  a minimal HTML view, gated by a `?token=` query param compared against `STATS_SECRET`. Unlike the
+  cron route's `Authorization: Bearer` header (which Vercel's own signer sets, not a human pasting
+  a URL), and unlike its fail-open-when-unset stance, this route is fail-closed: a missing secret,
+  a wrong token, and a nonexistent route all return the same 404 — never 401 — so nothing about
+  its existence or configuration leaks. It's `noindex` (both an `x-robots-tag` header and an
+  in-document `<meta name="robots">`, since Route Handlers aren't covered by Next's page metadata
+  API) and never listed in `app/sitemap.ts`.
+- **Vercel Analytics**: `apps/web/app/design-system/analytics/site-analytics.tsx` mounts
+  `@vercel/analytics/next`'s `<Analytics />` for page views and web vitals — separate from, and
+  complementary to, the pipeline above. It renders nothing at all (not even a script tag) unless
+  `shouldEnableVercelAnalytics()` (`apps/web/src/lib/config/vercel-analytics.ts`) confirms a
+  genuine Vercel production deploy, so local dev, unit tests, and the `e2e-preview` Playwright
+  suite never load it or send it traffic. It sets no third-party tracking cookies (first-party,
+  cookieless collector).
+- **Public privacy note**: `apps/web/app/privacy/page.tsx`, linked from the site footer, the chat
+  widget's first-run disclosure, and the MCP server's `instructions` string. Its content
+  (`privacy-content.ts`) is built directly from this module's exports (`RETENTION_WINDOW_DAYS`,
+  `SURFACES`, `TOOL_OUTCOMES`, `QUESTION_THEMES`) — see `privacy-content.test.ts` for the drift
+  test — and names the third-party services involved (Vercel, Google Gemini, Neon, Upstash).
 
 ## Migration and indexes
 
