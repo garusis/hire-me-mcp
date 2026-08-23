@@ -1,8 +1,23 @@
 # hire-me-mcp
 
-`hire-me-mcp` is Marcos Alvarez's portfolio, rebuilt as a live, queryable API: a Next.js site and a
-public, anonymous [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that both
-read from the same real career data, so any AI assistant can be handed this CV as a tool.
+`hire-me-mcp` is Marcos Alvarez's portfolio, rebuilt as a live, queryable API: a public, anonymous
+[Model Context Protocol](https://modelcontextprotocol.io) (MCP) server and a Next.js site that both
+read from the same real career data, so any AI assistant can be handed this CV as a tool and get
+back cited, grounded answers instead of guesses — no API key, no signup, one URL to connect.
+
+[![CI](https://github.com/garusis/hire-me-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/garusis/hire-me-mcp/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/tag/garusis/hire-me-mcp?label=release)](https://github.com/garusis/hire-me-mcp/tags)
+[![Deployed on Vercel](https://img.shields.io/github/deployments/garusis/hire-me-mcp/production?label=vercel&logo=vercel)](https://hire-me-mcp-web.vercel.app)
+
+<!--
+  Real terminal transcript (not staged output) of an MCP client speaking the
+  Streamable HTTP protocol to the LIVE production endpoint — see
+  docs/assets/mcp-demo.tape and scripts/demo/mcp-session-demo.mjs to
+  regenerate it. Marcos: feel free to replace this with a screen recording
+  of the Claude Desktop/Code UI asking the same question if you'd rather
+  show the chat experience instead of the raw protocol.
+-->
+![Terminal recording of a real MCP session: connecting to the live hire-me-mcp endpoint, listing its tools, then calling get-skill-evidence with "event-driven architecture" and receiving a cited, grounded answer pointing at a specific work-history entry.](docs/assets/mcp-demo.gif)
 
 - **Live site:** <https://hire-me-mcp-web.vercel.app>
 - **Downloadable CV (PDF):** generated straight from `packages/career-data` — same source, same
@@ -12,6 +27,11 @@ read from the same real career data, so any AI assistant can be handed this CV a
   result (the committed PDF ships with every deploy — Vercel's own build only builds/deploys the
   Next.js app, so PDF generation deliberately isn't wired into it). A print-ready HTML view of the
   same content is served at `/cv/print`.
+- **Agent docs:** [`docs/mcp.md`](docs/mcp.md) (every client, rate limits, troubleshooting) and
+  the site's own [`/llms.txt`](https://hire-me-mcp-web.vercel.app/llms.txt) entry point.
+- **Security checklist:** landing alongside this launch in
+  [#57](https://github.com/garusis/hire-me-mcp/issues/57) — linked here once
+  `docs/security-checklist.md` merges.
 - **Live MCP endpoint** (Streamable HTTP, no auth):
 
 <!-- BEGIN GENERATED: mcp-endpoint-url -->
@@ -20,7 +40,7 @@ https://hire-me-mcp-web.vercel.app/api/mcp
 ```
 <!-- END GENERATED: mcp-endpoint-url -->
 
-## Connect your agent in one step
+## Try it in 30 seconds
 
 No API key, no OAuth, no account. Any client that speaks MCP's **Streamable HTTP** transport can
 connect by pasting the URL above into a "remote server" / "custom connector" field.
@@ -152,7 +172,11 @@ protection), plus how to reproduce the Vercel deployment locally, live in
   troubleshooting), including its **"Discovery: machine-readable metadata"** section on JSON-LD
   `Person`, per-route OpenGraph/Twitter cards, and `/.well-known/mcp.json` — and which of those are
   MCP-spec-defined (none, for this no-auth server) versus project convention.
-- **`/llms.txt`** — the site's own agent entry point, for a visitor who was handed the deployed URL
-  rather than this repo (tracked in a sibling issue of this epic; add the link here once it ships).
+- **[`/llms.txt`](https://hire-me-mcp-web.vercel.app/llms.txt)** — the site's own agent entry
+  point, for a visitor who was handed the deployed URL rather than this repo.
+- **Security checklist** — a one-time security pass (dependency audit, secrets hygiene, MCP input
+  fuzzing, rate-limit re-verification) is landing in
+  [#57](https://github.com/garusis/hire-me-mcp/issues/57); this section will link straight to
+  `docs/security-checklist.md` once that PR merges.
 - **[Issue tracker](https://github.com/garusis/hire-me-mcp/issues)** — roadmap, open work, and
   where to report a stale snippet or a bug in the MCP server.
