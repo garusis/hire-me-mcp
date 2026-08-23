@@ -62,6 +62,24 @@ jobs:
       - name: Lint career data content
         run: pnpm turbo lint:content
 
+      # apps/web/lib/cv/generate-cv-pdf.test.ts (#35) launches real headless
+      # Chromium via Playwright as part of `pnpm turbo test` below — same
+      # browser the `e2e` job already caches/installs, mirrored here rather
+      # than skipping unit-test coverage for the one test that needs a real
+      # renderer.
+      - name: Resolve installed Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('./package.json').devDependencies['@playwright/test']")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Chromium (with OS deps)
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: Unit tests
         run: pnpm turbo test
 
