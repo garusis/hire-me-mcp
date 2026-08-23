@@ -35,6 +35,11 @@ vi.mock("../src/lib/content", () => ({
   getSkillsListView,
 }));
 
+const { getRequestNonce } = vi.hoisted(() => ({
+  getRequestNonce: vi.fn(async () => "test-nonce-value"),
+}));
+vi.mock("../src/lib/security/get-request-nonce", () => ({ getRequestNonce }));
+
 function buildProfile(overrides: Partial<ProfileView["profile"]> = {}): ProfileView {
   return {
     profile: {
@@ -143,21 +148,21 @@ describe("Home", () => {
   });
 
   describe("hero", () => {
-    it("renders the profile name from the content layer as the single page h1", () => {
-      render(<Home />);
+    it("renders the profile name from the content layer as the single page h1", async () => {
+      render(await Home());
 
       const heading = screen.getByRole("heading", { level: 1 });
       expect(heading.textContent).toBe("Ada Stubwell");
     });
 
-    it("renders the profile headline from the content layer", () => {
-      render(<Home />);
+    it("renders the profile headline from the content layer", async () => {
+      render(await Home());
 
       expect(screen.getByText("Staff Engineer, Distributed Systems")).toBeDefined();
     });
 
-    it("renders a one-line positioning statement derived from the profile summary", () => {
-      render(<Home />);
+    it("renders a one-line positioning statement derived from the profile summary", async () => {
+      render(await Home());
 
       const heroRegion = screen.getByRole("region", { name: "Ada Stubwell" });
       expect(
@@ -165,19 +170,19 @@ describe("Home", () => {
       ).toBeDefined();
     });
 
-    it("renders a call to action built from the profile's first contact", () => {
-      render(<Home />);
+    it("renders a call to action built from the profile's first contact", async () => {
+      render(await Home());
 
       const cta = screen.getByRole("link", { name: /email/i });
       expect(cta.getAttribute("href")).toBe("mailto:ada@example.com");
     });
 
-    it("changes the rendered hero when the stubbed profile changes", () => {
+    it("changes the rendered hero when the stubbed profile changes", async () => {
       getProfileView.mockReturnValue(
         buildProfile({ name: "Different Name", headline: "A totally different headline" }),
       );
 
-      render(<Home />);
+      render(await Home());
 
       expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Different Name");
       expect(screen.getByText("A totally different headline")).toBeDefined();
@@ -186,8 +191,8 @@ describe("Home", () => {
   });
 
   describe("bio", () => {
-    it("renders the full profile summary from the content layer", () => {
-      render(<Home />);
+    it("renders the full profile summary from the content layer", async () => {
+      render(await Home());
 
       const bioRegion = screen.getByRole("region", { name: "About" });
       expect(
@@ -195,10 +200,10 @@ describe("Home", () => {
       ).toBeDefined();
     });
 
-    it("changes the rendered bio when the stubbed summary changes", () => {
+    it("changes the rendered bio when the stubbed summary changes", async () => {
       getProfileView.mockReturnValue(buildProfile({ summary: "A brand new summary sentence." }));
 
-      render(<Home />);
+      render(await Home());
 
       const bioRegion = screen.getByRole("region", { name: "About" });
       expect(within(bioRegion).getByText("A brand new summary sentence.")).toBeDefined();
@@ -206,8 +211,8 @@ describe("Home", () => {
   });
 
   describe("highlights — experience", () => {
-    it("renders experience highlights in the order the content layer returns them", () => {
-      render(<Home />);
+    it("renders experience highlights in the order the content layer returns them", async () => {
+      render(await Home());
 
       const summaries = screen.getAllByText(/summary text$/).map((node) => node.textContent);
       expect(summaries).toEqual([
@@ -217,7 +222,7 @@ describe("Home", () => {
       ]);
     });
 
-    it("follows the content layer's ordering, not a hardcoded id list — reordering the stub reorders the output", () => {
+    it("follows the content layer's ordering, not a hardcoded id list — reordering the stub reorders the output", async () => {
       getExperienceListView.mockReturnValue({
         items: [
           buildExperienceItem("oldest-role"),
@@ -226,7 +231,7 @@ describe("Home", () => {
         ],
       });
 
-      render(<Home />);
+      render(await Home());
 
       const summaries = screen.getAllByText(/summary text$/).map((node) => node.textContent);
       expect(summaries).toEqual([
@@ -236,7 +241,7 @@ describe("Home", () => {
       ]);
     });
 
-    it("surfaces a brand-new entry placed first in the stub, proving selection isn't a literal id list", () => {
+    it("surfaces a brand-new entry placed first in the stub, proving selection isn't a literal id list", async () => {
       getExperienceListView.mockReturnValue({
         items: [
           buildExperienceItem("never-seen-before-role"),
@@ -245,7 +250,7 @@ describe("Home", () => {
         ],
       });
 
-      render(<Home />);
+      render(await Home());
 
       const summaries = screen.getAllByText(/summary text$/).map((node) => node.textContent);
       expect(summaries[0]).toBe("never-seen-before-role summary text");
@@ -253,8 +258,8 @@ describe("Home", () => {
   });
 
   describe("highlights — projects", () => {
-    it("renders project highlights in the order the content layer returns them", () => {
-      render(<Home />);
+    it("renders project highlights in the order the content layer returns them", async () => {
+      render(await Home());
 
       const names = screen
         .getAllByText(/-name$/)
@@ -263,7 +268,7 @@ describe("Home", () => {
       expect(names).toEqual(["first-project-name", "second-project-name", "third-project-name"]);
     });
 
-    it("follows the content layer's ordering, not a hardcoded id list — reordering the stub reorders the output", () => {
+    it("follows the content layer's ordering, not a hardcoded id list — reordering the stub reorders the output", async () => {
       getProjectsListView.mockReturnValue({
         items: [
           buildProjectItem("third-project"),
@@ -272,7 +277,7 @@ describe("Home", () => {
         ],
       });
 
-      render(<Home />);
+      render(await Home());
 
       const names = screen
         .getAllByText(/-name$/)
@@ -283,8 +288,8 @@ describe("Home", () => {
   });
 
   describe("highlights — skills", () => {
-    it("renders skill highlights in the order the content layer returns them", () => {
-      render(<Home />);
+    it("renders skill highlights in the order the content layer returns them", async () => {
+      render(await Home());
 
       const skillNames = screen
         .getAllByText(/-name$/)
@@ -293,7 +298,7 @@ describe("Home", () => {
       expect(skillNames).toEqual(["skill-one-name", "skill-two-name", "skill-three-name"]);
     });
 
-    it("follows the content layer's ordering, not a hardcoded id list — reordering the stub reorders the output", () => {
+    it("follows the content layer's ordering, not a hardcoded id list — reordering the stub reorders the output", async () => {
       getSkillsListView.mockReturnValue({
         items: [
           buildSkill("skill-three", "proficient"),
@@ -302,7 +307,7 @@ describe("Home", () => {
         ],
       });
 
-      render(<Home />);
+      render(await Home());
 
       const skillNames = screen
         .getAllByText(/-name$/)
@@ -313,14 +318,14 @@ describe("Home", () => {
   });
 
   describe("MCP teaser", () => {
-    it("renders a teaser heading and description", () => {
-      render(<Home />);
+    it("renders a teaser heading and description", async () => {
+      render(await Home());
 
       expect(screen.getByRole("heading", { name: /add me to your ai/i })).toBeDefined();
     });
 
-    it("links to the /mcp section", () => {
-      render(<Home />);
+    it("links to the /mcp section", async () => {
+      render(await Home());
 
       const links = screen
         .getAllByRole("link")
@@ -330,21 +335,21 @@ describe("Home", () => {
   });
 
   describe("connect panel (#45)", () => {
-    it("renders a client tablist with a copy-ready snippet for the selected client", () => {
-      render(<Home />);
+    it("renders a client tablist with a copy-ready snippet for the selected client", async () => {
+      render(await Home());
 
       const tablist = screen.getByRole("tablist");
       expect(within(tablist).getAllByRole("tab").length).toBeGreaterThan(0);
     });
 
-    it("renders an endpoint URL copy button", () => {
-      render(<Home />);
+    it("renders an endpoint URL copy button", async () => {
+      render(await Home());
 
       expect(screen.getByRole("button", { name: /copy.*endpoint|copy.*url/i })).toBeInTheDocument();
     });
 
-    it("shows at least 3 example prompts sourced from the connection metadata module", () => {
-      render(<Home />);
+    it("shows at least 3 example prompts sourced from the connection metadata module", async () => {
+      render(await Home());
 
       const heading = screen.getByRole("heading", { name: /try asking/i });
       const promptsList = heading.nextElementSibling;
@@ -356,23 +361,23 @@ describe("Home", () => {
       ).toBeGreaterThanOrEqual(3);
     });
 
-    it("links to /mcp for the full setup, tools, and demo", () => {
-      render(<Home />);
+    it("links to /mcp for the full setup, tools, and demo", async () => {
+      render(await Home());
 
       expect(screen.getByRole("link", { name: /full setup/i })).toHaveAttribute("href", "/mcp");
     });
   });
 
   describe("heading structure", () => {
-    it("renders exactly one h1", () => {
-      render(<Home />);
+    it("renders exactly one h1", async () => {
+      render(await Home());
 
       const h1s = screen.getAllByRole("heading", { level: 1 });
       expect(h1s).toHaveLength(1);
     });
 
-    it("never skips a heading level going deeper (no h1 -> h3 jump)", () => {
-      render(<Home />);
+    it("never skips a heading level going deeper (no h1 -> h3 jump)", async () => {
+      render(await Home());
 
       const headings = screen.getAllByRole("heading");
       const levels = headings.map((heading) => Number(heading.tagName.slice(1)));
@@ -386,8 +391,8 @@ describe("Home", () => {
       }
     });
 
-    it("starts the document outline with the h1", () => {
-      render(<Home />);
+    it("starts the document outline with the h1", async () => {
+      render(await Home());
 
       const headings = screen.getAllByRole("heading");
       expect(Number(headings[0]?.tagName.slice(1))).toBe(1);
@@ -395,8 +400,8 @@ describe("Home", () => {
   });
 
   describe("images", () => {
-    it("renders no images, since the stubbed/real content layer exposes no imagery yet", () => {
-      render(<Home />);
+    it("renders no images, since the stubbed/real content layer exposes no imagery yet", async () => {
+      render(await Home());
 
       expect(screen.queryAllByRole("img")).toEqual([]);
     });
@@ -412,8 +417,8 @@ describe("Home", () => {
   });
 
   describe("structured data", () => {
-    it("renders a Person JSON-LD script built from the stubbed profile", () => {
-      const { container } = render(<Home />);
+    it("renders a Person JSON-LD script built from the stubbed profile", async () => {
+      const { container } = render(await Home());
 
       const script = container.querySelector('script[type="application/ld+json"]');
       expect(script).not.toBeNull();
@@ -423,23 +428,30 @@ describe("Home", () => {
       expect(jsonLd.jobTitle).toBe("Staff Engineer, Distributed Systems");
     });
 
-    it("changes the JSON-LD when the stubbed profile changes", () => {
+    it("changes the JSON-LD when the stubbed profile changes", async () => {
       getProfileView.mockReturnValue(buildProfile({ name: "Different Name" }));
 
-      const { container } = render(<Home />);
+      const { container } = render(await Home());
 
       const script = container.querySelector('script[type="application/ld+json"]');
       const jsonLd = JSON.parse(script?.textContent ?? "{}");
       expect(jsonLd.name).toBe("Different Name");
     });
 
-    it("renders exactly one JSON-LD script, with knowsAbout listing every authored skill (not just the highlighted subset)", () => {
-      const { container } = render(<Home />);
+    it("renders exactly one JSON-LD script, with knowsAbout listing every authored skill (not just the highlighted subset)", async () => {
+      const { container } = render(await Home());
 
       const scripts = container.querySelectorAll('script[type="application/ld+json"]');
       expect(scripts).toHaveLength(1);
       const jsonLd = JSON.parse(scripts[0]?.textContent ?? "{}");
       expect(jsonLd.knowsAbout).toEqual(["skill-one-name", "skill-two-name", "skill-three-name"]);
+    });
+
+    it("carries the request's CSP nonce (#42) on the JSON-LD script tag", async () => {
+      const { container } = render(await Home());
+
+      const script = container.querySelector('script[type="application/ld+json"]');
+      expect(script).toHaveAttribute("nonce", "test-nonce-value");
     });
   });
 });

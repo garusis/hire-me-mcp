@@ -15,6 +15,11 @@ const { getSiteUrl, getRobotsIndexable } = vi.hoisted(() => ({
 }));
 vi.mock("../src/lib/config/site-url", () => ({ getSiteUrl, getRobotsIndexable }));
 
+const { getRequestNonce } = vi.hoisted(() => ({
+  getRequestNonce: vi.fn(async () => "test-nonce-value"),
+}));
+vi.mock("../src/lib/security/get-request-nonce", () => ({ getRequestNonce }));
+
 function profileView(): ProfileView {
   return {
     citations: [],
@@ -109,38 +114,38 @@ describe("RootLayout", () => {
     cleanup();
   });
 
-  it("renders a skip link as the first focusable element", () => {
-    render(<RootLayout>{<p>page content</p>}</RootLayout>);
+  it("renders a skip link as the first focusable element", async () => {
+    render(await RootLayout({ children: <p>page content</p> }));
     const skipLink = screen.getByRole("link", { name: /skip to main content/i });
     expect(skipLink).toBeDefined();
   });
 
-  it("renders header, main and footer landmarks", () => {
-    render(<RootLayout>{<p>page content</p>}</RootLayout>);
+  it("renders header, main and footer landmarks", async () => {
+    render(await RootLayout({ children: <p>page content</p> }));
     expect(screen.getByRole("banner")).toBeDefined();
     expect(screen.getByRole("main")).toBeDefined();
     expect(screen.getByRole("contentinfo")).toBeDefined();
   });
 
-  it("renders children inside the main landmark, associated with the skip link target", () => {
-    render(<RootLayout>{<p>page content</p>}</RootLayout>);
+  it("renders children inside the main landmark, associated with the skip link target", async () => {
+    render(await RootLayout({ children: <p>page content</p> }));
     const main = screen.getByRole("main");
     expect(main).toHaveAttribute("id", "main-content");
     expect(screen.getByText("page content").closest("main")).toBe(main);
   });
 
-  it("renders the theme toggle in the header", () => {
-    render(<RootLayout>{<p>page content</p>}</RootLayout>);
+  it("renders the theme toggle in the header", async () => {
+    render(await RootLayout({ children: <p>page content</p> }));
     expect(screen.getByRole("button", { name: /theme/i })).toBeDefined();
   });
 
-  it("renders the chat widget launcher, reachable from every page", () => {
-    render(<RootLayout>{<p>page content</p>}</RootLayout>);
+  it("renders the chat widget launcher, reachable from every page", async () => {
+    render(await RootLayout({ children: <p>page content</p> }));
     expect(screen.getByRole("button", { name: /ask about marcos/i })).toBeDefined();
   });
 
-  it("links to /llms.txt as an alternate text/markdown representation, on every page (#37)", () => {
-    render(<RootLayout>{<p>page content</p>}</RootLayout>);
+  it("links to /llms.txt as an alternate text/markdown representation, on every page (#37)", async () => {
+    render(await RootLayout({ children: <p>page content</p> }));
     const link = document.querySelector('link[rel="alternate"][type="text/markdown"]');
     expect(link).not.toBeNull();
     expect(link).toHaveAttribute("href", "/llms.txt");
@@ -153,12 +158,34 @@ describe("RootLayout", () => {
     vi.doMock("@vercel/analytics/next", () => ({ Analytics: analyticsSpy }));
     const { default: FreshRootLayout } = await import("./layout.js");
 
-    render(<FreshRootLayout>{<p>page content</p>}</FreshRootLayout>);
+    render(await FreshRootLayout({ children: <p>page content</p> }));
 
     expect(analyticsSpy).toHaveBeenCalledTimes(1);
 
     vi.doUnmock("@vercel/analytics/next");
     vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("passes the request's CSP nonce (#42) to the inline theme script, so it's permitted under the nonce-scoped policy", async () => {
+    // `next/script`'s `beforeInteractive` strategy renders nothing under a
+    // plain client render (it relies on Next's own document-build pipeline
+    // to have already inserted the tag) — stubbed here with a plain
+    // `<script>` so the `nonce` prop RootLayout passes through is
+    // inspectable, the same `vi.doMock` + fresh-import pattern the
+    // SiteAnalytics test above uses.
+    vi.resetModules();
+    vi.doMock("next/script", () => ({
+      default: (props: Record<string, unknown>) => <script {...props} />,
+    }));
+    const { default: FreshRootLayout } = await import("./layout.js");
+
+    render(await FreshRootLayout({ children: <p>page content</p> }));
+
+    const themeScript = document.getElementById("theme-script");
+    expect(themeScript).toHaveAttribute("nonce", "test-nonce-value");
+
+    vi.doUnmock("next/script");
     vi.resetModules();
   });
 });

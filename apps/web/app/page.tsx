@@ -11,6 +11,7 @@ import {
   type ProjectListItemView,
   type Skill,
 } from "../src/lib/content";
+import { getRequestNonce } from "../src/lib/security/get-request-nonce";
 import { buildPersonJsonLd } from "../src/lib/seo/json-ld";
 import { JsonLdScript } from "../src/lib/seo/json-ld-script";
 import { RevealOnScroll } from "./design-system/motion/reveal-on-scroll";
@@ -79,7 +80,8 @@ function SkillBadge({ skill }: { skill: Skill }) {
   return <Badge>{skill.name}</Badge>;
 }
 
-export default function Home() {
+export default async function Home() {
+  const nonce = await getRequestNonce();
   const profileView = getProfileView();
   const { profile } = profileView;
   const experience = getExperienceListView().items.slice(0, HIGHLIGHT_EXPERIENCE_COUNT);
@@ -100,7 +102,7 @@ export default function Home() {
 
   return (
     <>
-      <JsonLdScript data={buildPersonJsonLd(profileView, allSkills)} />
+      <JsonLdScript data={buildPersonJsonLd(profileView, allSkills)} nonce={nonce} />
 
       <Section aria-labelledby="hero-heading">
         <Container>
