@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MissingEnvVarError } from "./config.js";
-import { createChatModel } from "./model-provider.js";
+import { createChatModel, GOOGLE_DEFAULT_PROVIDER_OPTIONS } from "./model-provider.js";
 
 /**
  * `createChatModel` is typed against Mastra's `MastraModelConfig` union (see
@@ -19,6 +19,18 @@ describe("createChatModel", () => {
       env: { GOOGLE_GENERATIVE_AI_API_KEY: "fake-google-key" },
     }) as InstalledLanguageModel;
 
+    expect(model.modelId).toBe("gemini-3.5-flash-lite");
+    expect(model.provider).toContain("google");
+  });
+
+  it("pins Gemini thinking OFF by default (#169): free-tier flash-lite turns must not spend latency/quota on dynamic thinking", () => {
+    expect(GOOGLE_DEFAULT_PROVIDER_OPTIONS.google.thinkingConfig.thinkingBudget).toBe(0);
+
+    // The wrapped (middleware-carrying) model must still present the same
+    // provider/model identity the rest of the system keys on.
+    const model = createChatModel({
+      env: { GOOGLE_GENERATIVE_AI_API_KEY: "fake-google-key" },
+    }) as InstalledLanguageModel;
     expect(model.modelId).toBe("gemini-3.5-flash-lite");
     expect(model.provider).toContain("google");
   });

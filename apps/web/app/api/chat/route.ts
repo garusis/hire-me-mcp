@@ -16,9 +16,13 @@ export const runtime = "nodejs";
 // Standard Next.js/Vercel route-segment `maxDuration`
 // (https://vercel.com/docs/functions/configuring-functions/duration). A
 // streamed multi-tool-call agent turn can run considerably longer than the
-// MCP endpoint's single tool call; 60s is the maximum this project's Hobby
-// plan allows, chosen as a generous ceiling for a chat turn rather than a
-// measured requirement.
-export const maxDuration = 60;
+// MCP endpoint's single tool call. This project runs on Fluid compute
+// (visible in the deployment's function panel), where the Hobby ceiling is
+// 300s — not classic Hobby's 60s. 60s was observed truncating real slow
+// free-tier Gemini turns mid-stream as FUNCTION_INVOCATION_TIMEOUT 504s
+// (#169), so the full Fluid ceiling is used: streaming ends the invocation
+// as soon as the turn finishes, so the higher cap costs nothing on the
+// happy path.
+export const maxDuration = 300;
 
 export const POST = createChatPostHandler();
