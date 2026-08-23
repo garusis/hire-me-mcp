@@ -14,6 +14,11 @@ vi.mock("../../../src/lib/content", () => ({
   getProfileView,
 }));
 
+const { getRequestNonce } = vi.hoisted(() => ({
+  getRequestNonce: vi.fn(async () => "test-nonce-value"),
+}));
+vi.mock("../../../src/lib/security/get-request-nonce", () => ({ getRequestNonce }));
+
 function profileView(): ProfileView {
   return {
     citations: [],
@@ -122,6 +127,19 @@ describe("Project detail page", () => {
     expect(jsonLd["@type"]).toBe("SoftwareSourceCode");
     expect(jsonLd.name).toBe("Alpha Project");
     expect(jsonLd.author).toEqual({ "@type": "Person", name: "Ada Fixture" });
+  });
+
+  it("carries the request's CSP nonce (#42) on the JSON-LD script tag", async () => {
+    getProjectDetailView.mockReturnValue(foundView());
+    getProfileView.mockReturnValue(profileView());
+    const { default: ProjectDetailPage } = await import("./page.js");
+
+    const { container } = render(
+      await ProjectDetailPage({ params: Promise.resolve({ slug: "alpha-project" }) }),
+    );
+
+    const script = container.querySelector('script[type="application/ld+json"]');
+    expect(script).toHaveAttribute("nonce", "test-nonce-value");
   });
 });
 

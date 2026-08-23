@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { compileMDX } from "next-mdx-remote/rsc";
 import { getProfileView, getWritingEntryView, listWritingSlugs } from "../../../src/lib/content";
+import { getRequestNonce } from "../../../src/lib/security/get-request-nonce";
 import { buildArticleJsonLd } from "../../../src/lib/seo/json-ld";
 import { JsonLdScript } from "../../../src/lib/seo/json-ld-script";
 import { buildPageMetadata } from "../../../src/lib/seo/page-metadata";
@@ -58,11 +59,15 @@ export default async function WritingDetailPage({ params }: WritingDetailPagePro
   const { entry } = view.value;
   const { content: mdxContent } = await compileMDX({ source: entry.body });
   const { profile } = getProfileView();
+  const nonce = await getRequestNonce();
 
   return (
     <Section>
       <Container>
-        <JsonLdScript data={buildArticleJsonLd({ slug: view.slug, ...view.value }, profile.name)} />
+        <JsonLdScript
+          data={buildArticleJsonLd({ slug: view.slug, ...view.value }, profile.name)}
+          nonce={nonce}
+        />
         <Heading level={1}>{entry.title}</Heading>
         <p className={`${styles.meta} tabular-nums`}>{entry.publishedDate}</p>
         <Prose>

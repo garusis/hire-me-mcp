@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { compileMDX } from "next-mdx-remote/rsc";
 import { getProfileView, getProjectDetailView, listProjectSlugs } from "../../../src/lib/content";
+import { getRequestNonce } from "../../../src/lib/security/get-request-nonce";
 import { buildProjectJsonLd } from "../../../src/lib/seo/json-ld";
 import { JsonLdScript } from "../../../src/lib/seo/json-ld-script";
 import { buildPageMetadata } from "../../../src/lib/seo/page-metadata";
@@ -70,11 +71,15 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
   const { project } = view.value;
   const { content: mdxContent } = await compileMDX({ source: project.body });
   const { profile } = getProfileView();
+  const nonce = await getRequestNonce();
 
   return (
     <Section>
       <Container>
-        <JsonLdScript data={buildProjectJsonLd({ slug: view.slug, ...view.value }, profile.name)} />
+        <JsonLdScript
+          data={buildProjectJsonLd({ slug: view.slug, ...view.value }, profile.name)}
+          nonce={nonce}
+        />
         <Heading level={1}>{project.name}</Heading>
         <p>{project.role}</p>
         <Prose>

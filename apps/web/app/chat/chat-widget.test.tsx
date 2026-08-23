@@ -1,6 +1,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { WritingEntry } from "../../src/lib/content";
 import { ChatWidget } from "./chat-widget";
 
@@ -55,6 +56,14 @@ describe("ChatWidget", () => {
     render(<ChatWidget writingEntries={NO_WRITING} />);
     expect(screen.getByRole("button", { name: /ask about marcos/i })).toBeInTheDocument();
     expect(screen.queryByRole("log")).not.toBeInTheDocument();
+  });
+
+  it("configures zod as jitless on import (#42), so the CSP-enforced client bundle never attempts new Function()/eval", () => {
+    // `chat-widget.tsx` is imported at the top of this file, so its
+    // module-level `configureZodJitless()` call has already run by the
+    // time this test executes — asserted against zod's own global config
+    // rather than mocking the helper, so this proves the wiring is real.
+    expect(z.config().jitless).toBe(true);
   });
 
   it("opens the panel and shows starter prompts, including a grounded and a gap question, in the empty state", async () => {

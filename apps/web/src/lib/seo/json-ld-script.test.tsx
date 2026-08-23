@@ -31,4 +31,13 @@ describe("JsonLdScript", () => {
       headline: "Changed",
     });
   });
+
+  it("carries the CSP nonce (#42) so the inline script tag is permitted under the nonce-scoped policy", () => {
+    const { container } = render(
+      <JsonLdScript data={{ "@type": "Person" }} nonce="test-nonce-abc" />,
+    );
+
+    const script = container.querySelector('script[type="application/ld+json"]');
+    expect(script).toHaveAttribute("nonce", "test-nonce-abc");
+  });
 });

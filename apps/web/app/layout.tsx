@@ -3,6 +3,7 @@ import Script from "next/script";
 import type { ReactNode } from "react";
 import { getRobotsIndexable, getSiteUrl } from "../src/lib/config/site-url";
 import { getProfileView, getWritingListView } from "../src/lib/content";
+import { getRequestNonce } from "../src/lib/security/get-request-nonce";
 import { COLOR_BG_DARK, COLOR_BG_LIGHT } from "../src/lib/seo/site-colors";
 import { ChatWidget } from "./chat/chat-widget";
 import { SiteAnalytics } from "./design-system/analytics/site-analytics";
@@ -72,9 +73,13 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
   const { items: writingItems } = getWritingListView();
   const writingEntries = writingItems.map((item) => item.entry);
+  // The per-request CSP nonce (#42) — required on this inline script since
+  // the policy allows no `unsafe-inline` fallback. See
+  // `src/lib/security/get-request-nonce.ts`.
+  const nonce = await getRequestNonce();
 
   return (
     <html lang="en" className={`${displayFont.variable} ${bodyFont.variable} ${monoFont.variable}`}>
@@ -93,6 +98,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Script
           id="theme-script"
           strategy="beforeInteractive"
+          nonce={nonce ?? undefined}
           // biome-ignore lint/security/noDangerouslySetInnerHtml: static, build-authored script (buildThemeScript) with no user input — required for the beforeInteractive theme-flash guard.
           dangerouslySetInnerHTML={{ __html: buildThemeScript() }}
         />
