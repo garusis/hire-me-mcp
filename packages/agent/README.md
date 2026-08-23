@@ -113,6 +113,61 @@ If you're adding a fifth tool: give it its own `packages/core` domain service fi
 citations), then add a matching adapter here that imports it — never write the domain logic
 directly inside a `src/tools/*.ts` file.
 
+## Semantic search: the `search-career` tool (#75, epic #6)
+
+A fifth tool, `search-career` (`src/tools/search-career.ts`), wraps
+`createSearchCareer` from `@hire-me-mcp/core/search-career` — the same
+retrieval function #34 built and #41's retrieval eval scores in isolation.
+Unlike the other four tools it does **not** read through
+`CareerDataRepository`; it queries the Neon + pgvector semantic index
+directly via `src/tools/search-career-client.ts`'s lazily-constructed,
+module-scope-memoized `getAgentSearchCareer()` (mirroring
+`src/tools/repository.ts`'s memoization of the content repository — build
+once per process/warm serverless invocation, reuse across every call).
+
+**Hybrid policy — the locked epic #6 decision, enforced in two places:**
+
+- The tool's own `description` states when to use it (fuzzy/cross-cutting
+  questions) versus the four deterministic tools (exact, structured
+  questions) — asserted by `src/tools/search-career.test.ts`.
+- The system prompt's `retrievalPolicy` section (`src/prompt/sections.ts`,
+  between `groundingRules` and `gapDiscipline`) restates the same routing
+  policy as an explicit instruction, plus: cite every retrieved excerpt
+  using its own returned citation, and treat a low score / an empty result
+  as evidence of absence — answer the gap-discipline way, not by stretching
+  a weak match into a claim.
+
+**Graceful degradation, never a crash.** Real semantic search needs
+`DATABASE_URL` (`@hire-me-mcp/core/db`) and `GOOGLE_GENERATIVE_AI_API_KEY`
+(`@hire-me-mcp/core/embedding`) at runtime — both configured in Vercel.
+Either being unset is a normal deployment state (e.g. a preview environment
+without the database wired up), not a crash: `search-career-client.ts`'s
+`resolveAgentSearchCareer` never throws for that case, and the tool's
+`execute` collapses both "not configured" and "the real call failed" (a
+transient DB/network error, `StoredEmbeddingModelMismatchError`, ...) into
+the same typed `{ available: false, reason }` result the model can relay
+honestly instead of fabricating an answer or breaking the conversation.
+
+**Citation parity with the deterministic tools.** The tool result also
+carries a top-level `citations: Citation[]` array — the same
+`{ entityType, entityId, fragment?, label }` shape every `packages/core`
+`DomainResult` returns — so `src/evals/cli.ts`'s
+`extractCitationsFromToolResults` (which already reads
+`payload.result.citations` off every tool call) picks this tool's citations
+up with zero eval-runner change, and the chat UI's citation renderer
+resolves a `[cite:...]` marker backed by a retrieved chunk exactly the same
+way it resolves one backed by a deterministic tool.
+
+**Retrieval budget.** `applyRetrievalBudget` (same file) bounds what's
+injected into the model's context on top of (never instead of)
+`searchCareer`'s own `topK`: at most `MAX_RESULTS` (5) chunks, and at most
+`MAX_TOTAL_CHARACTERS` (4000) combined characters of chunk text, so a large
+retrieval result can never crowd out the rest of the conversation. Results
+are already score-sorted descending, so truncation always drops the
+weakest matches first; an oversized single chunk is trimmed to the
+remaining budget rather than dropped whole. Covered by
+`search-career.test.ts` with a synthetically oversized result set.
+
 ## Public API
 
 ```ts
@@ -411,6 +466,65 @@ observed number and an inline rationale documenting the residual risks above:
 | gapHonesty | 0.85 | **0.90** | 1.0000 (perfect on two separate full runs now) |
 | relevance | 0.45 | **0.48** | 0.5279 |
 
+### RAG-grounded cases and the tool-routing scorer (#75, epic #6)
+
+The dataset grew from 17 to **25 cases** for #75: eight new entries probing
+the hybrid retrieval policy the `search-career` tool (see above) and the
+`retrievalPolicy` prompt section add. All eight are copied verbatim from
+`packages/core`'s own `src/eval-retrieval/dataset/cases.ts` fuzzy/
+cross-cutting/absent-topic entries — already-vetted, public-facts-only
+phrasing #41 committed — so both eval suites agree on what "a fuzzy
+question about him" sounds like:
+
+- **Three RAG-grounded (`rag-*`)** — fuzzy/cross-cutting questions with no
+  literal wording overlap against the corpus (event-driven architecture,
+  combining full-stack with DevOps, taking an AI feature to production).
+  `category: "grounded"`, `expectedToolCall: "search-career"`.
+- **Two RAG-grounded absent-topic (`gap-blockchain`, `gap-sap-erp`)** —
+  plausible recruiter questions about topics genuinely absent from the
+  ENTIRE corpus, not just the curated `gaps.json` list (mirroring #41's own
+  `absent-topic` category). `category: "gap"`,
+  `expectedToolCall: "search-career"` — the agent should still check before
+  declaring an absence.
+- **One exact-fact (`exact-house-numbers-dates`)** — a structured question
+  a deterministic tool already answers precisely.
+  `expectedToolCall: "deterministic-only"` — the negative-routing
+  assertion.
+
+`category`/`gapHonestyDirection` are unchanged by this — routing is
+orthogonal to the expected answer shape, so these still exercise the
+existing groundedness/gap-honesty/relevance scorers exactly as before. A
+new, optional `EvalCase.expectedToolCall` field
+(`src/evals/dataset/schema.ts`) is what's new, checked by a fourth scorer,
+`src/evals/scorers/tool-routing.ts`'s `scoreToolRouting` — pure, zero model
+calls, same as the other three — against the run's actual tool-call trace
+(`src/evals/cli.ts`'s `extractToolNamesFromToolResults`, reading each tool
+result's `toolName`). Most cases don't set `expectedToolCall` at all, and
+`toolRouting` scores `null` for them, exactly the way `gapHonesty` already
+scores `null` for `off-topic`/`injection` cases.
+
+**Grounding, with no scorer change needed.** #75's "no citation references
+a source outside this turn's retrieval results" acceptance criterion is
+already satisfied by the existing groundedness scorer unchanged: it
+cross-checks every `[cite:...]` marker in the answer against the citations
+the run's tool calls actually returned, and `search-career`'s citations
+(via the parity design described above) are only ever the chunks that
+specific call actually retrieved — so a citation pointing at an
+unretrieved chunk already fails that check.
+
+**`toolRouting`'s threshold is a documented placeholder, not a calibrated
+number.** `EVAL_THRESHOLDS.toolRouting` is `0.6` — this package's local
+`.env` `GOOGLE_GENERATIVE_AI_API_KEY` is a known-invalid placeholder (see
+above), so no real tool-call trace has been observed for these eight new
+cases at the time they were added; `agent-evals`'s first real CI run of the
+extended dataset is what calibrates it for real, following the same
+"Procedure when a threshold fails" this file already documents below.
+`toolRouting` is an *optional* key on `ScorerThresholds`
+(`src/evals/thresholds.ts`) specifically so a run where no case exercises
+routing (e.g. a small budget-capped local slice) never compares an
+unset/zero-count aggregate against the threshold as if it were a real
+failing score.
+
 ### Env knobs
 
 | Env var                 | Purpose                                              | Default                  |
@@ -436,7 +550,7 @@ pnpm eval:agent                          # root proxy — same as the filtered c
 pnpm --filter @hire-me-mcp/agent eval:agent
 
 # A full-dataset run, matching what CI runs (default local run is budget-capped to 8 cases):
-EVAL_MAX_CASES=17 EVAL_MAX_TOTAL_TOKENS=200000 EVAL_MAX_COST_USD=1 pnpm eval:agent
+EVAL_MAX_CASES=25 EVAL_MAX_TOTAL_TOKENS=260000 EVAL_MAX_COST_USD=1 pnpm eval:agent
 
 # Re-run a single case while debugging a specific failure (see #143's methodology above):
 EVAL_CASE_IDS=grounded-nodejs-experience pnpm eval:agent
@@ -444,9 +558,12 @@ EVAL_CASE_IDS=grounded-nodejs-experience pnpm eval:agent
 
 Requires a real `GOOGLE_GENERATIVE_AI_API_KEY` in your environment (the local `.env`'s value is
 picked up automatically the same way the rest of this package resolves its provider — see
-"Provider abstraction" above). The command prints a summary to stdout and writes the full report
-to `EVAL_REPORT_PATH` (default `packages/agent/eval-report.json`, gitignored); a threshold breach
-exits non-zero.
+"Provider abstraction" above), and — since #75, for the `rag-*`/`gap-blockchain`/`gap-sap-erp`
+cases to exercise the real `search-career` tool rather than scoring a typed "unavailable" result —
+a real `DATABASE_URL` (the local `.env`'s value is valid; see the root README for how to point it
+at your own or a shared Neon branch). The command prints a summary to stdout and writes the full
+report to `EVAL_REPORT_PATH` (default `packages/agent/eval-report.json`, gitignored); a threshold
+breach exits non-zero.
 
 ### Expected cost
 
@@ -457,9 +574,11 @@ model costs anything today. The real, non-monetary cost is **shared free-tier re
 (`apps/web/e2e-preview/specs/chat-grounded.spec.ts`/`chat-gap.spec.ts`, #73), and anyone running
 this suite locally against the same key. A full 17-case run costs ~110K tokens (per the real run
 recorded in "Real-run results" above) and roughly one call per case (more for a multi-tool-call
-turn) — budget accordingly if running locally the same day CI or another contributor might also
-run it. `EVAL_RPM_LIMIT` (default 10) throttles between calls to stay a polite margin under the
-15 RPM ceiling regardless.
+turn); the full 25-case dataset (post-#75) is expected to cost proportionally more but has not yet
+been measured against a real key (see "RAG-grounded cases and the tool-routing scorer" above) —
+budget accordingly if running locally the same day CI or another contributor might also run it.
+`EVAL_RPM_LIMIT` (default 10) throttles between calls to stay a polite margin under the 15 RPM
+ceiling regardless.
 
 ### Procedure when a threshold fails
 

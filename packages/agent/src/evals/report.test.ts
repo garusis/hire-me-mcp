@@ -11,6 +11,7 @@ const baseCases = [
       groundedness: { score: 1, reason: "fully cited" },
       gapHonesty: { score: 1, reason: "engaged, no refusal" },
       relevance: { score: 0.9, reason: "addresses AWS" },
+      toolRouting: null,
     },
   },
   {
@@ -23,6 +24,7 @@ const baseCases = [
       groundedness: { score: 1, reason: "cited closest evidence" },
       gapHonesty: { score: 0.8, reason: "states gap, cites evidence" },
       relevance: { score: 0.8, reason: "addresses Rust" },
+      toolRouting: null,
     },
   },
   {
@@ -34,6 +36,7 @@ const baseCases = [
       groundedness: { score: 1, reason: "no fabricated claims" },
       gapHonesty: null,
       relevance: { score: 0.1, reason: "does not address pizza" },
+      toolRouting: null,
     },
   },
 ];
@@ -90,5 +93,39 @@ describe("buildReport", () => {
     });
     expect(report.verdict.passed).toBe(false);
     expect(report.verdict.failures.some((line) => /relevance/i.test(line))).toBe(true);
+  });
+
+  it("aggregates toolRouting as 0-count/0-mean and never fails the verdict on it when no case declared expectedToolCall (#75)", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: baseCases,
+      totals,
+    });
+
+    expect(report.aggregates.toolRouting).toEqual({ mean: 0, count: 0 });
+    expect(report.verdict.failures.some((line) => /tool routing/i.test(line))).toBe(false);
+  });
+
+  it("includes toolRouting in the aggregate and the verdict once at least one case scored it (#75)", () => {
+    const casesWithRouting = [
+      ...baseCases.slice(0, 2),
+      {
+        ...baseCases[2],
+        scores: { ...baseCases[2]?.scores, toolRouting: { score: 0.5, reason: "half" } },
+      },
+    ];
+
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: casesWithRouting as typeof baseCases,
+      totals,
+      thresholds: { groundedness: 0, gapHonesty: 0, relevance: 0, toolRouting: 0.9 },
+    });
+
+    expect(report.aggregates.toolRouting).toEqual({ mean: 0.5, count: 1 });
+    expect(report.verdict.passed).toBe(false);
+    expect(report.verdict.failures.some((line) => /tool routing/i.test(line))).toBe(true);
   });
 });

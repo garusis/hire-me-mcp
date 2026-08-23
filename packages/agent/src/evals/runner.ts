@@ -49,7 +49,12 @@ import {
 } from "./budget.js";
 import type { EvalCase } from "./dataset/schema.js";
 import { buildReport, type CaseReport, type EvalReport } from "./report.js";
-import { scoreGapHonesty, scoreGroundedness, scoreRelevance } from "./scorers/index.js";
+import {
+  scoreGapHonesty,
+  scoreGroundedness,
+  scoreRelevance,
+  scoreToolRouting,
+} from "./scorers/index.js";
 import type { ReturnedCitation } from "./scorers/types.js";
 import type { ScorerThresholds } from "./thresholds.js";
 
@@ -58,6 +63,15 @@ export interface CaseRunResult {
   answer: string;
   toolCitations: ReturnedCitation[];
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+  /**
+   * Every tool name called during this run's `agent.generate()`, in call
+   * order (duplicates allowed) — the trace `scoreToolRouting` (#75) checks
+   * a case's `expectedToolCall` against. Optional and defaults to an empty
+   * trace when omitted, so a `RunnerDeps.runCase` stub written before #75
+   * (this field's introduction) keeps compiling and running unchanged;
+   * `./cli.ts`'s real implementation always supplies it.
+   */
+  toolCallNames?: string[];
 }
 
 /** Injected dependencies — the real-call and real-timer seam. See module docs. */
@@ -93,6 +107,10 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
     evalCase.gapHonestyDirection === "n/a"
       ? null
       : scoreGapHonesty(transcript, evalCase.gapHonestyDirection);
+  const toolRouting =
+    evalCase.expectedToolCall === undefined
+      ? null
+      : scoreToolRouting(run.toolCallNames ?? [], evalCase.expectedToolCall);
 
   return {
     id: evalCase.id,
@@ -103,6 +121,7 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
       groundedness: scoreGroundedness(transcript, evalCase.category),
       gapHonesty,
       relevance: scoreRelevance(transcript),
+      toolRouting,
     },
   };
 }

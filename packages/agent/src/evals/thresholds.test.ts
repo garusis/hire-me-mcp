@@ -51,4 +51,34 @@ describe("evaluateVerdict", () => {
     expect(EVAL_THRESHOLDS.gapHonesty).toBe(0.9);
     expect(EVAL_THRESHOLDS.relevance).toBe(0.48);
   });
+
+  it("carries a provisional toolRouting threshold (#75), flagged as uncalibrated pending a real CI run", () => {
+    expect(EVAL_THRESHOLDS.toolRouting).toBe(0.6);
+  });
+
+  it("skips an unset threshold key without crashing or failing the verdict (toolRouting optional, #75)", () => {
+    const verdict = evaluateVerdict(
+      { groundedness: 0.9, gapHonesty: 0.95, relevance: 0.6 },
+      { groundedness: 0.8, gapHonesty: 0.7, relevance: 0.6 },
+    );
+    expect(verdict.passed).toBe(true);
+  });
+
+  it("skips an unset aggregate for a scorer the threshold DOES require, rather than treating it as a failing 0 (#75)", () => {
+    const verdict = evaluateVerdict(
+      { groundedness: 0.9, gapHonesty: 0.95, relevance: 0.6 },
+      { groundedness: 0.8, gapHonesty: 0.7, relevance: 0.6, toolRouting: 0.9 },
+    );
+    expect(verdict.passed).toBe(true);
+    expect(verdict.failures).toHaveLength(0);
+  });
+
+  it("fails on toolRouting when both the threshold and the aggregate are present and the aggregate misses it (#75)", () => {
+    const verdict = evaluateVerdict(
+      { groundedness: 0.9, gapHonesty: 0.95, relevance: 0.6, toolRouting: 0.2 },
+      { groundedness: 0.8, gapHonesty: 0.7, relevance: 0.6, toolRouting: 0.9 },
+    );
+    expect(verdict.passed).toBe(false);
+    expect(verdict.failures.some((line) => /tool routing/i.test(line))).toBe(true);
+  });
 });
