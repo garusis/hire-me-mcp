@@ -1,5 +1,13 @@
 "use client";
 
+// Must be the very first import in this file's module-execution order —
+// see `configure-zod-jitless.ts`'s own comment for exactly why. Kept
+// deliberately separate from the sorted import block below (biome's import
+// organizer would otherwise alphabetize it after `@ai-sdk/react`/`ai`,
+// undoing the ordering this depends on) — this is a genuine exception, not
+// stylistic preference; see the source-order comment there.
+import "./configure-zod-jitless";
+
 /**
  * The site's chat surface (#70): a floating, non-obstructive launcher that
  * expands into a chat panel wired to `POST /api/chat` (#67) via the AI SDK
