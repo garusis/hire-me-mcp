@@ -160,6 +160,26 @@ export function extractCitationsFromToolResults(
   return citations;
 }
 
+/**
+ * Extract every tool call's `toolName` (in call order, duplicates kept) off
+ * a real `agent.generate()` result's `toolResults` array (#75) — the
+ * tool-call trace `scoreToolRouting` (`./scorers/tool-routing.ts`) checks a
+ * dataset case's `expectedToolCall` against. Tolerant by design, same as
+ * `extractCitationsFromToolResults` above: a malformed entry (missing or
+ * non-string `toolName`) is skipped, never thrown on.
+ */
+export function extractToolNamesFromToolResults(toolResults: readonly unknown[]): string[] {
+  const names: string[] = [];
+  for (const toolResult of toolResults) {
+    if (typeof toolResult !== "object" || toolResult === null) continue;
+    const toolName = (toolResult as Record<string, unknown>).toolName;
+    if (typeof toolName === "string") {
+      names.push(toolName);
+    }
+  }
+  return names;
+}
+
 async function main(): Promise<void> {
   const envConfig = resolveRunnerEnvConfig();
   const modelId = resolveChatModelConfig().modelId;
@@ -192,6 +212,7 @@ async function main(): Promise<void> {
         return {
           answer: result.text,
           toolCitations: extractCitationsFromToolResults(result.toolResults ?? []),
+          toolCallNames: extractToolNamesFromToolResults(result.toolResults ?? []),
           usage: {
             inputTokens: result.totalUsage?.inputTokens ?? 0,
             outputTokens: result.totalUsage?.outputTokens ?? 0,

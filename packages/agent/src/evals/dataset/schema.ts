@@ -26,6 +26,21 @@ export type EvalCaseCategory = z.infer<typeof evalCaseCategorySchema>;
 export const gapHonestyDirectionSchema = z.enum(["claimed", "gap", "n/a"]);
 export type EvalCaseGapHonestyDirection = z.infer<typeof gapHonestyDirectionSchema>;
 
+/**
+ * Which tool-call routing a case expects (#75, epic #6) — orthogonal to
+ * `category`/`gapHonestyDirection`, since routing is about WHICH tool
+ * answers the question, not the shape of the expected answer.
+ * `"search-career"` asserts the agent's tool-call trace includes the
+ * semantic-search tool (a fuzzy/cross-cutting question, or a genuinely
+ * absent topic worth checking against the full corpus, not just the
+ * curated `gaps.json` list). `"deterministic-only"` asserts it does NOT —
+ * an exact, structured question one of `get-experience`/`search-projects`/
+ * `get-skill-evidence` already answers precisely. Optional: most existing
+ * cases don't assert routing at all. See `../scorers/tool-routing.ts`.
+ */
+export const expectedToolCallSchema = z.enum(["search-career", "deterministic-only"]);
+export type EvalCaseExpectedToolCall = z.infer<typeof expectedToolCallSchema>;
+
 const KEBAB_CASE_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const CATEGORY_DIRECTION_PAIRS: Readonly<Record<EvalCaseCategory, EvalCaseGapHonestyDirection>> = {
@@ -42,6 +57,7 @@ export const evalCaseSchema = z
     category: evalCaseCategorySchema,
     question: z.string().min(1),
     gapHonestyDirection: gapHonestyDirectionSchema,
+    expectedToolCall: expectedToolCallSchema.optional(),
     notes: z.string().min(1).optional(),
   })
   .strict()

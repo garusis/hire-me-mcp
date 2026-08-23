@@ -19,6 +19,17 @@ export interface ScorerThresholds {
   groundedness: number;
   gapHonesty: number;
   relevance: number;
+  /**
+   * Optional (#75, epic #6): unlike the three answer-content scorers above,
+   * not every eval run exercises a case that declares
+   * `EvalCase.expectedToolCall` (`./dataset/schema.ts`) — e.g. a
+   * budget-capped local run sliced to the dataset's first few cases. When
+   * `aggregates.toolRouting.count` is 0 for a run, `./report.ts` omits this
+   * key from the aggregates object it hands to `evaluateVerdict`
+   * specifically so a zero-count aggregate (mean defaults to 0) is never
+   * compared against this threshold as if it were a real failing score.
+   */
+  toolRouting?: number;
 }
 
 /**
@@ -74,12 +85,27 @@ export const EVAL_THRESHOLDS: ScorerThresholds = {
   groundedness: 0.75,
   gapHonesty: 0.9,
   relevance: 0.48,
+  // toolRouting (#75, epic #6): NOT calibrated against a real run yet — this
+  // package's own local `.env` GOOGLE_GENERATIVE_AI_API_KEY is a known-invalid
+  // placeholder (see README.md), so no real tool-call trace has been observed
+  // for the new RAG-grounded/exact-fact cases this task adds. 0.6 is a
+  // deliberately conservative placeholder — not a real observed number,
+  // flagged exactly as such per this file's own threshold-change policy — set
+  // low enough that routing has real room to be imperfect (a model
+  // occasionally reaching for search-career on a borderline exact question,
+  // or vice versa) without gating merge on an unverified guess. Recalibrate
+  // against `agent-evals`'s first real CI run of the extended dataset, the
+  // same procedure `README.md`'s "Procedure when a threshold fails" section
+  // documents for the other three scorers — raising this threshold with the
+  // real aggregate is a follow-up, not silently deferred.
+  toolRouting: 0.6,
 };
 
 const SCORER_LABELS: Readonly<Record<keyof ScorerThresholds, string>> = {
   groundedness: "groundedness",
   gapHonesty: "gap honesty",
   relevance: "relevance",
+  toolRouting: "tool routing",
 };
 
 /** Verdict for one eval run: whether every scorer aggregate met its threshold, and a human-readable failure line per scorer that didn't. */
@@ -95,8 +121,12 @@ export function evaluateVerdict(
 ): Verdict {
   const failures: string[] = [];
   for (const key of Object.keys(thresholds) as Array<keyof ScorerThresholds>) {
-    const actual = aggregates[key];
     const minimum = thresholds[key];
+    const actual = aggregates[key];
+    // Both optional (toolRouting, #75) — an unset threshold imposes no
+    // requirement, and an unset aggregate (no case exercised that scorer
+    // this run) is skipped rather than compared as if it were a real 0.
+    if (minimum === undefined || actual === undefined) continue;
     if (actual < minimum) {
       failures.push(
         `${SCORER_LABELS[key]} aggregate ${actual.toFixed(4)} is below its threshold ${minimum.toFixed(4)}`,

@@ -42,6 +42,30 @@ describe("evalCaseSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("accepts a case with an expectedToolCall of 'search-career' (#75 RAG-grounded case)", () => {
+    const result = evalCaseSchema.safeParse({ ...validCase, expectedToolCall: "search-career" });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a case with an expectedToolCall of 'deterministic-only' (#75 exact-fact case)", () => {
+    const result = evalCaseSchema.safeParse({
+      ...validCase,
+      expectedToolCall: "deterministic-only",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("omits expectedToolCall by default — not every case asserts tool-call routing", () => {
+    const result = evalCaseSchema.safeParse(validCase);
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.expectedToolCall).toBeUndefined();
+  });
+
+  it("rejects an unknown expectedToolCall value", () => {
+    const result = evalCaseSchema.safeParse({ ...validCase, expectedToolCall: "some-other-tool" });
+    expect(result.success).toBe(false);
+  });
+
   it("accepts an off-topic case with direction 'n/a'", () => {
     const result = evalCaseSchema.safeParse({
       id: "off-topic-pizza",

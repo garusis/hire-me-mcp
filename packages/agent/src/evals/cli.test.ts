@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractCitationsFromToolResults,
+  extractToolNamesFromToolResults,
   filterCasesByIds,
   resolveRunnerEnvConfig,
 } from "./cli.js";
@@ -118,5 +119,31 @@ describe("extractCitationsFromToolResults", () => {
     const toolResults = [{ payload: { result: null } }, { garbage: true }, undefined];
     expect(() => extractCitationsFromToolResults(toolResults)).not.toThrow();
     expect(extractCitationsFromToolResults(toolResults)).toEqual([]);
+  });
+});
+
+describe("extractToolNamesFromToolResults (#75)", () => {
+  it("collects every tool result's toolName, in order, including duplicates", () => {
+    const toolResults = [
+      { toolName: "get-experience", payload: { result: { data: [], citations: [] } } },
+      { toolName: "search-career", payload: { result: { data: {}, citations: [] } } },
+      { toolName: "search-career", payload: { result: { data: {}, citations: [] } } },
+    ];
+
+    expect(extractToolNamesFromToolResults(toolResults)).toEqual([
+      "get-experience",
+      "search-career",
+      "search-career",
+    ]);
+  });
+
+  it("returns an empty array for no tool calls", () => {
+    expect(extractToolNamesFromToolResults([])).toEqual([]);
+  });
+
+  it("skips a tool result with no string toolName, without throwing", () => {
+    const toolResults = [{ toolName: 42 }, { garbage: true }, undefined, { toolName: "real" }];
+    expect(() => extractToolNamesFromToolResults(toolResults)).not.toThrow();
+    expect(extractToolNamesFromToolResults(toolResults)).toEqual(["real"]);
   });
 });

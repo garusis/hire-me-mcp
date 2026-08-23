@@ -14,7 +14,12 @@ import type { ScoreResult } from "./scorers/types.js";
 import type { ScorerThresholds, Verdict } from "./thresholds.js";
 import { EVAL_THRESHOLDS, evaluateVerdict } from "./thresholds.js";
 
-/** One case's scored result — `gapHonesty` is `null` for categories that don't probe either gap-honesty direction (off-topic, injection — see `./dataset/cases.ts`). */
+/**
+ * One case's scored result — `gapHonesty` is `null` for categories that
+ * don't probe either gap-honesty direction (off-topic, injection — see
+ * `./dataset/cases.ts`). `toolRouting` (#75) is `null` for any case that
+ * doesn't declare `EvalCase.expectedToolCall` — most of the dataset.
+ */
 export interface CaseReport {
   id: string;
   category: EvalCaseCategory;
@@ -24,6 +29,7 @@ export interface CaseReport {
     groundedness: ScoreResult;
     gapHonesty: ScoreResult | null;
     relevance: ScoreResult;
+    toolRouting: ScoreResult | null;
   };
 }
 
@@ -51,6 +57,7 @@ export interface EvalReport {
     groundedness: ScorerAggregate;
     gapHonesty: ScorerAggregate;
     relevance: ScorerAggregate;
+    toolRouting: ScorerAggregate;
   };
   totals: EvalTotals & { cases: number };
   thresholds: ScorerThresholds;
@@ -81,6 +88,7 @@ export function buildReport(params: {
     groundedness: aggregate(params.cases.map((c) => c.scores.groundedness)),
     gapHonesty: aggregate(params.cases.map((c) => c.scores.gapHonesty)),
     relevance: aggregate(params.cases.map((c) => c.scores.relevance)),
+    toolRouting: aggregate(params.cases.map((c) => c.scores.toolRouting)),
   };
 
   return {
@@ -96,6 +104,11 @@ export function buildReport(params: {
         groundedness: aggregates.groundedness.mean,
         gapHonesty: aggregates.gapHonesty.mean,
         relevance: aggregates.relevance.mean,
+        // Only fed into the verdict when at least one case actually asserted
+        // routing this run — an unset/zero-count aggregate must never be
+        // compared against the threshold as if it were a real 0 score (see
+        // ./thresholds.ts's ScorerThresholds doc comment).
+        ...(aggregates.toolRouting.count > 0 ? { toolRouting: aggregates.toolRouting.mean } : {}),
       },
       thresholds,
     ),

@@ -23,6 +23,23 @@ describe("EVAL_CASES", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it("includes at least three fuzzy/cross-cutting cases expecting search-career to be called (#75)", () => {
+    const ragCases = EVAL_CASES.filter((c) => c.expectedToolCall === "search-career");
+    expect(ragCases.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("includes at least one absent-topic gap case expecting search-career to be called (#75)", () => {
+    const ragGapCases = EVAL_CASES.filter(
+      (c) => c.category === "gap" && c.expectedToolCall === "search-career",
+    );
+    expect(ragGapCases.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("includes at least one exact-fact case expecting deterministic-only routing (#75)", () => {
+    const exactCases = EVAL_CASES.filter((c) => c.expectedToolCall === "deterministic-only");
+    expect(exactCases.length).toBeGreaterThanOrEqual(1);
+  });
+
   it("carries no private personal data (no email addresses or phone-like digit runs)", () => {
     for (const evalCase of EVAL_CASES) {
       const text = `${evalCase.question} ${evalCase.notes ?? ""}`;
