@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getCvView,
   getExperienceEntryView,
   getExperienceListView,
   getGapsListView,
@@ -44,5 +45,9 @@ describe("apps/web content layer public entry point", () => {
 
     const gaps = getGapsListView().items;
     expect(gaps.length).toBe(8);
+
+    const cv = getCvView();
+    expect(cv.profile.id).toBe(profile.profile.id);
+    expect(cv.filename).toMatch(/-cv\.pdf$/);
   });
 });
