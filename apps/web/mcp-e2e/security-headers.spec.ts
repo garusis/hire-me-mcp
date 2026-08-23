@@ -24,6 +24,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   buildApiSecurityHeaders,
   HSTS_HEADER_VALUE,
+  MCP_STREAMING_CACHE_CONTROL_VALUE,
 } from "../src/lib/security/build-security-headers";
 import { type StartedServer, startNextServer } from "./support/next-server";
 
@@ -56,8 +57,15 @@ describe("MCP route header set", () => {
 
     const expectedHeaders = buildApiSecurityHeaders();
     for (const [name, value] of Object.entries(expectedHeaders)) {
+      if (name === "Cache-Control") continue; // asserted separately below
       expect(response.headers.get(name), `expected ${name} to be "${value}"`).toBe(value);
     }
+    // mcp-handler sets its own Cache-Control when it streams an SSE
+    // response, overriding the middleware default — equally non-cacheable
+    // either way. See MCP_STREAMING_CACHE_CONTROL_VALUE's doc comment.
+    expect([expectedHeaders["Cache-Control"], MCP_STREAMING_CACHE_CONTROL_VALUE]).toContain(
+      response.headers.get("Cache-Control"),
+    );
     // No nonce, no HTML-only directives — this is the API/MCP route group,
     // never the HTML one.
     expect(response.headers.get("Content-Security-Policy")).not.toContain("nonce-");
@@ -75,7 +83,10 @@ describe("MCP route header set", () => {
     });
 
     expect(response.headers.get("Strict-Transport-Security")).toBe(HSTS_HEADER_VALUE);
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect([
+      buildApiSecurityHeaders()["Cache-Control"],
+      MCP_STREAMING_CACHE_CONTROL_VALUE,
+    ]).toContain(response.headers.get("Cache-Control"));
   });
 });
 

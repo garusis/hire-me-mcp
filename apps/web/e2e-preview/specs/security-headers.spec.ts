@@ -23,6 +23,7 @@
 import {
   buildApiSecurityHeaders,
   HSTS_HEADER_VALUE,
+  MCP_STREAMING_CACHE_CONTROL_VALUE,
   PERMISSIONS_POLICY,
 } from "../../src/lib/security/build-security-headers";
 import { bypassHeaders } from "../helpers/bypass";
@@ -44,8 +45,14 @@ test.describe("HTML route headers", () => {
 
     const csp = headers["content-security-policy"] ?? "";
     expect(csp).toMatch(/script-src 'self' 'nonce-[^']+' 'strict-dynamic'/);
-    expect(csp).not.toContain("unsafe-inline");
-    expect(csp).not.toContain("unsafe-eval");
+    // Scoped to script-src specifically, not the whole header: on a real
+    // Preview deploy (this suite's usual target), style-src legitimately
+    // carries 'unsafe-inline' for Vercel's own injected Preview Toolbar —
+    // see HtmlSecurityHeaderOptions's doc comment. script-src itself must
+    // never carry either, on any environment — that's the actual #42 AC.
+    const scriptSrc = csp.split(";").find((directive) => directive.trim().startsWith("script-src"));
+    expect(scriptSrc).not.toContain("unsafe-inline");
+    expect(scriptSrc).not.toContain("unsafe-eval");
     expect(csp).toContain("frame-ancestors 'none'");
   });
 });
@@ -67,8 +74,15 @@ test.describe("MCP route headers", () => {
     const expectedHeaders = buildApiSecurityHeaders();
     const headers = response.headers();
     for (const [name, value] of Object.entries(expectedHeaders)) {
+      if (name === "Cache-Control") continue; // asserted separately below
       expect(headers[name.toLowerCase()], `expected ${name} to be "${value}"`).toBe(value);
     }
+    // mcp-handler sets its own Cache-Control for a streamed (SSE) response,
+    // overriding the middleware default — equally non-cacheable either way.
+    // See MCP_STREAMING_CACHE_CONTROL_VALUE's doc comment.
+    expect([expectedHeaders["Cache-Control"], MCP_STREAMING_CACHE_CONTROL_VALUE]).toContain(
+      headers["cache-control"],
+    );
     expect(headers["content-security-policy"]).not.toContain("nonce-");
 
     // The response body is the MCP endpoint's own concern (streamed SSE,

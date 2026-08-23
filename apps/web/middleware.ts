@@ -35,7 +35,10 @@ export function middleware(request: NextRequest): NextResponse {
   }
 
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-  const htmlHeaders = buildHtmlSecurityHeaders(nonce);
+  // Vercel's own Preview Toolbar (never Production) needs its documented
+  // CSP allowances — see the doc comment on `HtmlSecurityHeaderOptions`.
+  const allowVercelToolbar = process.env.VERCEL_ENV === "preview";
+  const htmlHeaders = buildHtmlSecurityHeaders(nonce, { allowVercelToolbar });
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);

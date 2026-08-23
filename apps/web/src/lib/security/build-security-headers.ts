@@ -48,6 +48,33 @@ export const PERMISSIONS_POLICY =
   "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()";
 
 /**
+ * Vercel automatically injects its own Toolbar (preview comments/feedback
+ * widget, https://vercel.com/docs/vercel-toolbar) into every Preview
+ * deployment — never Production — outside this app's control: a `<script>`
+ * loaded from `vercel.live`, which itself renders inline styles Vercel
+ * doesn't (and can't) stamp with this app's per-request nonce. A nonce'd
+ * `style-src` therefore blocks the Toolbar outright on every real preview
+ * (confirmed against a deployed preview, not just locally — see #42's PR
+ * discussion), which would make `e2e-preview`'s own console-error
+ * assertions (`navigation.spec.ts` et al.) permanently red on every future
+ * PR, unrelated to whatever that PR actually changed.
+ *
+ * `allowVercelToolbar` adds exactly Vercel's own documented CSP allowances
+ * (https://vercel.com/docs/vercel-toolbar/managing-toolbar) — nothing
+ * broader — and is passed `true` only when `VERCEL_ENV === "preview"` (see
+ * `middleware.ts`), never in Production. `style-src` drops the nonce when
+ * this is on: since browsers ignore `unsafe-inline` once any nonce is
+ * present, keeping the nonce there would silently defeat the Toolbar
+ * allowance while looking like it worked. This app has no legitimate
+ * inline `<style>` of its own (verified: no CSS-in-JS, no `style={{}}`
+ * attribute in any rendered page — see `docs/security-headers.md`), so
+ * losing the nonce on `style-src`, on Preview only, costs nothing real.
+ */
+export interface HtmlSecurityHeaderOptions {
+  allowVercelToolbar?: boolean;
+}
+
+/**
  * Builds the per-request CSP for an HTML document, nonce-scoped so no
  * `unsafe-inline`/`unsafe-eval` is ever needed for scripts. `strict-dynamic`
  * lets the one nonce'd bootstrap script (Next's own hydration script,
@@ -59,21 +86,30 @@ export const PERMISSIONS_POLICY =
  * externally-hosted fonts (`next/font/google` self-hosts at build time, see
  * `app/fonts.ts`), no third-party images, and both the chat stream
  * (`/api/chat`) and the MCP client demo (`/api/mcp`) are same-origin, so
- * there is nothing to allowlist rather than remove.
+ * there is nothing to allowlist rather than remove. See
+ * `HtmlSecurityHeaderOptions` for the one Preview-only exception.
  */
-export function buildHtmlSecurityHeaders(nonce: string): Record<string, string> {
+export function buildHtmlSecurityHeaders(
+  nonce: string,
+  options: HtmlSecurityHeaderOptions = {},
+): Record<string, string> {
+  const { allowVercelToolbar = false } = options;
+
   const csp = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
-    `style-src 'self' 'nonce-${nonce}'`,
-    "img-src 'self'",
-    "font-src 'self'",
-    "connect-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${allowVercelToolbar ? " https://vercel.live" : ""}`,
+    allowVercelToolbar
+      ? "style-src 'self' https://vercel.live 'unsafe-inline'"
+      : `style-src 'self' 'nonce-${nonce}'`,
+    `img-src 'self'${allowVercelToolbar ? " https://vercel.live https://vercel.com" : ""}`,
+    `font-src 'self'${allowVercelToolbar ? " https://vercel.live https://assets.vercel.com" : ""}`,
+    `connect-src 'self'${allowVercelToolbar ? " https://vercel.live wss://ws-us3.pusher.com" : ""}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
     "upgrade-insecure-requests",
+    ...(allowVercelToolbar ? ["frame-src https://vercel.live"] : []),
   ].join("; ");
 
   return {
@@ -95,6 +131,16 @@ export function buildHtmlSecurityHeaders(nonce: string): Record<string, string> 
  * need: every response here (`/api/mcp`, `/api/chat`, `/api/stats`,
  * `/api/cron/*`) is either per-caller or privileged, and none of them set
  * their own caching directive today, so this is safe to apply uniformly.
+ *
+ * `/api/mcp` specifically: when the deployed origin actually negotiates a
+ * streaming (SSE) response for a request, mcp-handler sets its own
+ * `Cache-Control: no-cache, no-transform` on that response — set later in
+ * the pipeline than this middleware header, so it wins for those
+ * responses (confirmed against a real Vercel preview; a locally started
+ * `next start` server did not reproduce it for every request shape, so
+ * this is a platform/transport-timing difference, not a bug in this
+ * function). Both directives are equally non-cacheable — see
+ * `MCP_STREAMING_CACHE_CONTROL_VALUE` and `docs/security-headers.md`.
  */
 export function buildApiSecurityHeaders(): Record<string, string> {
   return {
@@ -106,3 +152,16 @@ export function buildApiSecurityHeaders(): Record<string, string> {
     "Cache-Control": "no-store",
   };
 }
+
+/**
+ * The alternate, equally non-cacheable `Cache-Control` value mcp-handler's
+ * own SSE transport sets on `/api/mcp` responses it streams — observed
+ * only on a real deployed origin, not every locally started server. Tests
+ * asserting `/api/mcp`'s headers against a REAL running server (not the
+ * pure `buildApiSecurityHeaders()` unit test) should accept either this or
+ * `"no-store"` for `Cache-Control` specifically, and assert every other
+ * header exactly — see `mcp-e2e/security-headers.spec.ts`,
+ * `e2e/security-headers.smoke.spec.ts`, and
+ * `e2e-preview/specs/security-headers.spec.ts`.
+ */
+export const MCP_STREAMING_CACHE_CONTROL_VALUE = "no-cache, no-transform";

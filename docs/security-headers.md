@@ -73,6 +73,34 @@ only their `opengraph-image` sub-routes remain statically prerendered, the pages
 not). This is the correct trade-off for a CSP that's actually enforcing rather than theatre; it's
 called out here so a future contributor investigating a build-output change knows why.
 
+### Vercel's own Preview Toolbar (Preview only, never Production)
+
+Vercel automatically injects its own Toolbar (the comments/feedback widget,
+[docs](https://vercel.com/docs/vercel-toolbar)) into every **Preview** deployment — outside this
+app's control, and never on Production. It loads a script from `vercel.live` that renders its own
+inline styles, which it has no way to stamp with this app's per-request nonce. Against a real
+deployed preview this broke two things the nonce-scoped policy would otherwise flatly block:
+Vercel's inline-styled Toolbar UI (`style-src` violation) and framing `https://vercel.live/` for
+its panel (`default-src` fallback, since no `frame-src` was set).
+
+`buildHtmlSecurityHeaders(nonce, { allowVercelToolbar })` (`src/lib/security/build-security-headers.ts`)
+adds exactly [Vercel's own documented CSP allowances](https://vercel.com/docs/vercel-toolbar/managing-toolbar)
+for this — `script-src`/`connect-src`/`img-src`/`font-src`/`frame-src` origins for `vercel.live`
+(and `vercel.com`, `wss://ws-us3.pusher.com`), plus `style-src 'self' https://vercel.live
+'unsafe-inline'` **without** the nonce. Dropping the nonce there is deliberate, not an oversight:
+browsers ignore `unsafe-inline` once any nonce is present in the same directive, so keeping the
+nonce would silently defeat the very allowance being added. This app has no legitimate inline
+`<style>` of its own — verified: no CSS-in-JS anywhere in the codebase, no `style={{}}` attribute
+on any page-rendered element (the two components that do use `style={{}}`, `apple-icon.tsx` and
+`icon.tsx`, are `ImageResponse`-generated PNGs, never HTML a browser CSP applies to) — so losing
+the nonce on `style-src`, on Preview only, costs nothing real.
+
+`apps/web/middleware.ts` passes `allowVercelToolbar: process.env.VERCEL_ENV === "preview"` — `true`
+only on a genuine Vercel Preview deployment, `false` in Production, local dev, and every other
+context (unit tests, the `apps/web/e2e` smoke suite's local `next start`). Production's CSP is
+exactly as strict as documented above, with zero Vercel-specific allowances — this is a
+Preview-only accommodation for a Vercel platform feature, not a general weakening of the policy.
+
 ## API/MCP route group
 
 | Header | Value | Why |
@@ -82,7 +110,19 @@ called out here so a future contributor investigating a build-output change know
 | `X-Content-Type-Options` | `nosniff` | Same reasoning as the HTML group. |
 | `Referrer-Policy` | `no-referrer` | Stricter than the HTML group's default: a JSON endpoint has no legitimate reason to leak the calling page's URL to anywhere, including this origin's own logs. |
 | `X-Frame-Options` | `DENY` | These are never meant to be loaded in a `<frame>`/`<iframe>` either. |
-| `Cache-Control` | `no-store` | Every response in this group is either per-caller (`/api/mcp`, `/api/chat` — see the MCP tool-call and chat-stream responses) or privileged (`/api/stats`, `/api/cron/*`) and none of the underlying handlers set their own caching directive today, so applying this uniformly is safe and closes the gap rather than opening one. |
+| `Cache-Control` | `no-store` (`/api/mcp` may instead show `no-cache, no-transform` — see below) | Every response in this group is either per-caller (`/api/mcp`, `/api/chat` — see the MCP tool-call and chat-stream responses) or privileged (`/api/stats`, `/api/cron/*`). |
+
+`/api/mcp`'s `Cache-Control` specifically: when the deployed origin actually negotiates a
+streaming (SSE) response, `mcp-handler` sets its own `Cache-Control: no-cache, no-transform` —
+applied later in the response pipeline than this middleware's header, so it wins for those
+responses. Confirmed against a real Vercel preview; a locally started `next start` server didn't
+reproduce it for every request shape tried, so this reads as a platform/transport-timing
+difference rather than something this app's own code controls. Both values are equally
+non-cacheable, which is the actual property that matters here — `MCP_STREAMING_CACHE_CONTROL_VALUE`
+(`build-security-headers.ts`) documents the exact alternate value, and every test asserting
+`/api/mcp`'s headers against a real running server (`mcp-e2e/security-headers.spec.ts`,
+`e2e/security-headers.smoke.spec.ts`, `e2e-preview/specs/security-headers.spec.ts`) accepts either
+for `Cache-Control` while still asserting every other header exactly.
 
 No `Permissions-Policy` — that header is only evaluated by a browser rendering an HTML document
 with an embedded/iframed context; it has no meaning for a JSON response a browser never renders.

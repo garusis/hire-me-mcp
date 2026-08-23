@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { middleware } from "./middleware";
 import {
   buildApiSecurityHeaders,
@@ -11,6 +11,34 @@ function request(path: string): NextRequest {
 }
 
 describe("middleware", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("does not allow vercel.live when VERCEL_ENV is unset (production/local default)", () => {
+    const response = middleware(request("/"));
+
+    expect(response.headers.get("Content-Security-Policy")).not.toContain("vercel.live");
+  });
+
+  it("does not allow vercel.live on a production deploy (VERCEL_ENV=production)", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+
+    const response = middleware(request("/"));
+
+    expect(response.headers.get("Content-Security-Policy")).not.toContain("vercel.live");
+  });
+
+  it("allows the documented Vercel Toolbar CSP origins on a preview deploy (VERCEL_ENV=preview), so the Toolbar Vercel injects there doesn't trip the enforcing CSP", () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+
+    const response = middleware(request("/"));
+    const csp = response.headers.get("Content-Security-Policy") ?? "";
+
+    expect(csp).toContain("https://vercel.live");
+    expect(csp).toContain("frame-src https://vercel.live");
+  });
+
   it("applies the HTML header set, including a CSP with a fresh nonce, to a page route", async () => {
     const response = middleware(request("/experience"));
 

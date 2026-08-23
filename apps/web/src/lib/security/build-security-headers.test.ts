@@ -3,6 +3,7 @@ import {
   buildApiSecurityHeaders,
   buildHtmlSecurityHeaders,
   HSTS_HEADER_VALUE,
+  MCP_STREAMING_CACHE_CONTROL_VALUE,
   PERMISSIONS_POLICY,
 } from "./build-security-headers";
 
@@ -57,6 +58,35 @@ describe("buildHtmlSecurityHeaders", () => {
       expect(match?.trim()).toBe(`${directive} 'self'`);
     }
   });
+
+  it("allows no vercel.live origin by default (production has no Vercel Toolbar)", () => {
+    const headers = buildHtmlSecurityHeaders("n");
+    const csp = headers["Content-Security-Policy"] ?? "";
+
+    expect(csp).not.toContain("vercel.live");
+  });
+
+  it("with allowVercelToolbar, adds exactly Vercel's documented CSP allowances for its Preview Toolbar/Comments (script-src, connect-src, img-src, frame-src, style-src, font-src) without loosening any other origin", () => {
+    const headers = buildHtmlSecurityHeaders("n", { allowVercelToolbar: true });
+    const csp = headers["Content-Security-Policy"] ?? "";
+
+    expect(csp).toContain("script-src 'self' 'nonce-n' 'strict-dynamic' https://vercel.live");
+    expect(csp).toContain("connect-src 'self' https://vercel.live wss://ws-us3.pusher.com");
+    expect(csp).toContain("img-src 'self' https://vercel.live https://vercel.com");
+    // No nonce here, deliberately: Vercel injects the Toolbar's inline
+    // styles itself, with no way for it to know this app's per-request
+    // nonce, so a nonce'd style-src blocks it outright regardless of
+    // unsafe-inline (browsers ignore unsafe-inline once a nonce is
+    // present) — see the comment on ALLOW_VERCEL_TOOLBAR_STYLE_SRC.
+    expect(csp).toContain("style-src 'self' https://vercel.live 'unsafe-inline'");
+    expect(csp).toContain("font-src 'self' https://vercel.live https://assets.vercel.com");
+    expect(csp).toContain("frame-src https://vercel.live");
+    // Still no unsafe-eval, still frame-ancestors 'none' — the toolbar
+    // allowance never touches those.
+    const scriptSrc = csp.split(";").find((directive) => directive.trim().startsWith("script-src"));
+    expect(scriptSrc).not.toContain("unsafe-eval");
+    expect(csp).toContain("frame-ancestors 'none'");
+  });
 });
 
 describe("buildApiSecurityHeaders", () => {
@@ -90,5 +120,12 @@ describe("buildApiSecurityHeaders", () => {
     const headers = buildApiSecurityHeaders();
 
     expect(headers["Permissions-Policy"]).toBeUndefined();
+  });
+});
+
+describe("MCP_STREAMING_CACHE_CONTROL_VALUE", () => {
+  it("is a distinct, equally non-cacheable value from the default no-store", () => {
+    expect(MCP_STREAMING_CACHE_CONTROL_VALUE).toBe("no-cache, no-transform");
+    expect(MCP_STREAMING_CACHE_CONTROL_VALUE).not.toBe(buildApiSecurityHeaders()["Cache-Control"]);
   });
 });

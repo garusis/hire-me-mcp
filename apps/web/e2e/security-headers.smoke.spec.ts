@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import {
   buildApiSecurityHeaders,
   HSTS_HEADER_VALUE,
+  MCP_STREAMING_CACHE_CONTROL_VALUE,
   PERMISSIONS_POLICY,
 } from "../src/lib/security/build-security-headers";
 
@@ -50,8 +51,13 @@ test.describe("HTML route headers", () => {
     const csp = headers["content-security-policy"] ?? "";
     expect(csp).toMatch(/script-src 'self' 'nonce-[^']+' 'strict-dynamic'/);
     expect(csp).toMatch(/style-src 'self' 'nonce-[^']+'/);
+    // No VERCEL_ENV=preview locally, so no Vercel Toolbar allowance either
+    // — the whole header is checked here, not just script-src (contrast
+    // e2e-preview/specs/security-headers.spec.ts, which runs against a
+    // real preview where style-src legitimately gets 'unsafe-inline').
     expect(csp).not.toContain("unsafe-inline");
     expect(csp).not.toContain("unsafe-eval");
+    expect(csp).not.toContain("vercel.live");
     expect(csp).toContain("frame-ancestors 'none'");
   });
 
@@ -87,8 +93,15 @@ test.describe("MCP route headers", () => {
     const expectedHeaders = buildApiSecurityHeaders();
     const headers = response.headers();
     for (const [name, value] of Object.entries(expectedHeaders)) {
+      if (name === "Cache-Control") continue; // asserted separately below
       expect(headers[name.toLowerCase()], `expected ${name} to be "${value}"`).toBe(value);
     }
+    // mcp-handler sets its own Cache-Control when it streams an SSE
+    // response, overriding the middleware default — equally non-cacheable
+    // either way. See MCP_STREAMING_CACHE_CONTROL_VALUE's doc comment.
+    expect([expectedHeaders["Cache-Control"], MCP_STREAMING_CACHE_CONTROL_VALUE]).toContain(
+      headers["cache-control"],
+    );
     expect(headers["content-security-policy"]).not.toContain("nonce-");
     expect(headers["permissions-policy"]).toBeUndefined();
   });
