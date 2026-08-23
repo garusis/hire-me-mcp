@@ -6,6 +6,7 @@ import {
   computeRetentionCutoff,
   createPostgresAnalyticsStore,
   deleteExpiredAnalyticsEvents,
+  getUsageStats,
   insertQuestionEvent,
   insertToolEvent,
   LATENCY_BUCKETS,
@@ -42,5 +43,6 @@ describe("analytics module entry point", () => {
     expect(typeof RETENTION_WINDOW_DAYS).toBe("number");
     expect(typeof computeRetentionCutoff).toBe("function");
     expect(typeof runRetentionJob).toBe("function");
+    expect(typeof getUsageStats).toBe("function");
   });
 });
