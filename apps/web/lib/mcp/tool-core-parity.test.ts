@@ -131,8 +131,21 @@ describe("MCP tool set and agent tool set share one core-function source of trut
     },
   );
 
-  it("covers every tool name both surfaces register (no silently-skipped tool)", () => {
+  it("covers every tool name the MCP surface registers (no silently-skipped tool)", () => {
     expect(Object.keys(MCP_TOOL_EXECUTORS).sort()).toEqual(cases.map((c) => c.name).sort());
-    expect(Object.keys(AGENT_TOOLS).sort()).toEqual(cases.map((c) => c.name).sort());
+  });
+
+  it("the agent tool set is a superset of the MCP tool set — every MCP tool has an agent counterpart", () => {
+    // Not exact equality (#75, epic #6): the agent gained a fifth tool,
+    // `search-career` (a live semantic-retrieval query, not a
+    // CareerDataRepository read), that the MCP server does not register
+    // yet — that's #61's job, tracked separately and explicitly out of
+    // #75's scope. This still catches the drift this suite exists to
+    // catch: an MCP tool silently missing from the agent's tool set.
+    const mcpToolNames = Object.keys(MCP_TOOL_EXECUTORS);
+    const agentToolNames = new Set(Object.keys(AGENT_TOOLS));
+    for (const name of mcpToolNames) {
+      expect(agentToolNames.has(name)).toBe(true);
+    }
   });
 });

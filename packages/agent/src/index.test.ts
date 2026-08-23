@@ -77,6 +77,7 @@ describe("public entry point", () => {
       "get-experience",
       "search-projects",
       "get-skill-evidence",
+      "search-career",
     ]);
     expect(Object.keys(AGENT_TOOLS)).toEqual(AGENT_TOOL_NAMES);
     expect(Object.keys(AGENT_TOOL_CORE_FUNCTIONS).sort()).toEqual([...AGENT_TOOL_NAMES].sort());
