@@ -1,0 +1,46 @@
+{
+  "$comment": "Committed performance-budget config for #62. This is the reviewable, diffable record of every latency threshold enforced in CI, plus the v1.0 baseline each threshold was set below. Lighthouse's own per-page category/CWV/resource-byte thresholds are enforced by lighthouserc.json (LHCI's own schema, referenced below) — the 'lighthouse' section here only records those pages' measured baselines next to it, since LHCI's schema has no baseline field of its own. The 'latency' section is both the enforced config AND consumed directly by apps/web/e2e-preview/specs/latency.spec.ts. See docs/performance-budgets.md for how to run these locally and how to change a budget deliberately.",
+
+  "lighthouse": {
+    "configFile": "lighthouserc.json",
+    "pages": ["/", "/projects/<first project slug>", "/privacy", "/cv/print", "/mcp"],
+    "baselineMeasuredAgainst": "Vercel preview deployment for PR #182 / issue #62 (garusis/hire-me-mcp), CI run 32666601249, job 97260847781",
+    "baselineMeasuredAt": "2026-08-23",
+    "baselines": {
+      "/": { "performance": 99, "accessibility": 100, "bestPractices": 96 },
+      "/projects/<slug>": { "performance": 100, "accessibility": 100, "bestPractices": 96 },
+      "/privacy": { "performance": 100, "accessibility": 100, "bestPractices": 96 },
+      "/cv/print": { "performance": 100, "accessibility": 100, "bestPractices": 93 },
+      "/mcp": { "performance": 100, "accessibility": 100, "bestPractices": 96 }
+    },
+    "note": "Category scores (0-100) as printed by scripts/lighthouse/print-scores.mjs / GITHUB_STEP_SUMMARY for the run cited above. lighthouserc.json's thresholds are set below these with margin (performance >= 0.88-0.90, accessibility >= 0.95, best-practices >= 0.9 — best-practices deliberately kept below the measured 93-96 rather than at 95, since a single-point regression on a real preview run must not be indistinguishable from noise). Core Web Vitals (LCP/CLS/TBT) and resource-byte thresholds in lighthouserc.json were not yet individually re-measured against this run (the assert step errored on an unrelated assertMatrix/top-level-assertions config conflict before evaluating them — fixed in a follow-up commit on this PR) but are set generously relative to this app's ~101-107kB first-load JS (apps/web build output) and sub-3s performance category scores; they will be tightened once a clean run's per-audit numericValue data is available."
+  },
+
+  "latency": {
+    "$comment": "Percentile-over-repeated-calls thresholds against a real Vercel preview (apps/web/e2e-preview/specs/latency.spec.ts), never a single sample. One warm-up call is made and discarded per tool/endpoint before the sample is collected, so a cold Lambda invocation never counts toward the percentile. thresholdMs values below start intentionally generous (initial commit, before this PR's own preview measurement exists) and are tightened to sit just below the measured p75 baseline in a follow-up commit on this same PR once CI has produced one — see the PR #62 description for the before/after values.",
+
+    "mcpTools": {
+      "endpoint": "/api/mcp",
+      "warmupCalls": 1,
+      "sampleCalls": 5,
+      "percentile": 75,
+      "tools": {
+        "get-profile": { "thresholdMs": 3000 },
+        "get-experience": { "thresholdMs": 3000 },
+        "search-projects": { "thresholdMs": 3000 },
+        "get-skill-evidence": { "thresholdMs": 3000 }
+      }
+    },
+
+    "chat": {
+      "$comment": "gemini-3.5-flash-lite free-tier first-token latency is volatile (#169) — budgeted generously and measured as time-to-first-STREAM-EVENT (first byte of the response body), never full-completion time. maxCallsPerCiRun bounds this spec's own contribution to the shared 15 RPM Gemini quota (warmupCalls + sampleCalls must not exceed it).",
+      "endpoint": "/api/chat",
+      "metric": "time-to-first-stream-event",
+      "warmupCalls": 1,
+      "sampleCalls": 5,
+      "maxCallsPerCiRun": 6,
+      "percentile": 75,
+      "thresholdMs": 12000
+    }
+  }
+}

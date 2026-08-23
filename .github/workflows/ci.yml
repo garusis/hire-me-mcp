@@ -427,8 +427,13 @@ jobs:
           path: test-results-preview/
           retention-days: 7
 
-  # Lighthouse gate (#58) — performance/accessibility/best-practices/SEO on
-  # the preview URL for home, one project detail and /mcp. Shares the same
+  # Lighthouse budget gate (#58, extended to a full performance-budget gate
+  # by #62) — performance/accessibility/best-practices/SEO, Core Web Vitals
+  # (LCP/CLS/TBT) and JS/total resource-byte budgets, each read from the
+  # committed `lighthouserc.json` (per-page via `assert.assertMatrix` — see
+  # `performance-budgets.json` for the measured v1.0 baselines those
+  # thresholds sit below) on the preview URL for home, one project detail,
+  # /privacy, the CV print view (#35) and /mcp. Shares the same
   # preview-resolution and fork-skip behaviour as `preview-e2e` above.
   lighthouse:
     name: lighthouse
