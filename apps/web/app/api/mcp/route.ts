@@ -56,7 +56,10 @@ const handler = createMcpHandler(
       "his project portfolio, and `get-skill-evidence` to check whether a specific skill or " +
       "technology is claimed. For open-ended or cross-cutting questions those structured " +
       "tools can't answer directly, use `search-career`, a semantic search over the full " +
-      "career text.",
+      "career text. Every tool call is recorded as an anonymized, aggregate-only usage " +
+      "event (which tool, which surface, the outcome) — never the raw arguments, your IP, " +
+      "or any identifying information. See the privacy note at /privacy for the full, " +
+      "auditable list of what is and isn't collected.",
   },
 );
 

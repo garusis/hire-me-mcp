@@ -29,4 +29,10 @@ describe("SiteFooter", () => {
     const link = screen.getByRole("link", { name: /llms\.txt/i });
     expect(link.className).toMatch(/mutedLink/);
   });
+
+  it("links to /privacy, the public privacy note (#81)", () => {
+    render(<SiteFooter />);
+    const link = screen.getByRole("link", { name: /privacy/i });
+    expect(link).toHaveAttribute("href", "/privacy");
+  });
 });

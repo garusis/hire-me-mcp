@@ -69,6 +69,17 @@ describe("ChatWidget", () => {
     expect(screen.getByRole("button", { name: /has he worked with golang/i })).toBeInTheDocument();
   });
 
+  it("discloses on first open that questions are recorded only as anonymized usage stats, linking the privacy note (#81)", async () => {
+    const user = userEvent.setup();
+    render(<ChatWidget writingEntries={NO_WRITING} />);
+
+    await openWidget(user);
+
+    expect(screen.getByText(/anonymi[sz]ed/i)).toBeInTheDocument();
+    const privacyLink = screen.getByRole("link", { name: /privacy/i });
+    expect(privacyLink).toHaveAttribute("href", "/privacy");
+  });
+
   it("exposes the message list as a live region for streamed updates", async () => {
     const user = userEvent.setup();
     render(<ChatWidget writingEntries={NO_WRITING} />);
