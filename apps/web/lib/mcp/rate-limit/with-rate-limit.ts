@@ -14,11 +14,21 @@
  * so none are added.
  */
 
+import { recordMcpToolEvent } from "../../analytics/record";
 import { identifyCaller } from "./identify-caller";
 import type { RateLimiter, RateLimitOutcome } from "./limiter";
 import { attachRateLimitHeaders, buildRateLimitExceededResponse } from "./response";
 
 type RouteHandler = (request: Request) => Promise<Response>;
+
+/**
+ * The tool name recorded for a rate-limited request (#79). This wrapper
+ * runs BEFORE the MCP request body is parsed, so which tool the caller
+ * would have invoked is unknown here — `mcp_request` stands for the whole
+ * blocked request, not any specific tool. Per-tool events for the allowed
+ * path are recorded separately, in `define-tool.ts`.
+ */
+const RATE_LIMITED_TOOL_NAME = "mcp_request";
 
 /**
  * Builds a rate-limited route handler. `limiter` is injected so the real
@@ -27,12 +37,14 @@ type RouteHandler = (request: Request) => Promise<Response>;
  */
 export function withRateLimit(limiter: RateLimiter, handler: RouteHandler): RouteHandler {
   return async (request: Request): Promise<Response> => {
+    const startedAt = Date.now();
     const identifier = identifyCaller(request.headers);
     let outcome: RateLimitOutcome | undefined;
 
     try {
       outcome = await limiter.limit(identifier);
       if (!outcome.success) {
+        recordMcpToolEvent(RATE_LIMITED_TOOL_NAME, "rate_limited", Date.now() - startedAt);
         return buildRateLimitExceededResponse(outcome);
       }
     } catch (error) {
