@@ -9,6 +9,14 @@
     "node": ">=22"
   },
   "packageManager": "pnpm@10.18.3",
+  "pnpm": {
+    "overrides": {
+      "postcss": ">=8.5.23",
+      "uuid@<11.1.1": ">=11.1.1",
+      "tmp": ">=0.2.6",
+      "sharp": ">=0.35.0"
+    }
+  },
   "scripts": {
     "prepare": "lefthook install --force",
     "build": "turbo run build",
