@@ -65,6 +65,35 @@ const nextConfig: NextConfig = {
       "./assets/fonts/**/*",
     ],
   },
+  // #35 — the downloadable CV PDF is a plain static asset committed under
+  // public/cv/<deterministic-filename>.pdf. It's committed rather than
+  // generated during Vercel's own build: that build only builds/deploys
+  // the Next.js app (see docs/deployment.md's "CI vs. Vercel" section, and
+  // reindex-production.yml's doc comment for the same rationale applied
+  // to the retrieval index) and doesn't ship headless-Chromium system
+  // dependencies, so a build-time Playwright launch there would be a
+  // fragile, environment-dependent way to fail an otherwise-healthy
+  // deploy. `pnpm generate:cv` (README) regenerates it from current
+  // career-data whenever content changes; commit the result the same way
+  // `pnpm generate:connect` output is committed. `Content-Disposition:
+  // attachment` with no `filename` parameter tells the browser to save-as
+  // using the request URL's own last path segment — which is already the
+  // deterministic, profile-name-derived filename `getCvView()` computed —
+  // so this stays correct without duplicating that filename logic here.
+  // Next's `headers()` applies to files served from `public/` the same as
+  // any other route, so this needs no custom route handler or filesystem
+  // tracing.
+  async headers() {
+    return [
+      {
+        source: "/cv/:file(.*\\.pdf)",
+        headers: [
+          { key: "Content-Disposition", value: "attachment" },
+          { key: "Cache-Control", value: "public, max-age=3600, must-revalidate" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

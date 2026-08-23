@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
+  CvView,
   ExperienceListView,
   GapsListView,
   ProfileView,
@@ -14,12 +15,14 @@ const {
   getProjectsListView,
   getSkillsListView,
   getGapsListView,
+  getCvView,
 } = vi.hoisted(() => ({
   getProfileView: vi.fn(),
   getExperienceListView: vi.fn(),
   getProjectsListView: vi.fn(),
   getSkillsListView: vi.fn(),
   getGapsListView: vi.fn(),
+  getCvView: vi.fn(),
 }));
 
 vi.mock("../../src/lib/content", () => ({
@@ -28,6 +31,7 @@ vi.mock("../../src/lib/content", () => ({
   getProjectsListView,
   getSkillsListView,
   getGapsListView,
+  getCvView,
 }));
 
 function profileView(): ProfileView {
@@ -122,12 +126,23 @@ function gapsView(): GapsListView {
   };
 }
 
+function cvView(): CvView {
+  return {
+    profile: profileView().profile,
+    experience: [],
+    skillsByProficiency: [],
+    education: [],
+    filename: "fixture-cv.pdf",
+  };
+}
+
 function mockContentLayer(): void {
   getProfileView.mockReturnValue(profileView());
   getExperienceListView.mockReturnValue(experienceView());
   getProjectsListView.mockReturnValue(projectsView());
   getSkillsListView.mockReturnValue(skillsView());
   getGapsListView.mockReturnValue(gapsView());
+  getCvView.mockReturnValue(cvView());
 }
 
 /** Every markdown link target `[label](url)` found in `text`. */
@@ -240,6 +255,18 @@ describe("renderLlmsTxt", () => {
 
     expect(stub).not.toBe(preview);
     expect(preview).toContain("https://preview-abc.example.com/experience");
+  });
+
+  it("links to the downloadable CV at its deterministic-filename URL, absolute against the given site URL (#35)", async () => {
+    mockContentLayer();
+    const { renderLlmsTxt } = await import("./generate-llms.js");
+
+    const text = renderLlmsTxt({
+      siteUrl: "https://stub-deploy.example.com",
+      endpointUrl: "https://stub-deploy.example.com/api/mcp",
+    });
+
+    expect(text).toContain("https://stub-deploy.example.com/cv/fixture-cv.pdf");
   });
 });
 

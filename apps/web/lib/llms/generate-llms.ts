@@ -32,6 +32,7 @@ import "server-only";
 import { buildClientSnippets } from "@hire-me-mcp/connect-metadata";
 import { z } from "zod";
 import {
+  getCvView,
   getExperienceListView,
   getGapsListView,
   getProfileView,
@@ -120,12 +121,18 @@ function connectSection(siteUrl: string, endpointUrl: string): string {
 }
 
 function siteSection(siteUrl: string): string {
+  const { filename } = getCvView();
   return linkSection("Site", [
     linkLine("Home", siteUrl, "Overview and entry point."),
     linkLine("Experience", abs(siteUrl, "/experience"), "Full work history."),
     linkLine("Projects", abs(siteUrl, "/projects"), "Selected project write-ups."),
     linkLine("Skills", abs(siteUrl, "/skills"), "Claimed skills with evidence, and honest gaps."),
     linkLine("Writing", abs(siteUrl, "/writing"), "Longer-form notes."),
+    linkLine(
+      "Download CV (PDF)",
+      abs(siteUrl, `/cv/${filename}`),
+      "A print-ready, 1-2 page CV generated from the same career data.",
+    ),
   ]);
 }
 
