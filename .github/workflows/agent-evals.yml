@@ -7,6 +7,16 @@ name: Agent Evals
 # (non-zero exit) when a scorer aggregate drops below its committed
 # threshold (`packages/agent/src/evals/thresholds.ts`).
 #
+# #75 (epic #6) extended the dataset with RAG-grounded cases exercising the
+# agent's new `search-career` semantic-search tool — this job's "the
+# extended agent eval suite runs in CI" acceptance criterion — and is what
+# this workflow means by "wired in alongside the retrieval evals from #52"
+# (`retrieval-eval.yml`): both jobs share the `gemini-free-tier`
+# concurrency group below so they queue rather than race for the same
+# free-tier quota, and this job now also requires `DATABASE_URL` (the same
+# repo secret `reindex-production.yml` uses) so `search-career` has a real
+# store to query.
+#
 # ## Why a SEPARATE workflow file, not a job in ci.yml
 #
 # GitHub Actions `paths:` filters apply at the whole-workflow level, not
@@ -80,9 +90,9 @@ on:
   workflow_dispatch:
     inputs:
       max_cases:
-        description: "Override EVAL_MAX_CASES for this run (default: full 17-case dataset)"
+        description: "Override EVAL_MAX_CASES for this run (default: full 25-case dataset)"
         required: false
-        default: "17"
+        default: "25"
 
 concurrency:
   group: agent-evals-${{ github.workflow }}-${{ github.ref }}
@@ -99,14 +109,21 @@ jobs:
     concurrency:
       group: gemini-free-tier
       cancel-in-progress: false
-    # Budget caps below cover a full 17-case dataset run (#143's real
-    # full-dataset run: 111,137 tokens, $0 on the free tier) with margin,
-    # not an unbounded run — `assertWithinBudget` (`packages/agent/src/evals/budget.ts`)
-    # still aborts loudly if a run genuinely exceeds them. EVAL_RPM_LIMIT
-    # stays at the package default (10) — a polite margin under the
-    # model's 15 RPM ceiling, shared with production chat traffic.
-    # EVAL_REPORT_PATH is intentionally left at its default ("eval-report.json",
-    # resolved relative to `pnpm eval:agent`'s own working directory,
+    # Budget caps below cover a full 25-case dataset run — #143's real
+    # 17-case run used 111,137 tokens; #75 (this comment's own change) added
+    # 8 more cases (three RAG-grounded fuzzy/cross-cutting, two RAG-grounded
+    # absent-topic, one exact-fact tool-routing case, mirrored into the
+    # `grounded`/`gap` categories, see `packages/agent/src/evals/dataset/cases.ts`),
+    # so the token cap below is raised proportionally with margin, not
+    # measured against a real 25-case run yet (this package's local `.env`
+    # key is a known-invalid placeholder — see `packages/agent/README.md`) —
+    # `assertWithinBudget` (`packages/agent/src/evals/budget.ts`) still
+    # aborts loudly if a run genuinely exceeds it, so an underestimate here
+    # fails loud rather than silently truncating. EVAL_RPM_LIMIT stays at
+    # the package default (10) — a polite margin under the model's 15 RPM
+    # ceiling, shared with production chat traffic. EVAL_REPORT_PATH is
+    # intentionally left at its default ("eval-report.json", resolved
+    # relative to `pnpm eval:agent`'s own working directory,
     # `packages/agent`) rather than overridden here — `pnpm --filter
     # @hire-me-mcp/agent eval:agent` (what the root `eval:agent` script
     # below runs) executes with `packages/agent` as its cwd, so the
@@ -114,8 +131,8 @@ jobs:
     # to the repo root, which is exactly the path the later steps
     # (summary render, artifact upload) reference.
     env:
-      EVAL_MAX_CASES: ${{ github.event.inputs.max_cases || '17' }}
-      EVAL_MAX_TOTAL_TOKENS: "200000"
+      EVAL_MAX_CASES: ${{ github.event.inputs.max_cases || '25' }}
+      EVAL_MAX_TOTAL_TOKENS: "260000"
       EVAL_MAX_COST_USD: "1"
     steps:
       - name: Checkout
@@ -154,14 +171,21 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Fork PRs never carry repo secrets, so GOOGLE_GENERATIVE_AI_API_KEY
-      # is empty here — skip with an explicit notice instead of failing on
-      # an unauthenticated provider call. See the module header above.
+      # (and, since #75, DATABASE_URL — the interview agent's new
+      # search-career tool needs both to run a real semantic-search tool
+      # call) are empty here — skip with an explicit notice instead of
+      # failing on an unauthenticated provider/DB call. See the module
+      # header above. DATABASE_URL points at the same production database
+      # `reindex-production.yml` reads/writes — a read-only ANN query
+      # against it is safe; there's no disposable-Neon-branch provisioning
+      # here the way `retrieval-eval.yml` does, since this job doesn't
+      # ingest anything.
       - name: Check for required secrets (skips on fork PRs)
         id: secrets-check
         run: |
-          if [ -z "${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}" ]; then
+          if [ -z "${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}" ] || [ -z "${{ secrets.DATABASE_URL }}" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Skipping agent-evals — GOOGLE_GENERATIVE_AI_API_KEY is unavailable (expected for fork PRs, which never receive repo secrets)."
+            echo "::notice::Skipping agent-evals — GOOGLE_GENERATIVE_AI_API_KEY and/or DATABASE_URL is unavailable (expected for fork PRs, which never receive repo secrets)."
           else
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
@@ -194,6 +218,7 @@ jobs:
         if: steps.secrets-check.outputs.available == 'true'
         env:
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: pnpm eval:agent
 
       - name: Render job summary (per-scorer aggregates, verdict, totals)
