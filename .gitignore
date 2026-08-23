@@ -52,5 +52,9 @@ apps/web/e2e/screenshots/
 /.lighthouseci/
 /.lighthouserc.local.json
 
+# Downloadable CV PDF (#35) — regenerated from packages/career-data by
+# `pnpm generate:cv`, wired into the web build; never committed.
+apps/web/public/cv/
+
 # Claude Code agent worktrees (created by isolated agent sessions; never tracked)
 .claude/worktrees/

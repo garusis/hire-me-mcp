@@ -6,6 +6,15 @@
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
+    "@hire-me-mcp/web#build": {
+      "dependsOn": ["^build", "generate:cv"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "generate:cv": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": ["public/cv/**"]
+    },
     "@hire-me-mcp/career-data#build": {
       "dependsOn": ["^build", "lint:content"],
       "outputs": ["dist/**"]
