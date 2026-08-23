@@ -36,6 +36,24 @@ describe("migrations registry", () => {
     expect(sql).toMatch(/ALTER TABLE career_chunks/);
     expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS embedding_model text NOT NULL DEFAULT ''/);
   });
+
+  it("the third migration creates the anonymized analytics event tables with time-range and group-by indexes (#79)", () => {
+    const third = migrations.find((m) => m.id === "003_add_analytics_events");
+    expect(third).toBeDefined();
+    const sql = third?.statements.join("\n") ?? "";
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS analytics_tool_events/);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS analytics_question_events/);
+    // Time-range queries (retention job, "events in the last N days").
+    expect(sql).toMatch(
+      /analytics_tool_events_created_at_idx.*ON analytics_tool_events \(created_at\)/s,
+    );
+    expect(sql).toMatch(
+      /analytics_question_events_created_at_idx.*ON analytics_question_events \(created_at\)/s,
+    );
+    // Group-by queries ("counts per tool", "counts per theme").
+    expect(sql).toMatch(/ON analytics_tool_events \(tool_name, created_at\)/);
+    expect(sql).toMatch(/ON analytics_question_events \(theme, created_at\)/);
+  });
 });
 
 describe("selectPendingMigrations", () => {
