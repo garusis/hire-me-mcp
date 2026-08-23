@@ -20,6 +20,7 @@ export type PromptSectionId =
   | "identity"
   | "voice"
   | "groundingRules"
+  | "retrievalPolicy"
   | "gapDiscipline"
   | "citationFormat"
   | "redirectPolicy";
@@ -36,6 +37,7 @@ export const PROMPT_SECTION_ORDER: readonly PromptSectionId[] = [
   "identity",
   "voice",
   "groundingRules",
+  "retrievalPolicy",
   "gapDiscipline",
   "citationFormat",
   "redirectPolicy",
@@ -45,6 +47,7 @@ const SECTION_TITLES: Readonly<Record<PromptSectionId, string>> = {
   identity: "Identity",
   voice: "Voice",
   groundingRules: "Grounding rules",
+  retrievalPolicy: "Retrieval policy: deterministic tools vs. semantic search",
   gapDiscipline: "Gap discipline",
   citationFormat: "Citation format",
   redirectPolicy: "Off-topic and adversarial redirects",
@@ -81,6 +84,29 @@ result is not stated at all, not stated with a hedge. If you did not call a tool
 conversation, either call it now or do not state the fact — do not answer from a prior turn's
 result you no longer have, and do not answer from what a tool's name or a field's presence merely
 implies.
+`.trim(),
+
+  retrievalPolicy: `
+You have five tools: get-profile, get-experience, search-projects, get-skill-evidence, and
+search-career. The first four are deterministic — they return exact, guaranteed-correct data for
+structured questions (a specific company, role, date range, project keyword, or a single named
+skill). Try one of them first whenever the question fits its shape. search-career is a semantic
+search over the full career corpus by meaning, not literal wording — reach for it for fuzzy
+questions that do not match a deterministic tool's shape (a theme phrased without the corpus's
+exact wording, e.g. "event-driven architecture experience" or "how does he approach mentoring")
+and for cross-cutting questions whose answer legitimately spans several records. Do not call
+search-career for a question a deterministic tool already answers precisely; do not skip it for a
+fuzzy or cross-cutting question just because a deterministic tool returned nothing directly
+relevant.
+
+Every excerpt search-career returns carries its own score and citation. A returned excerpt is
+evidence, not automatically a fact worth stating — read it and only make the claim it actually
+supports, cited with that exact citation, the same way a deterministic tool's citation is used. A
+low score, or search-career returning nothing relevant to the question, is itself evidence of
+absence: treat it exactly like a deterministic tool returning no support, and answer honestly per
+the gap-discipline rules below rather than stretching a weak or unrelated excerpt into a claim.
+When semantic search reports itself unavailable, say so plainly instead of guessing at an answer
+it would have supported.
 `.trim(),
 
   gapDiscipline: `

@@ -5,6 +5,7 @@ const REQUIRED_SECTION_IDS = [
   "identity",
   "voice",
   "groundingRules",
+  "retrievalPolicy",
   "gapDiscipline",
   "citationFormat",
   "redirectPolicy",
@@ -50,6 +51,24 @@ describe("PROMPT_SECTIONS", () => {
     const grounding = PROMPT_SECTIONS.find((section) => section.id === "groundingRules");
     expect(grounding?.body).toMatch(/this conversation|this turn/i);
     expect(grounding?.body).toMatch(/call (the tool|it)|do not (make|state) (that )?claim/i);
+  });
+
+  it("states the hybrid retrieval routing policy — deterministic tools first, semantic search for fuzzy/cross-cutting questions (#75)", () => {
+    const retrievalPolicy = PROMPT_SECTIONS.find((section) => section.id === "retrievalPolicy");
+    expect(retrievalPolicy?.body).toMatch(/search-career/i);
+    expect(retrievalPolicy?.body).toMatch(/fuzzy|cross-cutting/i);
+    expect(retrievalPolicy?.body).toMatch(/get-experience|search-projects|get-skill-evidence/i);
+  });
+
+  it("requires citing retrieved excerpts using the returned chunk citation (#75)", () => {
+    const retrievalPolicy = PROMPT_SECTIONS.find((section) => section.id === "retrievalPolicy");
+    expect(retrievalPolicy?.body).toMatch(/cite/i);
+  });
+
+  it("tells the model a weak/absent retrieval result is evidence of a gap, not something to stretch into a claim (#75)", () => {
+    const retrievalPolicy = PROMPT_SECTIONS.find((section) => section.id === "retrievalPolicy");
+    expect(retrievalPolicy?.body).toMatch(/low score|weak|nothing.*(relevant|strong)|absence/i);
+    expect(retrievalPolicy?.body).toMatch(/honestly|gap/i);
   });
 
   it("states an off-topic/adversarial redirect policy", () => {
