@@ -155,9 +155,12 @@ Three loops, all running the exact same underlying commands (`db:migrate` then `
   personal Neon branch or database) to see the new content indexed and retrievable via
   `pnpm eval:retrieval` / `searchCareer`. Nothing here is automatic — a local run only ever
   happens when a contributor chooses to run it.
-- **PR loop** (`.github/workflows/retrieval-eval.yml`, required check). Every pull request that
-  touches `packages/core/**`, the career-data content, or the workflow/helper script itself
-  triggers a run that: creates a disposable Neon branch, runs migrations, runs a full `pnpm ingest`
+- **PR loop** (`.github/workflows/retrieval-eval.yml`, required check). The workflow runs on
+  EVERY pull request (a required check must always report a status — #176); a first in-job step
+  detects whether the PR touches `packages/core/**`, the career-data content, or the
+  workflow/helper script itself. Irrelevant PRs report green in seconds with zero Neon branches
+  and zero embedding calls. Relevant PRs run the full loop: create a disposable Neon branch, run
+  migrations, run a full `pnpm ingest`
   (real embeddings — the branch starts empty, so this is never an incremental no-op), runs `pnpm
   eval:retrieval` against it, uploads the JSON report as a build artifact, writes the aggregate
   metrics vs. thresholds to the job summary, and deletes the branch in an `always()` step
