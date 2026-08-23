@@ -241,9 +241,14 @@ pnpm test:e2e   # builds + starts apps/web on http://127.0.0.1:3100 and runs the
 BASE_URL=http://127.0.0.1:3100 pnpm test:e2e:preview
 BASE_URL=http://127.0.0.1:3100 pnpm test:e2e:preview:ui   # interactive UI mode
 
-# 3. Lighthouse gate — performance/accessibility/best-practices/SEO on home,
-#    one project detail, and /mcp:
+# 3. Lighthouse budget gate — performance/accessibility/best-practices/SEO,
+#    Core Web Vitals and JS/total resource-byte budgets, per page, on home,
+#    one project detail, /privacy, the CV print view and /mcp:
 BASE_URL=http://127.0.0.1:3100 pnpm run lighthouse
+
+# 4. Latency budget gate — MCP read-tool + chat time-to-first-stream-event
+#    percentile thresholds (#62):
+BASE_URL=http://127.0.0.1:3100 pnpm exec playwright test -c playwright.preview.config.ts apps/web/e2e-preview/specs/latency.spec.ts
 ```
 
 Against a Vercel Deployment-Protection-guarded preview, also set
@@ -260,7 +265,7 @@ every real browser navigation (the `gotoRoute` fixture) — a header alone doesn
 Vercel's own redirects for a full page load. The secret's value is never logged by either suite.
 
 Specs live under `apps/web/e2e-preview/specs/*.spec.ts`, organized by concern (navigation,
-content-correctness, accessibility, responsive, theme, project-filters, seo, mcp) rather than by
+content-correctness, accessibility, responsive, theme, project-filters, seo, mcp, latency) rather than by
 route — `apps/web/e2e-preview/helpers/routes.ts` is the one place every route this suite covers is
 listed. Content-correctness assertions (`content-correctness.spec.ts`) import `@hire-me-mcp/core`
 **directly** in the test process (`apps/web/e2e-preview/helpers/dataset.ts`) — never
@@ -269,17 +274,18 @@ unimportable from a plain Node/Playwright process anyway) — so they're a genui
 second reader of `packages/career-data`: if a page component ever hardcodes or edits copy instead
 of rendering what the content layer returns, the corresponding assertion fails.
 
-The Lighthouse gate (`lighthouserc.json`, `scripts/lighthouse/`) asserts `accessibility`/
-`best-practices` category scores ≥ 0.95, plus every individual SEO audit (document title, meta
-description, canonical, crawlable anchors, link text, etc.) at a perfect score — **except** two,
-both deliberately excluded and both confirmed against a real Vercel preview run, not just locally:
+The Lighthouse gate (`lighthouserc.json`, `scripts/lighthouse/`) asserts, per budgeted page (see
+"Performance budgets (#62)" below for the full per-page matrix): `accessibility`/`best-practices`
+category scores ≥ 0.9–0.95, `performance` ≥ 0.88–0.90 (kept slightly below the other categories —
+#58/#128 stabilization, calibrated from a real cold-lambda-penalty failing run — plus a per-URL
+warm-up request in CI as defense in depth), Core Web Vitals ceilings, and JS/total resource-byte
+ceilings. Every individual SEO/structural audit (document title, meta description, canonical,
+crawlable anchors, link text, etc.) is asserted at a perfect score — **except** two, both
+deliberately excluded and both confirmed against a real Vercel preview run, not just locally:
 `is-crawlable` (every preview deploy intentionally sets `noindex`) and `robots-txt` (Lighthouse
 fetches it out-of-band, without the Deployment Protection bypass header, so it always hits the
 protection interstitial on a gated preview — `robots.txt` validity is instead covered by
-`apps/web/e2e-preview/specs/seo.spec.ts`). `performance` is asserted at ≥ 0.90 against previews
-(#58/#128 stabilization, calibrated from a real cold-lambda-penalty failing run) rather than the
-0.95 the other categories use; a full production-config Lighthouse run against a warm deployment is
-tracked for #62/epic 9.
+`apps/web/e2e-preview/specs/seo.spec.ts`).
 
 **MCP endpoint smoke suite** (`apps/web/e2e-preview/specs/mcp.spec.ts`, #69). Drives the real
 `@modelcontextprotocol/sdk` client against `${BASE_URL}/api/mcp`: a successful `initialize`
@@ -303,6 +309,61 @@ claim outside it cited, using the same shared citation parser the eval scorer us
 real free-tier model calls per `preview-e2e` run — see `packages/agent/README.md`'s quota-rationale
 table for the full budget picture. `chat-guardrail-visibility.spec.ts` stubs `POST /api/chat` and
 asserts the honest, guardrail-specific banner renders.
+
+## Performance budgets (#62)
+
+Part of #9. Extends the Lighthouse gate above from a fixed set of category/SEO assertions into a
+full, **committed** performance-budget system covering both the browser experience and
+server-side latency, so v1.0 quality can't regress silently after launch.
+
+**The single source of truth is `performance-budgets.json` (repo root).** It has two sections:
+
+- `lighthouse` — records the pages budgeted and the v1.0 baseline category scores measured
+  against a real preview. The actually-*enforced* thresholds live in `lighthouserc.json` (LHCI's
+  own config schema, which `performance-budgets.json` can't replace) via `assert.assertMatrix`:
+  each budgeted page (`/`, `/projects/<slug>`, `/privacy`, `/cv/print`, `/mcp`) gets its own
+  `categories:performance`/`accessibility`/`best-practices` minimums, Core Web Vitals ceilings
+  (`largest-contentful-paint`, `cumulative-layout-shift`, `total-blocking-time`), and resource-byte
+  ceilings (`resource-summary:script:size`, `resource-summary:total:size`) — different pages
+  deliberately carry different budgets (e.g. the CV print view has a much tighter byte budget than
+  the home page). A handful of SEO/structural audits (`document-title`, `http-status-code`,
+  `link-text`, `crawlable-anchors`) are asserted globally across every page; `meta-description`/
+  `hreflang`/`canonical` are asserted per-page, excluding `/cv/print` (a print utility route,
+  deliberately not indexed).
+- `latency` — the MCP read-tool and chat endpoint latency thresholds, percentile method, sample
+  sizes, and warm-up counts, consumed directly (not just documented) by
+  `apps/web/e2e-preview/specs/latency.spec.ts`.
+
+**MCP + chat latency assertions** (`apps/web/e2e-preview/specs/latency.spec.ts`, runs inside the
+`preview-e2e` CI job — see below): one warm-up call per tool/endpoint (discarded, so a cold Lambda
+invocation never pollutes the sample), then `sampleCalls` timed calls, asserting the
+`percentile`-th value (computed by `apps/web/lib/perf/percentile.ts`, unit-tested independently)
+stays under `thresholdMs`. MCP read tools (`get-profile`, `get-experience`, `search-projects`,
+`get-skill-evidence`) are timed as raw `tools/call` JSON-RPC POSTs (not the SDK client, so a
+connection handshake never leaks into the measured duration). Chat is timed as
+**time-to-first-stream-event** — the first byte of the `POST /api/chat` response body, not full
+completion — because free-tier `gemini-3.5-flash-lite` first-token latency is volatile (#169) and
+this is the metric with real, budgetable margin. The chat case's `warmupCalls + sampleCalls` is
+capped at `maxCallsPerCiRun` (currently 6) to keep this spec's own contribution to the shared 15
+RPM Gemini quota bounded — see `packages/agent/README.md`'s quota-rationale table for the full
+picture across every Gemini-calling spec in `preview-e2e`.
+
+**Changing a budget deliberately.** A budget change (tightening OR loosening a threshold) must be
+its own small, reviewed commit to `performance-budgets.json` and/or `lighthouserc.json` — never
+bundled silently into an unrelated feature commit, and never done by editing the enforcement
+scripts (`scripts/lighthouse/build-config.mjs`, `apps/web/e2e-preview/specs/latency.spec.ts`)
+instead of the config. If a change tightens a threshold, re-run the affected gate against a real
+preview first (commands above) to confirm it still passes before committing — the whole point of
+"enforced" is that a report-only run that nobody looks at doesn't count (see #62's issue body). If
+CI flags a check as unstable, the fix is a tighter measurement method (more runs, a warm-up, the
+median already in use) — never a loosened budget to paper over flakiness.
+
+In CI, both gates run inside jobs already scoped to `pull_request` previews: the `lighthouse` job
+(`.github/workflows/ci.yml`) uploads its full report (`.lighthouseci/`) as a `lighthouse-report`
+artifact and prints a category-score summary to the job's `$GITHUB_STEP_SUMMARY`
+(`scripts/lighthouse/print-scores.mjs`); `latency.spec.ts`'s own `preview-e2e` job prints each
+tool/endpoint's measured percentile, threshold, and raw sample to the Playwright report (and the
+job log) so a regression is diagnosable without a local rerun.
 
 ## Protocol-level MCP integration tests (SDK client)
 

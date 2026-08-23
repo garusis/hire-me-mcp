@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
- * Generates a per-run `.lighthouserc.local.json` for the Lighthouse gate
- * (#58): three URLs (home, one project detail, the MCP section) resolved
- * against `BASE_URL`, plus the Vercel Deployment Protection bypass header
- * (`VERCEL_AUTOMATION_BYPASS_SECRET`, if set) so Lighthouse's own headless
- * Chrome can load a protected preview. This is generated at run time, never
- * committed, specifically so the bypass secret's value never lands in a
- * tracked file — see `.gitignore`. The static `lighthouserc.json` at the
- * repo root documents the assertion thresholds; this script only fills in
- * the per-run URLs/headers.
+ * Generates a per-run `.lighthouserc.local.json` for the Lighthouse budget
+ * gate (#58, extended to a full performance-budget gate by #62): five URLs
+ * (home, one project detail, /privacy, the CV print view, and the MCP
+ * section) resolved against `BASE_URL`, plus the Vercel Deployment
+ * Protection bypass header (`VERCEL_AUTOMATION_BYPASS_SECRET`, if set) so
+ * Lighthouse's own headless Chrome can load a protected preview. This is
+ * generated at run time, never committed, specifically so the bypass
+ * secret's value never lands in a tracked file — see `.gitignore`. The
+ * static `lighthouserc.json` at the repo root documents the per-page
+ * assertion thresholds (via `assert.assertMatrix` — different pages carry
+ * different budgets); this script only fills in the per-run URLs/headers.
  *
  * The project detail slug is resolved the same way the content-correctness
  * spec does (`apps/web/e2e-preview/helpers/dataset.ts`) — via
@@ -35,7 +37,13 @@ if (firstProject === undefined) {
   process.exit(1);
 }
 
-const urls = [origin, `${origin}/projects/${slugify(firstProject.id)}`, `${origin}/mcp`];
+const urls = [
+  origin,
+  `${origin}/projects/${slugify(firstProject.id)}`,
+  `${origin}/privacy`,
+  `${origin}/cv/print`,
+  `${origin}/mcp`,
+];
 
 const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 const extraHeaders = bypassSecret ? { "x-vercel-protection-bypass": bypassSecret } : {};
