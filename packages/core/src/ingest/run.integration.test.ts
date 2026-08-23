@@ -8,6 +8,7 @@ import {
   deleteNeonTestBranch,
   loadNeonBranchConfig,
 } from "../db/neon-branch.js";
+import { resetCareerChunks } from "../db/reset-career-chunks.js";
 import type { CareerDataset } from "../repository.js";
 import { createInMemoryCareerDataRepository, emptyCareerDataset } from "../repository.js";
 import { runIngest } from "./run.js";
@@ -96,6 +97,13 @@ describe.runIf(neonConfig !== undefined)("ingest pipeline (real Neon branch)", (
       }
     }
     await runMigrations(sql);
+
+    // Test branches fork from the project's default branch, which has real
+    // rows in career_chunks since the first production reindex (#52) — so
+    // a freshly created branch isn't actually empty. Reset it here so
+    // "populates an empty database" and the insert/update/delete counts
+    // below hold regardless of what the parent branch looked like (#173).
+    await resetCareerChunks(sql);
   }, 60_000);
 
   afterAll(async () => {

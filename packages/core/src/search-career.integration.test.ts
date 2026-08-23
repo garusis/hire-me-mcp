@@ -8,6 +8,7 @@ import {
   deleteNeonTestBranch,
   loadNeonBranchConfig,
 } from "./db/neon-branch.js";
+import { resetCareerChunks } from "./db/reset-career-chunks.js";
 import { EMBEDDING_DIMENSION } from "./embedding/config.js";
 import {
   createSearchCareer,
@@ -152,6 +153,13 @@ describe.runIf(neonConfig !== undefined)("searchCareer (real Neon branch)", () =
       }
     }
     await runMigrations(sql);
+
+    // Test branches fork from the project's default branch, which has real
+    // rows in career_chunks since the first production reindex (#52) — so
+    // a freshly created branch isn't actually empty. Reset it here so this
+    // suite's exact-count/ordering assertions only see the fixtures seeded
+    // below, regardless of what the parent branch looked like (#173).
+    await resetCareerChunks(sql);
 
     // Bulk corpus: enough rows that the query planner has a real reason to
     // prefer the HNSW index over a sequential scan (see the EXPLAIN test).
