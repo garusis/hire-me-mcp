@@ -448,6 +448,41 @@ A personal Neon API key with access to the project is required (`console.neon.te
 Settings -> API Keys). The suite only ever creates/deletes its own throwaway branch — it never
 touches the project's real (`production`) branch or `DATABASE_URL`.
 
+## Usage analytics (`@hire-me-mcp/core/analytics`, #79)
+
+An anonymized usage-analytics pipeline records two event families to the same Neon database
+(migration `003_add_analytics_events`, `src/db/migrations.ts`): a **tool event** per MCP tool call
+or per tool the chat agent invokes (`surface: "mcp" | "chat"`, `toolName`, `outcome`,
+`latencyBucket`), and a **question event** per chat turn (a taxonomy theme label, `latencyBucket`,
+`usedRetrieval`). See `docs/analytics.md` at the repo root for the full schema, the outcome/theme
+taxonomies, the scrubbing guarantee, and the documented retention window — this section only
+covers the module layout.
+
+- `src/analytics/taxonomy.ts` — the closed vocabularies (`SURFACES`, `TOOL_OUTCOMES`,
+  `QUESTION_THEMES`, `LATENCY_BUCKETS`) every field must be a member of.
+- `src/analytics/scrubber.ts` — the last line of defense before a write: rejects (throws
+  `AnalyticsScrubError`) any event carrying a value outside its taxonomy, or a `toolName` that
+  isn't a short label-shaped string (so a raw question or a raw contact message structurally
+  cannot pass as a valid field value).
+- `src/analytics/theme-classifier.ts` — `classifyQuestionTheme(question)`: a deterministic
+  keyword/rules classifier, no LLM call, no I/O. Raw question text is this function's *input*
+  only — never its output, never persisted.
+- `src/analytics/analytics-repository.ts` — the only module that writes to or deletes from
+  `analytics_tool_events`/`analytics_question_events`, mirroring `chunks-repository.ts`'s
+  "repository is the seam" convention. Every insert scrubs first.
+- `src/analytics/store.ts` — `recordToolEvent`/`recordQuestionEvent`: fire-and-forget wrappers a
+  request path calls without `await`ing; a rejected or throwing store is caught and logged, never
+  propagated, so a broken analytics write can never fail or measurably delay a tool call or chat
+  answer.
+- `src/analytics/retention.ts` — `RETENTION_WINDOW_DAYS` (90) is the single exported constant the
+  retention cron route (`apps/web/app/api/cron/analytics-retention/`), this README, and
+  `docs/analytics.md` all read from, so they cannot drift out of sync.
+
+No per-session/per-caller grouping key is stored at all — the locked decision was to omit
+session/caller grouping entirely (simpler than a rotating salted hash, the alternative the issue
+allowed) rather than add one nothing here actually needs: theme distribution, tool outcome counts,
+and latency all aggregate fine without ever being able to link two events back to the same visitor.
+
 ## Embedding client and shared config (`@hire-me-mcp/core/embedding`)
 
 `src/embedding/` (#24, epic #6) is the single source of the embedding model identifier, provider,

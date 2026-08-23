@@ -218,6 +218,22 @@ UI-safe message — the seam #70 (the chat widget) codes its UI against.
   cap and tool-input logging, #5, which depend on what the model does mid-turn). See that file's
   module docs for the full order and rationale.
 
+## Usage analytics (#79)
+
+Every MCP tool call and every chat question is recorded as an anonymized usage event — no raw
+question text, tool arguments, IPs, user agents, or session identifiers, ever. See
+`docs/analytics.md` at the repo root for the full schema, taxonomies, and the documented retention
+window (currently 90 days, `RETENTION_WINDOW_DAYS` in `packages/core/src/analytics/retention.ts`).
+
+- `apps/web/lib/analytics/` — `getAnalyticsStore()` (memoized, never throws) and
+  `record.ts`'s fire-and-forget wrappers every instrumentation call site uses.
+- Instrumented at `apps/web/lib/mcp/define-tool.ts` (every MCP tool call),
+  `apps/web/lib/mcp/rate-limit/with-rate-limit.ts` (MCP rate-limit rejections), and
+  `apps/web/app/api/chat/handler.ts` (every chat turn, plus every tool the agent invokes).
+- Retention is a Vercel cron job (`apps/web/vercel.json`) hitting `GET
+  /api/cron/analytics-retention` (`app/api/cron/analytics-retention/`) daily, authenticated via
+  `Authorization: Bearer $CRON_SECRET` — see `docs/deployment.md`.
+
 ## Commands
 
 ```bash
