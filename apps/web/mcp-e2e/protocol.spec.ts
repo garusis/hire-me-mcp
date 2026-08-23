@@ -188,6 +188,52 @@ describe("tools/call — career tools", () => {
     await client.close();
   });
 
+  it("search-career (#61): this job runs with no DATABASE_URL/GOOGLE_GENERATIVE_AI_API_KEY configured, so a call returns the server's standard sanitized error envelope, not a crash", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    // This suite's own CI job (`mcp-integration`) deliberately runs `next
+    // start` with no DATABASE_URL/GOOGLE_GENERATIVE_AI_API_KEY set (see
+    // .github/workflows/ci.yml) — the exact "graceful degradation"
+    // scenario #61's acceptance criteria ask for, exercised here for real
+    // rather than mocked (`apps/web/lib/mcp/tools/search-career.test.ts`
+    // and `app/api/mcp/route.test.ts` cover the mocked/env-stubbed
+    // versions of this same path).
+    const result = await client.callTool({
+      name: "search-career",
+      arguments: { query: "event-driven architecture experience" },
+    });
+
+    expect(result.isError).toBe(true);
+    const structuredContent = result.structuredContent as { code: string; message: string };
+    expect(structuredContent.code).toBe("internal_error");
+    expect(structuredContent.message).not.toMatch(
+      /DATABASE_URL|GOOGLE_GENERATIVE_AI_API_KEY|postgres:\/\//i,
+    );
+
+    // The connection remains usable afterwards — one tool's missing config
+    // never breaks the server or the rest of the tool registry.
+    const followUp = await client.callTool({ name: "ping", arguments: {} });
+    expect(followUp.isError).not.toBe(true);
+
+    await client.close();
+  });
+
+  it("search-career (#61) rejects a missing query as a documented validation failure, never reaching the (unconfigured) database", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({ name: "search-career", arguments: {} });
+
+    expect(result.isError).toBe(true);
+    expect(Array.isArray(result.content)).toBe(true);
+    const [firstBlock] = result.content as Array<{ type: string; text?: string }>;
+    expect(firstBlock?.type).toBe("text");
+    expect(firstBlock?.text?.length ?? 0).toBeGreaterThan(0);
+
+    await client.close();
+  });
+
   it("get-skill-evidence for a term guaranteed not to exist returns the honest 'unknown' outcome, not an error", async () => {
     const { client, transport } = connectClient();
     await client.connect(transport);

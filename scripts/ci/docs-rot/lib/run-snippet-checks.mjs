@@ -22,6 +22,19 @@
  * `lib/extract-artifacts.mjs`). Each `check*` helper below owns one AC and
  * reports through the same `{ fail, note }` reporter so failures always
  * name the exact file/region or live artifact that is stale.
+ *
+ * One deliberate exception to "checks run against the documented endpoint"
+ * (#61/#174): `checkToolsListAgainstReadme`'s `tools/list` call runs
+ * against `targetUrl` (via `resolveToolsListUrl`), not the documented
+ * (always-production) endpoint. The curl/CLI/JSON-config checks are
+ * legitimately about whether the doc's literal, copy-pasteable snippet
+ * works — that has to mean production, what a reader actually copies. The
+ * tool-table check is about whether the doc's CONTENT (which tool names
+ * are listed) matches the deployment this run is validating, which on a
+ * `pull_request` run is the PR's own preview — routinely ahead of
+ * production for the exact PR that just added a tool. Checking that one
+ * against production would fail every tool-adding PR before it's even
+ * merged, for a reason unrelated to that PR's correctness.
  */
 
 import { checkClaudeCodeCli } from "./check-claude-cli.mjs";
@@ -86,16 +99,28 @@ async function checkCurlSnippet(docsMcp, documentedEndpoint, headers, reporter) 
   }
 }
 
-/** `tools/list` against the documented endpoint, cross-checked against README's tool table (AC: no tool missing). */
-async function checkToolsListAgainstReadme(readme, documentedEndpoint, headers, reporter) {
+/**
+ * `tools/list` against the DEPLOYMENT UNDER TEST (`toolsListUrl`, derived
+ * from `targetUrl` — see {@link resolveToolsListUrl}), cross-checked
+ * against README's tool table (AC: no tool missing).
+ *
+ * Deliberately NOT the documented (production) endpoint, unlike every
+ * other check in this file (#61/#174): the doc's literal endpoint always
+ * reads as production (docs/mcp.md's "That URL is defined once..." note),
+ * but on a `pull_request` run `targetUrl` is that PR's own preview — which
+ * is routinely *ahead* of production (a PR that adds a tool has it in its
+ * preview build before it's merged/deployed). Checking the tool table
+ * against production instead would fail every such PR for a reason that
+ * has nothing to do with that PR's own correctness; checking it against
+ * the deployment the PR actually produced is what the AC ("stale doc vs.
+ * live tools/list") means.
+ */
+async function checkToolsListAgainstReadme(readme, toolsListUrl, headers, reporter) {
   let liveToolNames;
   try {
-    liveToolNames = await mcpToolsList(documentedEndpoint, { headers });
+    liveToolNames = await mcpToolsList(toolsListUrl, { headers });
   } catch (error) {
-    reporter.fail(
-      `documented endpoint (${documentedEndpoint})`,
-      `tools/list failed: ${error.message}`,
-    );
+    reporter.fail(`target deployment (${toolsListUrl})`, `tools/list failed: ${error.message}`);
     return;
   }
   const missing = readme.toolNames.filter((name) => !liveToolNames.includes(name));
@@ -105,6 +130,19 @@ async function checkToolsListAgainstReadme(readme, documentedEndpoint, headers, 
       `documented tool(s) not present in live tools/list: ${missing.join(", ")}.`,
     );
   }
+}
+
+/**
+ * Maps the documented (production) endpoint's PATH onto `targetUrl`'s
+ * origin, so the tool-table check above queries `tools/list` on the
+ * deployment actually under test (preview on a PR run, production itself
+ * on the daily cron/push-to-main run, where `targetUrl` IS production) —
+ * never a literal `/api/mcp` re-typed here, matching this file's own "every
+ * URL comes from extraction, never a re-typed literal" rule.
+ */
+function resolveToolsListUrl(targetUrl, documentedEndpoint) {
+  const path = new URL(documentedEndpoint).pathname;
+  return new URL(path, targetUrl).toString();
 }
 
 /** The Claude Code CLI snippet (AC: executed in CI, exit status asserted). */
@@ -280,7 +318,8 @@ export async function runSnippetChecks({
   const documentedEndpoint = docsMcp.endpointUrl;
 
   await checkCurlSnippet(docsMcp, documentedEndpoint, headers, reporter);
-  await checkToolsListAgainstReadme(readme, documentedEndpoint, headers, reporter);
+  const toolsListUrl = resolveToolsListUrl(targetUrl, documentedEndpoint);
+  await checkToolsListAgainstReadme(readme, toolsListUrl, headers, reporter);
   checkClaudeCodeSnippet(readme, documentedEndpoint, checkClaudeCli, reporter);
   checkJsonClientConfig(readme, documentedEndpoint, reporter);
 

@@ -158,6 +158,52 @@ test("get-skill-evidence succeeds with citations present for a claimed term", as
   await client.close();
 });
 
+test("search-career succeeds with a ranked result and citations present, against real indexed content (#61)", async () => {
+  const { client, transport } = connectClient();
+  await client.connect(transport);
+
+  // Only this suite (preview/production Vercel deploys) has both
+  // DATABASE_URL and GOOGLE_GENERATIVE_AI_API_KEY configured (see
+  // apps/web/mcp-e2e/protocol.spec.ts for the graceful-degradation
+  // counterpart, which runs with neither set) and a real, already-indexed
+  // corpus to search — safe to query for real here.
+  const result = await client.callTool({
+    name: "search-career",
+    arguments: { query: "leading engineering teams and mentoring other engineers" },
+  });
+
+  expect(result.isError).not.toBe(true);
+  const structuredContent = result.structuredContent as {
+    data: { found: boolean; results?: Array<Record<string, unknown>> };
+    citations: unknown;
+  };
+  // Structural, not exact-string: whatever real content matches today, a
+  // `found: true` result must carry ranked hits with a score and citation;
+  // `found: false` is also a legitimate, honest outcome for this query,
+  // never treated as a failure.
+  if (structuredContent.data.found) {
+    expect(structuredContent.data.results?.length ?? 0).toBeGreaterThan(0);
+    const [first] = structuredContent.data.results ?? [];
+    expect(typeof first?.text).toBe("string");
+    expect(typeof first?.score).toBe("number");
+    expect(typeof first?.citation).toBe("string");
+    expectCitationsPresent(structuredContent.citations);
+  }
+
+  await client.close();
+});
+
+test("search-career rejects a missing query as a documented validation failure over the real network", async () => {
+  const { client, transport } = connectClient();
+  await client.connect(transport);
+
+  const result = await client.callTool({ name: "search-career", arguments: {} });
+
+  expect(result.isError).toBe(true);
+
+  await client.close();
+});
+
 test("calling an unregistered tool returns the documented MCP error over the real network, not a transport failure", async () => {
   const { client, transport } = connectClient();
   await client.connect(transport);

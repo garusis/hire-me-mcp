@@ -15,6 +15,7 @@ import { getExperienceTool } from "./tools/get-experience.js";
 import { getProfileTool } from "./tools/get-profile.js";
 import { getSkillEvidenceTool } from "./tools/get-skill-evidence.js";
 import { pingTool } from "./tools/ping.js";
+import { searchCareerTool } from "./tools/search-career.js";
 import { searchProjectsTool } from "./tools/search-projects.js";
 
 /** Documented minimum: enough room for purpose + when-to-use + when-not-to-use in one paragraph. */
@@ -26,6 +27,7 @@ const toolsUnderTest: ToolDefinition<z.ZodTypeAny, any>[] = [
   getExperienceTool,
   searchProjectsTool,
   getSkillEvidenceTool,
+  searchCareerTool,
 ];
 
 function schemaProperties(schema: z.ZodTypeAny): Record<string, z.ZodTypeAny> {
@@ -79,7 +81,7 @@ describe("career tool description quality", () => {
     expect(searchProjectsTool.description.toLowerCase()).toMatch(/keyword|tag-based/);
   });
 
-  it("EXPECTED_TOOL_NAMES matches exactly this server's registered tool set (ping + all four career tools)", () => {
+  it("EXPECTED_TOOL_NAMES matches exactly this server's registered tool set (ping + all five career tools)", () => {
     const registeredTools = [pingTool, ...toolsUnderTest];
     const registeredNames = registeredTools.map((tool) => tool.name).sort();
 

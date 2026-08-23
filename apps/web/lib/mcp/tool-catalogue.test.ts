@@ -5,12 +5,18 @@ import { getExperienceTool } from "./tools/get-experience";
 import { getProfileTool } from "./tools/get-profile";
 import { getSkillEvidenceTool } from "./tools/get-skill-evidence";
 import { pingTool } from "./tools/ping";
+import { searchCareerTool } from "./tools/search-career";
 import { searchProjectsTool } from "./tools/search-projects";
 
 const REAL_TOOLS_BY_NAME = new Map(
-  [pingTool, getProfileTool, getExperienceTool, searchProjectsTool, getSkillEvidenceTool].map(
-    (tool) => [tool.name, tool],
-  ),
+  [
+    pingTool,
+    getProfileTool,
+    getExperienceTool,
+    searchProjectsTool,
+    getSkillEvidenceTool,
+    searchCareerTool,
+  ].map((tool) => [tool.name, tool]),
 );
 
 describe("MCP_TOOL_CATALOGUE (#43)", () => {

@@ -270,6 +270,21 @@ describe("renderLlmsFullTxt", () => {
     }
   });
 
+  it("renders search-career's real parameter names (#61) rather than falling back to 'none'", async () => {
+    mockContentLayer();
+    const { renderLlmsFullTxt } = await import("./generate-llms.js");
+
+    const text = renderLlmsFullTxt({
+      siteUrl: "https://stub-deploy.example.com",
+      endpointUrl: "https://stub-deploy.example.com/api/mcp",
+    });
+
+    const searchCareerSection = text.slice(text.indexOf("### search-career"));
+    expect(searchCareerSection).toContain("Parameters: query");
+    expect(searchCareerSection).toContain("topK");
+    expect(searchCareerSection).not.toContain("Parameters: none");
+  });
+
   it("includes at least 3 example prompts", async () => {
     mockContentLayer();
     const { renderLlmsFullTxt } = await import("./generate-llms.js");
