@@ -48,6 +48,7 @@ import { getExperienceTool } from "../mcp/tools/get-experience";
 import { getProfileTool } from "../mcp/tools/get-profile";
 import { getSkillEvidenceTool } from "../mcp/tools/get-skill-evidence";
 import { pingTool } from "../mcp/tools/ping";
+import { searchCareerTool } from "../mcp/tools/search-career";
 import { searchProjectsTool } from "../mcp/tools/search-projects";
 
 export interface LlmsRenderInput {
@@ -162,6 +163,7 @@ const TOOL_INPUT_SCHEMAS: Record<string, z.ZodTypeAny> = {
   [getExperienceTool.name]: getExperienceTool.inputSchema,
   [searchProjectsTool.name]: searchProjectsTool.inputSchema,
   [getSkillEvidenceTool.name]: getSkillEvidenceTool.inputSchema,
+  [searchCareerTool.name]: searchCareerTool.inputSchema,
 };
 
 function fieldDescription(field: z.ZodTypeAny): string | undefined {

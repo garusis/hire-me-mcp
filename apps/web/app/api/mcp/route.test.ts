@@ -224,6 +224,91 @@ describe("MCP endpoint (app/api/mcp/route.ts)", () => {
     await client.close();
   });
 
+  it("rejects search-career called with a missing query over streamable HTTP as a documented validation failure, without touching the database", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const result = await client.callTool({ name: "search-career", arguments: {} });
+
+    // Per mcp-e2e/protocol.spec.ts's documented behavior: the registered
+    // McpServer's own input-schema validation rejects a missing/mistyped
+    // required field before this server's `defineTool` executor (and
+    // therefore this project's own `{ code, message }` envelope) ever runs
+    // — still a normal `isError: true` tool result, never a transport
+    // failure, and critically: never a call to searchCareer/the embedder.
+    expect(result.isError).toBe(true);
+    const [firstBlock] = result.content as Array<{ type: string; text?: string }>;
+    expect(firstBlock?.text?.length ?? 0).toBeGreaterThan(0);
+
+    await client.close();
+  });
+
+  it("rejects search-career called with an out-of-range topK over streamable HTTP as a documented validation failure", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "search-career",
+      arguments: { query: "typescript", topK: 999 },
+    });
+
+    expect(result.isError).toBe(true);
+    const [firstBlock] = result.content as Array<{ type: string; text?: string }>;
+    expect(firstBlock?.text?.length ?? 0).toBeGreaterThan(0);
+
+    await client.close();
+  });
+
+  describe("search-career graceful degradation (#61): DATABASE_URL/GOOGLE_GENERATIVE_AI_API_KEY absent", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    });
+
+    it("returns the server's standard sanitized error envelope instead of crashing, and the server stays usable afterwards", async () => {
+      vi.stubEnv("DATABASE_URL", "");
+      vi.stubEnv("GOOGLE_GENERATIVE_AI_API_KEY", "");
+      vi.resetModules();
+      const testRoute = await import("./route");
+      const server = await startTestServer(testRoute);
+
+      try {
+        const client = new Client({ name: "test-client", version: "0.0.0" });
+        const transport = new StreamableHTTPClientTransport(new URL(server.baseUrl));
+        await client.connect(transport);
+
+        // tools/list must still succeed — a missing env var must never break tool
+        // registration/discovery, only the one tool that actually needs it.
+        const { tools } = await client.listTools();
+        expect(tools.map((tool) => tool.name)).toContain("search-career");
+
+        const result = await client.callTool({
+          name: "search-career",
+          arguments: { query: "event-driven architecture experience" },
+        });
+
+        expect(result.isError).toBe(true);
+        const structuredContent = result.structuredContent as { code: string; message: string };
+        expect(structuredContent.code).toBe("internal_error");
+        // Never leak the fact that a specific env var is missing, a connection
+        // string, or any other implementation detail to the client.
+        expect(structuredContent.message).not.toMatch(
+          /DATABASE_URL|GOOGLE_GENERATIVE_AI_API_KEY|postgres:\/\//i,
+        );
+
+        // The connection, and the server process, remain usable afterwards.
+        const followUp = await client.callTool({ name: "ping", arguments: {} });
+        expect(followUp.isError).not.toBe(true);
+
+        await client.close();
+      } finally {
+        await server.close();
+      }
+    });
+  });
+
   describe("MCP_TEST_RATE_LIMITER=1 (real 429 enforcement, no Upstash credentials)", () => {
     afterEach(() => {
       vi.unstubAllEnvs();
@@ -290,6 +375,47 @@ describe("MCP endpoint (app/api/mcp/route.ts)", () => {
         }
         expect(recoveryError).toBeInstanceOf(Error);
         expect(String((recoveryError as Error).message)).toMatch(/rate_limited|Too many requests/);
+      } finally {
+        await server.close();
+      }
+    });
+
+    it("rejects a search-career tools/call once the caller is over budget, with the same documented 429 shape (#61)", async () => {
+      vi.stubEnv("MCP_TEST_RATE_LIMITER", "1");
+      vi.stubEnv("RATELIMIT_MAX_REQUESTS", "2");
+      vi.stubEnv("RATELIMIT_WINDOW_SECONDS", "60");
+      vi.resetModules();
+      const testRoute = await import("./route");
+      const server = await startTestServer(testRoute);
+
+      try {
+        // Consume the caller's whole budget with the connect handshake.
+        const client = new Client({ name: "test-client", version: "0.0.0" });
+        const transport = new StreamableHTTPClientTransport(new URL(server.baseUrl));
+        await client.connect(transport);
+        await client.close();
+
+        // A specific search-career tools/call, over budget, is rejected at the
+        // HTTP layer before the MCP server (and therefore before the tool's own
+        // handler, which would otherwise try to embed the query) ever sees it.
+        const response = await fetch(server.baseUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "search-career", arguments: { query: "typescript" } },
+          }),
+        });
+
+        expect(response.status).toBe(429);
+        expect(response.headers.get("Retry-After")).toBeTruthy();
+        const body = (await response.json()) as { error: { code: string; message: string } };
+        expect(body.error.code).toBe("rate_limited");
       } finally {
         await server.close();
       }

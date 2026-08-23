@@ -7,6 +7,7 @@ import { getExperienceTool } from "../../../lib/mcp/tools/get-experience";
 import { getProfileTool } from "../../../lib/mcp/tools/get-profile";
 import { getSkillEvidenceTool } from "../../../lib/mcp/tools/get-skill-evidence";
 import { pingTool } from "../../../lib/mcp/tools/ping";
+import { searchCareerTool } from "../../../lib/mcp/tools/search-career";
 import { searchProjectsTool } from "../../../lib/mcp/tools/search-projects";
 import packageJson from "../../../package.json" with { type: "json" };
 
@@ -40,6 +41,7 @@ const handler = createMcpHandler(
     defineTool(server, getExperienceTool);
     defineTool(server, searchProjectsTool);
     defineTool(server, getSkillEvidenceTool);
+    defineTool(server, searchCareerTool);
   },
   {
     serverInfo: {
@@ -52,7 +54,9 @@ const handler = createMcpHandler(
       "and read-only — no authentication is required. Use `get-profile` for who he is, " +
       "`get-experience` for his work history, `search-projects` for keyword/tag search over " +
       "his project portfolio, and `get-skill-evidence` to check whether a specific skill or " +
-      "technology is claimed.",
+      "technology is claimed. For open-ended or cross-cutting questions those structured " +
+      "tools can't answer directly, use `search-career`, a semantic search over the full " +
+      "career text.",
   },
 );
 
