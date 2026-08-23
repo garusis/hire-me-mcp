@@ -37,15 +37,18 @@ name: Retrieval Eval
 # threshold change). This is now a REQUIRED status check (#52) — see
 # `docs/development.md`'s "Continuous integration and branch protection"
 # section.
+# Trigger design (#176): this is a REQUIRED status check, and a required
+# check that never reports leaves a PR permanently "Expected — waiting for
+# status" — trigger-level `paths:` filtering did exactly that to every PR
+# outside the filter, and a compensating `workflow_dispatch` run does NOT
+# attach a status context to the PR, so it cannot satisfy branch
+# protection. The job therefore runs on EVERY pull request and does its own
+# changed-paths detection in the "Detect retrieval-relevant changes" step
+# below: irrelevant PRs report green in seconds with zero Neon branches and
+# zero embedding calls.
 on:
   workflow_dispatch: {}
   pull_request:
-    paths:
-      - "packages/core/**"
-      - "packages/career-data/content/**"
-      - "packages/career-data/src/**"
-      - ".github/workflows/retrieval-eval.yml"
-      - "scripts/ci/retrieval-eval/**"
 
 concurrency:
   group: retrieval-eval-${{ github.workflow }}-${{ github.ref }}
@@ -101,9 +104,35 @@ jobs:
       # security) — skip with an explicit notice instead of failing red on
       # an unresolvable Neon/embedding call, same pattern as
       # ci.yml's db-integration/preview-e2e/lighthouse and agent-evals.yml.
-      - name: Check for required secrets (skips on fork PRs)
+      # #176: the trigger runs on every PR (see the `on:` comment); this
+      # step keeps the COST filter — when a PR touches nothing that can
+      # change what gets indexed or how retrieval scores, the expensive
+      # steps are skipped and the required check still reports green.
+      # workflow_dispatch runs are always treated as relevant.
+      - name: Detect retrieval-relevant changes
+        id: relevance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          FILES=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${{ github.event.pull_request.number }}/files" --paginate -q '.[].filename')
+          if echo "$FILES" | grep -qE '^(packages/core/|packages/career-data/content/|packages/career-data/src/|\.github/workflows/retrieval-eval\.yml|scripts/ci/retrieval-eval/)'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No retrieval-relevant changes in this PR — skipping Neon/embedding work; the required check reports green (#176)."
+          fi
+
+      - name: Check for required secrets (skips on fork PRs and irrelevant PRs)
         id: secrets-check
         run: |
+          if [ "${{ steps.relevance.outputs.relevant }}" != "true" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ -z "${{ secrets.NEON_API_KEY }}" ] || [ -z "${{ vars.NEON_PROJECT_ID }}" ] || [ -z "${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping retrieval-eval — NEON_API_KEY/NEON_PROJECT_ID/GOOGLE_GENERATIVE_AI_API_KEY are unavailable (expected for fork PRs, which never receive repo secrets)."
