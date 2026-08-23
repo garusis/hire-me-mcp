@@ -37,4 +37,12 @@ describe("SiteHeader", () => {
     expect(nav.querySelector('a[href="/skills"]')).not.toBeNull();
     expect(nav.querySelector('a[href="/writing"]')).not.toBeNull();
   });
+
+  it("adds a visible Download CV link pointing at the CV's stable, deterministic-filename URL (#35)", () => {
+    render(<SiteHeader />);
+    const nav = screen.getByRole("navigation", { name: /primary/i });
+    const cvLink = nav.querySelector('a[href^="/cv/"][href$=".pdf"]');
+    expect(cvLink).not.toBeNull();
+    expect(cvLink?.textContent).toMatch(/download cv/i);
+  });
 });

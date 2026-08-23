@@ -5,6 +5,13 @@ public, anonymous [Model Context Protocol](https://modelcontextprotocol.io) (MCP
 read from the same real career data, so any AI assistant can be handed this CV as a tool.
 
 - **Live site:** <https://hire-me-mcp-web.vercel.app>
+- **Downloadable CV (PDF):** generated straight from `packages/career-data` — same source, same
+  domain layer, no separately maintained copy. Linked from the site header ("Download CV") and
+  `/llms.txt`'s Site section; the stable download path is `/cv/<slugified-name>-cv.pdf` on the
+  live site above. Regenerate it any time content changes with `pnpm generate:cv` and commit the
+  result (the committed PDF ships with every deploy — Vercel's own build only builds/deploys the
+  Next.js app, so PDF generation deliberately isn't wired into it). A print-ready HTML view of the
+  same content is served at `/cv/print`.
 - **Live MCP endpoint** (Streamable HTTP, no auth):
 
 <!-- BEGIN GENERATED: mcp-endpoint-url -->

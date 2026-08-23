@@ -3,11 +3,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProfileView } from "../src/lib/content";
 import RootLayout from "./layout.js";
 
-const { getProfileView, getWritingListView } = vi.hoisted(() => ({
+const { getProfileView, getWritingListView, getCvView } = vi.hoisted(() => ({
   getProfileView: vi.fn(),
   getWritingListView: vi.fn(() => ({ items: [], citations: [] })),
+  // Stubbed with a fixed default so every existing test (which only sets
+  // up `getProfileView`) doesn't need touching — `SiteHeader`'s "Download
+  // CV" link (#35) reads this the same way it reads the profile.
+  getCvView: vi.fn(() => ({ filename: "fixture-cv.pdf" })),
 }));
-vi.mock("../src/lib/content", () => ({ getProfileView, getWritingListView }));
+vi.mock("../src/lib/content", () => ({ getProfileView, getWritingListView, getCvView }));
 
 const { getSiteUrl, getRobotsIndexable } = vi.hoisted(() => ({
   getSiteUrl: vi.fn(),

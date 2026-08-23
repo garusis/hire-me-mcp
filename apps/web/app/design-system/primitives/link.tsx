@@ -13,6 +13,17 @@ function isExternal(href: string): boolean {
 }
 
 /**
+ * Matches a same-origin href that points at a static file (a downloadable
+ * asset like the CV PDF, #35) rather than a Next.js page. Prefetching one
+ * of these with `next/link`'s default behavior requests its RSC payload,
+ * which 404s — a real console error caught by the preview e2e navigation
+ * spec after the CV download link shipped in the site header.
+ */
+function isStaticFile(href: string): boolean {
+  return /\.[a-z0-9]{2,5}$/i.test(href);
+}
+
+/**
  * A single link primitive for both internal (uses `next/link` for
  * client-side navigation) and external (plain `<a>`, opened in a new tab
  * with `rel="noopener noreferrer"` and a screen-reader-only hint) hrefs.
@@ -31,7 +42,12 @@ export function Link({ href, className, children, ...rest }: LinkProps) {
   }
 
   return (
-    <NextLink href={href} className={classes} {...rest}>
+    <NextLink
+      href={href}
+      className={classes}
+      prefetch={isStaticFile(href) ? false : undefined}
+      {...rest}
+    >
       {children}
     </NextLink>
   );
