@@ -35,6 +35,7 @@
     "generate:connect:check": "turbo run generate:connect:check --filter=@hire-me-mcp/web",
     "generate:llms": "turbo run generate:llms --filter=@hire-me-mcp/web",
     "generate:llms:check": "turbo run generate:llms:check --filter=@hire-me-mcp/web",
+    "generate:cv": "turbo run generate:cv --filter=@hire-me-mcp/web",
     "docs-rot:snippets": "node scripts/ci/docs-rot/check-snippets.mjs",
     "docs-rot:links": "node scripts/ci/docs-rot/check-links.mjs",
     "docs-rot:test": "node --test scripts/ci/docs-rot/*.test.mjs",
