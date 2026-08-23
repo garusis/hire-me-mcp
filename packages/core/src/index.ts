@@ -31,6 +31,26 @@ export {
 } from "./chunking/index.js";
 export type { BuildCitationOptions } from "./citation-builder.js";
 export { buildCitation, UnknownEntityError } from "./citation-builder.js";
+export type {
+  ContactAccepted,
+  ContactEvaluationResult,
+  ContactRejected,
+  ContactRejectionDetail,
+  ContactRejectionReason,
+  ContactSubmissionInput,
+  HeuristicId,
+  NormalizedContactSubmission,
+} from "./contact/index.js";
+export {
+  CONTACT_CONTACT_MAX_LENGTH,
+  CONTACT_CONTEXT_MAX_LENGTH,
+  CONTACT_HONEYPOT_MAX_LENGTH,
+  CONTACT_MESSAGE_MAX_LENGTH,
+  CONTACT_NAME_MAX_LENGTH,
+  contactSubmissionSchema,
+  evaluateContactSubmission,
+  normalizeContactSubmission,
+} from "./contact/index.js";
 export type { DependencyAllowlist } from "./dependency-allowlist.js";
 export { findDisallowedDependencies } from "./dependency-allowlist.js";
 export type { ExperienceFilter } from "./get-experience.js";
