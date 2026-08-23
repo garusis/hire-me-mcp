@@ -1,0 +1,123 @@
+name: Reindex Production
+
+# The production loop of #52 (epic #6): every push to `main` that touches
+# content or the retrieval domain layer runs migrations, then `pnpm ingest`
+# (#24), against the REAL production database (`DATABASE_URL`) — so a
+# content edit alone is enough to make fresh content retrievable in
+# production with no manual step. This is deliberately a separate GitHub
+# Actions job, not wired into Vercel's own build (Vercel's build command
+# only builds/deploys the Next.js app — see `docs/deployment.md`'s "CI vs.
+# Vercel" section on why those two systems intentionally can't block each
+# other, and mixing a database write into a build step would make a
+# transient ingest failure block a deploy that has nothing wrong with it).
+#
+# Ingestion is incremental and idempotent (#24): re-running it with no
+# content change makes ZERO embedding calls and zero writes — the
+# `inserted/updated/deleted/unchanged/embedding calls` summary line
+# `pnpm ingest` prints is the visible proof of that in this job's logs.
+#
+# ## Why push-to-main, path-filtered
+#
+# Every merge to `main` already ran the same ingest for real, on a
+# disposable Neon branch, in `retrieval-eval.yml`'s PR check — this job
+# repeats that exact command against the real database, so restricting the
+# trigger to the same paths that job watches (`packages/core/**`, the
+# career-data content, this workflow itself) keeps the steady-state
+# embedding-quota cost near zero without silently skipping content changes.
+#
+# ## Not fork-skippable — pushes to `main` are never fork events
+#
+# Unlike the PR-triggered jobs in this repo, a `push` to `main` only ever
+# comes from a merge into this repository (forks cannot push to `main`
+# here), so secrets are always present for a legitimate run. The secrets
+# check below still exists, but fails LOUDLY (`::error::` + non-zero exit)
+# rather than skipping — a missing secret here is a real misconfiguration
+# that must block the job, not an expected fork-PR condition.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/core/**"
+      - "packages/career-data/content/**"
+      - "packages/career-data/src/**"
+      - ".github/workflows/reindex-production.yml"
+  workflow_dispatch: {}
+
+jobs:
+  reindex-production:
+    name: reindex-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Job-level: queue behind (never race) other Gemini-calling CI jobs —
+    # same shared free-tier embedding/chat quota `retrieval-eval`/
+    # `agent-evals`/`preview-e2e` already queue behind (#169). A production
+    # reindex must never starve, or be starved by, a PR's evals.
+    concurrency:
+      group: gemini-free-tier
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Loud, not a skip: a push to `main` never comes from a fork, so a
+      # missing secret here is a real misconfiguration.
+      - name: Check for required secrets
+        run: |
+          if [ -z "${{ secrets.DATABASE_URL }}" ] || [ -z "${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}" ]; then
+            echo "::error::reindex-production requires DATABASE_URL and GOOGLE_GENERATIVE_AI_API_KEY to be configured as repository secrets."
+            exit 1
+          fi
+
+      # packages/core/src/repository.ts imports @hire-me-mcp/career-data at
+      # the top level, resolving via that package's own "exports" field to
+      # its compiled dist/ — db:migrate/ingest fail with "Failed to resolve
+      # entry for package @hire-me-mcp/career-data" without this, same as
+      # every other job in this repo that runs those commands.
+      - name: Build packages/career-data
+        run: pnpm turbo run build --filter=@hire-me-mcp/career-data
+
+      - name: Run migrations against production
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm --filter @hire-me-mcp/core db:migrate
+
+      # No --dry-run, no --full: the real incremental ingest. On the very
+      # first run against a previously-empty production store this inserts
+      # every chunk (~60, per #52's acceptance criteria); on every
+      # subsequent run with no content change it makes zero embedding
+      # calls and zero writes — visible in the summary line this step
+      # prints. A failure here (retries exhausted, non-retryable error)
+      # exits non-zero and fails this job — no partial/stale index is ever
+      # left in place, see packages/core/src/ingest/run.ts's docstring for
+      # why ordering (embed everything needed, then write) makes that
+      # guarantee free.
+      - name: Reindex production (pnpm ingest, real embeddings)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+        run: pnpm ingest

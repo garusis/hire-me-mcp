@@ -37,7 +37,9 @@
     "generate:llms:check": "turbo run generate:llms:check --filter=@hire-me-mcp/web",
     "docs-rot:snippets": "node scripts/ci/docs-rot/check-snippets.mjs",
     "docs-rot:links": "node scripts/ci/docs-rot/check-links.mjs",
-    "docs-rot:test": "node --test scripts/ci/docs-rot/*.test.mjs"
+    "docs-rot:test": "node --test scripts/ci/docs-rot/*.test.mjs",
+    "ci:neon-cleanup": "node scripts/ci/neon-branch-cleanup.mjs",
+    "ci:neon-cleanup:test": "node --test scripts/ci/neon-branch-cleanup.test.mjs scripts/ci/retrieval-eval/summary.test.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

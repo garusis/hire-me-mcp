@@ -142,7 +142,56 @@ categories, how to add a golden query, how to interpret a failure, and the thres
 — lives in [`packages/core/README.md`](../packages/core/README.md#retrieval-evals-pnpm-evalretrieval-41).
 Like `pnpm ingest`, it needs `DATABASE_URL` and `GOOGLE_GENERATIVE_AI_API_KEY` and a populated
 store; a real run against the local (known-invalid) API key isn't possible, so it's run for real
-via `.github/workflows/retrieval-eval.yml`'s `workflow_dispatch` job (see the CI section below).
+via `.github/workflows/retrieval-eval.yml` — a required PR check as of #52, see "How re-indexing
+works" and the CI section below.
+
+## How re-indexing works (local / PR / production loops) — #52
+
+Three loops, all running the exact same underlying commands (`db:migrate` then `pnpm ingest`), so
+"does it work" only ever needs verifying once per loop rather than once per environment:
+
+- **Local loop.** A contributor edits `packages/career-data/content/**`, then runs `pnpm
+  --filter @hire-me-mcp/core db:migrate && pnpm ingest` against their own `DATABASE_URL` (a
+  personal Neon branch or database) to see the new content indexed and retrievable via
+  `pnpm eval:retrieval` / `searchCareer`. Nothing here is automatic — a local run only ever
+  happens when a contributor chooses to run it.
+- **PR loop** (`.github/workflows/retrieval-eval.yml`, required check). Every pull request that
+  touches `packages/core/**`, the career-data content, or the workflow/helper script itself
+  triggers a run that: creates a disposable Neon branch, runs migrations, runs a full `pnpm ingest`
+  (real embeddings — the branch starts empty, so this is never an incremental no-op), runs `pnpm
+  eval:retrieval` against it, uploads the JSON report as a build artifact, writes the aggregate
+  metrics vs. thresholds to the job summary, and deletes the branch in an `always()` step
+  regardless of outcome. A PR that degrades retrieval quality below the committed thresholds
+  (`packages/core/src/eval-retrieval/thresholds.ts`) fails this required check and cannot merge.
+  `db-integration` (`ci.yml`, runs unconditionally on every PR) independently exercises the same
+  disposable-branch pattern for the `#14`/`#24`/`#34` integration suites — together, opening a PR
+  is enough to exercise branch creation, migration, real ingestion, integration tests and the
+  retrieval eval, all against disposable databases, all cleaned up on completion.
+- **Production loop** (`.github/workflows/reindex-production.yml`). Every push to `main` that
+  touches the same paths runs migrations and a real, incremental `pnpm ingest` directly against
+  production's `DATABASE_URL` — no Neon branch, no dry run. Because ingestion is incremental and
+  idempotent (#24), an unchanged-content re-run makes zero embedding calls and zero writes (visible
+  in the ingestion summary line the job prints); a genuinely new/changed chunk gets embedded and
+  written for real, and a permanent ingest failure fails the job loudly rather than leaving a
+  stale or partial index in place. This is a **separate GitHub Actions job, not part of Vercel's
+  own build** — see `docs/deployment.md`'s "CI vs. Vercel" section for why the two systems are kept
+  independent; a transient ingest hiccup should never block an otherwise-healthy deploy, and a
+  deploy failure should never skip a needed reindex.
+
+All three loops are provisioned by the same two building blocks: `packages/core/src/db/neon-branch.ts`
+(TypeScript, used by the integration test suites) and `scripts/ci/retrieval-eval/neon-branch.mjs`
+(a standalone pre-build script with the same create/delete shape, used by `retrieval-eval.yml`
+before any package is built). `scripts/ci/neon-branch-cleanup.mjs`, run daily by
+`.github/workflows/neon-branch-cleanup.yml`, is the stale-branch safety net for all of them: it
+deletes any `hire-me-mcp-`-prefixed branch older than 24h that a run's own `always()` cleanup step
+somehow missed (a hard runner crash, a cancelled mid-step run), while explicitly refusing to touch
+the project's `default`/`protected` branch. Run it manually with:
+
+```bash
+NEON_API_KEY=... NEON_PROJECT_ID=... node scripts/ci/neon-branch-cleanup.mjs             # delete branches older than 24h
+NEON_API_KEY=... NEON_PROJECT_ID=... node scripts/ci/neon-branch-cleanup.mjs --dry-run    # list only
+NEON_API_KEY=... NEON_PROJECT_ID=... node scripts/ci/neon-branch-cleanup.mjs --max-age-hours=6
+```
 
 ## End-to-end tests (Playwright)
 
@@ -418,18 +467,44 @@ timeout skips rather than blocking a PR — see the note on `agent-evals` above 
 reasoning applied to a path-filtered job.
 
 An EIGHTH workflow, [`.github/workflows/retrieval-eval.yml`](../.github/workflows/retrieval-eval.yml)
-(#41, epic #6), runs `pnpm eval:retrieval` (see "Retrieval evals" above) for real: it provisions its
-own throwaway Neon branch (`NEON_API_KEY`/`NEON_PROJECT_ID`, same helper `db-integration` and the
-`search-career`/`ingest` integration suites use), runs migrations and `pnpm ingest` against it with
-the real `GOOGLE_GENERATIVE_AI_API_KEY` secret, runs the eval, uploads the JSON report as a build
-artifact, and deletes the branch in an `always()` step regardless of outcome. Deliberately
-`workflow_dispatch`-only for now, not `pull_request`/`push` — provisioning a Neon branch and running
-a real ingest plus ~25 embedding calls on every PR would be real, unbounded cost for a still-new
-eval suite; #52 (pipeline automation, tracked separately in this epic) is where this becomes an
-automatic merge gate, matching the same "manual today, automated once the pipeline task lands"
-posture `agent-evals.yml` documents for its own `workflow_dispatch` trigger. Not in the
-required-status-checks list for the same reason `agent-evals`/`db-integration` aren't: a manually
-triggered workflow can't be a required check GitHub blocks a PR on.
+(#41/#52, epic #6), runs `pnpm eval:retrieval` (see "Retrieval evals" above) for real, as a
+**required PR check** (see "How re-indexing works" above for the full PR-loop description): it
+provisions its own throwaway Neon branch (`NEON_API_KEY`/`NEON_PROJECT_ID`, same helper
+`db-integration` and the `search-career`/`ingest` integration suites use), runs migrations and
+`pnpm ingest` against it with the real `GOOGLE_GENERATIVE_AI_API_KEY` secret, runs the eval, writes
+the aggregate metrics vs. thresholds and the pass/fail verdict to the job summary
+(`scripts/ci/retrieval-eval/summary.mjs`), uploads the JSON report as a build artifact, and deletes
+the branch in an `always()` step regardless of outcome. Triggered on `pull_request` for paths that
+can change what gets indexed or how retrieval scores (`packages/core/**`, the career-data content,
+the workflow/helper script), plus `workflow_dispatch` for an on-demand full run — not on every PR
+unconditionally, since a still-new eval suite making real embedding calls on every unrelated PR
+would be needless cost even though ingestion's incremental behavior keeps the marginal cost near
+zero once content is unchanged. Shares the job-level `gemini-free-tier` concurrency group with
+`agent-evals`/`preview-e2e` (below) — see that group's own note for why a job can be cancelled
+while queued and what to do about it. Skips (rather than fails red) on fork PRs, same pattern as
+`db-integration`.
+
+A NINTH workflow, [`.github/workflows/reindex-production.yml`](../.github/workflows/reindex-production.yml)
+(#52), is the production loop: on every push to `main` touching the same paths, it runs migrations
+and a real, incremental `pnpm ingest` directly against production's `DATABASE_URL` — no Neon
+branch — failing loudly on a permanent ingest error rather than leaving a stale/partial index. Also
+in the `gemini-free-tier` concurrency group. Deliberately **not** wired into Vercel's own build —
+see "How re-indexing works" above and `docs/deployment.md`'s "CI vs. Vercel" section.
+
+A TENTH workflow, [`.github/workflows/neon-branch-cleanup.yml`](../.github/workflows/neon-branch-cleanup.yml)
+(#52), is the stale-branch safety net: a daily scheduled job (plus `workflow_dispatch`) that runs
+`scripts/ci/neon-branch-cleanup.mjs` to delete any `hire-me-mcp-`-prefixed Neon branch older than
+24h that a run's own `always()` cleanup step missed, explicitly refusing to touch the project's
+`default`/`protected` branch. See "How re-indexing works" above for the manual-run command.
+
+None of `agent-evals`/`db-integration`/`neon-branch-cleanup`/`reindex-production` are (or should
+be) in the required-status-checks list: `agent-evals` and `neon-branch-cleanup` are path-filtered
+or scheduled and would otherwise block PRs they never run on; `db-integration` and
+`reindex-production` are defense-in-depth/production-side jobs, not merge gates in their own
+right — retrieval quality is what a PR must prove, and `retrieval-eval` is the check that proves
+it. `retrieval-eval` **is** intended to join the required-status-checks list below (#52) — updating
+live branch protection is a separate, deliberate step (see the `gh api` command below) taken once
+the workflow above has a real green run to point at, not part of this doc edit.
 
 - Node is pinned via `.nvmrc`; pnpm is installed via `pnpm/action-setup`, reading the version from
   the root `packageManager` field.
@@ -441,10 +516,10 @@ triggered workflow can't be a required check GitHub blocks a PR on.
   also fail here, so `--no-verify` doesn't let a violation reach `main`.
 
 `main` is protected to match: no direct pushes, no force pushes, and `quality`, `e2e`,
-`mcp-integration`, `preview-e2e` and `lighthouse` must all pass before a PR can merge. This was
-configured once, by hand, by PUTting a JSON body (the branch protection endpoint rejects
-`gh api -f/-F` key-path syntax for this nested shape, so a body file is the reliable way to
-reproduce it):
+`mcp-integration`, `preview-e2e` and `lighthouse` must all pass before a PR can merge — this is the
+**current live configuration**. This was configured once, by hand, by PUTting a JSON body (the
+branch protection endpoint rejects `gh api -f/-F` key-path syntax for this nested shape, so a body
+file is the reliable way to reproduce it):
 
 ```bash
 cat > branch-protection.json <<'EOF'
@@ -477,6 +552,12 @@ gh api repos/garusis/hire-me-mcp/branches/main/protection \
   -H "Accept: application/vnd.github+json" \
   --input branch-protection.json
 ```
+
+**Target state (#52, not yet applied):** `retrieval-eval` is intended to join the `checks` array
+above once `retrieval-eval.yml`'s new required-check trigger has a real green (and a real
+threshold-failing red) run to point at — add `{ "context": "retrieval-eval" }` to the array and
+re-run the same PUT. This is a deliberate, separate step taken after this PR's own runs have
+demonstrated the check, not part of merging this documentation change.
 
 Verify the live configuration at any time with:
 

@@ -634,12 +634,11 @@ pnpm eval:retrieval   # runs the golden dataset against a populated store, write
 Requires `DATABASE_URL` and `GOOGLE_GENERATIVE_AI_API_KEY` (see `.env.example`), and a store
 already populated by `pnpm ingest` (#24) — this command only queries, it never ingests. Locally,
 the checked-in `.env`'s `GOOGLE_GENERATIVE_AI_API_KEY` is a known-invalid placeholder, so a real
-run happens via `.github/workflows/retrieval-eval.yml`'s `workflow_dispatch` job against a
-disposable Neon branch (created, migrated, ingested, evaluated, and deleted in one job run) — see
-that workflow file for the exact steps, and `docs/development.md`'s CI section for why it's a
-separate, manually-triggered workflow rather than a job in `ci.yml` (same path-filtered/on-demand
-reasoning `agent-evals.yml` documents, plus #52 — pipeline automation, tracked separately — is
-where this becomes an automatic merge gate rather than a manual check).
+run happens via `.github/workflows/retrieval-eval.yml` — a **required PR check** as of #52 — against
+a disposable Neon branch (created, migrated, ingested, evaluated, and deleted in one job run,
+path-filtered to PRs that touch `packages/core/**`/career-data content, plus `workflow_dispatch`
+for an on-demand run) — see that workflow file for the exact steps, and `docs/development.md`'s
+"How re-indexing works" section for the full PR/production/local loop picture.
 
 ### The dataset: categories and target size
 
