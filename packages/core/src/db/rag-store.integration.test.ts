@@ -75,6 +75,7 @@ describe.runIf(neonConfig !== undefined)("Neon pgvector store (real branch)", ()
     expect(result.appliedMigrationIds).toEqual([
       "001_init_pgvector_chunks",
       "002_add_embedding_model",
+      "003_add_analytics_events",
     ]);
 
     const [extension] = await sql`SELECT extname FROM pg_extension WHERE extname = 'vector'`;
