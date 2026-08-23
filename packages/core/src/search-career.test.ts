@@ -270,4 +270,14 @@ describe("createSearchCareer", () => {
     expect(MIN_TOP_K).toBeLessThanOrEqual(DEFAULT_TOP_K);
     expect(MAX_TOP_K).toBeGreaterThanOrEqual(DEFAULT_TOP_K);
   });
+
+  it("defaults modelId to STORED_EMBEDDING_MODEL_ID, not the raw Google API model id, so it flags rows stored under the old identifier as a mismatch", async () => {
+    const { sql } = createFakeSql([fakeRow({ embedding_model: MODEL_ID })]);
+    const embedder = fakeEmbedder();
+    const searchCareer = createSearchCareer({ sql, embedder });
+
+    await expect(searchCareer("architecture experience")).rejects.toThrow(
+      StoredEmbeddingModelMismatchError,
+    );
+  });
 });

@@ -295,6 +295,13 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Shares one Gemini free-tier RPM budget with every other job that
+    # calls the model (#169): agent-evals running concurrently starves the
+    # chat specs past Vercel's 60s function limit. The shared
+    # `gemini-free-tier` group queues those jobs instead of racing them.
+    concurrency:
+      group: gemini-free-tier
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4

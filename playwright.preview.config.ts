@@ -32,7 +32,14 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 4 : undefined,
+  // ONE worker in CI, deliberately (#169): the chat specs are multi-step
+  // agent conversations, each costing several Gemini calls against the
+  // shared gemini-3.5-flash-lite free tier (15 requests/minute). Running
+  // them concurrently exceeds that cap — Google stalls the request past
+  // Vercel's 60s function limit and the gate 504s. Serial execution keeps
+  // the suite deterministic; do not raise this without moving CI to a
+  // dedicated Google project or a paid tier (tracked under #52).
+  workers: process.env.CI ? 1 : undefined,
   timeout: 60_000,
   reporter: process.env.CI
     ? [

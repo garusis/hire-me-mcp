@@ -93,6 +93,12 @@ jobs:
     name: agent-evals
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Job-level: queue behind (never race) other Gemini-calling CI jobs —
+    # preview-e2e's chat specs share the same 15 RPM free-tier budget and
+    # starve out when this job runs concurrently (#169).
+    concurrency:
+      group: gemini-free-tier
+      cancel-in-progress: false
     # Budget caps below cover a full 17-case dataset run (#143's real
     # full-dataset run: 111,137 tokens, $0 on the free tier) with margin,
     # not an unbounded run — `assertWithinBudget` (`packages/agent/src/evals/budget.ts`)

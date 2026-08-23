@@ -26,6 +26,7 @@
     "test:mcp": "pnpm --filter @hire-me-mcp/web test:mcp",
     "ingest": "pnpm --filter @hire-me-mcp/core ingest",
     "eval:agent": "pnpm --filter @hire-me-mcp/agent eval:agent",
+    "eval:retrieval": "pnpm --filter @hire-me-mcp/core eval:retrieval",
     "typecheck": "turbo run typecheck",
     "validate": "turbo run validate",
     "lint:content": "turbo run lint:content",

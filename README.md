@@ -126,6 +126,7 @@ pnpm build                 # turbo run build — builds all packages in dependen
 pnpm test:e2e               # Playwright smoke test against a production build
 pnpm test:mcp               # protocol-level MCP integration suite (real SDK client, real server process)
 pnpm eval:agent              # chat agent groundedness/gap-honesty/relevance evals
+pnpm eval:retrieval          # searchCareer recall@k/precision@k/MRR golden-dataset eval
 pnpm generate:connect:check  # verify the generated regions above are up to date with the real tool registry
 ```
 

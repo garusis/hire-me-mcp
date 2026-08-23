@@ -24,8 +24,8 @@ describe("app/api/chat/route.ts", () => {
     expect(route.runtime).toBe("nodejs");
   });
 
-  it("sets a maxDuration within the Hobby plan's ceiling", () => {
-    expect(route.maxDuration).toBeGreaterThan(0);
-    expect(route.maxDuration).toBeLessThanOrEqual(60);
+  it("sets a maxDuration within the Hobby plan's Fluid-compute ceiling (300s), above the old 60s that truncated slow free-tier turns (#169)", () => {
+    expect(route.maxDuration).toBeGreaterThan(60);
+    expect(route.maxDuration).toBeLessThanOrEqual(300);
   });
 });
