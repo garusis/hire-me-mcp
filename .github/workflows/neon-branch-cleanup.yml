@@ -1,0 +1,69 @@
+name: Neon Branch Cleanup
+
+# Stale-branch safety net for #52 (epic #6). Every CI job that provisions a
+# disposable Neon branch (`retrieval-eval`, and `db-integration`'s three
+# real-Neon integration suites in `ci.yml`) deletes its own branch in an
+# `always()` step — but a hard runner crash, a cancelled-mid-step run, or a
+# bug in that cleanup step can still leak one. This scheduled job is the
+# backstop: it lists every branch on the project and deletes the ones that
+# are both prefixed `hire-me-mcp-` (every CI-created branch name, see
+# `scripts/ci/neon-branch-cleanup.mjs`'s own docstring for the full list of
+# call sites) and older than 24h, so an aborted run can never quietly pile
+# up branches against the project's free-tier branch quota. It explicitly
+# never touches a branch Neon reports as the project's `default` or
+# `protected` branch, regardless of name.
+#
+# Runs on a daily schedule plus `workflow_dispatch` for an on-demand run
+# (e.g. right after noticing a leaked branch) — same pattern as
+# `docs-rot.yml`'s daily schedule. Not fork-triggerable (schedules only run
+# on the default branch of the base repo), so no fork-secret-skip guard is
+# needed here, only a loud failure if the required secrets are somehow
+# missing.
+on:
+  schedule:
+    - cron: "17 5 * * *" # 05:17 UTC daily — off-peak, staggered from docs-rot's 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      max_age_hours:
+        description: "Delete hire-me-mcp-* branches older than this many hours"
+        required: false
+        default: "24"
+      dry_run:
+        description: "List stale branches without deleting them"
+        required: false
+        default: "false"
+
+jobs:
+  neon-branch-cleanup:
+    name: neon-branch-cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Check for required secrets
+        run: |
+          if [ -z "${{ secrets.NEON_API_KEY }}" ] || [ -z "${{ vars.NEON_PROJECT_ID }}" ]; then
+            echo "::error::neon-branch-cleanup requires NEON_API_KEY and NEON_PROJECT_ID to be configured."
+            exit 1
+          fi
+
+      # Plain Node, zero npm dependencies — same convention as
+      # scripts/ci/docs-rot/*.mjs and scripts/ci/retrieval-eval/neon-branch.mjs,
+      # so no `pnpm install` step is needed before this runs.
+      - name: Delete stale hire-me-mcp-* Neon branches
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+        run: |
+          ARGS="--max-age-hours=${{ github.event.inputs.max_age_hours || '24' }}"
+          if [ "${{ github.event.inputs.dry_run || 'false' }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          node scripts/ci/neon-branch-cleanup.mjs $ARGS
