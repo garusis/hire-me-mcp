@@ -5,6 +5,7 @@ import { getRobotsIndexable, getSiteUrl } from "../src/lib/config/site-url";
 import { getProfileView, getWritingListView } from "../src/lib/content";
 import { COLOR_BG_DARK, COLOR_BG_LIGHT } from "../src/lib/seo/site-colors";
 import { ChatWidget } from "./chat/chat-widget";
+import { SiteAnalytics } from "./design-system/analytics/site-analytics";
 import { SiteFooter } from "./design-system/layout/site-footer";
 import { SiteHeader } from "./design-system/layout/site-header";
 import { MAIN_CONTENT_ID, SkipLink } from "./design-system/layout/skip-link";
@@ -100,6 +101,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <main id={MAIN_CONTENT_ID}>{children}</main>
         <SiteFooter />
         <ChatWidget writingEntries={writingEntries} />
+        <SiteAnalytics />
       </body>
     </html>
   );

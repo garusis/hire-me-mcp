@@ -145,4 +145,20 @@ describe("RootLayout", () => {
     expect(link).not.toBeNull();
     expect(link).toHaveAttribute("href", "/llms.txt");
   });
+
+  it("mounts SiteAnalytics on every page (#81), which loads Vercel Analytics only on a genuine production deploy", async () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.resetModules();
+    const analyticsSpy = vi.fn(() => null);
+    vi.doMock("@vercel/analytics/next", () => ({ Analytics: analyticsSpy }));
+    const { default: FreshRootLayout } = await import("./layout.js");
+
+    render(<FreshRootLayout>{<p>page content</p>}</FreshRootLayout>);
+
+    expect(analyticsSpy).toHaveBeenCalledTimes(1);
+
+    vi.doUnmock("@vercel/analytics/next");
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
 });
