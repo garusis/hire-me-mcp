@@ -90,7 +90,9 @@ import type { ChatModel } from "@hire-me-mcp/agent";
 import { getInterviewAgent } from "@hire-me-mcp/agent";
 import { toAISdkStream } from "@mastra/ai-sdk";
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
+import { recordChatQuestionEvent, recordChatToolEvent } from "../../../lib/analytics/record";
 import { CHAT_AGENT_LIMITS_DEFAULTS, readChatAgentStepLimit } from "../../../lib/chat/agent-limits";
+import { classifyLastUserQuestionTheme } from "../../../lib/chat/analytics";
 import { CHAT_ERROR_MESSAGES } from "../../../lib/chat/error-codes";
 import { logChatEvent } from "../../../lib/chat/logger";
 import {
@@ -124,7 +126,62 @@ function countToolSteps(chunkType: string, seen: Set<string>, toolCallId: unknow
 interface StreamChunkLike {
   type?: string;
   toolCallId?: unknown;
+  toolName?: unknown;
   output?: { error?: unknown; validationErrors?: unknown };
+}
+
+/**
+ * The tool name `search-career` (#61) is treated as this turn's retrieval
+ * signal for the `usedRetrieval` field on its question event (#79) — it's
+ * the one tool in this server backed by semantic search over career
+ * content (`lib/mcp/tool-names.ts`'s `EXPECTED_TOOL_NAMES`); every other
+ * tool answers from structured, non-retrieval lookups.
+ */
+const RETRIEVAL_TOOL_NAME = "search-career";
+
+/** In-flight chat-side tool calls this turn, keyed by `toolCallId` — populated by {@link trackChatToolCallAnalytics}. */
+type PendingChatToolCalls = Map<string, { toolName: string; startedAt: number }>;
+
+/**
+ * Records a `surface: "chat"` tool event (#79) for each tool the agent
+ * itself invokes during this turn: starts a timer on `tool-input-available`,
+ * and on the matching `tool-output-available` computes latency + outcome
+ * (validation failure -> `invalid_input`, a domain error surfaced on the
+ * output -> `domain_error`, otherwise `success`) and records it. Returns
+ * whether this chunk is the turn's `search-career` tool call actually
+ * being attempted (checked at `tool-input-available`, not at completion —
+ * "did this turn reach for retrieval" is the signal `usedRetrieval` needs,
+ * independent of whether that call then succeeded or errored), so the
+ * caller can set the turn's `usedRetrieval` flag.
+ */
+function trackChatToolCallAnalytics(params: {
+  chunk: StreamChunkLike;
+  pending: PendingChatToolCalls;
+}): boolean {
+  const { chunk, pending } = params;
+  const toolCallId = typeof chunk.toolCallId === "string" ? chunk.toolCallId : undefined;
+  if (toolCallId === undefined) return false;
+
+  if (chunk.type === "tool-input-available") {
+    const toolName = typeof chunk.toolName === "string" ? chunk.toolName : "unknown";
+    pending.set(toolCallId, { toolName, startedAt: Date.now() });
+    return toolName === RETRIEVAL_TOOL_NAME;
+  }
+
+  if (chunk.type === "tool-output-available") {
+    const inFlight = pending.get(toolCallId);
+    if (!inFlight) return false;
+    pending.delete(toolCallId);
+    const latencyMs = Date.now() - inFlight.startedAt;
+    const outcome = chunk.output?.validationErrors
+      ? "invalid_input"
+      : chunk.output?.error
+        ? "domain_error"
+        : "success";
+    recordChatToolEvent(inFlight.toolName, outcome, latencyMs);
+  }
+
+  return false;
 }
 
 /**
@@ -235,6 +292,11 @@ export function createChatPostHandler(options: ChatRouteOptions = {}) {
       console.warn("[chat] IP rate limiter threw — failing open for this request", error);
     }
     if (ipOutcome && !ipOutcome.success) {
+      // #79: the exact tool a rejected caller would have used is unknown
+      // this early (the body isn't even parsed yet) — one pipeline-level
+      // event stands in for the whole rejected chat turn, mirroring the
+      // MCP route's `with-rate-limit.ts`.
+      recordChatToolEvent("chat", "rate_limited", Date.now() - startedAt);
       return buildChatRateLimitExceededResponse("ip_rate_limited", ipOutcome);
     }
 
@@ -242,6 +304,7 @@ export function createChatPostHandler(options: ChatRouteOptions = {}) {
     try {
       rawBody = await request.json();
     } catch {
+      recordChatToolEvent("chat", "invalid_input", Date.now() - startedAt);
       return buildValidationErrorResponse("Request body must be valid JSON.");
     }
 
@@ -250,10 +313,15 @@ export function createChatPostHandler(options: ChatRouteOptions = {}) {
     const parsed = chatRequestSchema.safeParse(rawBody);
     if (!parsed.success) {
       const code = classifyValidationIssues(parsed.error.issues);
+      recordChatToolEvent("chat", "invalid_input", Date.now() - startedAt);
       return buildValidationErrorResponse(formatValidationIssues(parsed.error.issues), code);
     }
 
     const { sessionId, messages }: ChatRequestBody = parsed.data;
+    // #79: the theme of the question this turn asks, classified once up
+    // front from the raw (unwrapped) text — never stored itself, only fed
+    // into the deterministic keyword classifier.
+    const theme = classifyLastUserQuestionTheme(messages);
 
     // Guardrail #3: per-session limit, now that sessionId is validated.
     let sessionOutcome: Awaited<ReturnType<ChatRateLimiters["session"]["limit"]>> | undefined;
@@ -263,6 +331,7 @@ export function createChatPostHandler(options: ChatRouteOptions = {}) {
       console.warn("[chat] session rate limiter threw — failing open for this request", error);
     }
     if (sessionOutcome && !sessionOutcome.success) {
+      recordChatToolEvent("chat", "rate_limited", Date.now() - startedAt);
       return buildChatRateLimitExceededResponse("session_rate_limited", sessionOutcome);
     }
 
@@ -270,6 +339,20 @@ export function createChatPostHandler(options: ChatRouteOptions = {}) {
     // mechanically delimited as data, not commands — see wrap-user-content.ts.
     const agentInputMessages = wrapUserMessages(messages);
     const toolCallIdsSeen = new Set<string>();
+    const pendingToolCalls: PendingChatToolCalls = new Map();
+    let usedRetrieval = false;
+    // #79: guards against ever recording more than one pipeline/question
+    // event pair for this request, even though `handleStreamError` can be
+    // reached from two different call sites (the stream's own `onError`
+    // and `createUIMessageStream`'s top-level `onError`).
+    let terminalEventRecorded = false;
+    function recordTerminalChatEvent(outcome: Parameters<typeof recordChatToolEvent>[1]): void {
+      if (terminalEventRecorded) return;
+      terminalEventRecorded = true;
+      const latencyMs = Date.now() - startedAt;
+      recordChatToolEvent("chat", outcome, latencyMs);
+      recordChatQuestionEvent(theme, latencyMs, usedRetrieval);
+    }
 
     // The single error-mapping choke point. Two different layers can
     // observe a failure and both funnel through this: (1) Mastra's own
@@ -292,6 +375,7 @@ export function createChatPostHandler(options: ChatRouteOptions = {}) {
         latencyMs: Date.now() - startedAt,
         errorCode: classified.code,
       });
+      recordTerminalChatEvent("internal_error");
       return toStreamErrorEventText(classified);
     }
 
@@ -339,6 +423,18 @@ export function createChatPostHandler(options: ChatRouteOptions = {}) {
             sessionId,
             latencyMs: Date.now() - startedAt,
           });
+          // #79: record a per-tool chat analytics event and note whether
+          // this turn used retrieval — independent of the step-limit
+          // bookkeeping above, since a tool call can complete on the same
+          // chunk that also happens to be this turn's last allowed step.
+          if (
+            trackChatToolCallAnalytics({
+              chunk: value as StreamChunkLike,
+              pending: pendingToolCalls,
+            })
+          ) {
+            usedRetrieval = true;
+          }
           if (stepLimitExceeded) {
             // Flat `{ code, message }`, matching the shape every other
             // stream `error` chunk carries (`toStreamErrorEventText`,
@@ -353,6 +449,10 @@ export function createChatPostHandler(options: ChatRouteOptions = {}) {
               }),
             } as unknown as Parameters<typeof writer.write>[0]);
             await reader.cancel().catch(() => undefined);
+            // #79: a deliberate guard rejection, not a system failure —
+            // classified the same as a domain-level refusal elsewhere in
+            // this codebase (see `taxonomy.ts`'s `domain_error`).
+            recordTerminalChatEvent("domain_error");
             return;
           }
           // Same nominal-vs-structural boundary as `originalMessages`
@@ -370,6 +470,7 @@ export function createChatPostHandler(options: ChatRouteOptions = {}) {
           inputTokens: usage?.inputTokens,
           outputTokens: usage?.outputTokens,
         });
+        recordTerminalChatEvent("success");
       },
       onError: handleStreamError,
     });
