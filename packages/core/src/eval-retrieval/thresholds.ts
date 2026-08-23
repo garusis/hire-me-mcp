@@ -58,8 +58,13 @@ export interface RetrievalThresholds {
   absentTopicAccuracy: number;
 }
 
+// TEMPORARY — #52 acceptance-criteria demonstration ONLY: raises recallAtK
+// to an impossible value so the required `retrieval-eval` check goes red
+// on a real run, proving "a PR that degrades retrieval below the committed
+// thresholds fails the required check and cannot be merged." Reverted in
+// the very next commit — see that commit's message for the run link.
 export const RETRIEVAL_THRESHOLDS: RetrievalThresholds = {
-  recallAtK: 0.5,
+  recallAtK: 0.999,
   precisionAtK: 0.2,
   mrr: 0.4,
   absentTopicAccuracy: 0.8,
