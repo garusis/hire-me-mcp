@@ -1,0 +1,40 @@
+import { describe, expect, it, vi } from "vitest";
+
+const { getCvView } = vi.hoisted(() => ({ getCvView: vi.fn() }));
+vi.mock("../../../src/lib/content", () => ({ getCvView }));
+
+const { renderCvHtml } = vi.hoisted(() => ({ renderCvHtml: vi.fn() }));
+vi.mock("../../../lib/cv/render-cv-html", () => ({ renderCvHtml }));
+
+const { getSiteUrl } = vi.hoisted(() => ({ getSiteUrl: vi.fn() }));
+vi.mock("../../../src/lib/config/site-url", () => ({ getSiteUrl }));
+
+describe("GET /cv/print", () => {
+  it("returns 200 with a text/html; charset=utf-8 content type", async () => {
+    getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
+    getCvView.mockReturnValue({ profile: { name: "Stub Person" } });
+    renderCvHtml.mockReturnValue("<!doctype html><html><body>stub</body></html>");
+    const { GET } = await import("./route.js");
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+  });
+
+  it("serves the body rendered from the CV view and the runtime site URL", async () => {
+    getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
+    const stubView = { profile: { name: "Stub Person" } };
+    getCvView.mockReturnValue(stubView);
+    renderCvHtml.mockReturnValue("<!doctype html><html><body>stub cv</body></html>");
+    const { GET } = await import("./route.js");
+
+    const response = await GET();
+    const body = await response.text();
+
+    expect(body).toBe("<!doctype html><html><body>stub cv</body></html>");
+    expect(renderCvHtml).toHaveBeenCalledWith(stubView, {
+      siteUrl: "https://stub-deploy.example.com",
+    });
+  });
+});
