@@ -45,14 +45,13 @@ async function readBody(req) {
   return Buffer.concat(chunks).toString("utf-8");
 }
 
-function handleMcpRpc(rpc, res) {
-  const result =
-    rpc.method === "initialize" ? { serverInfo: { name: "hire-me-mcp" } } : { tools: TOOLS };
+function handleMcpRpc(rpc, res, tools) {
+  const result = rpc.method === "initialize" ? { serverInfo: { name: "hire-me-mcp" } } : { tools };
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result }));
 }
 
-function handleMcpJson(res, origin) {
+function handleMcpJson(res, origin, tools) {
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(
     JSON.stringify({
@@ -60,30 +59,37 @@ function handleMcpJson(res, origin) {
       transport: "streamable-http",
       auth: "none",
       endpointUrl: `${origin}/api/mcp`,
-      tools: TOOLS,
+      tools,
     }),
   );
 }
 
-function handleLlmsFullTxt(res) {
+function handleLlmsFullTxt(res, tools) {
   res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end(TOOLS.map((tool) => tool.name).join("\n"));
+  res.end(tools.map((tool) => tool.name).join("\n"));
 }
 
-/** A minimal fake MCP + connection-metadata server, standing in for a real deployment. */
-function startFixtureServer() {
+/**
+ * A minimal fake MCP + connection-metadata server, standing in for a live
+ * deployment. `tools` defaults to the module-level fixture set; the
+ * preview-vs-production regression test below (#61/#174) passes a
+ * DIFFERENT tool set per server instance, to simulate a PR preview whose
+ * tool registry has already changed while the documented (production)
+ * origin hasn't been deployed yet.
+ */
+function startFixtureServer({ tools = TOOLS } = {}) {
   return new Promise((resolvePromise) => {
     const server = createServer(async (req, res) => {
       if (req.url === "/api/mcp" && req.method === "POST") {
-        handleMcpRpc(JSON.parse(await readBody(req)), res);
+        handleMcpRpc(JSON.parse(await readBody(req)), res, tools);
         return;
       }
       if (req.url === "/.well-known/mcp.json") {
-        handleMcpJson(res, `http://127.0.0.1:${server.address().port}`);
+        handleMcpJson(res, `http://127.0.0.1:${server.address().port}`, tools);
         return;
       }
       if (req.url === "/llms-full.txt") {
-        handleLlmsFullTxt(res);
+        handleLlmsFullTxt(res, tools);
         return;
       }
       res.writeHead(404);
@@ -269,5 +275,53 @@ test("runSnippetChecks fails and names the file when a documented tool is missin
     );
   } finally {
     server.close();
+  }
+});
+
+// #61/#174: the docs' hardcoded endpoint always points at PRODUCTION (see
+// docs/mcp.md's "That URL is defined once..." note) — but on a `pull_request`
+// run, `targetUrl` is the PR's own PREVIEW deployment, which is often
+// *ahead* of production (a new tool landed on this PR's branch but hasn't
+// been merged/deployed to prod yet). The tool-table check must validate
+// the documented tool table against the DEPLOYMENT UNDER TEST (targetUrl),
+// not against the doc's literal (production) endpoint, or every PR that
+// adds a tool fails its own docs-rot check for a reason that has nothing
+// to do with that PR's actual correctness.
+test("runSnippetChecks checks the documented tool table against targetUrl, not the documented (production) endpoint — #61/#174", async () => {
+  const previewOnlyTool = {
+    name: "search-career",
+    description: "search",
+    examplePrompt: "search?",
+  };
+  const prodServer = await startFixtureServer({ tools: TOOLS }); // no search-career yet
+  const previewServer = await startFixtureServer({ tools: [...TOOLS, previewOnlyTool] });
+  try {
+    const prodOrigin = `http://127.0.0.1:${prodServer.address().port}`;
+    const previewOrigin = `http://127.0.0.1:${previewServer.address().port}`;
+
+    // The docs (as generated on this PR's branch) document the new tool,
+    // but their hardcoded endpoint literal still points at "production"
+    // (prodServer), which doesn't have it yet.
+    const { readmeText, docsMcpText } = buildDocs(prodOrigin);
+    const readmeWithNewTool = readmeText.replace(
+      "<!-- END GENERATED: mcp-tool-table -->",
+      "| `search-career` | search | search? |\n<!-- END GENERATED: mcp-tool-table -->",
+    );
+
+    const result = await runSnippetChecks({
+      targetUrl: previewOrigin, // this PR's preview — has the new tool
+      readmeText: readmeWithNewTool,
+      docsMcpText,
+      checkClaudeCli: skipClaudeCli,
+    });
+
+    assert.equal(
+      result.ok,
+      true,
+      `expected no failures (tool-table check should use targetUrl, not the documented production endpoint), got:\n${result.failures.join("\n")}`,
+    );
+  } finally {
+    prodServer.close();
+    previewServer.close();
   }
 });
