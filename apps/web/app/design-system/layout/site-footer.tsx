@@ -18,6 +18,10 @@ export function SiteFooter() {
         <Link href="/llms.txt" className={styles.mutedLink}>
           llms.txt
         </Link>
+        {/* The public privacy note (#81) — what usage data this site collects, what it never does, and for how long. */}
+        <Link href="/privacy" className={styles.mutedLink}>
+          Privacy
+        </Link>
       </Container>
     </footer>
   );

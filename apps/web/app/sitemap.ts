@@ -8,7 +8,15 @@ import { getWritingListView, listProjectSlugs } from "../src/lib/content";
  * facts, so it doesn't fall under the content-layer-sourcing rule the way a
  * title or description would.
  */
-const STATIC_ROUTES = ["", "/experience", "/projects", "/skills", "/writing", "/mcp"] as const;
+const STATIC_ROUTES = [
+  "",
+  "/experience",
+  "/projects",
+  "/skills",
+  "/writing",
+  "/mcp",
+  "/privacy",
+] as const;
 
 /**
  * `sitemap.xml`. Every dynamic segment is enumerated from the same content

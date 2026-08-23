@@ -89,4 +89,16 @@ describe("sitemap", () => {
     const urls = sitemap().map((entry) => entry.url);
     expect(new Set(urls).size).toBe(urls.length);
   });
+
+  it("includes the public privacy note (#81) but never the private, noindex stats route", async () => {
+    getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
+    listProjectSlugs.mockReturnValue([]);
+    getWritingListView.mockReturnValue(writingView());
+    const { default: sitemap } = await import("./sitemap.js");
+
+    const urls = sitemap().map((entry) => entry.url);
+    expect(urls).toContain("https://stub-deploy.example.com/privacy");
+    expect(urls.some((url) => url.includes("/stats"))).toBe(false);
+    expect(urls.some((url) => url.includes("/api/"))).toBe(false);
+  });
 });

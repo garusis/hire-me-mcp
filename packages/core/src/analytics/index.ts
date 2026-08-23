@@ -24,6 +24,15 @@ export type {
   ToolEventInput,
 } from "./scrubber.js";
 export { AnalyticsScrubError, scrubQuestionEvent, scrubToolEvent } from "./scrubber.js";
+export type {
+  OutcomeCountRow,
+  SurfaceCountRow,
+  ThemeCountRow,
+  ToolCountRow,
+  UsageStats,
+  UsageStatsRange,
+} from "./stats.js";
+export { getUsageStats } from "./stats.js";
 export type { AnalyticsStore } from "./store.js";
 export {
   createPostgresAnalyticsStore,

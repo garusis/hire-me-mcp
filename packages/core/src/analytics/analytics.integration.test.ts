@@ -13,6 +13,7 @@ import {
   insertToolEvent,
   resetAnalyticsEvents,
 } from "./analytics-repository.js";
+import { getUsageStats } from "./stats.js";
 
 /**
  * Real-Neon integration suite for #79: creates a throwaway branch off the
@@ -154,6 +155,71 @@ describe.runIf(neonConfig !== undefined)("Analytics events store (real Neon bran
     );
     expect(questionIndexNames).toContain("analytics_question_events_created_at_idx");
     expect(questionIndexNames).toContain("analytics_question_events_theme_created_at_idx");
+  });
+
+  it("getUsageStats aggregates seeded events into counts by tool, surface, outcome and theme", async () => {
+    if (sql === undefined) throw new Error("sql not initialized");
+    await resetAnalyticsEvents(sql);
+
+    const since = new Date(Date.now() - 60 * 60 * 1000);
+
+    await insertToolEvent(sql, {
+      surface: "mcp",
+      toolName: "get-profile",
+      outcome: "success",
+      latencyMs: 10,
+    });
+    await insertToolEvent(sql, {
+      surface: "mcp",
+      toolName: "get-profile",
+      outcome: "success",
+      latencyMs: 20,
+    });
+    await insertToolEvent(sql, {
+      surface: "chat",
+      toolName: "search-career",
+      outcome: "rate_limited",
+      latencyMs: 5,
+    });
+    await insertQuestionEvent(sql, { theme: "experience", latencyMs: 100, usedRetrieval: true });
+    await insertQuestionEvent(sql, { theme: "experience", latencyMs: 200, usedRetrieval: false });
+    await insertQuestionEvent(sql, { theme: "rates", latencyMs: 50, usedRetrieval: false });
+
+    // A row outside the range must never be counted.
+    const outOfRangeCutoff = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+    await sql`
+      INSERT INTO analytics_tool_events (surface, tool_name, outcome, latency_bucket, created_at)
+      VALUES ('mcp', 'get-profile', 'success', 'under_100ms', ${outOfRangeCutoff})
+    `;
+
+    const stats = await getUsageStats(sql, { since });
+
+    expect(stats.totalToolEvents).toBe(3);
+    expect(stats.totalQuestionEvents).toBe(3);
+    expect(stats.toolCounts).toEqual(
+      expect.arrayContaining([
+        { surface: "mcp", toolName: "get-profile", count: 2 },
+        { surface: "chat", toolName: "search-career", count: 1 },
+      ]),
+    );
+    expect(stats.surfaceCounts).toEqual(
+      expect.arrayContaining([
+        { surface: "mcp", count: 2 },
+        { surface: "chat", count: 1 },
+      ]),
+    );
+    expect(stats.outcomeCounts).toEqual(
+      expect.arrayContaining([
+        { outcome: "success", count: 2 },
+        { outcome: "rate_limited", count: 1 },
+      ]),
+    );
+    expect(stats.themeCounts).toEqual(
+      expect.arrayContaining([
+        { theme: "experience", count: 2 },
+        { theme: "rates", count: 1 },
+      ]),
+    );
   });
 });
 

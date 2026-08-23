@@ -20,6 +20,11 @@ Preview and Production (see `.env.example`). If another requirement genuinely ca
 through Project Settings either (custom headers, rewrites), extend this same file and document why
 here.
 
+The private stats view (#81, `app/api/stats/route.ts`) needs its own secret, `STATS_SECRET`, also
+set in Project Settings → Environment Variables for Preview and Production — see `.env.example` and
+`docs/analytics.md` for the gate mechanism (a `?token=` query param, checked fail-closed: unset or
+wrong both return 404, never 401, so nothing about the route leaks).
+
 | Setting | Value |
 | --- | --- |
 | Vercel project | `hire-me-mcp-web`, personal Hobby account `marcos-javier-alvarez-maestres-projects` (**not** the House Numbers team — see note below) |

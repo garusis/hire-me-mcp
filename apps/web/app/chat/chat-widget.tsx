@@ -35,6 +35,7 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { WritingEntry } from "../../src/lib/content";
 import { Button } from "../design-system/primitives/button";
+import { Link } from "../design-system/primitives/link";
 import { describeChatError, parseChatErrorText } from "./chat-error-messages";
 import styles from "./chat-widget.module.css";
 import { CitationText } from "./citation-text";
@@ -155,6 +156,16 @@ export function ChatWidget({ writingEntries }: ChatWidgetProps) {
             {messages.length === 0 && (
               <div className={styles.empty}>
                 <p>Ask anything about Marcos&apos;s experience, or try:</p>
+                {/*
+                  First-run disclosure (#81): what this chat records, in
+                  one sentence, linking the full privacy note. Only shown
+                  in the empty state — once a conversation is underway the
+                  starter prompts and messages take priority.
+                */}
+                <p>
+                  Questions are recorded only as anonymized usage stats (a topic label and outcome)
+                  — never the raw text. See the <Link href="/privacy">privacy note</Link>.
+                </p>
                 <ul className={styles.starterList}>
                   {STARTER_PROMPTS.map((prompt) => (
                     <li key={prompt.id}>
