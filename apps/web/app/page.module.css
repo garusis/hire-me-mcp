@@ -66,13 +66,14 @@
   margin-top: var(--space-5);
 }
 
+/* Accent border + badge only — no tinted background, for the same WCAG AA
+   contrast reason documented on /projects' .flagshipCard. */
 .flagshipCard {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   border-color: var(--color-accent);
   border-width: 2px;
-  background: var(--color-bg-subtle);
 }
 
 .flagshipBadge {
