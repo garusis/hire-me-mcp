@@ -535,6 +535,30 @@ jobs:
               "${url}" || echo "  -> warm-up request failed (non-fatal, Lighthouse will still run)"
           done
 
+      # TEMPORARY (#57 debugging): dump where <meta name="description"> sits
+      # (head vs body) for a Lighthouse UA vs a plain browser UA, plus the
+      # /projects listing hrefs, straight from the preview. Remove once the
+      # meta-description regression is root-caused.
+      - name: Diagnose preview HTML (temporary)
+        if: steps.preview.outputs.found == 'true'
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          LH_UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.60 Safari/537.36 Chrome-Lighthouse"
+          BROWSER_UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.60 Safari/537.36"
+          base=$(node -p "new URL(require('./.lighthouserc.local.json').ci.collect.url[0]).origin")
+          for url in $(node -p "require('./.lighthouserc.local.json').ci.collect.url.join('\n')"); do
+            for ua in "$LH_UA" "$BROWSER_UA"; do
+              html=$(curl -sS -A "$ua" -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" "$url")
+              headpart=$(printf '%s' "$html" | awk 'BEGIN{RS="</head>"} NR==1')
+              echo "URL=$url UA=${ua##* } total_meta=$(printf '%s' "$html" | grep -c 'name="description"' || true) head_meta=$(printf '%s' "$headpart" | grep -c 'name="description"' || true) bytes=${#html}"
+            done
+          done
+          echo "--- /projects hrefs (browser UA) ---"
+          curl -sS -A "$BROWSER_UA" -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" "$base/projects" | grep -oE 'href="/projects/[^"]*"' | sort -u || true
+          echo "--- head of / (Lighthouse UA, first 2000 chars) ---"
+          curl -sS -A "$LH_UA" -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" "$base/" | awk 'BEGIN{RS="</head>"} NR==1' | head -c 2000; echo
+
       - name: Run Lighthouse CI
         if: steps.preview.outputs.found == 'true'
         run: pnpm exec lhci autorun --config=.lighthouserc.local.json
@@ -554,4 +578,8 @@ jobs:
         with:
           name: lighthouse-report
           path: .lighthouseci/
+          # upload-artifact@v4 skips hidden files/dirs by default (its
+          # 2024-08 security change) — without this the `.lighthouseci`
+          # dot-directory uploads nothing, with only a log warning.
+          include-hidden-files: true
           retention-days: 7
