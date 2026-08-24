@@ -9,6 +9,14 @@ back cited, grounded answers instead of guesses — no API key, no signup, one U
 [![Latest release](https://img.shields.io/github/v/tag/garusis/hire-me-mcp?label=release)](https://github.com/garusis/hire-me-mcp/tags)
 [![Deployed on Vercel](https://img.shields.io/github/deployments/garusis/hire-me-mcp/production?label=vercel&logo=vercel)](https://hire-me-mcp-web.vercel.app)
 
+**Live site:** <https://hire-me-mcp-web.vercel.app> · **Live MCP endpoint** (Streamable HTTP, no auth):
+
+<!-- BEGIN GENERATED: mcp-endpoint-url -->
+```
+https://hire-me-mcp-web.vercel.app/api/mcp
+```
+<!-- END GENERATED: mcp-endpoint-url -->
+
 <!--
   Real terminal transcript (not staged output) of an MCP client speaking the
   Streamable HTTP protocol to the LIVE production endpoint — see
@@ -29,16 +37,8 @@ back cited, grounded answers instead of guesses — no API key, no signup, one U
   same content is served at `/cv/print`.
 - **Agent docs:** [`docs/mcp.md`](docs/mcp.md) (every client, rate limits, troubleshooting) and
   the site's own [`/llms.txt`](https://hire-me-mcp-web.vercel.app/llms.txt) entry point.
-- **Security checklist:** landing alongside this launch in
-  [#57](https://github.com/garusis/hire-me-mcp/issues/57) — linked here once
-  `docs/security-checklist.md` merges.
-- **Live MCP endpoint** (Streamable HTTP, no auth):
-
-<!-- BEGIN GENERATED: mcp-endpoint-url -->
-```
-https://hire-me-mcp-web.vercel.app/api/mcp
-```
-<!-- END GENERATED: mcp-endpoint-url -->
+- **Security checklist:** [`docs/security-checklist.md`](docs/security-checklist.md), landed with
+  the v1.0 security review ([#57](https://github.com/garusis/hire-me-mcp/issues/57)).
 
 ## Try it in 30 seconds
 
