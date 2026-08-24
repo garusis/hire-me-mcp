@@ -595,5 +595,25 @@
         "label": "Senior Full Stack & Mobile Developer, Kubesoft SAS"
       }
     ]
+  },
+  {
+    "id": "vision-document-processing",
+    "name": "Vision-based Document Processing",
+    "aliases": ["vision llm", "vision-llm document extraction"],
+    "category": "ai-ml",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers",
+        "fragment": "highlights.3"
+      },
+      {
+        "entityType": "project",
+        "entityId": "document-extraction-pipeline",
+        "label": "AI Document Extraction Pipeline"
+      }
+    ]
   }
 ]

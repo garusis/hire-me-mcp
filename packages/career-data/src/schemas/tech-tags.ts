@@ -41,6 +41,7 @@ export const TECH_TAGS = [
   "sql",
   "turborepo",
   "pnpm",
+  "vision-document-processing",
 ] as const;
 
 /** A single canonical technology tag spelling from {@link TECH_TAGS}. */
