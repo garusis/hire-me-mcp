@@ -20,6 +20,7 @@ import { Button } from "./design-system/primitives/button";
 import { Card } from "./design-system/primitives/card";
 import { Container } from "./design-system/primitives/container";
 import { Heading } from "./design-system/primitives/heading";
+import { Link } from "./design-system/primitives/link";
 import { Prose } from "./design-system/primitives/prose";
 import { Section } from "./design-system/primitives/section";
 import { getDeepLinksForClient } from "./mcp/client-deep-links";
@@ -65,6 +66,28 @@ function ExperienceHighlightCard({ item }: { item: ExperienceListItemView }) {
   );
 }
 
+/**
+ * The flagship (issue 191) treatment: the one `featured: true` project — this
+ * portfolio itself — rendered in its own group with a distinct, accented
+ * card linking to the full write-up, rather than as just another rail
+ * entry. Which project leads is still the content layer's call (the
+ * `featured` flag on the record), never an id hardcoded here.
+ */
+function FlagshipProjectCard({ item }: { item: ProjectListItemView }) {
+  return (
+    <Card as="article" className={styles.flagshipCard}>
+      <p className={styles.flagshipBadge}>
+        <Badge variant="accent">Flagship</Badge>
+      </p>
+      <Heading level={4} className={styles.highlightCardTitle}>
+        <Link href={`/projects/${item.slug}`}>{item.project.name}</Link>
+      </Heading>
+      <p className={styles.flagshipRole}>{item.project.role}</p>
+      <p className={styles.highlightCardBody}>{item.project.summary}</p>
+    </Card>
+  );
+}
+
 function ProjectHighlightCard({ item }: { item: ProjectListItemView }) {
   return (
     <Card as="article" className={styles.highlightCard}>
@@ -85,7 +108,11 @@ export default async function Home() {
   const profileView = getProfileView();
   const { profile } = profileView;
   const experience = getExperienceListView().items.slice(0, HIGHLIGHT_EXPERIENCE_COUNT);
-  const projects = getProjectsListView().items.slice(0, HIGHLIGHT_PROJECT_COUNT);
+  const projectItems = getProjectsListView().items;
+  const flagship = projectItems.find((item) => item.project.featured === true);
+  const projects = projectItems
+    .filter((item) => item !== flagship)
+    .slice(0, HIGHLIGHT_PROJECT_COUNT);
   const allSkills = getSkillsListView().items;
   const skills = allSkills.slice(0, HIGHLIGHT_SKILL_COUNT);
   const [primaryContact] = profile.contacts;
@@ -154,6 +181,15 @@ export default async function Home() {
                   {experience.map((item) => (
                     <ExperienceHighlightCard key={item.slug} item={item} />
                   ))}
+                </div>
+              </div>
+            ) : null}
+
+            {flagship !== undefined ? (
+              <div className={styles.highlightGroup}>
+                <Heading level={3}>Flagship project</Heading>
+                <div className={styles.flagshipGrid}>
+                  <FlagshipProjectCard item={flagship} />
                 </div>
               </div>
             ) : null}

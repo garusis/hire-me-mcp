@@ -287,6 +287,57 @@ describe("Home", () => {
     });
   });
 
+  describe("highlights — flagship project (#191)", () => {
+    function stubWithFlagship(): void {
+      getProjectsListView.mockReturnValue({
+        items: [
+          buildProjectItem("flagship-project", {
+            featured: true,
+            role: "Creator and maintainer",
+          }),
+          buildProjectItem("first-project"),
+          buildProjectItem("second-project"),
+          buildProjectItem("third-project"),
+        ],
+      });
+    }
+
+    it("renders the featured project in its own flagship group, linking to its detail page", async () => {
+      stubWithFlagship();
+
+      render(await Home());
+
+      const heading = screen.getByRole("heading", { name: /flagship project/i });
+      expect(heading).toBeDefined();
+      const link = screen.getByRole("link", { name: /flagship-project-name/i });
+      expect(link).toHaveAttribute("href", "/projects/flagship-project");
+      expect(screen.getByText("flagship-project project summary")).toBeDefined();
+    });
+
+    it("excludes the flagship from the Selected projects rail rather than duplicating it", async () => {
+      stubWithFlagship();
+
+      render(await Home());
+
+      const names = screen
+        .getAllByText(/-name$/)
+        .map((node) => node.textContent)
+        .filter((text) => text?.includes("-project-name"));
+      expect(names).toEqual([
+        "flagship-project-name",
+        "first-project-name",
+        "second-project-name",
+        "third-project-name",
+      ]);
+    });
+
+    it("renders no flagship group at all when no project is featured", async () => {
+      render(await Home());
+
+      expect(screen.queryByRole("heading", { name: /flagship project/i })).toBeNull();
+    });
+  });
+
   describe("highlights — skills", () => {
     it("renders skill highlights in the order the content layer returns them", async () => {
       render(await Home());

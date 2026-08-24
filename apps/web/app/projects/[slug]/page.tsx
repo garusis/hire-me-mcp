@@ -80,6 +80,11 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
           data={buildProjectJsonLd({ slug: view.slug, ...view.value }, profile.name)}
           nonce={nonce}
         />
+        {project.featured === true && (
+          <p className={styles.flagshipBadge}>
+            <Badge variant="accent">Flagship project of this portfolio</Badge>
+          </p>
+        )}
         <Heading level={1}>{project.name}</Heading>
         <p>{project.role}</p>
         <Prose>

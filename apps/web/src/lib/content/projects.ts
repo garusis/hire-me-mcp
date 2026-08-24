@@ -39,16 +39,34 @@ function toListItem(repository: CareerDataRepository, project: Project): Project
   };
 }
 
-/** Every project, unranked, each paired with its slug and a citation to itself. */
+/**
+ * Featured (flagship, issue 191) projects first, then the rest, each group in
+ * dataset order. The flag itself lives on the content record
+ * (`featured: true` in the project's frontmatter), so which project leads
+ * is a content decision, never a hardcoded id here.
+ */
+function sortFeaturedFirst(projects: readonly Project[]): Project[] {
+  return [
+    ...projects.filter((project) => project.featured === true),
+    ...projects.filter((project) => project.featured !== true),
+  ];
+}
+
+/** Every project, unranked but featured-first, each paired with its slug and a citation to itself. */
 export function getProjectsListView(): ProjectListView {
   const repository = getCareerDataRepository();
-  const items = repository.getDataset().projects.map((project) => toListItem(repository, project));
+  const items = sortFeaturedFirst(repository.getDataset().projects).map((project) =>
+    toListItem(repository, project),
+  );
   return { items, citations: items.map((item) => item.citation) };
 }
 
-/** Every project slug, for `generateStaticParams`. */
+/** Every project slug, for `generateStaticParams` — same featured-first order as the list view. */
 export function listProjectSlugs(): string[] {
-  return listSlugs(getCareerDataRepository().getDataset().projects, (project) => project.id);
+  return listSlugs(
+    sortFeaturedFirst(getCareerDataRepository().getDataset().projects),
+    (project) => project.id,
+  );
 }
 
 /**

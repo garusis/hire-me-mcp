@@ -102,6 +102,30 @@ describe("Project detail page", () => {
     expect(await screen.findByText("Alpha project body copy.")).toBeDefined();
   });
 
+  it("marks a featured project's detail page as the flagship (#191)", async () => {
+    const view = foundView();
+    if (view.found) {
+      view.value.project.featured = true;
+    }
+    getProjectDetailView.mockReturnValue(view);
+    getProfileView.mockReturnValue(profileView());
+    const { default: ProjectDetailPage } = await import("./page.js");
+
+    render(await ProjectDetailPage({ params: Promise.resolve({ slug: "alpha-project" }) }));
+
+    expect(screen.getByText(/flagship project of this portfolio/i)).toBeDefined();
+  });
+
+  it("shows no flagship marker on an ordinary (non-featured) project detail page", async () => {
+    getProjectDetailView.mockReturnValue(foundView());
+    getProfileView.mockReturnValue(profileView());
+    const { default: ProjectDetailPage } = await import("./page.js");
+
+    render(await ProjectDetailPage({ params: Promise.resolve({ slug: "alpha-project" }) }));
+
+    expect(screen.queryByText(/flagship/i)).toBeNull();
+  });
+
   it("triggers the not-found path for an unknown slug", async () => {
     getProjectDetailView.mockReturnValue({ found: false, slug: "unknown-project" });
     const { default: ProjectDetailPage } = await import("./page.js");

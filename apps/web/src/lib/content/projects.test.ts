@@ -5,13 +5,24 @@ import { getCareerDataRepository } from "./repository";
 import { toSlug } from "./slug";
 
 describe("getProjectsListView", () => {
-  it("lists every project from the repository's dataset, passing project data through unmodified", () => {
+  it("lists every project from the repository's dataset, featured first, passing project data through unmodified", () => {
     const repository = getCareerDataRepository();
-    const expected = repository.getDataset().projects;
+    const dataset = repository.getDataset().projects;
+    const expected = [
+      ...dataset.filter((project) => project.featured === true),
+      ...dataset.filter((project) => project.featured !== true),
+    ];
 
     const view = getProjectsListView();
 
     expect(view.items.map((item) => item.project)).toEqual(expected);
+  });
+
+  it("surfaces the featured (flagship) project as the first list item (#191)", () => {
+    const view = getProjectsListView();
+
+    const [first] = view.items;
+    expect(first?.project.featured).toBe(true);
   });
 
   it("builds a citation to each project via packages/core's buildCitation", () => {

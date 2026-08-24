@@ -58,6 +58,28 @@ function projectsView(): ProjectListView {
   };
 }
 
+function projectsViewWithFlagship(): ProjectListView {
+  const view = projectsView();
+  view.items.unshift({
+    slug: "flagship-project",
+    project: {
+      id: "flagship-project",
+      name: "Flagship Project",
+      summary: "The flagship summary.",
+      role: "Creator and maintainer",
+      tech: ["typescript"],
+      links: [
+        { label: "GitHub", url: "https://github.com/example/flagship" },
+        { label: "Live site", url: "https://flagship.example.test" },
+      ],
+      body: "b",
+      featured: true,
+    },
+    citation: { entityType: "project", entityId: "flagship-project", label: "Flagship Project" },
+  });
+  return view;
+}
+
 async function renderProjectsPage(searchParams: Record<string, string | string[] | undefined>) {
   const { default: ProjectsPage } = await import("./page.js");
   render(await ProjectsPage({ searchParams: Promise.resolve(searchParams) }));
@@ -150,6 +172,64 @@ describe("Projects page", () => {
     if (card !== null) {
       expect(within(card).getByText("The alpha summary.")).toBeDefined();
     }
+  });
+});
+
+describe("Projects page — flagship treatment (#191)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("marks the featured project's card as the flagship, and no other card", async () => {
+    getProjectsListView.mockReturnValue(projectsViewWithFlagship());
+
+    await renderProjectsPage({});
+
+    const flagshipMarkers = screen.getAllByText(/flagship project of this portfolio/i);
+    expect(flagshipMarkers).toHaveLength(1);
+    const flagshipCard = flagshipMarkers[0]?.closest("article");
+    expect(flagshipCard).not.toBeNull();
+    if (flagshipCard !== null && flagshipCard !== undefined) {
+      expect(within(flagshipCard).getByText("The flagship summary.")).toBeDefined();
+    }
+    const alphaCard = screen.getByRole("link", { name: /Alpha Project/i }).closest("article");
+    if (alphaCard !== null) {
+      expect(within(alphaCard).queryByText(/flagship/i)).toBeNull();
+    }
+  });
+
+  it("renders the flagship card's role and external links, unlike ordinary list cards", async () => {
+    getProjectsListView.mockReturnValue(projectsViewWithFlagship());
+
+    await renderProjectsPage({});
+
+    expect(screen.getByText("Creator and maintainer")).toBeDefined();
+    expect(screen.getByRole("link", { name: /^GitHub/ })).toHaveAttribute(
+      "href",
+      "https://github.com/example/flagship",
+    );
+    expect(screen.getByRole("link", { name: /^Live site/ })).toHaveAttribute(
+      "href",
+      "https://flagship.example.test",
+    );
+  });
+
+  it("renders no flagship marker at all when no project is featured", async () => {
+    getProjectsListView.mockReturnValue(projectsView());
+
+    await renderProjectsPage({});
+
+    expect(screen.queryByText(/flagship/i)).toBeNull();
+  });
+
+  it("keeps the flagship inside the filterable list — a tag it lacks filters it out", async () => {
+    getProjectsListView.mockReturnValue(projectsViewWithFlagship());
+
+    await renderProjectsPage({ tags: "python" });
+
+    expect(screen.queryByText(/flagship project of this portfolio/i)).toBeNull();
+    expect(screen.getByRole("link", { name: /Beta Project/i })).toBeDefined();
   });
 });
 
