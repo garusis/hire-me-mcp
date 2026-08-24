@@ -1,0 +1,107 @@
+---
+id: hire-me-mcp
+name: hire-me-mcp
+summary: >-
+  This portfolio itself: an open-source MCP server, RAG-backed interview
+  agent and Next.js site over one typed career dataset — built as the
+  demonstrable, inspectable evidence of how I ship production software.
+role: Creator and maintainer
+featured: true
+tech:
+  - typescript
+  - nextjs
+  - react
+  - nodejs
+  - mcp
+  - rag
+  - llms
+  - ai-agents
+  - postgresql
+  - redis
+  - playwright
+  - turborepo
+  - pnpm
+  - vercel
+  - github-actions
+  - ci-cd
+links:
+  - label: GitHub
+    url: https://github.com/garusis/hire-me-mcp
+  - label: Live site
+    url: https://hire-me-mcp-web.vercel.app
+  - label: MCP endpoint
+    url: https://hire-me-mcp-web.vercel.app/api/mcp
+---
+
+## What it is
+
+hire-me-mcp is the project you are reading right now: a public MCP server,
+an embedded RAG-backed interview agent, and this website, all serving one
+typed career dataset. My recent professional work at House Numbers is
+proprietary and cannot be shown, so I built this repo to be the thing a
+recruiter or engineer can actually open and judge — every architectural
+decision, test, and CI gate is public, in the same shape I ship
+professionally.
+
+## Coding patterns
+
+- A Turborepo + pnpm monorepo with typed package boundaries:
+  `packages/career-data` (the Zod-validated content corpus and its
+  cross-entity lint engine), `packages/core` (domain services, search, the
+  pgvector store and ingestion pipeline), `packages/agent` (the interview
+  agent, its prompt contract and evals) and `packages/connect-metadata`
+  (generated client-connection snippets, drift-checked in CI).
+- The web app reads career content only through a `server-only` content
+  layer — never by importing `career-data` directly — enforced by lint
+  rules, so a page can't hardcode or fork the data it renders.
+- A structural no-PII analytics scrubber: tool-call and chat analytics
+  record event shapes, never free text, so usage stats exist without
+  storing what anyone typed.
+- Fail-closed auth on the private stats route, and security headers with a
+  per-request-nonce, `strict-dynamic` Content-Security-Policy.
+
+## Testing patterns
+
+A full pyramid, every layer a real CI gate:
+
+- Unit/integration tests (Vitest) co-located with every source file,
+  enforced test-first by repo hooks and a pre-commit runner.
+- Playwright e2e against a production build, plus a second preview suite
+  that runs against the real Vercel preview deployment of every PR —
+  navigation, accessibility scans, responsive checks, and
+  content-correctness specs that independently re-read the career dataset
+  to catch any page that drifts from it.
+- Protocol-level MCP integration tests driving the real
+  `@modelcontextprotocol/sdk` client against a locally started production
+  server, and an MCP smoke suite against the deployed endpoint.
+- Retrieval evals — recall/precision/MRR over a committed golden-query
+  dataset with hard thresholds — run as a required PR check on a
+  disposable Neon branch, so a change that degrades retrieval quality
+  cannot merge.
+- Agent evals scoring groundedness, gap honesty and relevance on real
+  model output, plus Lighthouse performance budgets and MCP/chat latency
+  percentile budgets, all enforced in CI from committed config.
+
+## AI patterns
+
+- A public MCP server exposing the career data as typed tools with
+  citations back to source records, over Streamable HTTP.
+- RAG on Neon pgvector with task-typed Gemini embeddings
+  (`RETRIEVAL_DOCUMENT` at ingestion, `RETRIEVAL_QUERY` at search),
+  incremental ingestion keyed on content hashes — an unchanged corpus
+  re-runs with zero embedding calls — and automatic production re-indexing
+  on every content merge, which is how the chat can answer questions about
+  this very project.
+- An embedded chat agent grounded in that retrieval layer, with honesty
+  guardrails (known gaps are acknowledged, claims are cited) held in place
+  by the eval gates above.
+- Deliberate free-tier quota engineering: CI jobs that call Gemini share a
+  concurrency group and per-run call caps, so the whole pipeline runs on
+  free tiers without tripping rate limits.
+
+## Why it mattered
+
+It is the one project where nothing has to be taken on faith. The claims
+this portfolio makes about how I work — test-first, typed boundaries,
+eval-gated AI, honest content — are not descriptions of past work; they
+are enforced, inspectable properties of this repository.

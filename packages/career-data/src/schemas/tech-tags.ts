@@ -41,6 +41,12 @@ export const TECH_TAGS = [
   "sql",
   "turborepo",
   "pnpm",
+  "nextjs",
+  "vercel",
+  "playwright",
+  "mcp",
+  "rag",
+  "github-actions",
 ] as const;
 
 /** A single canonical technology tag spelling from {@link TECH_TAGS}. */
