@@ -33,10 +33,10 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.40",
-    "@ai-sdk/google": "4.0.48",
+    "@ai-sdk/google": "4.0.49",
     "@hire-me-mcp/core": "workspace:*",
     "@mastra/core": "1.61.0",
-    "ai": "7.0.71",
+    "ai": "7.0.74",
     "zod": "4.4.3"
   },
   "devDependencies": {
