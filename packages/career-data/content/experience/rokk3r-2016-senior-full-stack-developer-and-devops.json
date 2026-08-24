@@ -6,8 +6,9 @@
   "endDate": "2018-06",
   "summary": "Senior full-stack and DevOps engineer across a portfolio of client projects, including a real-time procurement and productivity platform for telecom clients.",
   "highlights": [
-    "Migrated legacy infrastructure to Kubernetes for a real-time procurement and productivity platform serving telecom clients, with major performance and scalability gains.",
-    "Delivered a digital insurance-broker platform, a backend migration off a discontinued backend-as-a-service for an iOS smart keyboard, and IoT video/academic platforms on experimental hardware."
+    "Migrated a real-time telecom procurement monolith from self-hosted servers to an AWS Kubernetes microservices cluster, researching the approach and moving large parts of the monolith personally, as part of a company-wide push to adopt microservices across several client monoliths.",
+    "Migrated a mobile app's backend off Parse, a backend-as-a-service being shut down, onto AWS EC2 against the platform's fixed shutdown deadline — reading the platform's own source to work out its poorly documented internals and why the self-hosted version behaved differently from the hosted one.",
+    "Delivered a digital insurance-broker platform and IoT video/academic platforms on experimental hardware."
   ],
   "tech": ["nodejs", "docker", "kubernetes", "angularjs", "socketio", "aws"]
 }
