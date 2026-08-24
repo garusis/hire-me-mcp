@@ -44,6 +44,35 @@ locally with `pnpm audit` (no flags) for the full report including moderate/low 
 **Re-run**: `pnpm run audit` from the repo root. Full report (including the accepted advisory):
 `pnpm audit`.
 
+### Next 15.5.23 upgrade: preview regression triage (fix-forward decision)
+
+The first preview deployment of this branch showed two symptoms production (15.3.9) did not:
+mangled `/projects` listing hrefs (`/projects/page-7b8f60ab804c6fe4` instead of
+`/projects/cowork`) and a failing `lighthouse` gate — `meta-description` asserted 0 on `/`,
+`/mcp`, `/privacy` and `/projects/cowork` (run 32675439895).
+
+**Root cause analysis** (reproduced and ruled out locally on `next@15.5.23`):
+- Next 15.2+ streams metadata for dynamically-rendered pages: `<meta name="description">` is
+  emitted in the `<body>` of the initial HTML and hoisted to `<head>` client-side. That is why
+  `curl` "sees" the tag while a head-only check can miss it. Next serves *blocking* (in-`<head>`)
+  metadata to user agents matching its `htmlLimitedBots` default, which includes
+  `Chrome-Lighthouse` — verified locally: a UA containing `Chrome-Lighthouse` gets the meta tag
+  in `<head>` on every audited route, and `lhci autorun` with this repo's own config passes
+  `meta-description` on all asserted URLs against a local production build of this branch.
+- The `/projects` listing renders correct slug hrefs on a local production build
+  (`next build` + `next start`); the `page-<hash>` strings match Next build-manifest keys, i.e.
+  the *deployment* was built/served from inconsistent build artifacts, not from this branch's
+  code. Both symptoms point at a stale Vercel build cache carried across the 15.3.9 → 15.5.23
+  bump rather than a code-level regression.
+
+**Decision: fix forward on 15.5.23** (not pin back to an older 15.4.x/15.5.x): the branch's code
+is correct under 15.5.23 in a clean build, 15.5.23 is the current advisory-clean patch release
+(`pnpm audit`: no known vulnerabilities), and pinning lower would reintroduce a version with
+fewer fixes to work around what is a deployment-cache artifact. Remediation is a fresh preview
+deployment (rebased onto `main`, which also re-runs the `lighthouse` gate against a rebuilt
+preview); if a Vercel build ever shows `page-<hash>` hrefs again, redeploy with the build cache
+cleared.
+
 ### Dependabot PR #183 triage
 
 `build(deps): bump next from 15.3.9 to 15.5.21` — **superseded, recommend closing, do not merge**.
