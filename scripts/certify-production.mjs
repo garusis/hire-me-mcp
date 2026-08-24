@@ -62,10 +62,28 @@ const REQUIRED_ENV = [
   "NEON_PROJECT_ID",
 ];
 
-/** Env without the DB/Neon vars — keeps the `unit` step hermetic. */
+/**
+ * Env with every real backing-service credential scrubbed — for the
+ * hermetic steps (unit, and the locally-started-server suites). Without
+ * this, a locally sourced `.env` leaks real credentials into the local
+ * server under test: Neon env un-skips the runIf integration suites
+ * inside `unit`, and real Upstash credentials make the local MCP server
+ * use the REAL shared limiter — the protocol fuzz suite then trips the
+ * 60-req window and every subsequent tools/call 429s (observed on the
+ * first local certification run). Resend is scrubbed on principle: no
+ * hermetic step may ever be able to send outbound email.
+ */
 function hermeticEnv() {
   const env = { ...process.env };
-  for (const key of ["DATABASE_URL", "NEON_API_KEY", "NEON_PROJECT_ID"]) {
+  const scrubbed = [
+    "DATABASE_URL",
+    "NEON_API_KEY",
+    "NEON_PROJECT_ID",
+    "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN",
+    "RESEND_API_KEY",
+  ];
+  for (const key of scrubbed) {
     delete env[key];
   }
   return env;
@@ -128,7 +146,13 @@ const STEPS = [
   },
   {
     name: "production-e2e",
-    command: ["pnpm", "test:e2e:preview"],
+    // --workers=1 / --retries=2 mirror what playwright.preview.config.ts
+    // already enforces when process.env.CI is set, made explicit so a
+    // LOCAL certification run behaves identically: parallel workers burst
+    // the production per-IP rate-limit budget from one machine (observed
+    // as transient CSP-walk console-error failures), and the serial run
+    // is also what the committed latency budgets assume.
+    command: ["pnpm", "test:e2e:preview", "--workers=1", "--retries=2"],
     env: () => ({ ...process.env, BASE_URL: baseUrl }),
   },
   {
