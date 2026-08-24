@@ -27,7 +27,9 @@
  *                           (navigation, content, a11y, SEO, security
  *                           headers, MCP endpoint smoke, chat flows,
  *                           latency budgets) against `BASE_URL` — the
- *                           production site by default.
+ *                           production site by default. The latency
+ *                           project drains the per-IP rate window before
+ *                           sampling (latency.spec.ts, #76).
  *   8. production-lighthouse — the Lighthouse budget gate against
  *                           `BASE_URL`.
  *
@@ -152,6 +154,12 @@ const STEPS = [
     // the production per-IP rate-limit budget from one machine (observed
     // as transient CSP-walk console-error failures), and the serial run
     // is also what the committed latency budgets assume.
+    //
+    // The latency project inside this run drains the target's per-IP rate
+    // window itself before sampling (latency.spec.ts's beforeAll, #76) —
+    // release-readiness dispatch run 32748181900 saw the last sampled
+    // tool 429 on the suite's own leftover window consumption before that
+    // guard existed.
     command: ["pnpm", "test:e2e:preview", "--workers=1", "--retries=2"],
     env: () => ({ ...process.env, BASE_URL: baseUrl }),
   },
