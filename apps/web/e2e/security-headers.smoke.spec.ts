@@ -33,6 +33,11 @@ const HTML_ROUTES_TO_WALK = [
   { path: "/writing", heading: "Writing" },
   { path: "/mcp", heading: "Add me to your AI" },
   { path: "/privacy", heading: /privacy/i },
+  // #76: the browsable CV view is a raw HTML document served by a route
+  // handler, not an app-shell page — the production certification run
+  // caught its inline <style> being blocked by the nonce-scoped CSP (and a
+  // favicon 404) because no CSP-violation walk covered it.
+  { path: "/cv/print", heading: "Marcos Javier Alvarez" },
 ] as const;
 
 test.describe("HTML route headers", () => {
