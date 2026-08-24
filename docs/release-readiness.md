@@ -46,8 +46,9 @@ it queues behind — never races — `preview-e2e`, `agent-evals` and
 | 4 | `mcp-protocol` | `pnpm test:mcp` | A real `@modelcontextprotocol/sdk` client completes initialize / tools-list / every tool's happy path and documented error path / fuzzed inputs / rate-limit and security-header contracts against a local production build. |
 | 5 | `retrieval-eval` | `pnpm eval:retrieval` | Recall@k / precision@k / MRR meet the committed thresholds (`packages/core/src/eval-retrieval/thresholds.ts`) with **read-only** queries against the production database. |
 | 6 | `agent-evals` | `pnpm eval:agent` | Honesty, citation-correctness and grounding scorers meet the committed thresholds (`packages/agent/src/evals/thresholds.ts`) on real, budget-capped Gemini calls with production model config. |
-| 7 | `production-e2e` | `BASE_URL=<prod> pnpm test:e2e:preview` | The full deployed-URL gate passes against production: navigation, content correctness against the real dataset, axe accessibility, responsive, theme, SEO artifacts, security headers, the MCP endpoint smoke suite, the real-model chat grounded/gap flows, and the committed latency budgets (`performance-budgets.json`). |
-| 8 | `production-lighthouse` | `BASE_URL=<prod> pnpm run lighthouse` | Every budgeted page meets the per-page category, Core Web Vitals and resource-byte budgets in `lighthouserc.json`. |
+| 7 | `production-e2e` | `BASE_URL=<prod> pnpm test:e2e:preview --project=chromium` | The deployed-URL gate passes against production: navigation, content correctness against the real dataset, axe accessibility, responsive, theme, SEO artifacts, security headers, the MCP endpoint smoke suite, and the real-model chat grounded/gap flows. |
+| 8 | `production-latency` | `BASE_URL=<prod> pnpm test:e2e:preview --project=chromium-latency --no-deps` (after a 75 s rate-window cool-down) | The committed latency budgets (`performance-budgets.json`) hold, sampled against a clean per-IP rate window rather than racing the rest of the suite's own `/api/mcp` consumption. |
+| 9 | `production-lighthouse` | `BASE_URL=<prod> pnpm run lighthouse` | Every budgeted page meets the per-page category, Core Web Vitals and resource-byte budgets in `lighthouserc.json`. |
 
 Suite mechanics (how each is wired, local commands, env) are documented in
 [`docs/development.md`](development.md); this checklist deliberately doesn't

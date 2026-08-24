@@ -96,6 +96,17 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          # Keep in sync with agent-evals.yml — the committed full-dataset
+          # eval budget. The eval CLI's own defaults (60k tokens) predate
+          # the #75 dataset extension and only fit a partial run: dispatch
+          # run 32748181900 aborted at 63,585 tokens on the full 23-case
+          # dataset because these overrides weren't carried over. 260k is
+          # agent-evals.yml's value (~4x observed full-run usage), sized to
+          # catch runaways, not normal gemini-3.5-flash-lite
+          # dynamic-thinking jitter.
+          EVAL_MAX_CASES: "25"
+          EVAL_MAX_TOTAL_TOKENS: "260000"
+          EVAL_MAX_COST_USD: "1"
         run: pnpm certify:production
 
       - name: Upload Playwright preview-suite report
