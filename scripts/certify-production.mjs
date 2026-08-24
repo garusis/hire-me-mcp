@@ -23,17 +23,14 @@
  *                           safety rationale as agent-evals.yml).
  *   6. agent-evals        — `pnpm eval:agent`, real budget-capped Gemini
  *                           calls with the production model config.
- *   7. production-e2e     — the preview-gate Playwright suite
+ *   7. production-e2e     — the full preview-gate Playwright suite
  *                           (navigation, content, a11y, SEO, security
- *                           headers, MCP endpoint smoke, chat flows)
- *                           against `BASE_URL` — the production site by
- *                           default.
- *   8. production-latency  — the latency-budget spec, run separately
- *                           after a rate-window cool-down so its p75
- *                           samples never race the rest of the suite's
- *                           own /api/mcp consumption for the per-IP
- *                           budget.
- *   9. production-lighthouse — the Lighthouse budget gate against
+ *                           headers, MCP endpoint smoke, chat flows,
+ *                           latency budgets) against `BASE_URL` — the
+ *                           production site by default. The latency
+ *                           project drains the per-IP rate window before
+ *                           sampling (latency.spec.ts, #76).
+ *   8. production-lighthouse — the Lighthouse budget gate against
  *                           `BASE_URL`.
  *
  * Safety, by construction: this script never runs `pnpm ingest`, never
@@ -158,37 +155,12 @@ const STEPS = [
     // as transient CSP-walk console-error failures), and the serial run
     // is also what the committed latency budgets assume.
     //
-    // --project=chromium runs every spec EXCEPT latency.spec.ts — the
-    // latency samples get their own step below, behind a rate-window
-    // cool-down. Release-readiness dispatch run 32748181900: this suite's
-    // cumulative /api/mcp calls (mcp.spec's protocol+burst checks, the
-    // security-headers MCP sequence, then latency's 4x6 sampled tool
-    // calls) sit right at the production per-IP budget (60 req / 60 s
-    // sliding window), and the LAST latency tool 429ed on all three
-    // attempts — retries only re-enter the same exhausted window.
-    command: ["pnpm", "test:e2e:preview", "--project=chromium", "--workers=1", "--retries=2"],
-    env: () => ({ ...process.env, BASE_URL: baseUrl }),
-  },
-  {
-    name: "rate-limit-cooldown",
-    // Let the production per-IP sliding window (60 s) fully drain before
-    // the latency samples run, so the committed p75 budgets are measured
-    // against a clean window instead of racing the suite's own leftovers.
-    command: ["node", "-e", "setTimeout(() => process.exit(0), 75_000)"],
-    env: () => process.env,
-  },
-  {
-    name: "production-latency",
-    // --no-deps skips the chromium project dependency (already run above);
-    // the latency project's own consumption (~30 calls) fits the window.
-    command: [
-      "pnpm",
-      "test:e2e:preview",
-      "--project=chromium-latency",
-      "--no-deps",
-      "--workers=1",
-      "--retries=2",
-    ],
+    // The latency project inside this run drains the target's per-IP rate
+    // window itself before sampling (latency.spec.ts's beforeAll, #76) —
+    // release-readiness dispatch run 32748181900 saw the last sampled
+    // tool 429 on the suite's own leftover window consumption before that
+    // guard existed.
+    command: ["pnpm", "test:e2e:preview", "--workers=1", "--retries=2"],
     env: () => ({ ...process.env, BASE_URL: baseUrl }),
   },
   {
