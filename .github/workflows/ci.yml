@@ -50,6 +50,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Dependency/supply-chain audit (#57 security review): fails the build
+      # on any new high/critical advisory with a published fix.
+      # `--ignore-unfixable` skips only advisories with no patched version
+      # available at all (currently one: extract-zip via @lhci/cli's
+      # Puppeteer downloader, dev-only — see docs/security-checklist.md for
+      # the accepted-risk rationale and re-run instructions) rather than
+      # silently accepting every unfixable advisory forever; a newly
+      # disclosed unfixable advisory still surfaces here as a job failure
+      # until it's re-triaged and the checklist is updated.
+      - name: Dependency audit
+        run: pnpm run audit
+
       - name: Biome check
         run: pnpm biome check .
 

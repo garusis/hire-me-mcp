@@ -174,9 +174,8 @@ protection), plus how to reproduce the Vercel deployment locally, live in
   MCP-spec-defined (none, for this no-auth server) versus project convention.
 - **[`/llms.txt`](https://hire-me-mcp-web.vercel.app/llms.txt)** — the site's own agent entry
   point, for a visitor who was handed the deployed URL rather than this repo.
-- **Security checklist** — a one-time security pass (dependency audit, secrets hygiene, MCP input
-  fuzzing, rate-limit re-verification) is landing in
-  [#57](https://github.com/garusis/hire-me-mcp/issues/57); this section will link straight to
-  `docs/security-checklist.md` once that PR merges.
+- **[`docs/security-checklist.md`](docs/security-checklist.md)** — the v1.0 security review:
+  dependency/supply-chain audit, secrets hygiene, MCP input fuzzing, and production rate-limit
+  re-verification, with what was checked, fixed, accepted (and why), and how to re-run each check.
 - **[Issue tracker](https://github.com/garusis/hire-me-mcp/issues)** — roadmap, open work, and
   where to report a stale snippet or a bug in the MCP server.
