@@ -51,27 +51,38 @@ mangled `/projects` listing hrefs (`/projects/page-7b8f60ab804c6fe4` instead of
 `/projects/cowork`) and a failing `lighthouse` gate — `meta-description` asserted 0 on `/`,
 `/mcp`, `/privacy` and `/projects/cowork` (run 32675439895).
 
-**Root cause analysis** (reproduced and ruled out locally on `next@15.5.23`):
-- Next 15.2+ streams metadata for dynamically-rendered pages: `<meta name="description">` is
-  emitted in the `<body>` of the initial HTML and hoisted to `<head>` client-side. That is why
-  `curl` "sees" the tag while a head-only check can miss it. Next serves *blocking* (in-`<head>`)
-  metadata to user agents matching its `htmlLimitedBots` default, which includes
-  `Chrome-Lighthouse` — verified locally: a UA containing `Chrome-Lighthouse` gets the meta tag
-  in `<head>` on every audited route, and `lhci autorun` with this repo's own config passes
-  `meta-description` on all asserted URLs against a local production build of this branch.
-- The `/projects` listing renders correct slug hrefs on a local production build
-  (`next build` + `next start`); the `page-<hash>` strings match Next build-manifest keys, i.e.
-  the *deployment* was built/served from inconsistent build artifacts, not from this branch's
-  code. Both symptoms point at a stale Vercel build cache carried across the 15.3.9 → 15.5.23
-  bump rather than a code-level regression.
+**Root cause** (reproduced locally on `next@15.5.23`, confirmed against the live preview with a
+temporary CI diagnostic — job 97407176124 — and the run's `.lighthouseci` LHR artifacts):
+- Since the streaming-metadata change (Next 15.2, behavior broadened by 15.4/15.5), a
+  dynamically-rendered page emits `<meta name="description">` inside `<body>` and relies on the
+  client to hoist it into `<head>`. Every audited page here renders dynamically because the #42
+  CSP middleware injects a per-request nonce. On 15.3.9 the same pages still served blocking
+  in-`<head>` metadata; after the bump they stream it — `curl` still counts the tag (it greps the
+  whole document), but Lighthouse's `meta-description` audit only reads `head meta`, and the
+  hoist does not land reliably before Lighthouse snapshots the DOM (score 0 on the preview on
+  every run; also reproduced against a local production build).
+- Next's escape hatch is user-agent based: UAs matching its `htmlLimitedBots` default regex get
+  blocking in-`<head>` metadata, and that regex includes `Chrome-Lighthouse`. But Lighthouse
+  12.x's emulated desktop UA no longer carries the `Chrome-Lighthouse` token (plain
+  `... Chrome/136.0.0.0 Safari/537.36` — confirmed in the LHRs' `networkUserAgent`), so the
+  bot path never triggered. Verified both directions on the preview: the same URL served
+  `head_meta=1` with a `Chrome-Lighthouse` UA and `head_meta=0` (body-only) with the plain UA.
+- The mangled `/projects` hrefs (`/projects/page-<hash>`) reported on the first preview were
+  **not reproducible** on the rebased branch's preview (the CI diagnostic dumped the live
+  listing: all four slug hrefs correct) or on any local build — treated as a transient artifact
+  of the earlier deployment, resolved by the rebase/redeploy, and covered going forward by
+  `preview-e2e`'s content-correctness specs.
 
-**Decision: fix forward on 15.5.23** (not pin back to an older 15.4.x/15.5.x): the branch's code
-is correct under 15.5.23 in a clean build, 15.5.23 is the current advisory-clean patch release
-(`pnpm audit`: no known vulnerabilities), and pinning lower would reintroduce a version with
-fewer fixes to work around what is a deployment-cache artifact. Remediation is a fresh preview
-deployment (rebased onto `main`, which also re-runs the `lighthouse` gate against a rebuilt
-preview); if a Vercel build ever shows `page-<hash>` hrefs again, redeploy with the build cache
-cleared.
+**Decision: fix forward on 15.5.23** (not pin back to an older 15.4.x/15.5.x): 15.5.23 is the
+current advisory-clean patch release (`pnpm audit`: no known vulnerabilities), the app's HTML is
+correct by Next's design (real HTML-limited bots match the regex and get blocking metadata;
+JS-executing crawlers see the hoisted tag), and the only broken consumer was our own auditor.
+Fix (`lighthouserc.json`): pin `emulatedUserAgent` to Lighthouse's stock desktop UA plus the
+`Chrome-Lighthouse` token, restoring the UA contract Next keys on — verified locally
+(`meta-description` back to score 1) and by the `lighthouse` gate on the preview. Side fix
+(`.github/workflows/ci.yml`): the `lighthouse-report` artifact was silently empty because
+`upload-artifact@v4` skips hidden dirs like `.lighthouseci/` unless `include-hidden-files` is
+set — enabled, which is what made the LHR-based diagnosis possible.
 
 ### Dependabot PR #183 triage
 
