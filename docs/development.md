@@ -394,6 +394,17 @@ absent — by design, so the endpoint never 500s for want of Redis. `MCP_TEST_RA
 in a deterministic, in-memory, hermetic limiter for tests — never set in production, preview, or
 the default-config server.
 
+## Release readiness certification (`pnpm certify:production`) — #76
+
+One command runs the **entire** pyramid above — unit, Neon integration, e2e smoke, MCP protocol,
+retrieval evals, agent evals, the full deployed-URL suite and the Lighthouse gate — against the
+production configuration and domain, and reports a single pass/fail. In CI it's the manually
+dispatched **Release Readiness** workflow (`.github/workflows/release-readiness.yml`, same
+`gemini-free-tier` concurrency group as the other model-calling jobs). The committed checklist —
+what "green" means at each level, the per-surface coverage inventory, and the
+production-safety/no-pollution rationale — lives in
+[`docs/release-readiness.md`](release-readiness.md).
+
 ## Pre-commit hooks (lefthook)
 
 [lefthook](https://lefthook.dev) is the **tool-agnostic** enforcement layer: a `pre-commit` hook
