@@ -4,20 +4,65 @@
   "lighthouse": {
     "configFile": "lighthouserc.json",
     "pages": ["/", "/projects/<first project slug>", "/privacy", "/cv/print", "/mcp"],
-    "baselineMeasuredAgainst": "Vercel preview deployment for PR #182 / issue #62 (garusis/hire-me-mcp), CI run 32666601249, job 97260847781",
-    "baselineMeasuredAt": "2026-08-23",
+    "baselineMeasuredAgainst": "Production deployment https://hire-me-mcp-web.vercel.app, #76 certification run (3 LHCI runs per page, desktop preset), cross-checked against the last green CI lighthouse job on a Vercel preview (run 32720210208, job 97409814182)",
+    "baselineMeasuredAt": "2026-08-24",
     "baselines": {
-      "/": { "performance": 99, "accessibility": 100, "bestPractices": 96 },
-      "/projects/<slug>": { "performance": 100, "accessibility": 100, "bestPractices": 96 },
-      "/privacy": { "performance": 100, "accessibility": 100, "bestPractices": 96 },
-      "/cv/print": { "performance": 100, "accessibility": 100, "bestPractices": 93 },
-      "/mcp": { "performance": 100, "accessibility": 100, "bestPractices": 96 }
+      "/": {
+        "performance": 99,
+        "accessibility": 100,
+        "bestPractices": 96,
+        "lcpMs": 650,
+        "cls": 0,
+        "tbtMs": 0,
+        "scriptKb": 167,
+        "totalKb": 330
+      },
+      "/projects/<slug>": {
+        "performance": 100,
+        "accessibility": 100,
+        "bestPractices": 96,
+        "lcpMs": 616,
+        "cls": 0,
+        "tbtMs": 0,
+        "scriptKb": 165,
+        "totalKb": 324
+      },
+      "/privacy": {
+        "performance": 100,
+        "accessibility": 100,
+        "bestPractices": 96,
+        "lcpMs": 609,
+        "cls": 0,
+        "tbtMs": 0,
+        "scriptKb": 165,
+        "totalKb": 324
+      },
+      "/cv/print": {
+        "performance": 100,
+        "accessibility": 100,
+        "bestPractices": 89,
+        "lcpMs": 296,
+        "cls": 0,
+        "tbtMs": 0,
+        "scriptKb": 0,
+        "totalKb": 144
+      },
+      "/mcp": {
+        "performance": 100,
+        "accessibility": 100,
+        "bestPractices": 96,
+        "lcpMs": 620,
+        "cls": 0,
+        "tbtMs": 0,
+        "scriptKb": 165,
+        "totalKb": 324
+      }
     },
-    "note": "Category scores (0-100) as printed by scripts/lighthouse/print-scores.mjs / GITHUB_STEP_SUMMARY for the run cited above. lighthouserc.json's thresholds are set below these with margin (performance >= 0.88-0.90, accessibility >= 0.95, best-practices >= 0.9 — best-practices deliberately kept below the measured 93-96 rather than at 95, since a single-point regression on a real preview run must not be indistinguishable from noise). Core Web Vitals (LCP/CLS/TBT) and resource-byte thresholds in lighthouserc.json were not yet individually re-measured against this run (the assert step errored on an unrelated assertMatrix/top-level-assertions config conflict before evaluating them — fixed in a follow-up commit on this PR) but are set generously relative to this app's ~101-107kB first-load JS (apps/web build output) and sub-3s performance category scores; they will be tightened once a clean run's per-audit numericValue data is available."
+    "note": "Category scores (0-100), worst-of-3 per-audit numericValues (LCP/CLS/TBT) and transfer sizes measured by the #76 production certification run. lighthouserc.json's thresholds sit below/above these with deliberate margin: performance >= 0.95 (measured 99-100), accessibility >= 0.98 (measured 100 everywhere; a11y audits are deterministic DOM checks, so only a hair of noise allowance is needed), best-practices >= 0.93 (measured 96 in production — kept a single-point-noise margin below, same rationale as #62). LCP thresholds are ~2.3-3x the worst clean measurement, TBT/CLS allow noise above a measured constant zero, and resource-byte thresholds are ~1.5-1.8x the measured transfer sizes so a genuinely heavy dependency or asset fails the gate while routine drift does not. /cv/print's measured best-practices of 89 was a real production bug found by this run (inline <style> blocked by the #42 nonce-scoped CSP + a favicon 404) and is fixed on this same PR; its 0.93 threshold asserts the fix stays fixed."
   },
 
   "latency": {
-    "$comment": "Percentile-over-repeated-calls thresholds against a real Vercel preview (apps/web/e2e-preview/specs/latency.spec.ts), never a single sample. One warm-up call is made and discarded per tool/endpoint before the sample is collected, so a cold Lambda invocation never counts toward the percentile. thresholdMs values below start intentionally generous (initial commit, before this PR's own preview measurement exists) and are tightened to sit just below the measured p75 baseline in a follow-up commit on this same PR once CI has produced one — see the PR #62 description for the before/after values.",
+    "$comment": "Percentile-over-repeated-calls thresholds against a real Vercel preview (apps/web/e2e-preview/specs/latency.spec.ts), never a single sample. One warm-up call is made and discarded per tool/endpoint before the sample is collected, so a cold Lambda invocation never counts toward the percentile. Tightened by #76 from the initial generous placeholders (3000ms tools / 12000ms chat) using the three green preview-e2e CI runs since #62 merged (tool p75 106-262ms, chat TTFS p75 739-818ms) plus the #76 production certification run (tool p75 120-190ms, chat TTFS p75 267-770ms). Thresholds sit ~2.3x (tools) / ~3.7x (chat) above the worst clean-run p75 — wider than a bare 30% because only three CI datapoints exist, the runner shares one egress IP with every other spec's calls, and #169 documents free-tier Gemini volatility; still tight enough that one extra backend round-trip or a cold-path regression fails the gate.",
 
     "mcpTools": {
       "endpoint": "/api/mcp",
@@ -25,10 +70,10 @@
       "sampleCalls": 5,
       "percentile": 75,
       "tools": {
-        "get-profile": { "thresholdMs": 3000 },
-        "get-experience": { "thresholdMs": 3000 },
-        "search-projects": { "thresholdMs": 3000 },
-        "get-skill-evidence": { "thresholdMs": 3000 }
+        "get-profile": { "thresholdMs": 600 },
+        "get-experience": { "thresholdMs": 600 },
+        "search-projects": { "thresholdMs": 600 },
+        "get-skill-evidence": { "thresholdMs": 600 }
       }
     },
 
@@ -40,7 +85,7 @@
       "sampleCalls": 5,
       "maxCallsPerCiRun": 6,
       "percentile": 75,
-      "thresholdMs": 12000
+      "thresholdMs": 3000
     }
   }
 }

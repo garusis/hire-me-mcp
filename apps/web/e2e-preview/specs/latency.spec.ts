@@ -63,6 +63,37 @@ const chatUrl = `${baseUrl}${budgets.latency.chat.endpoint}`;
 
 test.describe.configure({ timeout: 90_000 });
 
+/**
+ * Drain the deployed origin's per-IP rate window before sampling (#76).
+ *
+ * This spec runs strictly after every other preview spec (the
+ * `chromium-latency` project's `dependencies` edge), but "after" is not
+ * "unaffected": the preceding specs' own `/api/mcp` calls (mcp.spec.ts's
+ * handshakes/tool calls/bounded burst, security-headers.spec.ts's MCP
+ * sequence) land in the same per-IP sliding window (60 req / 60 s by
+ * default) this spec's samples then draw from. The combined total sits
+ * right at that budget — release-readiness dispatch run 32748181900 and a
+ * preview-e2e run on PR #210 both saw the LAST sampled tool 429 on every
+ * attempt (Playwright retries just re-enter the same exhausted window),
+ * failing the gate on the suite's own leftovers rather than a real
+ * regression. Waiting one full window (plus margin) guarantees the p75
+ * samples are measured against a clean budget. Skipped for localhost
+ * targets: a local production build runs the fail-open (or hermetic
+ * test) limiter, so there is nothing to drain and no reason to slow
+ * `BASE_URL=http://127.0.0.1:3100` runs down.
+ */
+const RATE_WINDOW_DRAIN_MS = 75_000;
+const isLocalTarget = /^https?:\/\/(127\.0\.0\.1|localhost)([:/]|$)/.test(baseUrl);
+
+test.beforeAll(async () => {
+  if (isLocalTarget) {
+    return;
+  }
+  // The drain alone exceeds the config's default 60 s hook timeout.
+  test.setTimeout(RATE_WINDOW_DRAIN_MS + 30_000);
+  await new Promise((resolve) => setTimeout(resolve, RATE_WINDOW_DRAIN_MS));
+});
+
 /** Arguments each budgeted MCP read tool needs to succeed — mirrors mcp.spec.ts's real calls. */
 const TOOL_ARGUMENTS: Record<string, Record<string, unknown>> = {
   "get-profile": {},

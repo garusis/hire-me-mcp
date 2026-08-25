@@ -16,7 +16,7 @@ describe("GET /cv/print", () => {
     renderCvHtml.mockReturnValue("<!doctype html><html><body>stub</body></html>");
     const { GET } = await import("./route.js");
 
-    const response = await GET();
+    const response = await GET(new Request("https://stub-deploy.example.com/cv/print"));
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
@@ -29,12 +29,32 @@ describe("GET /cv/print", () => {
     renderCvHtml.mockReturnValue("<!doctype html><html><body>stub cv</body></html>");
     const { GET } = await import("./route.js");
 
-    const response = await GET();
+    const response = await GET(new Request("https://stub-deploy.example.com/cv/print"));
     const body = await response.text();
 
     expect(body).toBe("<!doctype html><html><body>stub cv</body></html>");
     expect(renderCvHtml).toHaveBeenCalledWith(stubView, {
       siteUrl: "https://stub-deploy.example.com",
+      nonce: undefined,
+    });
+  });
+
+  it("forwards the middleware's x-nonce request header so the inline print CSS passes CSP (#76)", async () => {
+    getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
+    const stubView = { profile: { name: "Stub Person" } };
+    getCvView.mockReturnValue(stubView);
+    renderCvHtml.mockReturnValue("<!doctype html><html><body>stub cv</body></html>");
+    const { GET } = await import("./route.js");
+
+    await GET(
+      new Request("https://stub-deploy.example.com/cv/print", {
+        headers: { "x-nonce": "stub-nonce" },
+      }),
+    );
+
+    expect(renderCvHtml).toHaveBeenCalledWith(stubView, {
+      siteUrl: "https://stub-deploy.example.com",
+      nonce: "stub-nonce",
     });
   });
 });

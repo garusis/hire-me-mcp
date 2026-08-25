@@ -24,6 +24,14 @@ import type { CvView } from "../../src/lib/content/cv";
 export interface RenderCvHtmlOptions {
   /** The site's own absolute origin, used only for the "more at" footer link — not a career fact. */
   siteUrl: string;
+  /**
+   * CSP nonce to stamp on the inline `<style>` (#76). The browsable
+   * `/cv/print` route serves this document under the middleware's
+   * nonce-scoped `style-src` policy, so the style tag must carry the
+   * request's nonce or the browser blocks it. The headless PDF renderer
+   * loads the document with no CSP at all and omits this.
+   */
+  nonce?: string;
 }
 
 function escapeHtml(value: string): string {
@@ -160,12 +168,16 @@ const STYLE = `
  */
 export function renderCvHtml(view: CvView, options: RenderCvHtmlOptions): string {
   const { profile } = view;
+  const styleTag =
+    options.nonce === undefined ? "<style>" : `<style nonce="${escapeHtml(options.nonce)}">`;
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="/icon" />
 <title>${escapeHtml(profile.name)} — CV</title>
-<style>${STYLE}</style>
+${styleTag}${STYLE}</style>
 </head>
 <body>
   <header>

@@ -99,4 +99,26 @@ describe("renderCvHtml", () => {
     const html = renderCvHtml(FIXTURE_VIEW, { siteUrl: "https://example.test" });
     expect(html).toContain("Present");
   });
+
+  it("stamps the CSP nonce on the inline <style> when one is provided (#76 — production /cv/print CSP violation)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, {
+      siteUrl: "https://example.test",
+      nonce: "fixture-nonce-value",
+    });
+    expect(html).toContain('<style nonce="fixture-nonce-value">');
+  });
+
+  it("emits a bare <style> when no nonce is provided (headless PDF render has no CSP)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, { siteUrl: "https://example.test" });
+    expect(html).toContain("<style>");
+    expect(html).not.toContain("<style nonce=");
+  });
+
+  it("declares a viewport meta and an icon link so the browsable /cv/print view has no favicon 404 (#76)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, { siteUrl: "https://example.test" });
+    expect(html).toContain(
+      '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+    );
+    expect(html).toContain('<link rel="icon" href="/icon" />');
+  });
 });
