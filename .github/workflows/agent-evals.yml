@@ -19,48 +19,59 @@ name: Agent Evals
 #
 # ## Why a SEPARATE workflow file, not a job in ci.yml
 #
-# GitHub Actions `paths:` filters apply at the whole-workflow level, not
-# per-job — putting this job inside `ci.yml` would either gate every job
-# in that file (quality/e2e/mcp-integration/preview-e2e/lighthouse) on
-# these paths, which is wrong, or drop the path filter and run the eval
-# suite (real model spend, shared quota) on every single PR regardless of
-# what it touches, which is exactly what this gate is trying to avoid.
-# A standalone workflow gets its own `on:` block.
+# This job has its own trigger set (`labeled` PRs for the run-evals
+# override, `workflow_dispatch` with a `max_cases` input, `push` to main)
+# and its own `gemini-free-tier` queueing semantics — a standalone
+# workflow keeps that self-contained instead of entangling it with
+# quality/e2e/mcp-integration's plain every-PR triggers.
 #
-# ## Trigger strategy — path-filtered, not "every PR"
+# ## Trigger strategy — every PR, in-job relevance detection (#207, #176)
 #
 # The model is `gemini-3.5-flash-lite` free tier: 15 RPM / 500 RPD, SHARED
 # with live production chat traffic (see `packages/agent/README.md`'s
-# quota rationale table — the prior default's 20 RPD ceiling was already
-# exhausted by a single eval run plus incidental debug traffic). Running
-# a ~17-case eval suite (~110K tokens per #143's real full-dataset run) on
-# every PR — including PRs touching docs, unrelated packages, or CI config
-# — would burn real, shared quota for no signal. Restricting to `pull_request`
-# runs whose diff touches a path that can actually change agent behavior
-# (the agent package itself, the shared `core` domain layer the agent's
-# tools call into, the career-data content the agent's answers are
-# grounded in, or the chat route wiring) keeps the gate meaningful without
-# spending on PRs it has nothing to say about. `workflow_dispatch` covers
-# an on-demand full run (e.g. re-verifying after a quota reset, or a
-# manual threshold-bump demonstration per #73's acceptance criteria).
-# `push` to `main` on the same paths keeps main's own history gated too,
-# since a merge can combine changes that individually passed review but
-# regress in combination.
+# quota rationale table). Running the ~25-case eval suite (real model
+# spend) on every PR — docs, unrelated packages, CI config — would burn
+# shared quota for no signal. But workflow-level `paths:` filtering is
+# BANNED here by the #176 lesson: a required check that never runs leaves
+# a PR permanently "Expected — waiting for status", and this job must stay
+# compatible with becoming required. So the workflow triggers on EVERY
+# pull request, and the "Detect agent-relevant changes" step below decides
+# in-job (#207) whether the expensive steps run:
 #
-# ## Required-check decision: NOT a required status check (documented here per #73)
+#   1. Turborepo dependency graph — `scripts/ci/eval-relevance.mjs` runs
+#      `turbo query`'s `affectedPackages` against the PR's merge base;
+#      the suite is relevant iff `@hire-me-mcp/agent` is affected, i.e.
+#      the agent package itself OR anything in its dependency closure
+#      (`@hire-me-mcp/core`, `@hire-me-mcp/career-data`, per-package
+#      lockfile changes, root config) changed. Transitive dependency
+#      changes are caught without a hand-maintained path list.
+#   2. An explicit path regex for assets outside that module graph: this
+#      workflow file, the relevance/summary CI scripts, and the chat
+#      route wiring.
+#   3. A `run-evals` PR label forces a run regardless of the diff (the
+#      `labeled` trigger type below fires a fresh run when it's added).
 #
-# A path-filtered job never RUNS on a PR outside its paths, and GitHub
-# reports a required check that never ran as pending/blocking, not
-# "skipped, so pass" — making this job required would block every PR that
-# doesn't touch these paths (docs, apps/web UI-only changes, workflow
-# config, etc.) on a check that will never fire. The gate is still REAL
-# on the paths that matter (a threshold breach fails this job red, and
-# the job is clearly visible on any PR it does run on), just not through
-# branch-protection's required-check mechanism, which GitHub does not
-# support cleanly for a path-filtered job on the "run only when relevant,
-# but block when relevant" pattern (there is no native "required-if-
-# triggered" status). See `packages/agent/README.md`'s "Running evals in
-# CI" section for the same rationale in the docs a PR reviewer reads.
+# The decision FAILS OPEN: any detection error (git, turbo, parsing)
+# runs the full suite rather than silently skipping the gate. Irrelevant
+# PRs report green in seconds with zero Gemini calls. See
+# `docs/development.md` > "What triggers the eval workflows".
+#
+# `workflow_dispatch` covers an on-demand full run (e.g. re-verifying
+# after a quota reset, or a manual threshold-bump demonstration per #73's
+# acceptance criteria). `push` to `main` keeps main's own history gated
+# too (same in-job detection, diffed against the pre-push sha), since a
+# merge can combine changes that individually passed review but regress
+# in combination.
+#
+# ## Required-check decision: NOT (yet) a required status check
+#
+# Historically this workflow was path-filtered, which is fundamentally
+# incompatible with being required (#176 — a path-filtered required check
+# permanently blocks every PR outside its paths). Since #207 it runs on
+# every PR and always attaches a status, so making it required is now
+# POSSIBLE; it stays non-required for the fork-PR reason `db-integration`
+# shares (no repo secrets → skip must not block unrelated merges). See
+# `packages/agent/README.md`'s "Running evals in CI" section.
 #
 # ## No-secrets / fork-PR behaviour
 #
@@ -72,21 +83,13 @@ name: Agent Evals
 # — same pattern as `ci.yml`'s `preview-e2e`/`lighthouse` jobs.
 on:
   pull_request:
-    paths:
-      - "packages/agent/**"
-      - "packages/core/**"
-      - "packages/career-data/content/**"
-      - "apps/web/app/api/chat/**"
-      - ".github/workflows/agent-evals.yml"
+    # No `paths:` filter (#176/#207 — see the module header). `labeled` is
+    # added to the default types so applying the `run-evals` override
+    # label fires a fresh run with the label visible in the event payload.
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches:
       - main
-    paths:
-      - "packages/agent/**"
-      - "packages/core/**"
-      - "packages/career-data/content/**"
-      - "apps/web/app/api/chat/**"
-      - ".github/workflows/agent-evals.yml"
   workflow_dispatch:
     inputs:
       max_cases:
@@ -137,6 +140,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history: the relevance step diffs against the PR's merge
+          # base (or the pre-push sha) via `git merge-base`/`turbo query`,
+          # which a depth-1 clone cannot resolve (#207).
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -170,8 +178,32 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # #207: decide in-job whether this PR/push can change agent behavior
+      # — turborepo affected-package graph (is @hire-me-mcp/agent affected?)
+      # plus an explicit regex for non-imported assets, with a `run-evals`
+      # label override. Fails OPEN (detection error → run). Labels are read
+      # live from the API, not the (re-run-stale) event payload, so
+      # label-then-re-run works as well as the `labeled` trigger. See the
+      # module header and `scripts/ci/eval-relevance.mjs`.
+      - name: Detect agent-relevant changes (turborepo graph + asset regex)
+        id: relevance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.event.pull_request.base.ref) || github.event.before }}
+          TARGET_PACKAGE: "@hire-me-mcp/agent"
+          EXTRA_PATH_REGEX: '^(\.github/workflows/agent-evals\.yml|scripts/ci/eval-relevance|scripts/ci/eval-summary\.mjs|apps/web/app/api/chat/)'
+          OVERRIDE_LABEL: run-evals
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -n "$PR_NUMBER" ]; then
+            PR_LABELS=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels" --paginate -q '.[].name' || true)
+            export PR_LABELS
+          fi
+          node scripts/ci/eval-relevance.mjs
+
       # Fork PRs never carry repo secrets, so GOOGLE_GENERATIVE_AI_API_KEY
-      # (and, since #75, DATABASE_URL — the interview agent's new
+      # (and, since #75, DATABASE_URL — the interview agent's
       # search-career tool needs both to run a real semantic-search tool
       # call) are empty here — skip with an explicit notice instead of
       # failing on an unauthenticated provider/DB call. See the module
@@ -179,10 +211,15 @@ jobs:
       # `reindex-production.yml` reads/writes — a read-only ANN query
       # against it is safe; there's no disposable-Neon-branch provisioning
       # here the way `retrieval-eval.yml` does, since this job doesn't
-      # ingest anything.
-      - name: Check for required secrets (skips on fork PRs)
+      # ingest anything. #207: this step also folds in the relevance
+      # decision above, same shape as retrieval-eval.yml's equivalent step.
+      - name: Check for required secrets (skips on fork PRs and irrelevant PRs)
         id: secrets-check
         run: |
+          if [ "${{ steps.relevance.outputs.relevant }}" != "true" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ -z "${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}" ] || [ -z "${{ secrets.DATABASE_URL }}" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping agent-evals — GOOGLE_GENERATIVE_AI_API_KEY and/or DATABASE_URL is unavailable (expected for fork PRs, which never receive repo secrets)."
