@@ -16,6 +16,12 @@ describe("TECH_TAGS", () => {
     expect(new Set(TECH_TAGS).size).toBe(TECH_TAGS.length);
   });
 
+  it("covers the flagship hire-me-mcp project's stack (#191)", () => {
+    for (const tag of ["nextjs", "vercel", "playwright", "mcp", "rag", "github-actions"]) {
+      expect(TECH_TAGS).toContain(tag);
+    }
+  });
+
   it("uses the canonical postgresql spelling, never a variant", () => {
     expect(TECH_TAGS).toContain("postgresql");
     expect(TECH_TAGS).not.toContain("postgres");

@@ -42,4 +42,26 @@ describe("projectSchema", () => {
     const { name: _name, ...withoutName } = validProject;
     expect(projectSchema.safeParse(withoutName).success).toBe(false);
   });
+
+  describe("featured flag (#191)", () => {
+    it("accepts a project with featured: true and preserves the value", () => {
+      const result = projectSchema.safeParse({ ...validProject, featured: true });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.featured).toBe(true);
+      }
+    });
+
+    it("accepts a project without a featured field (optional, stays undefined)", () => {
+      const result = projectSchema.safeParse(validProject);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.featured).toBeUndefined();
+      }
+    });
+
+    it("rejects a non-boolean featured value", () => {
+      expect(projectSchema.safeParse({ ...validProject, featured: "yes" }).success).toBe(false);
+    });
+  });
 });

@@ -62,6 +62,30 @@
   color: var(--color-fg-muted);
 }
 
+.flagshipGrid {
+  margin-top: var(--space-5);
+}
+
+/* Accent border + badge only — no tinted background, for the same WCAG AA
+   contrast reason documented on /projects' .flagshipCard. */
+.flagshipCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-color: var(--color-accent);
+  border-width: 2px;
+}
+
+.flagshipBadge {
+  margin: 0;
+}
+
+.flagshipRole {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+}
+
 .skillList {
   display: flex;
   flex-wrap: wrap;

@@ -23,13 +23,28 @@ interface ProjectsPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
+/**
+ * One project card. A `featured` project (issue 191) gets the flagship
+ * treatment: an accent badge naming it the flagship of this portfolio, its
+ * role, and its external links, on a visually distinct card — while still
+ * living inside the same filterable list as every other project. Which
+ * project (if any) is the flagship is purely a content-layer decision
+ * (`featured: true` on the record), never an id hardcoded here.
+ */
 function ProjectCard({ item }: { item: ProjectListItemView }) {
   const { project, slug } = item;
+  const flagship = project.featured === true;
   return (
-    <Card as="article">
+    <Card as="article" className={cx(flagship && styles.flagshipCard)}>
+      {flagship && (
+        <p className={styles.flagshipBadge}>
+          <Badge variant="accent">Flagship project of this portfolio</Badge>
+        </p>
+      )}
       <Heading level={2}>
         <Link href={`/projects/${slug}`}>{project.name}</Link>
       </Heading>
+      {flagship && <p className={styles.flagshipRole}>{project.role}</p>}
       <Prose>
         <p>{project.summary}</p>
       </Prose>
@@ -40,6 +55,15 @@ function ProjectCard({ item }: { item: ProjectListItemView }) {
           </li>
         ))}
       </ul>
+      {flagship && project.links.length > 0 && (
+        <ul className={styles.flagshipLinks}>
+          {project.links.map((link) => (
+            <li key={link.url}>
+              <Link href={link.url}>{link.label}</Link>
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }

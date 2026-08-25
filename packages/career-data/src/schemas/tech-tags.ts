@@ -41,6 +41,12 @@ export const TECH_TAGS = [
   "sql",
   "turborepo",
   "pnpm",
+  "nextjs",
+  "vercel",
+  "playwright",
+  "mcp",
+  "rag",
+  "github-actions",
   "vision-document-processing",
 ] as const;
 

@@ -19,6 +19,14 @@ export const projectSchema = z.object({
   tech: z.array(z.string().min(1)).min(1),
   links: z.array(linkSchema),
   body: z.string().min(1),
+  /**
+   * Flagship/featured treatment (#191): a `featured: true` project is
+   * surfaced first by the site's listing views and rendered with a
+   * visually-distinct flagship card on `/projects` and the home page.
+   * Optional — the overwhelmingly common case is an ordinary project with
+   * no flag at all.
+   */
+  featured: z.boolean().optional(),
 });
 
 export type Project = z.infer<typeof projectSchema>;

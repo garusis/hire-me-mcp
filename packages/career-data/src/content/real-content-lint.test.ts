@@ -27,16 +27,21 @@ describe("real career-data content — lint (#51)", () => {
     expect(result.schemaErrors).toEqual([]);
   });
 
-  it("flags exactly the two known orphan education entries, at warning severity only", () => {
+  it("flags exactly the known orphan entries, at warning severity only", () => {
     const result = runLint(contentDir);
-    const orphanEducationIds = result.violations
+    const orphanIds = result.violations
       .filter((violation) => violation.rule === "no-orphan-entities")
       .map((violation) => violation.entityId)
       .sort();
-    expect(orphanEducationIds).toEqual(
+    // Two education credentials no skill cites, plus the hire-me-mcp
+    // flagship write-up (#191) — a brand-new project record not yet cited
+    // as evidence by any skill. Legitimate warnings, per the rule's own
+    // docstring, not errors.
+    expect(orphanIds).toEqual(
       [
         "unad-bs-systems-engineering",
         "international-scrum-institute-2020-scrum-master-product-owner",
+        "hire-me-mcp",
       ].sort(),
     );
     expect(

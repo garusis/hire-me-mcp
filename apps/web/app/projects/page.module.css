@@ -44,6 +44,36 @@
   margin: 0;
 }
 
+/*
+ * Distinct via the accent border and badge only — deliberately no tinted
+ * background: `--color-bg-subtle` behind default link/muted-text colors
+ * drops contrast below the 4.5:1 WCAG AA minimum the axe preview gate
+ * enforces (measured 4.14:1 in the light theme).
+ */
+.flagshipCard {
+  border-color: var(--color-accent);
+  border-width: 2px;
+}
+
+.flagshipBadge {
+  margin: 0 0 var(--space-2);
+}
+
+.flagshipRole {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+}
+
+.flagshipLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  list-style: none;
+  padding: 0;
+  margin: var(--space-3) 0 0;
+}
+
 .techList {
   display: flex;
   flex-wrap: wrap;

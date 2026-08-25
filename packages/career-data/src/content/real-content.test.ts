@@ -236,5 +236,34 @@ describe("skills, gaps and projects content (#50)", () => {
         expect(project.body.trim().length).toBeGreaterThan(0);
       }
     });
+
+    describe("flagship record (#191)", () => {
+      it("includes hire-me-mcp itself, flagged as the featured project", () => {
+        const flagship = dataset.projects.find((project) => project.id === "hire-me-mcp");
+        expect(flagship).toBeDefined();
+        expect(flagship?.featured).toBe(true);
+      });
+
+      it("hire-me-mcp is the only featured project — the flagship treatment is singular", () => {
+        const featured = dataset.projects.filter((project) => project.featured === true);
+        expect(featured.map((project) => project.id)).toEqual(["hire-me-mcp"]);
+      });
+
+      it("hire-me-mcp links to the GitHub repo, the live site, and the MCP endpoint", () => {
+        const flagship = dataset.projects.find((project) => project.id === "hire-me-mcp");
+        const urls = flagship?.links.map((link) => link.url) ?? [];
+        expect(urls).toContain("https://github.com/garusis/hire-me-mcp");
+        expect(urls).toContain("https://hire-me-mcp-web.vercel.app");
+        expect(urls).toContain("https://hire-me-mcp-web.vercel.app/api/mcp");
+      });
+
+      it("hire-me-mcp documents its coding, testing and AI patterns in the body", () => {
+        const flagship = dataset.projects.find((project) => project.id === "hire-me-mcp");
+        const body = flagship?.body ?? "";
+        expect(body).toContain("## Coding patterns");
+        expect(body).toContain("## Testing patterns");
+        expect(body).toContain("## AI patterns");
+      });
+    });
   });
 });
