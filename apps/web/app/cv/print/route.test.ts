@@ -6,12 +6,16 @@ vi.mock("../../../src/lib/content", () => ({ getCvView }));
 const { renderCvHtml } = vi.hoisted(() => ({ renderCvHtml: vi.fn() }));
 vi.mock("../../../lib/cv/render-cv-html", () => ({ renderCvHtml }));
 
-const { getSiteUrl } = vi.hoisted(() => ({ getSiteUrl: vi.fn() }));
-vi.mock("../../../src/lib/config/site-url", () => ({ getSiteUrl }));
+const { getSiteUrl, getMcpEndpointUrl } = vi.hoisted(() => ({
+  getSiteUrl: vi.fn(),
+  getMcpEndpointUrl: vi.fn(),
+}));
+vi.mock("../../../src/lib/config/site-url", () => ({ getSiteUrl, getMcpEndpointUrl }));
 
 describe("GET /cv/print", () => {
   it("returns 200 with a text/html; charset=utf-8 content type", async () => {
     getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
+    getMcpEndpointUrl.mockReturnValue("https://stub-deploy.example.com/api/mcp");
     getCvView.mockReturnValue({ profile: { name: "Stub Person" } });
     renderCvHtml.mockReturnValue("<!doctype html><html><body>stub</body></html>");
     const { GET } = await import("./route.js");
@@ -24,6 +28,7 @@ describe("GET /cv/print", () => {
 
   it("serves the body rendered from the CV view and the runtime site URL", async () => {
     getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
+    getMcpEndpointUrl.mockReturnValue("https://stub-deploy.example.com/api/mcp");
     const stubView = { profile: { name: "Stub Person" } };
     getCvView.mockReturnValue(stubView);
     renderCvHtml.mockReturnValue("<!doctype html><html><body>stub cv</body></html>");
@@ -35,12 +40,14 @@ describe("GET /cv/print", () => {
     expect(body).toBe("<!doctype html><html><body>stub cv</body></html>");
     expect(renderCvHtml).toHaveBeenCalledWith(stubView, {
       siteUrl: "https://stub-deploy.example.com",
+      mcpUrl: "https://stub-deploy.example.com/api/mcp",
       nonce: undefined,
     });
   });
 
   it("forwards the middleware's x-nonce request header so the inline print CSS passes CSP (#76)", async () => {
     getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
+    getMcpEndpointUrl.mockReturnValue("https://stub-deploy.example.com/api/mcp");
     const stubView = { profile: { name: "Stub Person" } };
     getCvView.mockReturnValue(stubView);
     renderCvHtml.mockReturnValue("<!doctype html><html><body>stub cv</body></html>");
@@ -54,6 +61,7 @@ describe("GET /cv/print", () => {
 
     expect(renderCvHtml).toHaveBeenCalledWith(stubView, {
       siteUrl: "https://stub-deploy.example.com",
+      mcpUrl: "https://stub-deploy.example.com/api/mcp",
       nonce: "stub-nonce",
     });
   });

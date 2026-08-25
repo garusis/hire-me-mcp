@@ -45,7 +45,7 @@ function toListItem(repository: CareerDataRepository, project: Project): Project
  * (`featured: true` in the project's frontmatter), so which project leads
  * is a content decision, never a hardcoded id here.
  */
-function sortFeaturedFirst(projects: readonly Project[]): Project[] {
+export function sortFeaturedFirst(projects: readonly Project[]): Project[] {
   return [
     ...projects.filter((project) => project.featured === true),
     ...projects.filter((project) => project.featured !== true),
