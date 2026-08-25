@@ -1,6 +1,6 @@
 {
   "name": "@hire-me-mcp/tdd-guard",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Source<->test path mapping and TDD allow/block decision logic used by .claude/hooks",
   "license": "UNLICENSED",
