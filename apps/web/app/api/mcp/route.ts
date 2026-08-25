@@ -6,7 +6,12 @@ import { withRateLimit } from "../../../lib/mcp/rate-limit/with-rate-limit";
 import { getExperienceTool } from "../../../lib/mcp/tools/get-experience";
 import { getProfileTool } from "../../../lib/mcp/tools/get-profile";
 import { getSkillEvidenceTool } from "../../../lib/mcp/tools/get-skill-evidence";
+import { listEducationTool } from "../../../lib/mcp/tools/list-education";
+import { listGapsTool } from "../../../lib/mcp/tools/list-gaps";
+import { listProjectsTool } from "../../../lib/mcp/tools/list-projects";
 import { listRecommendationsTool } from "../../../lib/mcp/tools/list-recommendations";
+import { listSkillsTool } from "../../../lib/mcp/tools/list-skills";
+import { listWritingTool } from "../../../lib/mcp/tools/list-writing";
 import { pingTool } from "../../../lib/mcp/tools/ping";
 import { searchCareerTool } from "../../../lib/mcp/tools/search-career";
 import { searchProjectsTool } from "../../../lib/mcp/tools/search-projects";
@@ -43,6 +48,11 @@ const handler = createMcpHandler(
     defineTool(server, searchProjectsTool);
     defineTool(server, getSkillEvidenceTool);
     defineTool(server, searchCareerTool);
+    defineTool(server, listEducationTool);
+    defineTool(server, listSkillsTool);
+    defineTool(server, listGapsTool);
+    defineTool(server, listProjectsTool);
+    defineTool(server, listWritingTool);
     defineTool(server, listRecommendationsTool);
   },
   {
@@ -58,7 +68,10 @@ const handler = createMcpHandler(
       "his project portfolio, and `get-skill-evidence` to check whether a specific skill or " +
       "technology is claimed. For open-ended or cross-cutting questions those structured " +
       "tools can't answer directly, use `search-career`, a semantic search over the full " +
-      "career text. Every tool call is recorded as an anonymized, aggregate-only usage " +
+      "career text. To enumerate whole collections deterministically — e.g. for CV-style " +
+      "rendering — use the read-only list tools: `list-education`, `list-skills`, " +
+      "`list-gaps` (his honest, self-declared skill gaps), `list-projects`, and " +
+      "`list-writing`. Every tool call is recorded as an anonymized, aggregate-only usage " +
       "event (which tool, which surface, the outcome) — never the raw arguments, your IP, " +
       "or any identifying information. See the privacy note at /privacy for the full, " +
       "auditable list of what is and isn't collected.",
