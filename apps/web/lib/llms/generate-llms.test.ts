@@ -306,7 +306,14 @@ describe("renderLlmsFullTxt", () => {
       endpointUrl: "https://stub-deploy.example.com/api/mcp",
     });
 
-    const searchCareerSection = text.slice(text.indexOf("### search-career"));
+    // Bound the slice at the next tool heading — sections after search-career
+    // (the no-parameter list tools, #211-#215) legitimately say "Parameters: none".
+    const sectionStart = text.indexOf("### search-career");
+    const nextHeading = text.indexOf("\n### ", sectionStart + 1);
+    const searchCareerSection = text.slice(
+      sectionStart,
+      nextHeading === -1 ? undefined : nextHeading,
+    );
     expect(searchCareerSection).toContain("Parameters: query");
     expect(searchCareerSection).toContain("topK");
     expect(searchCareerSection).not.toContain("Parameters: none");

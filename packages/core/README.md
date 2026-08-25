@@ -217,6 +217,36 @@ so real-content-unreachable) case of a citation that fails to resolve against th
 repository's dataset — no randomness, no wall-clock dependency. The same `skill` string against the
 same dataset, called any number of times, returns byte-identical output.
 
+### The list services (#211–#215)
+
+Five deterministic enumeration services from the #188 tool-coverage audit — the read-only
+counterparts to the search/lookup services above. All follow the same contract: pure reads
+against the repository's dataset, a documented stable sort order (deterministic regardless of
+input array order), `citations[i]` resolving to `data[i]`, and an honest empty list — never a
+thrown error — when nothing matches or nothing is authored.
+
+- **`listEducation(repository): DomainResult<EducationEntry[]>`** — every education record, most
+  recent first (a missing `endDate` means in-progress and sorts first; ties by `startDate`
+  descending, then `id` ascending). Optional dates are preserved exactly as authored. Citation
+  label: `"{credential}, {institution}"`.
+- **`listSkills(repository, filter?): DomainResult<Skill[]>`** — the full claimed-skills
+  inventory, sorted by name (case-insensitive, ties by `id`). `SkillsFilter` ANDs an optional
+  exact case-insensitive `category` and an optional `proficiency` enum value. Each record's
+  `evidence` citations are resolved fresh against the dataset (same guarantee as
+  `getSkillEvidence`'s `claimed` branch); top-level `citations[i]` is a self-citation to the
+  skill entity.
+- **`listGaps(repository): DomainResult<GapListEntry[]>`** — the authoritative known-gaps
+  enumeration, `id` ascending. Each `GapListEntry` carries the authored `statement`
+  byte-identical, with `relatedSkills` resolved from bare skill ids into skill citations
+  (unresolvable ids skipped, same tolerance as `getSkillEvidence`).
+- **`listProjects(repository, options?): DomainResult<Project[]>`** — every project record
+  (including the full MDX `body`), `id` ascending, no scores or ranking — this complements, not
+  replaces, `searchProjects`. `options.tags` pre-filters with OR semantics, each tag resolved
+  through the same skill-alias index `searchProjects` uses.
+- **`listWriting(repository): DomainResult<WritingEntry[]>`** — every writing entry,
+  `publishedDate` descending (ties by `id`). With the currently-empty writing corpus the honest
+  result is `{ data: [], citations: [] }` — "nothing published yet" is data.
+
 ## The career-data chunker (`chunkCareerData`)
 
 `chunkCareerData(dataset: CareerDataset, options?: ChunkingOptions): Chunk[]` (#21, epic #6) turns
