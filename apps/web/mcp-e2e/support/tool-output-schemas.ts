@@ -22,9 +22,12 @@
  */
 import {
   citationSchema,
+  educationEntrySchema,
   experienceEntrySchema,
   profileSchema,
   projectSchema,
+  skillSchema,
+  writingEntrySchema,
 } from "@hire-me-mcp/career-data";
 import { z } from "zod";
 
@@ -103,5 +106,46 @@ export const getSkillEvidenceOutputSchema = z.object({
       term: z.string().min(1),
     }),
   ]),
+  citations: citationsSchema,
+});
+
+/** `list-education` result (#211): a list of EducationEntry plus citations. */
+export const listEducationOutputSchema = z.object({
+  data: z.array(educationEntrySchema),
+  citations: citationsSchema,
+});
+
+/** `list-skills` result (#212): full Skill records (evidence citations resolved) plus citations. */
+export const listSkillsOutputSchema = z.object({
+  data: z.array(skillSchema),
+  citations: citationsSchema,
+});
+
+/**
+ * `list-gaps` result (#213): authored gap fields with `relatedSkills`
+ * resolved from bare skill ids into Citation records.
+ */
+export const listGapsOutputSchema = z.object({
+  data: z.array(
+    z.object({
+      id: z.string().min(1),
+      name: z.string().min(1),
+      aliases: z.array(z.string()),
+      statement: z.string().min(1),
+      relatedSkills: citationsSchema,
+    }),
+  ),
+  citations: citationsSchema,
+});
+
+/** `list-projects` result (#214): full Project records (incl. body) plus citations. */
+export const listProjectsOutputSchema = z.object({
+  data: z.array(projectSchema),
+  citations: citationsSchema,
+});
+
+/** `list-writing` result (#215): a list of WritingEntry plus citations (currently empty corpus). */
+export const listWritingOutputSchema = z.object({
+  data: z.array(writingEntrySchema),
   citations: citationsSchema,
 });

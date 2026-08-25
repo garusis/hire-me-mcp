@@ -64,6 +64,14 @@ export type {
   UnknownSkillOutcome,
 } from "./get-skill-evidence.js";
 export { getSkillEvidence } from "./get-skill-evidence.js";
+export { listEducation } from "./list-education.js";
+export type { GapListEntry } from "./list-gaps.js";
+export { listGaps } from "./list-gaps.js";
+export type { ListProjectsOptions } from "./list-projects.js";
+export { listProjects } from "./list-projects.js";
+export type { SkillsFilter } from "./list-skills.js";
+export { listSkills } from "./list-skills.js";
+export { listWriting } from "./list-writing.js";
 export type { CareerDataRepository, CareerDataset } from "./repository.js";
 export {
   createContentCareerDataRepository,
