@@ -4,6 +4,11 @@ import { EXPECTED_TOOL_NAMES } from "./tool-names";
 import { getExperienceTool } from "./tools/get-experience";
 import { getProfileTool } from "./tools/get-profile";
 import { getSkillEvidenceTool } from "./tools/get-skill-evidence";
+import { listEducationTool } from "./tools/list-education";
+import { listGapsTool } from "./tools/list-gaps";
+import { listProjectsTool } from "./tools/list-projects";
+import { listSkillsTool } from "./tools/list-skills";
+import { listWritingTool } from "./tools/list-writing";
 import { pingTool } from "./tools/ping";
 import { searchCareerTool } from "./tools/search-career";
 import { searchProjectsTool } from "./tools/search-projects";
@@ -16,6 +21,11 @@ const REAL_TOOLS_BY_NAME = new Map(
     searchProjectsTool,
     getSkillEvidenceTool,
     searchCareerTool,
+    listEducationTool,
+    listSkillsTool,
+    listGapsTool,
+    listProjectsTool,
+    listWritingTool,
   ].map((tool) => [tool.name, tool]),
 );
 

@@ -21,6 +21,11 @@
 import { getExperienceTool } from "./tools/get-experience";
 import { getProfileTool } from "./tools/get-profile";
 import { getSkillEvidenceTool } from "./tools/get-skill-evidence";
+import { listEducationTool } from "./tools/list-education";
+import { listGapsTool } from "./tools/list-gaps";
+import { listProjectsTool } from "./tools/list-projects";
+import { listSkillsTool } from "./tools/list-skills";
+import { listWritingTool } from "./tools/list-writing";
 import { pingTool } from "./tools/ping";
 import { searchCareerTool } from "./tools/search-career";
 import { searchProjectsTool } from "./tools/search-projects";
@@ -39,6 +44,11 @@ const REGISTERED_TOOLS = [
   searchProjectsTool,
   getSkillEvidenceTool,
   searchCareerTool,
+  listEducationTool,
+  listSkillsTool,
+  listGapsTool,
+  listProjectsTool,
+  listWritingTool,
 ];
 
 const EXAMPLE_PROMPTS_BY_NAME: Record<string, string> = {
@@ -48,6 +58,11 @@ const EXAMPLE_PROMPTS_BY_NAME: Record<string, string> = {
   "search-projects": "Show me projects where Marcos used TypeScript or Kubernetes.",
   "get-skill-evidence": "Has Marcos worked with event-driven architectures? Show me the evidence.",
   "search-career": "What's Marcos's experience with leading engineering teams and mentoring?",
+  "list-education": "What formal education and certifications does Marcos have?",
+  "list-skills": "List every skill Marcos claims, with category and proficiency.",
+  "list-gaps": "Which technologies does Marcos explicitly not claim experience with?",
+  "list-projects": "Give me the complete list of Marcos's projects and open-source work.",
+  "list-writing": "Has Marcos published any articles or long-form writing?",
 };
 
 function examplePromptFor(toolName: string): string {
