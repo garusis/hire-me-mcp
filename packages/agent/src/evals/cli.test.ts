@@ -123,11 +123,20 @@ describe("extractCitationsFromToolResults", () => {
 });
 
 describe("extractToolNamesFromToolResults (#75)", () => {
-  it("collects every tool result's toolName, in order, including duplicates", () => {
+  it("collects every tool result's payload.toolName (the real ToolResultChunk shape), in order, including duplicates", () => {
     const toolResults = [
-      { toolName: "get-experience", payload: { result: { data: [], citations: [] } } },
-      { toolName: "search-career", payload: { result: { data: {}, citations: [] } } },
-      { toolName: "search-career", payload: { result: { data: {}, citations: [] } } },
+      {
+        type: "tool-result",
+        payload: { toolName: "get-experience", result: { data: [], citations: [] } },
+      },
+      {
+        type: "tool-result",
+        payload: { toolName: "search-career", result: { data: {}, citations: [] } },
+      },
+      {
+        type: "tool-result",
+        payload: { toolName: "search-career", result: { data: {}, citations: [] } },
+      },
     ];
 
     expect(extractToolNamesFromToolResults(toolResults)).toEqual([
@@ -137,12 +146,25 @@ describe("extractToolNamesFromToolResults (#75)", () => {
     ]);
   });
 
+  it("falls back to a top-level toolName when there is no payload one", () => {
+    const toolResults = [
+      { toolName: "flat-shape" },
+      { toolName: "top-level-ignored", payload: { toolName: "payload-wins" } },
+    ];
+    expect(extractToolNamesFromToolResults(toolResults)).toEqual(["flat-shape", "payload-wins"]);
+  });
+
   it("returns an empty array for no tool calls", () => {
     expect(extractToolNamesFromToolResults([])).toEqual([]);
   });
 
-  it("skips a tool result with no string toolName, without throwing", () => {
-    const toolResults = [{ toolName: 42 }, { garbage: true }, undefined, { toolName: "real" }];
+  it("skips a tool result with no string toolName anywhere, without throwing", () => {
+    const toolResults = [
+      { payload: { toolName: 42 } },
+      { garbage: true },
+      undefined,
+      { payload: { toolName: "real" } },
+    ];
     expect(() => extractToolNamesFromToolResults(toolResults)).not.toThrow();
     expect(extractToolNamesFromToolResults(toolResults)).toEqual(["real"]);
   });

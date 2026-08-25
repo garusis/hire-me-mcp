@@ -7,7 +7,7 @@
   "summary": "Main backend engineer on a cloud-based, multi-tenant SaaS for real-time quality-control inspections across factories, product lots, and distribution points.",
   "highlights": [
     "Owned backend architecture and delivery for the multi-tenant inspection platform end to end.",
-    "Gathered requirements directly with project leaders, QA, and the client, translating them into shipped features.",
+    "Took over the client relationship mid-project after the PM left: diagnosed a roadmap built on misread requirements, brought the team's lead frontend engineer and lead QA into the client meetings, proposed a reorganized roadmap, renegotiated scope and deadlines with a frustrated client, and rebuilt trust over a few sprints of working software — the recovered account won the company further work.",
     "Onboarded and mentored new team members on the business domain and technical stack."
   ],
   "tech": ["nestjs", "typescript", "postgresql", "docker", "gitlab-ci", "aws"]

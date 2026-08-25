@@ -2,9 +2,10 @@
 id: document-extraction-pipeline
 name: AI Document Extraction Pipeline
 summary: >-
-  Production LLM pipeline for extracting structured data from documents,
-  with a fallback lane that lifted field accuracy from roughly 0.30 to 0.87
-  on documents an incumbent OCR vendor could not process at all.
+  Production LLM pipeline for extracting structured data from documents —
+  across the vendor-replacement experiments, accuracy went from roughly 30%
+  to 87%, with wider coverage than the incumbent OCR vendor at about 3% of
+  its cost.
 role: Lead engineer
 tech:
   - typescript
@@ -14,6 +15,7 @@ tech:
   - anthropic-api
   - ai-agents
   - prompt-engineering
+  - vision-document-processing
 links: []
 ---
 
@@ -27,23 +29,28 @@ everything by hand.
 
 ## What I built
 
-I designed and shipped the production LLM pipeline that extracts that
-structured data. The incumbent OCR vendor returned nothing on a meaningful
-slice of real-world documents — low scan quality, unusual layouts, dense
-tables. I built a fallback lane in front of an LLM-based extraction path for
-exactly that slice, and measured field accuracy against a human-graded
-ground truth before and after: roughly 0.30 to 0.87 on the documents the
-vendor could not process.
+The incumbent OCR vendor was doing real work: it extracted roughly 66% of
+the documents in the pipeline at 80–90% accuracy. The remaining third it
+only classified — those documents were never extracted at all. The project
+was to prove the vendor could be replaced, by testing competing theories
+about how to split, index, categorize and extract documents more reliably,
+with more coverage, and cheaper.
+
+Across those experiments, field accuracy measured against a human-graded
+ground truth went from roughly 30% on the first pass to 87% — at least as
+reliable as the vendor's scores, extending coverage past the third of
+documents it never extracted, with better categorization and indexing, at
+about 3% of the vendor's cost.
 
 The pipeline is not a single prompt. It is a set of typed extraction
 contracts per document type, a routing layer that decides which lane a
-document takes, and a scoring step that treats "the vendor returned
-nothing" as a first-class outcome rather than a failure to swallow silently.
+document takes, and a scoring step that measures every lane against the
+same human-graded ground truth instead of trusting any of them.
 
-I later led an evaluation of vision-LLM document classification and
-extraction as a potential replacement for parts of the vendor's own path,
-sizing the cost and accuracy trade-off for processing large, multi-page
-closing packets at a fraction of the vendor's per-document price.
+I led the team evaluating vision-LLM document classification and extraction
+for the replacement, personally designing and testing the competing
+pipeline architectures — which made 80+ page closing packets processable
+at a small fraction of the vendor's per-loan cost.
 
 ## Why it mattered
 
