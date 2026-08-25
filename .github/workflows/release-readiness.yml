@@ -1,0 +1,137 @@
+name: Release Readiness
+
+# #76 — the single documented CI job that runs the ENTIRE test pyramid
+# (unit, DB integration, e2e smoke, MCP protocol, retrieval evals, agent
+# evals, full production e2e, Lighthouse budgets) against the production
+# configuration and domain, and reports ONE pass/fail result. The actual
+# order/logic lives in `scripts/certify-production.mjs` (also runnable
+# locally as `pnpm certify:production`); this workflow only provisions the
+# environment and secrets. See docs/release-readiness.md for the
+# checklist, the per-level definition of "green", and the
+# no-pollution (analytics / rate limits / outbound contact) rationale.
+#
+# Manually dispatched, never scheduled or PR-triggered: a certification
+# run makes real Gemini calls (agent evals + chat e2e + retrieval-eval
+# query embeddings) against the SAME free-tier quota production chat
+# serves from (15 RPM / 500 RPD gemini-3.5-flash-lite — see
+# packages/agent/README.md), and drives real traffic at the production
+# domain. Run it before cutting a release, not on every push.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Deployment origin to certify (defaults to production)"
+        required: false
+        default: "https://hire-me-mcp-web.vercel.app"
+
+# Same shared-quota queueing as preview-e2e / agent-evals / retrieval-eval
+# (#169): never race another Gemini-calling job for the free-tier RPM.
+concurrency:
+  group: gemini-free-tier
+  cancel-in-progress: false
+
+jobs:
+  certify:
+    name: certify
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Cache Turborepo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ github.job }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve installed Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('./package.json').devDependencies['@playwright/test']")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Chromium (with OS deps)
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Strict, not skip-on-missing: unlike the per-PR jobs (which skip
+      # cleanly on fork PRs), a certification run with a missing secret
+      # would silently certify less than the whole pyramid — the script
+      # itself also re-checks and fails fast.
+      - name: Run the full certification pyramid
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          # Keep in sync with agent-evals.yml — the committed full-dataset
+          # eval budget. The eval CLI's own defaults (60k tokens) predate
+          # the #75 dataset extension and only fit a partial run: dispatch
+          # run 32748181900 aborted at 63,585 tokens on the full 23-case
+          # dataset because these overrides weren't carried over. 260k is
+          # agent-evals.yml's value (~4x observed full-run usage), sized to
+          # catch runaways, not normal gemini-3.5-flash-lite
+          # dynamic-thinking jitter.
+          EVAL_MAX_CASES: "25"
+          EVAL_MAX_TOTAL_TOKENS: "260000"
+          EVAL_MAX_COST_USD: "1"
+        run: pnpm certify:production
+
+      - name: Upload Playwright preview-suite report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: certification-playwright-report
+          path: playwright-preview-report/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload Lighthouse reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: certification-lighthouse-report
+          path: .lighthouseci/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload agent eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: certification-agent-eval-report
+          path: packages/agent/eval-report.json
+          retention-days: 30
+          if-no-files-found: ignore

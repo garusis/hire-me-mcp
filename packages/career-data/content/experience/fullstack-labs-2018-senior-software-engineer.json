@@ -7,7 +7,7 @@
   "summary": "Full-stack development of a platform supporting a fiduciary purchasing agent for FF&E/OS&E procurement, for a US client.",
   "highlights": [
     "Built and maintained full-stack features across the procurement platform.",
-    "Migrated data from a poorly documented legacy platform while preserving the integrity of core financial calculations."
+    "Migrated existing quote data to the rebuilt platform and reconciled it against the legacy system, tracing a mismatch in financial totals to differing rounding behavior between JavaScript and the legacy system, and aligning the new calculations to the client's existing rounding rules — number continuity was an explicit client requirement."
   ],
   "tech": ["nodejs", "react", "postgresql", "aws", "docker"]
 }

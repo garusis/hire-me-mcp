@@ -47,6 +47,7 @@ export const TECH_TAGS = [
   "mcp",
   "rag",
   "github-actions",
+  "vision-document-processing",
 ] as const;
 
 /** A single canonical technology tag spelling from {@link TECH_TAGS}. */

@@ -41,6 +41,7 @@
     "ingest": "pnpm --filter @hire-me-mcp/core ingest",
     "eval:agent": "pnpm --filter @hire-me-mcp/agent eval:agent",
     "eval:retrieval": "pnpm --filter @hire-me-mcp/core eval:retrieval",
+    "certify:production": "node scripts/certify-production.mjs",
     "typecheck": "turbo run typecheck",
     "validate": "turbo run validate",
     "lint:content": "turbo run lint:content",
@@ -54,7 +55,8 @@
     "docs-rot:links": "node scripts/ci/docs-rot/check-links.mjs",
     "docs-rot:test": "node --test scripts/ci/docs-rot/*.test.mjs",
     "ci:neon-cleanup": "node scripts/ci/neon-branch-cleanup.mjs",
-    "ci:neon-cleanup:test": "node --test scripts/ci/neon-branch-cleanup.test.mjs scripts/ci/retrieval-eval/summary.test.mjs"
+    "ci:neon-cleanup:test": "node --test scripts/ci/neon-branch-cleanup.test.mjs scripts/ci/retrieval-eval/summary.test.mjs",
+    "ci:eval-relevance:test": "node --test scripts/ci/eval-relevance.test.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

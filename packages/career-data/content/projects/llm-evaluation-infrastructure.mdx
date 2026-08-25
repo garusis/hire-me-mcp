@@ -36,6 +36,13 @@ into something measurable, on my own, end to end:
   costs to run, not in isolation.
 - Version-controlled prompts, so a regression can be bisected the same way a
   code regression can.
+- A judge model deliberately resolved from a different provider than the
+  agent under test — a provider grading its own output tends to be biased,
+  so I moved model selection out of environment variables to make an
+  opposing-provider judge the default.
+- A file-naming convention that isolates model-dependent code into a
+  separate CI lane, so real-model evals only run when a prompt or agent
+  actually changes instead of on every pull request.
 
 ## Why it mattered
 

@@ -172,7 +172,22 @@ export function extractToolNamesFromToolResults(toolResults: readonly unknown[])
   const names: string[] = [];
   for (const toolResult of toolResults) {
     if (typeof toolResult !== "object" || toolResult === null) continue;
-    const toolName = (toolResult as Record<string, unknown>).toolName;
+    const entry = toolResult as Record<string, unknown>;
+    // Real `agent.generate()` tool results are `ToolResultChunk`s —
+    // `{ type: "tool-result", payload: { toolName, result, ... } }`
+    // (`@mastra/core`'s `ToolResultPayload`) — so the name lives on
+    // `payload.toolName`, exactly where `readCitationsField` above reads
+    // `payload.result`. Reading it at the top level instead made this
+    // return `[]` on every real run, deterministically failing 5 of the 6
+    // tool-routing cases (the sixth, `deterministic-only`, passed
+    // trivially — aggregate 0.1667). The top-level fallback keeps the
+    // tolerant behavior for any flatter shape.
+    const payload = entry.payload;
+    const payloadToolName =
+      typeof payload === "object" && payload !== null
+        ? (payload as Record<string, unknown>).toolName
+        : undefined;
+    const toolName = typeof payloadToolName === "string" ? payloadToolName : entry.toolName;
     if (typeof toolName === "string") {
       names.push(toolName);
     }
