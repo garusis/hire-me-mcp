@@ -14,4 +14,5 @@ export const EXPECTED_TOOL_NAMES = [
   "search-projects",
   "get-skill-evidence",
   "search-career",
+  "list-recommendations",
 ] as const;

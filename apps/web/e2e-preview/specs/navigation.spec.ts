@@ -31,7 +31,9 @@ test("header navigation reaches every top-level route", async ({ gotoRoute, page
   const nav = page.getByRole("navigation", { name: "Primary" });
 
   for (const { path, heading } of ROUTES.filter((route) =>
-    ["/", "/experience", "/projects", "/skills", "/writing"].includes(route.path),
+    ["/", "/experience", "/projects", "/skills", "/writing", "/recommendations"].includes(
+      route.path,
+    ),
   )) {
     const label = heading === "Marcos Javier Alvarez" ? "Home" : heading;
     await nav.getByRole("link", { name: label, exact: true }).click();

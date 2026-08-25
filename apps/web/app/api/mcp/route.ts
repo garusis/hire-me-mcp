@@ -6,6 +6,7 @@ import { withRateLimit } from "../../../lib/mcp/rate-limit/with-rate-limit";
 import { getExperienceTool } from "../../../lib/mcp/tools/get-experience";
 import { getProfileTool } from "../../../lib/mcp/tools/get-profile";
 import { getSkillEvidenceTool } from "../../../lib/mcp/tools/get-skill-evidence";
+import { listRecommendationsTool } from "../../../lib/mcp/tools/list-recommendations";
 import { pingTool } from "../../../lib/mcp/tools/ping";
 import { searchCareerTool } from "../../../lib/mcp/tools/search-career";
 import { searchProjectsTool } from "../../../lib/mcp/tools/search-projects";
@@ -42,6 +43,7 @@ const handler = createMcpHandler(
     defineTool(server, searchProjectsTool);
     defineTool(server, getSkillEvidenceTool);
     defineTool(server, searchCareerTool);
+    defineTool(server, listRecommendationsTool);
   },
   {
     serverInfo: {

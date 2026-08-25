@@ -20,6 +20,7 @@ export {
   chunkGap,
   chunkProfile,
   chunkProject,
+  chunkRecommendation,
   chunkSkill,
   chunkWriting,
   computeChunkId,
@@ -64,6 +65,7 @@ export type {
   UnknownSkillOutcome,
 } from "./get-skill-evidence.js";
 export { getSkillEvidence } from "./get-skill-evidence.js";
+export { listRecommendations } from "./list-recommendations.js";
 export type { CareerDataRepository, CareerDataset } from "./repository.js";
 export {
   createContentCareerDataRepository,

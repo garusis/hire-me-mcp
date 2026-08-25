@@ -20,12 +20,19 @@
  * share this exact tool.
  */
 
-import { getExperience, getProfile, getSkillEvidence, searchProjects } from "@hire-me-mcp/core";
+import {
+  getExperience,
+  getProfile,
+  getSkillEvidence,
+  listRecommendations,
+  searchProjects,
+} from "@hire-me-mcp/core";
 import { createSearchCareer } from "@hire-me-mcp/core/search-career";
 import type { Tool } from "@mastra/core/tools";
 import { getExperienceTool } from "./get-experience.js";
 import { getProfileTool } from "./get-profile.js";
 import { getSkillEvidenceTool } from "./get-skill-evidence.js";
+import { listRecommendationsTool } from "./list-recommendations.js";
 import { searchCareerTool } from "./search-career.js";
 import { searchProjectsTool } from "./search-projects.js";
 
@@ -39,6 +46,7 @@ export const AGENT_TOOLS: Record<string, Tool<any, any>> = {
   "get-experience": getExperienceTool,
   "search-projects": searchProjectsTool,
   "get-skill-evidence": getSkillEvidenceTool,
+  "list-recommendations": listRecommendationsTool,
   "search-career": searchCareerTool,
 };
 
@@ -57,5 +65,6 @@ export const AGENT_TOOL_CORE_FUNCTIONS: Record<string, (...args: never[]) => unk
   "get-experience": getExperience,
   "search-projects": searchProjects,
   "get-skill-evidence": getSkillEvidence,
+  "list-recommendations": listRecommendations,
   "search-career": createSearchCareer,
 };

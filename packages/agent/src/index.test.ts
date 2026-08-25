@@ -77,6 +77,7 @@ describe("public entry point", () => {
       "get-experience",
       "search-projects",
       "get-skill-evidence",
+      "list-recommendations",
       "search-career",
     ]);
     expect(Object.keys(AGENT_TOOLS)).toEqual(AGENT_TOOL_NAMES);

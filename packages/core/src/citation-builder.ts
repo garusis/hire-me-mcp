@@ -64,6 +64,12 @@ function lookupEntity(
       const entry = dataset.writing.find((item) => item.id === entityId);
       return { found: entry !== undefined, label: entry?.title };
     }
+    case "recommendation": {
+      const entry = dataset.recommendations.find((item) => item.id === entityId);
+      return entry
+        ? { found: true, label: `Recommendation from ${entry.recommenderName}` }
+        : { found: false, label: undefined };
+    }
     default:
       return { found: false, label: undefined };
   }

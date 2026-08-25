@@ -21,6 +21,7 @@
 import { getExperienceTool } from "./tools/get-experience";
 import { getProfileTool } from "./tools/get-profile";
 import { getSkillEvidenceTool } from "./tools/get-skill-evidence";
+import { listRecommendationsTool } from "./tools/list-recommendations";
 import { pingTool } from "./tools/ping";
 import { searchCareerTool } from "./tools/search-career";
 import { searchProjectsTool } from "./tools/search-projects";
@@ -39,6 +40,7 @@ const REGISTERED_TOOLS = [
   searchProjectsTool,
   getSkillEvidenceTool,
   searchCareerTool,
+  listRecommendationsTool,
 ];
 
 const EXAMPLE_PROMPTS_BY_NAME: Record<string, string> = {
@@ -48,6 +50,8 @@ const EXAMPLE_PROMPTS_BY_NAME: Record<string, string> = {
   "search-projects": "Show me projects where Marcos used TypeScript or Kubernetes.",
   "get-skill-evidence": "Has Marcos worked with event-driven architectures? Show me the evidence.",
   "search-career": "What's Marcos's experience with leading engineering teams and mentoring?",
+  "list-recommendations":
+    "What do Marcos's managers and colleagues say about working with him? Show me his LinkedIn recommendations.",
 };
 
 function examplePromptFor(toolName: string): string {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EXPECTED_TOOL_NAMES } from "./tool-names.js";
 
 describe("EXPECTED_TOOL_NAMES", () => {
-  it("lists exactly the five career tools plus ping, with no duplicates (#61 adds search-career)", () => {
+  it("lists exactly the six career tools plus ping, with no duplicates (#61 adds search-career, #190 adds list-recommendations)", () => {
     expect(EXPECTED_TOOL_NAMES).toEqual([
       "ping",
       "get-profile",
@@ -10,6 +10,7 @@ describe("EXPECTED_TOOL_NAMES", () => {
       "search-projects",
       "get-skill-evidence",
       "search-career",
+      "list-recommendations",
     ]);
     expect(new Set(EXPECTED_TOOL_NAMES).size).toBe(EXPECTED_TOOL_NAMES.length);
   });

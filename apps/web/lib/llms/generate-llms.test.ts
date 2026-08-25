@@ -306,7 +306,7 @@ describe("renderLlmsFullTxt", () => {
       endpointUrl: "https://stub-deploy.example.com/api/mcp",
     });
 
-    const searchCareerSection = text.slice(text.indexOf("### search-career"));
+    const searchCareerSection = text.slice(text.indexOf("### search-career")).split("\n### ")[0];
     expect(searchCareerSection).toContain("Parameters: query");
     expect(searchCareerSection).toContain("topK");
     expect(searchCareerSection).not.toContain("Parameters: none");

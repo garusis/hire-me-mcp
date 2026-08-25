@@ -29,6 +29,7 @@ export function SiteHeader() {
           <Link href="/projects">Projects</Link>
           <Link href="/skills">Skills</Link>
           <Link href="/writing">Writing</Link>
+          <Link href="/recommendations">Recommendations</Link>
           <Link href={`/cv/${filename}`}>Download CV</Link>
         </nav>
         <ThemeToggle />

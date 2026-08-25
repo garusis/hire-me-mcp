@@ -340,5 +340,30 @@ Paragraph point number 0 makes a distinct claim about the subject matter of the 
     "text": "article. Paragraph point number 35 makes a distinct claim about the subject matter of the article. Paragraph point number 36 makes a distinct claim about the subject matter of the article. Paragraph point number 37 makes a distinct claim about the subject matter of the article. Paragraph point number 38 makes a distinct claim about the subject matter of the article. Paragraph point number 39 makes a distinct claim about the subject matter of the article.",
     "tokenCount": 115,
   },
+  {
+    "chunkIndex": 0,
+    "citation": {
+      "entityId": "recommendation-john-smith-2024",
+      "entityType": "recommendation",
+      "label": "Recommendation from John Smith",
+      "url": "https://www.linkedin.com/in/jane-doe/details/recommendations/",
+    },
+    "contentHash": "0f9e6fe632b8e8e40268a49fcff72783509b785ce34b865a9b57f82d6a697faf",
+    "id": "16c75eb43861b9f36fd2b4a6a23d2a63505d1f551d31da9e4fca90478c396329",
+    "metadata": {
+      "dateFrom": "2024-06-15",
+      "dateTo": "2024-06-15",
+    },
+    "sourceId": "recommendation-john-smith-2024",
+    "sourceType": "recommendation",
+    "text": "Recommendation from John Smith — VP of Engineering at Example Corp
+Relationship: John was Jane's direct manager
+Date: 2024-06-15
+
+Jane is a fantastic engineer who ships reliable systems and mentors everyone around her.
+
+Verify on LinkedIn: https://www.linkedin.com/in/jane-doe/details/recommendations/",
+    "tokenCount": 76,
+  },
 ]
 `;
