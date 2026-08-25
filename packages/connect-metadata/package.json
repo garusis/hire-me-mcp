@@ -1,6 +1,6 @@
 {
   "name": "@hire-me-mcp/connect-metadata",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Single source of truth for MCP connection metadata, per-client snippet renderers, and the marked-region injector (#17)",
   "license": "UNLICENSED",

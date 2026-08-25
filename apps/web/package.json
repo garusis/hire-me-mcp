@@ -1,6 +1,6 @@
 {
   "name": "@hire-me-mcp/web",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Portfolio site, chat, and MCP endpoint — the single user-facing Next.js app",
   "license": "UNLICENSED",
