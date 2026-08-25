@@ -157,8 +157,9 @@ Three loops, all running the exact same underlying commands (`db:migrate` then `
   happens when a contributor chooses to run it.
 - **PR loop** (`.github/workflows/retrieval-eval.yml`, required check). The workflow runs on
   EVERY pull request (a required check must always report a status — #176); a first in-job step
-  detects whether the PR touches `packages/core/**`, the career-data content, or the
-  workflow/helper script itself. Irrelevant PRs report green in seconds with zero Neon branches
+  decides relevance via the shared detection mechanism (#207) — turborepo's affected-package
+  graph plus an explicit asset regex, with a `run-evals` label override; see "What triggers the
+  eval workflows" below. Irrelevant PRs report green in seconds with zero Neon branches
   and zero embedding calls. Relevant PRs run the full loop: create a disposable Neon branch, run
   migrations, run a full `pnpm ingest`
   (real embeddings — the branch starts empty, so this is never an incremental no-op), runs `pnpm
@@ -484,11 +485,38 @@ push to `main`, with five jobs:
 A SIXTH, separate workflow, [`.github/workflows/agent-evals.yml`](../.github/workflows/agent-evals.yml)
 (`agent-evals`) gates the interview agent's honesty guarantees on real, budget-capped model output
 — `pnpm eval:agent`, failing the build when a scorer aggregate (groundedness/gap honesty/relevance)
-drops below its committed threshold. It is path-filtered (`packages/agent/**`, `packages/core/**`,
-`packages/career-data/content/**`, the chat route) plus `workflow_dispatch`, and deliberately **not**
-in the required-status-checks list below (a path-filtered job that never runs would otherwise block
-every unrelated PR) — see `packages/agent/README.md`'s "Running evals in CI" section for the full
-rationale.
+drops below its committed threshold. Since #207 it runs on **every** pull request (and every push
+to `main`) and decides in-job whether to spend real Gemini quota — see "What triggers the eval
+workflows" just below. It always attaches a PR status (so it *could* become required — #176), but
+stays **not** in the required-status-checks list for the same fork-PR reason as `db-integration`
+(no repo secrets → the skip must not block unrelated merges) — see `packages/agent/README.md`'s
+"Running evals in CI" section.
+
+### What triggers the eval workflows (#207)
+
+Both Gemini-spending eval workflows (`agent-evals`, `retrieval-eval`) trigger on every PR and
+decide **in-job** whether to run the real suite, via the shared
+[`scripts/ci/eval-relevance.mjs`](../scripts/ci/eval-relevance.mjs) (unit-tested:
+`pnpm ci:eval-relevance:test`). A run happens when ANY of these is true:
+
+1. **Turborepo dependency graph** — `turbo query`'s `affectedPackages`, computed against the PR's
+   merge base, contains the workflow's target package (`@hire-me-mcp/agent` for agent-evals,
+   `@hire-me-mcp/core` for retrieval-eval). Because turbo's affected set includes transitive
+   dependents of every changed package (and attributes lockfile changes per-package), "a
+   dependency of the agent changed" is caught with no hand-maintained path list — the failure
+   mode of the earlier glob/filename-convention approaches.
+2. **Explicit asset regex** — for files the module graph can't see: the workflow file itself, the
+   CI helper scripts, career-data content, the chat-route wiring. Each workflow declares its own
+   `EXTRA_PATH_REGEX`.
+3. **The `run-evals` PR label** — the override: label the PR and both workflows run their full
+   suites regardless of the diff. Adding the label fires fresh runs (the `labeled` trigger type);
+   labels are also re-read live from the API, so re-running an existing job after labeling works
+   too. `workflow_dispatch` remains the non-PR override.
+
+The decision **fails open**: any detection error (git, `turbo query`, output parsing) runs the
+evals rather than silently skipping a gate. Irrelevant PRs report green in seconds with zero
+model calls — never a workflow-level `paths:` filter, which would permanently block PRs on a
+required check that never reports (#176).
 
 A SEVENTH workflow, [`.github/workflows/docs-rot.yml`](../.github/workflows/docs-rot.yml) (#59),
 makes documentation rot impossible to merge or leave running unnoticed: two independent jobs,

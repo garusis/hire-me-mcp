@@ -538,10 +538,14 @@ failing score.
 
 ## Running evals in CI (#73)
 
-`.github/workflows/agent-evals.yml` runs this suite in CI — see the root `README.md`'s
-"Continuous integration and branch protection" section for the full trigger/required-check
-rationale. This section covers the three things that section points back here for: running
-locally, expected cost, and what to do when a threshold fails.
+`.github/workflows/agent-evals.yml` runs this suite in CI. Since #207 the workflow triggers on
+every pull request (and every push to `main`) and decides in-job whether to spend real Gemini
+quota: turborepo's affected-package graph (run iff `@hire-me-mcp/agent` — its own files or
+anything in its dependency closure — changed), plus an explicit asset regex, plus a `run-evals`
+PR label override, failing open on any detection error. The full trigger/required-check
+rationale lives in `docs/development.md` > "Continuous integration and branch protection" (see
+its "What triggers the eval workflows" subsection). This section covers the three things those
+docs point back here for: running locally, expected cost, and what to do when a threshold fails.
 
 ### Running locally
 
