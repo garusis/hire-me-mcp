@@ -1,6 +1,8 @@
 import type { CareerDataRepository, DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import { withCitationSiteUrls } from "../citation-site-urls.js";
 import { createToolExecutor } from "../define-tool.js";
 import { searchProjectsTool } from "./search-projects.js";
 
@@ -72,7 +74,7 @@ describe("searchProjectsTool", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({
       data: domainResult.data,
-      citations: domainResult.citations,
+      citations: withCitationSiteUrls(domainResult.citations),
     });
   });
 
@@ -118,7 +120,7 @@ describe("searchProjectsTool", () => {
     const result = await executor({ query: "typescript" });
 
     const structuredContent = result.structuredContent as { citations: unknown };
-    expect(structuredContent.citations).toStrictEqual(citations);
+    expect(structuredContent.citations).toStrictEqual(withCitationSiteUrls(citations));
   });
 
   it("maps invalid input (missing required query) to a sanitized invalid_input error", async () => {
@@ -137,5 +139,35 @@ describe("searchProjectsTool", () => {
 
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
+  });
+
+  it("reports the missing required query as 'query: required' (#244)", async () => {
+    const executor = createToolExecutor(searchProjectsTool);
+
+    const result = await executor({});
+
+    const message = (result.structuredContent as { message: string }).message;
+    expect(message).toContain("query: required");
+  });
+
+  it("advertises a sane bounded maximum for limit instead of Number.MAX_SAFE_INTEGER (#243)", () => {
+    const jsonSchema = z.toJSONSchema(searchProjectsTool.inputSchema) as unknown as {
+      properties: { limit: { maximum?: number } };
+    };
+    expect(jsonSchema.properties.limit.maximum).toBe(50);
+  });
+
+  it("rejects a limit above the advertised maximum as invalid_input", async () => {
+    const executor = createToolExecutor(searchProjectsTool);
+
+    const result = await executor({ query: "typescript", limit: 51 });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
+  });
+
+  it("declares a human-readable title and an outputSchema for its structuredContent (#241, #242)", () => {
+    expect(searchProjectsTool.title).toBeTruthy();
+    expect(searchProjectsTool.outputSchema).toBeDefined();
   });
 });

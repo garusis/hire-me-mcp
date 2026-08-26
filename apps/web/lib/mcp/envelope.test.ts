@@ -9,17 +9,43 @@ describe("buildToolSuccessResult", () => {
     citations: [citation],
   };
 
-  it("wraps data and citations into structuredContent", () => {
+  it("wraps data and citations into structuredContent, adding each citation's canonical site url (#247)", () => {
     const result = buildToolSuccessResult(domainResult);
     expect(result.structuredContent).toEqual({
       data: domainResult.data,
-      citations: domainResult.citations,
+      citations: [{ ...citation, url: "http://localhost:3000/skills#skill-1" }],
     });
   });
 
-  it("passes citations through by deep equality — no field added, dropped, or altered", () => {
+  it("passes every authored citation field through by deep equality — url is the only derived addition (#247)", () => {
     const result = buildToolSuccessResult(domainResult);
-    expect(result.structuredContent.citations).toStrictEqual(domainResult.citations);
+    expect(result.structuredContent.citations).toStrictEqual([
+      { ...citation, url: "http://localhost:3000/skills#skill-1" },
+    ]);
+    expect(domainResult.citations[0]).not.toHaveProperty("url");
+  });
+
+  it("keeps a citation's own external url when the domain layer already provided one", () => {
+    const external: DomainResult<{ term: string }> = {
+      data: { term: "cowork" },
+      citations: [
+        {
+          entityType: "project",
+          entityId: "cowork",
+          label: "cowork",
+          url: "https://github.com/garusis/cowork",
+        } as Citation,
+      ],
+    };
+    const result = buildToolSuccessResult(external);
+    expect(result.structuredContent.citations).toEqual([
+      {
+        entityType: "project",
+        entityId: "cowork",
+        label: "cowork",
+        url: "https://github.com/garusis/cowork",
+      },
+    ]);
   });
 
   it("produces a text content block equal to structuredContent, deterministically serialized", () => {

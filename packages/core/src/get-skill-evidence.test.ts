@@ -181,6 +181,31 @@ describe("getSkillEvidence", () => {
     }
   });
 
+  it("'claimed' embeds the skill record WITHOUT its own evidence array — outcome.evidence is the one canonical copy (#245)", () => {
+    const result = getSkillEvidence(fixtureRepository(), "TypeScript");
+
+    expect(result.data.kind).toBe("claimed");
+    if (result.data.kind !== "claimed") {
+      throw new Error("expected claimed");
+    }
+    expect(result.data.skill).not.toHaveProperty("evidence");
+    expect(result.data.evidence.length).toBeGreaterThan(0);
+  });
+
+  it("'not-claimed' related skills embed their skill records WITHOUT evidence arrays — each entry's evidence is the one canonical copy (#245)", () => {
+    const result = getSkillEvidence(fixtureRepository(), "Go");
+
+    expect(result.data.kind).toBe("not-claimed");
+    if (result.data.kind !== "not-claimed") {
+      throw new Error("expected not-claimed");
+    }
+    expect(result.data.relatedSkills.length).toBeGreaterThan(0);
+    for (const entry of result.data.relatedSkills) {
+      expect(entry.skill).not.toHaveProperty("evidence");
+      expect(entry.evidence.length).toBeGreaterThan(0);
+    }
+  });
+
   it("is deterministic: repeated identical calls return identical output", () => {
     const repository = fixtureRepository();
 

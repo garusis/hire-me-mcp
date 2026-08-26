@@ -43,10 +43,17 @@
  * upstream-failure acceptance criteria).
  */
 
-import { MAX_QUERY_LENGTH, MAX_TOP_K, MIN_TOP_K } from "@hire-me-mcp/core/search-career";
+import {
+  MAX_QUERY_LENGTH,
+  MAX_TOP_K,
+  MIN_TOP_K,
+  RELEVANCE_FLOOR,
+} from "@hire-me-mcp/core/search-career";
 import { z } from "zod";
+import { resolveCitationSiteUrl } from "../citation-site-urls";
 import type { ToolDefinition } from "../define-tool";
 import { getSearchCareer } from "../search-career-instance";
+import { toolSuccessSchema } from "../wire-schemas";
 
 /** One ranked hit, reshaped so its citation travels inline with the excerpt (see module docstring). */
 export interface SearchCareerHit {
@@ -57,14 +64,32 @@ export interface SearchCareerHit {
   sourceId: string;
   /** Human-readable citation label — quote this alongside `text` when relaying the excerpt. */
   citation: string;
-  /** Canonical external URL for the source record, when it has one. */
-  citationUrl?: string;
+  /** The chunk's own external canonical URL when it has one, otherwise the source record's page on this site (#247). */
+  citationUrl: string;
 }
 
 /** `search-career`'s result: either ranked hits, or an explicit "nothing above threshold" outcome. */
 export type SearchCareerToolData =
   | { found: true; results: SearchCareerHit[] }
   | { found: false; message: string };
+
+/**
+ * The chunked source types a caller may filter by — exactly the entity
+ * types the ingestion pipeline chunks (`@hire-me-mcp/core`'s
+ * `chunkCareerData`, #21). Declared as a Zod enum so an unknown value is an
+ * `invalid_input` validation error naming the valid set (#238), never a
+ * silent empty "no relevant content found" result that sends the caller off
+ * rephrasing a query that was fine.
+ */
+const SEARCH_SOURCE_TYPES = [
+  "profile",
+  "experience",
+  "project",
+  "skill",
+  "gap",
+  "education",
+  "writing",
+] as const;
 
 const inputSchema = z.object({
   query: z
@@ -94,14 +119,21 @@ const inputSchema = z.object({
     .optional()
     .describe(
       "Minimum cosine-similarity score (in [-1, 1], higher is more similar) a result must " +
-        "meet. Omit for no filtering (the server's default) — every ANN match is returned.",
+        `meet. The server always applies its calibrated relevance floor of ${RELEVANCE_FLOOR} ` +
+        "— scores below it are indistinguishable from off-topic noise — so values below the " +
+        "floor have no effect. Set this above the floor for a stricter cut; omit for the " +
+        "floor itself.",
     ),
   sourceTypes: z
-    .array(z.string().min(1))
+    .array(
+      z.enum(SEARCH_SOURCE_TYPES, {
+        error: () => `expected one of ${SEARCH_SOURCE_TYPES.map((t) => `'${t}'`).join(", ")}`,
+      }),
+    )
     .optional()
     .describe(
-      "Restricts results to these source types (e.g. ['experience', 'project']). Omit for no " +
-        "constraint.",
+      "Restricts results to these source types. Valid values: " +
+        `${SEARCH_SOURCE_TYPES.map((t) => `'${t}'`).join(", ")}. Omit for no constraint.`,
     ),
 });
 
@@ -112,14 +144,47 @@ function noRelevantContentMessage(query: string): string {
   );
 }
 
+/** One ranked hit as it appears on the wire — mirrors {@link SearchCareerHit} (#242). */
+const searchCareerHitSchema = z.object({
+  text: z.string().describe("The matching career-content excerpt."),
+  score: z.number().describe("Cosine similarity in [-1, 1] - higher is more similar."),
+  sourceType: z.string().describe("The source record's entity type (experience, project, ...)."),
+  sourceId: z.string().describe("The source record's stable id."),
+  citation: z.string().describe("Human-readable citation label to quote alongside the excerpt."),
+  citationUrl: z
+    .url()
+    .describe(
+      "URL back to the source: its external canonical link when it has one, otherwise the " +
+        "record's page on this site.",
+    ),
+});
+
+/** `{ data, citations }` envelope around the found/not-found discriminated result (#242). */
+const outputSchema = toolSuccessSchema(
+  z.discriminatedUnion("found", [
+    z.object({
+      found: z.literal(true),
+      results: z.array(searchCareerHitSchema).describe("Ranked hits, most similar first."),
+    }),
+    z.object({
+      found: z.literal(false),
+      message: z
+        .string()
+        .describe("Explicit 'no relevant content found' outcome - relay it honestly."),
+    }),
+  ]),
+);
+
 /** `search-career` — registered against a live `McpServer` via `defineTool`. */
 export const searchCareerTool: ToolDefinition<typeof inputSchema, SearchCareerToolData> = {
   name: "search-career",
+  title: "Search career content",
   description:
     "Runs a fuzzy, semantic search over the full text of Marcos Alvarez's career content " +
     "(experience, projects, skills, writing) and returns ranked excerpts, each with a " +
     "relevance score and a citation, or an explicit 'no relevant content found' result when " +
-    "nothing clears the similarity threshold. Use this for open-ended, cross-cutting, or " +
+    "nothing clears the server's calibrated relevance floor — off-topic questions get that " +
+    "honest empty result, not low-scoring noise. Use this for open-ended, cross-cutting, or " +
     "conceptual questions a structured lookup can't answer directly — e.g. 'has he worked " +
     "with event-driven architectures', 'what's his experience with leading teams', 'anything " +
     "about cost optimization'. Do not use it when the question maps onto a specific, " +
@@ -128,16 +193,21 @@ export const searchCareerTool: ToolDefinition<typeof inputSchema, SearchCareerTo
     "keyword/tag project search, and get-skill-evidence to check one specific named skill or " +
     "technology — prefer those first, and fall back to this tool only when they don't fit. " +
     "This tool is more expensive per call (it embeds the query) and subject to the same " +
-    "more expensive per call (it embeds the query) and subject to the same server-wide rate " +
-    "limit as every other tool here — don't call it repeatedly for the same question.",
+    "server-wide rate limit as every other tool here — don't call it repeatedly for the same " +
+    "question.",
   inputSchema,
+  outputSchema,
   handler: async (input) => {
     let result: Awaited<ReturnType<ReturnType<typeof getSearchCareer>>>;
     try {
       const searchCareer = getSearchCareer();
       result = await searchCareer(input.query, {
         topK: input.topK,
-        minScore: input.minScore,
+        // The calibrated relevance floor (#237) is a hard baseline: an
+        // explicit minScore below it would reopen the door to
+        // confident-looking off-topic noise, so the effective threshold is
+        // never lower than the floor — only stricter.
+        minScore: Math.max(RELEVANCE_FLOOR, input.minScore ?? RELEVANCE_FLOOR),
         sourceTypes: input.sourceTypes,
       });
     } catch (error) {
@@ -158,7 +228,10 @@ export const searchCareerTool: ToolDefinition<typeof inputSchema, SearchCareerTo
       sourceType: item.sourceType,
       sourceId: item.sourceId,
       citation: item.citation.label,
-      ...(item.citation.url === undefined ? {} : { citationUrl: item.citation.url }),
+      // The chunk's own external canonical url when it has one, otherwise
+      // the source record's page on this site (#247) — every hit is
+      // linkable back to its source.
+      citationUrl: resolveCitationSiteUrl(item.citation),
     }));
 
     return {

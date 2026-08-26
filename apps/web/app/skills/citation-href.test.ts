@@ -81,6 +81,19 @@ describe("resolveCitationHref", () => {
     expect(href).toBe("/writing#local-post");
   });
 
+  it("points a recommendation citation at the matching anchor on /recommendations", () => {
+    const href = resolveCitationHref(
+      {
+        entityType: "recommendation",
+        entityId: "andre-treib-2026",
+        label: "Recommendation from Andre Treib",
+      },
+      [],
+    );
+
+    expect(href).toBe("/recommendations#andre-treib-2026");
+  });
+
   it("falls back to /writing for a writing citation whose entry can't be resolved", () => {
     const href = resolveCitationHref(
       { entityType: "writing", entityId: "missing", label: "Missing" },

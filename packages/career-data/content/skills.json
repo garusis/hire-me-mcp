@@ -319,7 +319,7 @@
     "name": "Python",
     "aliases": ["py"],
     "category": "language",
-    "proficiency": "familiar",
+    "proficiency": "proficient",
     "evidence": [
       {
         "entityType": "project",

@@ -26,6 +26,7 @@ import { AGENT_TOOL_CORE_FUNCTIONS, AGENT_TOOLS } from "@hire-me-mcp/agent";
 import type { DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCitationSiteUrls } from "./citation-site-urls.js";
 import { MCP_TOOL_EXECUTORS } from "./tool-core-parity";
 
 vi.mock("@hire-me-mcp/core", async (importOriginal) => {
@@ -138,7 +139,7 @@ describe("MCP tool set and agent tool set share one core-function source of trut
       expect(mcpResult.isError).toBeUndefined();
       expect(mcpResult.structuredContent).toEqual({
         data: sentinel.data,
-        citations: sentinel.citations,
+        citations: withCitationSiteUrls(sentinel.citations),
       });
       expect(agentResult).toEqual(sentinel);
 

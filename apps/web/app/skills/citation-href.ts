@@ -12,6 +12,13 @@
  *   section's "closest related experience" links).
  * - `gap` → the matching anchor in the `/skills` "what I don't claim"
  *   section.
+ * - `recommendation` → the matching card anchor on `/recommendations`
+ *   (issue 190); that card carries the entry's own two LinkedIn links,
+ *   which is the closest thing to a permalink LinkedIn offers. Spelled
+ *   "issue 190" rather than with a leading hash, per the convention the
+ *   rest of `app/` follows: the design-system hex-colour scanner
+ *   (`design-system/lib/no-hardcoded-hex.test.ts`) reads a 3-digit issue
+ *   reference as a raw colour literal.
  * - `writing` → the entry's canonical external URL if it has one, otherwise
  *   its anchor on `/writing` (there is no local writing detail route today
  *   — real `writing` content is empty; see `/writing`'s doc comment).
@@ -46,6 +53,8 @@ export function resolveCitationHref(
       return `/skills#${toSlug(citation.entityId)}`;
     case "gap":
       return `/skills#gap-${toSlug(citation.entityId)}`;
+    case "recommendation":
+      return `/recommendations#${toSlug(citation.entityId)}`;
     case "writing":
       return resolveWritingHref(citation.entityId, writingEntries);
     default:
