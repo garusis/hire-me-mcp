@@ -20,6 +20,7 @@ export {
   chunkGap,
   chunkProfile,
   chunkProject,
+  chunkRecommendation,
   chunkSkill,
   chunkWriting,
   computeChunkId,
@@ -69,6 +70,7 @@ export type { GapListEntry } from "./list-gaps.js";
 export { listGaps } from "./list-gaps.js";
 export type { ListProjectsOptions } from "./list-projects.js";
 export { listProjects } from "./list-projects.js";
+export { listRecommendations } from "./list-recommendations.js";
 export type { SkillsFilter } from "./list-skills.js";
 export { listSkills } from "./list-skills.js";
 export { listWriting } from "./list-writing.js";

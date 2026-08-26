@@ -9,6 +9,7 @@ import { getSkillEvidenceTool } from "../../../lib/mcp/tools/get-skill-evidence"
 import { listEducationTool } from "../../../lib/mcp/tools/list-education";
 import { listGapsTool } from "../../../lib/mcp/tools/list-gaps";
 import { listProjectsTool } from "../../../lib/mcp/tools/list-projects";
+import { listRecommendationsTool } from "../../../lib/mcp/tools/list-recommendations";
 import { listSkillsTool } from "../../../lib/mcp/tools/list-skills";
 import { listWritingTool } from "../../../lib/mcp/tools/list-writing";
 import { pingTool } from "../../../lib/mcp/tools/ping";
@@ -52,6 +53,7 @@ const handler = createMcpHandler(
     defineTool(server, listGapsTool);
     defineTool(server, listProjectsTool);
     defineTool(server, listWritingTool);
+    defineTool(server, listRecommendationsTool);
   },
   {
     serverInfo: {

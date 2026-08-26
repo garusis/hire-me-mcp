@@ -16,6 +16,7 @@ import { createToolExecutor } from "./define-tool";
 import { getExperienceTool } from "./tools/get-experience";
 import { getProfileTool } from "./tools/get-profile";
 import { getSkillEvidenceTool } from "./tools/get-skill-evidence";
+import { listRecommendationsTool } from "./tools/list-recommendations";
 import { searchProjectsTool } from "./tools/search-projects";
 
 /** The MCP server's own tool-name -> executor mapping for every core-backed tool. */
@@ -24,4 +25,5 @@ export const MCP_TOOL_EXECUTORS = {
   "get-experience": createToolExecutor(getExperienceTool),
   "search-projects": createToolExecutor(searchProjectsTool),
   "get-skill-evidence": createToolExecutor(getSkillEvidenceTool),
+  "list-recommendations": createToolExecutor(listRecommendationsTool),
 } as const;

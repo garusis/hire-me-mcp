@@ -101,6 +101,7 @@ function baseDataset(): CareerDataset {
       },
     ],
     writing: [],
+    recommendations: [],
   };
 }
 

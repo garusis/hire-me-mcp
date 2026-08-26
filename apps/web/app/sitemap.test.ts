@@ -30,6 +30,7 @@ describe("sitemap", () => {
         "https://stub-deploy.example.com/experience",
         "https://stub-deploy.example.com/projects",
         "https://stub-deploy.example.com/skills",
+        "https://stub-deploy.example.com/recommendations",
         "https://stub-deploy.example.com/mcp",
       ]),
     );

@@ -46,7 +46,8 @@ export type CitableEntityType =
   | "skill"
   | "gap"
   | "education"
-  | "writing";
+  | "writing"
+  | "recommendation";
 
 const CITABLE_ENTITY_TYPES: readonly CitableEntityType[] = [
   "profile",
@@ -56,6 +57,7 @@ const CITABLE_ENTITY_TYPES: readonly CitableEntityType[] = [
   "gap",
   "education",
   "writing",
+  "recommendation",
 ];
 
 /** A single parsed (or to-be-serialized) citation marker. */

@@ -25,6 +25,7 @@ import type {
   Gap,
   Profile,
   Project,
+  Recommendation,
   Skill,
   WritingEntry,
 } from "@hire-me-mcp/career-data";
@@ -155,6 +156,25 @@ export function renderEducation(entry: EducationEntry): RenderedEntity {
       company: entry.institution,
       dateFrom: entry.startDate,
       dateTo: entry.endDate,
+    },
+  };
+}
+
+export function renderRecommendation(entry: Recommendation): RenderedEntity {
+  const header = [
+    `Recommendation from ${entry.recommenderName} — ${entry.recommenderTitle}`,
+    `Relationship: ${entry.relationship}`,
+    `Date: ${entry.date}`,
+  ].join("\n");
+  const body = [entry.text, "", `Verify on LinkedIn: ${entry.sourceUrl}`].join("\n");
+  return {
+    header,
+    body,
+    label: `Recommendation from ${entry.recommenderName}`,
+    url: entry.sourceUrl,
+    metadata: {
+      dateFrom: entry.date,
+      dateTo: entry.date,
     },
   };
 }

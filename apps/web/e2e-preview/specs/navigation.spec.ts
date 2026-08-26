@@ -36,6 +36,7 @@ const NAV_PATHS = [
   "/projects",
   "/skills",
   ...(dataset.writing.length > 0 ? ["/writing"] : []),
+  "/recommendations",
 ];
 
 test("header navigation reaches every top-level route", async ({ gotoRoute, page }) => {
