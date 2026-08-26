@@ -26,15 +26,18 @@ import { expect, test } from "../helpers/fixtures";
  */
 
 const GROUNDED_QUESTION = "What did Marcos build at House Numbers?";
+const FOLLOW_UP_QUESTION = "Which technologies did he use there?";
 const LIVE_MODEL_TIMEOUT_MS = 90_000;
 
-test("grounded chat flow: streamed answer renders with a citation link to a real site section", async ({
+test("grounded chat flow: streamed answer renders with a citation link to a real site section, and a follow-up turn succeeds (#222)", async ({
   gotoRoute,
   page,
   request,
   baseURL,
 }) => {
-  test.setTimeout(LIVE_MODEL_TIMEOUT_MS + 15_000);
+  // Two live model turns (the grounded question + the #222 follow-up
+  // regression below), each up to LIVE_MODEL_TIMEOUT_MS.
+  test.setTimeout(2 * LIVE_MODEL_TIMEOUT_MS + 15_000);
 
   await gotoRoute("/");
   await page.getByRole("button", { name: "Ask about Marcos" }).click();
@@ -44,8 +47,12 @@ test("grounded chat flow: streamed answer renders with a citation link to a real
 
   await page.getByRole("button", { name: GROUNDED_QUESTION, exact: true }).click();
 
+  // The assistant bubble only renders once the FIRST stream chunk arrives,
+  // which on a slow free-tier turn is regularly beyond Playwright's 5s
+  // default expect timeout (issue 223 measured ~24s to first activity) —
+  // wait with the live-model budget, not the default.
   const assistantMessage = log.locator('[data-role="assistant"]').last();
-  await expect(assistantMessage).toBeVisible();
+  await expect(assistantMessage).toBeVisible({ timeout: LIVE_MODEL_TIMEOUT_MS });
 
   // A citation renders as a literal "[cite:entityType:entityId]" link
   // (`apps/web/app/chat/citation-text.tsx`) — wait for at least one to
@@ -60,6 +67,31 @@ test("grounded chat flow: streamed answer renders with a citation link to a real
   const href = await citationLink.first().getAttribute("href");
   expect(href, "citation link must carry an href").toBeTruthy();
   expect(href).not.toBe("/");
+
+  // #222 regression: the SECOND turn of a conversation must succeed. The
+  // first assistant turn's replayed history carries `step-start`/`tool-*`
+  // parts, which used to be sent verbatim and rejected with HTTP 400
+  // `invalid_request` — making the chat effectively single-turn. Costs one
+  // extra live model call per preview run, accepted for the flagship
+  // interactive feature's core regression. Run BEFORE the citation-target
+  // navigation below, which would discard the conversation state.
+  const chatInput = page.getByLabel("Message");
+  await expect(chatInput).toBeEnabled({ timeout: LIVE_MODEL_TIMEOUT_MS });
+  await chatInput.fill(FOLLOW_UP_QUESTION);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+
+  const secondAssistantMessage = log.locator('[data-role="assistant"]').nth(1);
+  await expect(secondAssistantMessage).toBeVisible({ timeout: LIVE_MODEL_TIMEOUT_MS });
+  // Turn complete: the input re-enables only once the stream finishes.
+  await expect(chatInput).toBeEnabled({ timeout: LIVE_MODEL_TIMEOUT_MS });
+  // The answer paragraph (the bubble's last <p>) must carry real text —
+  // the bubble alone would also render for an errored/blank turn.
+  await expect(secondAssistantMessage.locator("p").last()).not.toHaveText("");
+  // Scoped to the chat panel: a page-level getByRole("alert") also matches
+  // Next.js's own route announcer (an always-present, empty alert element),
+  // which false-positived this assertion on an otherwise fully green turn.
+  const chatPanel = page.getByRole("region", { name: "Chat with the interview agent" });
+  await expect(chatPanel.getByRole("alert")).toHaveCount(0);
 
   // Resolve the href for real: the target page must actually load, and if
   // the href carries a fragment, that fragment's element must exist on the
