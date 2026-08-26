@@ -35,6 +35,14 @@ describe("resolveCitationSiteUrl", () => {
     );
   });
 
+  it("maps a recommendation citation to its anchor on the /recommendations page", () => {
+    expect(
+      resolveCitationSiteUrl(
+        citation({ entityType: "recommendation", entityId: "andre-treib-2026" }),
+      ),
+    ).toBe(`${ORIGIN}/recommendations#andre-treib-2026`);
+  });
+
   it("maps a profile citation to the home page", () => {
     expect(resolveCitationSiteUrl(citation({ entityType: "profile" }))).toBe(`${ORIGIN}/`);
   });

@@ -1,6 +1,7 @@
 import type { CareerDataRepository, DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCitationSiteUrls } from "../citation-site-urls.js";
 import { createToolExecutor } from "../define-tool.js";
 import { listRecommendationsTool } from "./list-recommendations.js";
 
@@ -59,7 +60,7 @@ describe("listRecommendationsTool", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({
       data: domainResult.data,
-      citations: domainResult.citations,
+      citations: withCitationSiteUrls(domainResult.citations),
     });
   });
 
@@ -73,7 +74,49 @@ describe("listRecommendationsTool", () => {
     const result = await executor({});
 
     const structuredContent = result.structuredContent as { citations: unknown };
-    expect(structuredContent.citations).toStrictEqual(fixtureCitations);
+    expect(structuredContent.citations).toStrictEqual(withCitationSiteUrls(fixtureCitations));
+  });
+
+  it("gives every citation a resolvable url pointing at the recommendation on /recommendations (#247)", async () => {
+    vi.mocked(core.listRecommendations).mockReturnValue({
+      data: [fixtureRecommendation],
+      citations: fixtureCitations,
+    });
+    const executor = createToolExecutor(listRecommendationsTool);
+
+    const result = await executor({});
+
+    const { citations } = result.structuredContent as { citations: { url: string }[] };
+    expect(citations[0]?.url).toBe(
+      "http://localhost:3000/recommendations#recommendation-fixture-person-2024",
+    );
+  });
+
+  it("declares a human title and an outputSchema that accepts its own success envelope (#241, #242)", async () => {
+    expect(listRecommendationsTool.title).toBe("List recommendations");
+
+    vi.mocked(core.listRecommendations).mockReturnValue({
+      data: [fixtureRecommendation],
+      citations: fixtureCitations,
+    });
+    const executor = createToolExecutor(listRecommendationsTool);
+
+    const result = await executor({});
+
+    const outputSchema = listRecommendationsTool.outputSchema;
+    expect(outputSchema).toBeDefined();
+    expect(outputSchema?.safeParse(result.structuredContent).success).toBe(true);
+  });
+
+  it("outputSchema rejects a recommendation missing a required authored field", () => {
+    const { recommenderName: _recommenderName, ...incomplete } = fixtureRecommendation;
+
+    const parsed = listRecommendationsTool.outputSchema?.safeParse({
+      data: [incomplete],
+      citations: withCitationSiteUrls(fixtureCitations),
+    });
+
+    expect(parsed?.success).toBe(false);
   });
 
   it("returns an empty list as a successful result, not an error (empty outcome)", async () => {

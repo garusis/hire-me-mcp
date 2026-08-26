@@ -15,6 +15,7 @@ export {
   gapSchema,
   profileSchema,
   projectSchema,
+  recommendationSchema,
   skillSchema,
   writingEntrySchema,
 } from "@hire-me-mcp/career-data";

@@ -25,6 +25,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { EXPECTED_TOOL_NAMES } from "../lib/mcp/tool-names";
 import packageJson from "../package.json" with { type: "json" };
 import { type StartedServer, startNextServer } from "./support/next-server";
@@ -35,6 +36,7 @@ import {
   listEducationOutputSchema,
   listGapsOutputSchema,
   listProjectsOutputSchema,
+  listRecommendationsOutputSchema,
   listSkillsOutputSchema,
   listWritingOutputSchema,
   searchProjectsOutputSchema,
@@ -56,14 +58,28 @@ function connectClient(): { client: Client; transport: StreamableHTTPClientTrans
   return { client, transport };
 }
 
-/** Asserts `citations` is a non-empty array of well-formed Citation records. */
+/**
+ * An envelope citation as it must appear ON THE WIRE: the authored Citation
+ * fields plus a resolvable absolute `url` (#247). Restated here rather than
+ * imported from `lib/mcp/wire-schemas.ts` so this black-box suite checks the
+ * promise ("citations back to the source") independently of the module that
+ * implements it.
+ */
+const wireCitationSchema = citationSchema.extend({ url: z.url() });
+
+/**
+ * Asserts `citations` is a non-empty array of well-formed Citation records,
+ * each carrying a resolvable absolute `url` back to its source (#247).
+ */
 function expectWellFormedCitations(citations: unknown): asserts citations is unknown[] {
   expect(Array.isArray(citations)).toBe(true);
   const list = citations as unknown[];
   expect(list.length).toBeGreaterThan(0);
   for (const citation of list) {
-    const parsed = citationSchema.safeParse(citation);
-    expect(parsed.success).toBe(true);
+    const parsed = wireCitationSchema.safeParse(citation);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error?.issues)).toBe(
+      true,
+    );
   }
 }
 
@@ -101,6 +117,51 @@ describe("tools/list", () => {
         typeof tool.inputSchema.properties === "object" ||
           tool.inputSchema.properties === undefined,
       ).toBe(true);
+    }
+
+    await client.close();
+  });
+
+  it("advertises a human-readable title and read-only annotations for EVERY tool, with no tool exempt (#241)", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const { tools } = await client.listTools();
+    expect(tools.length).toBe(EXPECTED_TOOL_NAMES.length);
+
+    for (const tool of tools) {
+      // A title a client can show a human instead of the kebab-case wire name.
+      expect(tool.annotations?.title, `${tool.name} has no annotations.title`).toBeTruthy();
+      expect(tool.annotations?.title).not.toContain("-");
+      // This whole server reads one static career dataset over an anonymous,
+      // public endpoint — every tool, present and future, is read-only.
+      expect(tool.annotations, `${tool.name} is missing read-only hints`).toMatchObject({
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      });
+    }
+
+    await client.close();
+  });
+
+  it("advertises an outputSchema describing the { data, citations } envelope for EVERY tool (#242)", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const { tools } = await client.listTools();
+
+    for (const tool of tools) {
+      const outputSchema = tool.outputSchema as
+        | { type?: string; properties?: Record<string, unknown> }
+        | undefined;
+      expect(outputSchema, `${tool.name} advertises no outputSchema`).toBeDefined();
+      expect(outputSchema).toMatchObject({ type: "object" });
+      expect(
+        Object.keys(outputSchema?.properties ?? {}),
+        `${tool.name}'s outputSchema does not describe the shared envelope`,
+      ).toEqual(expect.arrayContaining(["data", "citations"]));
     }
 
     await client.close();
@@ -385,6 +446,43 @@ describe("tools/call — list tools (#211-#215)", () => {
     // stay aligned 1:1 with data either way.
     const structuredContent = result.structuredContent as { data: unknown[]; citations: unknown[] };
     expect(structuredContent.citations.length).toBe(structuredContent.data.length);
+
+    await client.close();
+  });
+
+  it("list-recommendations returns every recommendation verbatim, newest first, with aligned citations that resolve back to /recommendations (#190, #247)", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({ name: "list-recommendations", arguments: {} });
+
+    expect(result.isError).not.toBe(true);
+    const parsed = listRecommendationsOutputSchema.safeParse(result.structuredContent);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error?.issues)).toBe(
+      true,
+    );
+    const structuredContent = result.structuredContent as {
+      data: Array<{ id: string; date: string; text: string }>;
+      citations: Array<{ entityId: string; url: string }>;
+    };
+    expect(structuredContent.data.length).toBeGreaterThan(0);
+    expect(structuredContent.citations.length).toBe(structuredContent.data.length);
+    expectWellFormedCitations(structuredContent.citations);
+
+    // Verbatim: no entry is truncated away to nothing by the adapter.
+    for (const entry of structuredContent.data) {
+      expect(entry.text.length).toBeGreaterThan(0);
+    }
+
+    // Deterministic order: reverse-chronological by date.
+    const dates = structuredContent.data.map((entry) => entry.date);
+    expect(dates).toEqual([...dates].sort().reverse());
+
+    // Each citation points at that recommendation's own card on the site,
+    // rather than falling back to the home page for an unmapped entity type.
+    for (const citation of structuredContent.citations) {
+      expect(citation.url).toContain(`/recommendations#${citation.entityId}`);
+    }
 
     await client.close();
   });
