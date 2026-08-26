@@ -76,12 +76,31 @@ describe("buildCitedAnswer", () => {
     );
   });
 
-  it("leaves no stray space for a marker it cannot resolve either", () => {
+  it("leaves prose carrying an unrecognized marker-shaped string completely alone", () => {
     const unmapped = "He studied there [cite:future-type:whatever].";
     // Not a well-formed marker for any known entity type, so it is not even
     // parsed as one — the prose must survive verbatim rather than losing a
     // chunk of itself.
     expect(textOf(unmapped)).toBe(unmapped);
+  });
+
+  // A citation must never fail invisibly again: an entity type the site has
+  // no surface for keeps its marker in the text rather than being deleted
+  // mid-sentence. Unreachable today (every `CitableEntityType` resolves) —
+  // this is the guard for the next type someone adds.
+  it("keeps a marker it cannot map in the text verbatim instead of deleting it", () => {
+    // Injected resolver: no real entity type is unresolvable any more (see
+    // the exhaustive case below), so this branch is only reachable through
+    // the seam `buildCitedAnswer` exposes for it.
+    const answer = buildCitedAnswer("A claim. [cite:project:cowork]", NO_WRITING, () => undefined);
+
+    expect(answer.sources).toEqual([]);
+    expect(
+      answer.segments
+        .filter((segment) => segment.kind === "text")
+        .map((segment) => segment.text)
+        .join(""),
+    ).toBe("A claim. [cite:project:cowork]");
   });
 
   it("keeps a single space between words when a marker sits mid-sentence", () => {

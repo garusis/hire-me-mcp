@@ -15,7 +15,8 @@
  *   tool set emits constantly — were all "unresolvable", so a typical
  *   answer showed no citation at all;
  * - deleting the marker left the space in front of it behind, producing the
- *   reported `"…open to new opportunities ."` artifact;
+ *   reported `"…open to new opportunities ."` artifact — a citation failing
+ *   invisibly, mid-sentence, with only a typographic scar to show for it;
  * - and the raw `[cite:experience:house-numbers]` string, when it *did*
  *   render, is machine syntax leaking into a sentence a recruiter reads.
  *
@@ -27,14 +28,16 @@
  *
  * ## Whitespace
  *
- * Horizontal whitespace immediately before a marker is always dropped, so a
- * reference hugs the word it supports (`opportunities¹.`) and a marker that
- * still can't be resolved leaves no `" ."` scar behind. Newlines are left
- * alone — the bubble renders `white-space: pre-wrap`, so eating them would
- * silently reflow the agent's paragraphs.
+ * Horizontal whitespace immediately before a rendered reference is dropped,
+ * so the reference hugs the word it supports (`opportunities¹.`). Newlines
+ * are left alone — the bubble renders `white-space: pre-wrap`, so eating
+ * them would silently reflow the agent's paragraphs. A marker that can't be
+ * mapped at all is left in the text verbatim, spacing included: nothing is
+ * ever deleted from an answer, because a silent deletion is the failure
+ * mode issue 227 was made of.
  */
 
-import type { CitableEntityType } from "@hire-me-mcp/agent/citations";
+import type { CitableEntityType, CitationMarker } from "@hire-me-mcp/agent/citations";
 import { parseCitations, serializeCitation } from "@hire-me-mcp/agent/citations";
 import type { WritingEntry } from "../../src/lib/content";
 import { resolveChatCitationHref } from "./resolve-chat-citation-href";
@@ -123,14 +126,28 @@ function pushText(segments: CitedSegment[], text: string): void {
   }
 }
 
+/** How a parsed marker is turned into an href — see {@link buildCitedAnswer}'s `resolveHref` parameter. */
+export type CitationHrefResolver = (
+  marker: CitationMarker,
+  writingEntries: readonly WritingEntry[],
+) => string | undefined;
+
 /**
  * Splits `text` into renderable segments and collects its distinct sources.
  * Never throws: text with no markers comes back as a single text segment
  * and an empty source list.
+ *
+ * `resolveHref` defaults to the real resolver and exists as a seam for the
+ * one branch below that production code cannot reach: every member of
+ * `CitableEntityType` maps to a site surface today, and `parseCitations`
+ * only ever yields those types, so "no href for this marker" is
+ * unreachable — but it is the exact failure mode issue 227 was made of, so
+ * it is kept, and kept genuinely tested rather than asserted vacuously.
  */
 export function buildCitedAnswer(
   text: string,
   writingEntries: readonly WritingEntry[],
+  resolveHref: CitationHrefResolver = resolveChatCitationHref,
 ): CitedAnswer {
   const segments: CitedSegment[] = [];
   const sources: ChatCitationSource[] = [];
@@ -146,19 +163,26 @@ export function buildCitedAnswer(
       continue;
     }
 
-    // Whitespace in front of a marker belongs to the marker, not the prose:
-    // dropping it is what stops both `"opportunities ¹."` and — when the
-    // marker can't be resolved at all — issue 227's `"opportunities ."`.
-    pushText(segments, trimHorizontalEnd(text.slice(cursor, markerIndex)));
+    const before = text.slice(cursor, markerIndex);
     cursor = markerIndex + markerText.length;
 
-    const href = resolveChatCitationHref(marker, writingEntries);
+    const href = resolveHref(marker, writingEntries);
     if (href === undefined) {
-      // No site surface for this entity type at all. The reference is
-      // dropped (never a broken link, never raw `[cite:...]` syntax), and
-      // the sentence still reads cleanly thanks to the trim above.
+      // No site surface for this entity type at all — only reachable if the
+      // shared marker format grows a type this app hasn't mapped yet. The
+      // marker stays in the text verbatim rather than being deleted: a
+      // silent drop is what produced issue 227's invisible failure, and a
+      // visible oddity is easier to notice and fix than a missing citation.
+      // Whitespace is left alone here so the marker keeps its own spacing.
+      pushText(segments, before);
+      pushText(segments, markerText);
       continue;
     }
+
+    // Whitespace in front of a rendered reference belongs to the reference,
+    // not the prose: eating it is what stops both `"opportunities ¹."` and
+    // issue 227's `"opportunities ."`.
+    pushText(segments, trimHorizontalEnd(before));
 
     const existing = sourcesByHref.get(href);
     const source =
