@@ -68,7 +68,7 @@ const FIXTURE_OPTIONS = {
 const REAL_CAREER_STRINGS = [
   "House Numbers",
   "garusis@gmail.com",
-  "Cucuta",
+  "Cúcuta",
   "Marcos Javier Alvarez",
 ];
 

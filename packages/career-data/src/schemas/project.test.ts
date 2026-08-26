@@ -43,6 +43,45 @@ describe("projectSchema", () => {
     expect(projectSchema.safeParse(withoutName).success).toBe(false);
   });
 
+  describe("period (#224)", () => {
+    it("accepts a project with a start-only (ongoing) period and preserves it", () => {
+      const result = projectSchema.safeParse({ ...validProject, period: { start: "2026-08" } });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.period).toEqual({ start: "2026-08" });
+      }
+    });
+
+    it("accepts a project with a closed period", () => {
+      const result = projectSchema.safeParse({
+        ...validProject,
+        period: { start: "2023-01", end: "2024-06" },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts a project without a period (optional, stays undefined)", () => {
+      const result = projectSchema.safeParse(validProject);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.period).toBeUndefined();
+      }
+    });
+
+    it("rejects a period whose end is before its start", () => {
+      const result = projectSchema.safeParse({
+        ...validProject,
+        period: { start: "2024-06", end: "2023-01" },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects a period with a non-YYYY-MM start", () => {
+      const result = projectSchema.safeParse({ ...validProject, period: { start: "2026" } });
+      expect(result.success).toBe(false);
+    });
+  });
+
   describe("featured flag (#191)", () => {
     it("accepts a project with featured: true and preserves the value", () => {
       const result = projectSchema.safeParse({ ...validProject, featured: true });

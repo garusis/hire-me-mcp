@@ -1,3 +1,12 @@
+/* Availability + location side by side (issue 229) — where he is and that he
+   works remotely belong right next to "open to new roles". */
+.heroBadges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 .heroName {
   margin-top: var(--space-4);
 }
@@ -93,6 +102,13 @@
   margin-top: var(--space-5);
   padding: 0;
   list-style: none;
+}
+
+/* "See all" link closing each highlight rail (issue 234) — the reading path
+   out of a section, so it sits below the grid with its own breathing room. */
+.seeAllLink {
+  display: inline-block;
+  margin-top: var(--space-4);
 }
 
 .mcpTeaser {

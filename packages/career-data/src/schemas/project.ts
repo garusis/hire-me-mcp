@@ -6,6 +6,25 @@ const linkSchema = z.object({
   url: z.url(),
 });
 
+/** `YYYY-MM` month-precision date, same convention as experience/education. */
+const yearMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "expected YYYY-MM");
+
+/**
+ * When the project's work actually happened (#224). Optional because most
+ * write-ups don't need one; a project that declares a period is only
+ * "related" to experience entries whose own date span overlaps it — see
+ * apps/web's related-projects rule. An omitted `end` means ongoing.
+ */
+const periodSchema = z
+  .object({
+    start: yearMonthSchema,
+    end: yearMonthSchema.optional(),
+  })
+  .refine((period) => period.end === undefined || period.end >= period.start, {
+    message: "end must not be before start",
+    path: ["end"],
+  });
+
 /**
  * A project write-up. Structured fields (name, summary, tech, links) come
  * from MDX frontmatter; `body` is the MDX document's long-form prose,
@@ -27,6 +46,12 @@ export const projectSchema = z.object({
    * no flag at all.
    */
   featured: z.boolean().optional(),
+  /**
+   * Optional `YYYY-MM` span of when the work happened — see
+   * {@link periodSchema}. The flagship record carries one so tech-tag
+   * overlap alone can't relate the 2026 portfolio to a 2013 role (#224).
+   */
+  period: periodSchema.optional(),
 });
 
 export type Project = z.infer<typeof projectSchema>;

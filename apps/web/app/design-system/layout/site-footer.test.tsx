@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { getProfileView } from "../../../src/lib/content/index.js";
 import { SiteFooter } from "./site-footer.js";
 
 describe("SiteFooter", () => {
@@ -34,5 +35,20 @@ describe("SiteFooter", () => {
     render(<SiteFooter />);
     const link = screen.getByRole("link", { name: /privacy/i });
     expect(link).toHaveAttribute("href", "/privacy");
+  });
+
+  it("surfaces every profile contact (Email / GitHub / LinkedIn) on every page, not just /privacy (issue 228)", () => {
+    render(<SiteFooter />);
+    const { profile } = getProfileView();
+    expect(profile.contacts.length).toBeGreaterThan(0);
+    for (const contact of profile.contacts) {
+      // External links append a visually-hidden "(opens in a new tab)" hint
+      // to their accessible name, so match on the label as a prefix.
+      const link = screen.getByRole("link", { name: new RegExp(`^${contact.label}`) });
+      expect(link).toHaveAttribute("href", contact.url);
+      // Same muted-ink treatment as the other footer links — the accent
+      // color fails WCAG AA against this footer's subtle background.
+      expect(link.className).toMatch(/mutedLink/);
+    }
   });
 });

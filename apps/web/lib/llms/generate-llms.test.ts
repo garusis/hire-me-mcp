@@ -16,6 +16,7 @@ const {
   getSkillsListView,
   getGapsListView,
   getCvView,
+  getWritingListView,
 } = vi.hoisted(() => ({
   getProfileView: vi.fn(),
   getExperienceListView: vi.fn(),
@@ -23,6 +24,7 @@ const {
   getSkillsListView: vi.fn(),
   getGapsListView: vi.fn(),
   getCvView: vi.fn(),
+  getWritingListView: vi.fn(),
 }));
 
 vi.mock("../../src/lib/content", () => ({
@@ -32,6 +34,7 @@ vi.mock("../../src/lib/content", () => ({
   getSkillsListView,
   getGapsListView,
   getCvView,
+  getWritingListView,
 }));
 
 function profileView(): ProfileView {
@@ -144,6 +147,7 @@ function mockContentLayer(): void {
   getSkillsListView.mockReturnValue(skillsView());
   getGapsListView.mockReturnValue(gapsView());
   getCvView.mockReturnValue(cvView());
+  getWritingListView.mockReturnValue({ citations: [], items: [] });
 }
 
 /** Every markdown link target `[label](url)` found in `text`. */
@@ -392,5 +396,36 @@ describe("renderLlmsFullTxt", () => {
 
     expect(changed).not.toBe(baseline);
     expect(changed).toContain("Changed Fixture Name");
+  });
+});
+
+describe("renderLlmsTxt Writing visibility (#233)", () => {
+  it("omits the Writing link while nothing is published, and includes it once something is", async () => {
+    mockContentLayer();
+    const { renderLlmsTxt } = await import("./generate-llms.js");
+    const input = {
+      siteUrl: "https://site.example.com",
+      endpointUrl: "https://site.example.com/api/mcp",
+    };
+
+    expect(renderLlmsTxt(input)).not.toContain("/writing");
+
+    getWritingListView.mockReturnValue({
+      citations: [],
+      items: [
+        {
+          slug: "fixture-note",
+          entry: {
+            id: "fixture-note",
+            title: "Fixture Note",
+            publishedDate: "2024-01-15",
+            summary: "s",
+            body: "b",
+          },
+          citation: { entityType: "writing", entityId: "fixture-note", label: "Fixture Note" },
+        },
+      ],
+    });
+    expect(renderLlmsTxt(input)).toContain("https://site.example.com/writing");
   });
 });
