@@ -1,5 +1,5 @@
 import { renderCvHtml } from "../../../lib/cv/render-cv-html";
-import { getSiteUrl } from "../../../src/lib/config/site-url";
+import { getMcpEndpointUrl, getSiteUrl } from "../../../src/lib/config/site-url";
 import { getCvView } from "../../../src/lib/content";
 
 /**
@@ -19,7 +19,7 @@ import { getCvView } from "../../../src/lib/content";
 export async function GET(request: Request): Promise<Response> {
   const view = getCvView();
   const nonce = request.headers.get("x-nonce") ?? undefined;
-  const html = renderCvHtml(view, { siteUrl: getSiteUrl(), nonce });
+  const html = renderCvHtml(view, { siteUrl: getSiteUrl(), mcpUrl: getMcpEndpointUrl(), nonce });
   return new Response(html, {
     headers: { "Content-Type": "text/html; charset=utf-8" },
   });

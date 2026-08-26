@@ -66,7 +66,10 @@ describe("generateCvPdf", () => {
       ],
     });
     const view = getCvView(repository);
-    const html = renderCvHtml(view, { siteUrl: "https://example.test" });
+    const html = renderCvHtml(view, {
+      siteUrl: "https://example.test",
+      mcpUrl: "https://example.test/api/mcp",
+    });
 
     await generateCvPdf(html, outputPath);
 

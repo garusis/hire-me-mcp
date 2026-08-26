@@ -133,6 +133,7 @@ function cvView(): CvView {
   return {
     profile: profileView().profile,
     experience: [],
+    projects: [],
     skillsByProficiency: [],
     education: [],
     filename: "fixture-cv.pdf",
