@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CitationMarker } from "./citations.js";
-import { parseCitationMarker, parseCitations, serializeCitation } from "./citations.js";
+import {
+  CITABLE_ENTITY_TYPES,
+  parseCitationMarker,
+  parseCitations,
+  serializeCitation,
+} from "./citations.js";
 
 describe("serializeCitation", () => {
   it("serializes an entityType/entityId pair into the [cite:type:id] marker", () => {
@@ -93,5 +98,23 @@ describe("round trip", () => {
 
   it.each(markers)("parse(serialize(x)) === x for %o", (marker) => {
     expect(parseCitationMarker(serializeCitation(marker))).toEqual(marker);
+  });
+});
+
+describe("CITABLE_ENTITY_TYPES", () => {
+  // Exported for issue 227: the chat UI has to map EVERY citable type onto a
+  // site section, and a hand-maintained duplicate of this list is exactly
+  // how `profile`/`education`/`recommendation` citations came to be dropped
+  // from answers. A consumer can now iterate the real set in a test.
+  it("is the runtime list of every entity type a well-formed marker can carry", () => {
+    for (const entityType of CITABLE_ENTITY_TYPES) {
+      const marker = parseCitationMarker(`[cite:${entityType}:some-entity]`);
+      expect(marker, `"${entityType}" is not accepted by the parser`).not.toBeNull();
+      expect(marker?.entityType).toBe(entityType);
+    }
+  });
+
+  it("has no duplicates", () => {
+    expect(new Set(CITABLE_ENTITY_TYPES).size).toBe(CITABLE_ENTITY_TYPES.length);
   });
 });

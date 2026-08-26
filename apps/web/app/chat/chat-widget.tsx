@@ -40,6 +40,33 @@ import "./configure-zod-jitless";
  * carrying the raw `errorText` `stream-errors.ts` wrote — `{ code,
  * message }` JSON. `chat-error-messages.ts` maps that to UI copy generically
  * by code, with a fallback for any code introduced later.
+ *
+ * ## Failure UX (issue 253)
+ *
+ * A turn that fails before the assistant has said anything leaves the
+ * visitor's own message in the transcript with nothing under it. That used
+ * to be all it left: an anonymous "You" bubble, plus one banner pinned to
+ * the bottom of the panel that named neither the message it belonged to nor
+ * the real cause. Sending again just added another orphan, so a few
+ * failures produced a wall of ignored questions.
+ *
+ * Now the failure is attached to the message that failed —
+ * `data-failed="true"` on that bubble, a "not sent" tag on its role label,
+ * and the error text plus its actions rendered inside the bubble rather
+ * than at the far end of the panel:
+ *
+ * - **Try again** re-sends that exact text (it does NOT `regenerate()` —
+ *   there is no assistant turn to regenerate) after removing the failed
+ *   bubble, so a retry replaces the message instead of appending a twin.
+ * - **Edit message** takes the text back out of the transcript and returns
+ *   it to the input box, so nothing the visitor typed is ever stranded.
+ * - Sending a NEW question also drops the previous unanswered one. An
+ *   unanswered message is not conversation history — the server never saw
+ *   it — so keeping it would only rebuild the wall.
+ *
+ * A failure that arrives mid-stream (the assistant bubble already carries
+ * partial text) is not an orphan and keeps the panel-level banner, whose
+ * "Try again" still regenerates that assistant turn.
  */
 
 import { useChat } from "@ai-sdk/react";
@@ -50,7 +77,7 @@ import { Button } from "../design-system/primitives/button";
 import { Link } from "../design-system/primitives/link";
 import { describeChatError, parseChatErrorText } from "./chat-error-messages";
 import styles from "./chat-widget.module.css";
-import { CitationText } from "./citation-text";
+import { CitationSources, CitationText } from "./citation-text";
 import { STARTER_PROMPTS } from "./starter-prompts";
 import { toRequestMessages } from "./to-request-messages";
 import { useChatSessionId } from "./use-chat-session-id";
@@ -176,10 +203,11 @@ export function ChatWidget({ writingEntries }: ChatWidgetProps) {
     [],
   );
 
-  const { messages, sendMessage, status, error, stop, regenerate } = useChat({
-    id: sessionId,
-    transport,
-  });
+  const { messages, sendMessage, setMessages, status, error, clearError, stop, regenerate } =
+    useChat({
+      id: sessionId,
+      transport,
+    });
 
   useEffect(() => {
     if (isOpen) {
@@ -194,13 +222,51 @@ export function ChatWidget({ writingEntries }: ChatWidgetProps) {
   const timedOutOrParsedCode = hasTimedOut ? "timeout" : parsedError?.code;
   const errorDescription = timedOutOrParsedCode ? describeChatError(timedOutOrParsedCode) : null;
 
-  const showThinkingIndicator =
-    isBusy && !hasVisibleAssistantActivity(messages[messages.length - 1]);
+  const lastMessage = messages[messages.length - 1];
+  const showThinkingIndicator = isBusy && !hasVisibleAssistantActivity(lastMessage);
+
+  /**
+   * issue 253: the message this failure belongs to — the trailing "You"
+   * bubble the assistant never replied to. `undefined` when the turn failed
+   * mid-stream (the assistant bubble exists and carries what it managed to
+   * say), which is not an orphan and keeps the panel-level banner instead.
+   */
+  const failedMessage =
+    errorDescription !== null && lastMessage?.role === "user" ? lastMessage : undefined;
+
+  const forgetFailedMessage = useCallback(
+    (id: string) => {
+      clearTimedOut();
+      clearError();
+      setMessages((current) => current.filter((message) => message.id !== id));
+    },
+    [clearError, clearTimedOut, setMessages],
+  );
 
   const handleRetry = useCallback(() => {
     clearTimedOut();
     void regenerate();
   }, [clearTimedOut, regenerate]);
+
+  /** Re-send the failed message's own text, replacing its bubble rather than adding a second one. */
+  const handleRetryFailedMessage = useCallback(() => {
+    if (failedMessage === undefined) {
+      return;
+    }
+    const text = messageText(failedMessage.parts);
+    forgetFailedMessage(failedMessage.id);
+    sendMessage({ text });
+  }, [failedMessage, forgetFailedMessage, sendMessage]);
+
+  /** Hand the failed message's text back to the input box so it is never stranded in the transcript. */
+  const handleEditFailedMessage = useCallback(() => {
+    if (failedMessage === undefined) {
+      return;
+    }
+    setInput(messageText(failedMessage.parts));
+    forgetFailedMessage(failedMessage.id);
+    inputRef.current?.focus();
+  }, [failedMessage, forgetFailedMessage]);
 
   function sendText(text: string): void {
     const trimmed = text.trim();
@@ -208,6 +274,12 @@ export function ChatWidget({ writingEntries }: ChatWidgetProps) {
       return;
     }
     clearTimedOut();
+    clearError();
+    // issue 253: the previous turn's unanswered question is dropped, not
+    // stacked on top of — the server never saw it, so it is not history.
+    if (failedMessage !== undefined) {
+      setMessages((current) => current.filter((message) => message.id !== failedMessage.id));
+    }
     sendMessage({ text: trimmed });
     setInput("");
   }
@@ -278,17 +350,62 @@ export function ChatWidget({ writingEntries }: ChatWidgetProps) {
               </div>
             )}
 
-            {messages.map((message) => (
-              <div key={message.id} className={styles.message} data-role={message.role}>
-                <span className={styles.role}>{message.role === "user" ? "You" : "Agent"}</span>
-                {message.parts.some(isInFlightToolPart) && (
-                  <p className={styles.toolStep}>Consulting career data…</p>
-                )}
-                <p className={styles.text}>
-                  <CitationText text={messageText(message.parts)} writingEntries={writingEntries} />
-                </p>
-              </div>
-            ))}
+            {messages.map((message) => {
+              const text = messageText(message.parts);
+              const hasFailed = message.id === failedMessage?.id;
+              return (
+                <div
+                  key={message.id}
+                  className={styles.message}
+                  data-role={message.role}
+                  // issue 253: the failing message is identifiable in the
+                  // DOM, not just described by a banner somewhere else.
+                  data-failed={hasFailed ? "true" : undefined}
+                >
+                  <span className={styles.role}>
+                    {message.role === "user" ? "You" : "Agent"}
+                    {hasFailed && <span className={styles.notSentTag}> · not sent</span>}
+                  </span>
+                  {message.parts.some(isInFlightToolPart) && (
+                    <p className={styles.toolStep}>Consulting career data…</p>
+                  )}
+                  {/*
+                    `data-chat-answer` marks the answer prose itself, apart
+                    from the role label, the tool-step line, the Sources
+                    list and any attached error — a stable hook for the
+                    preview e2e specs, which since issue 227 have to read
+                    citations out of `data-citation` attributes rather than
+                    out of raw marker syntax in the text.
+                  */}
+                  <p className={styles.text} data-chat-answer="true">
+                    <CitationText text={text} writingEntries={writingEntries} />
+                  </p>
+                  {message.role === "assistant" && (
+                    <CitationSources text={text} writingEntries={writingEntries} />
+                  )}
+                  {hasFailed && errorDescription !== null && (
+                    <div className={styles.messageError} role="alert">
+                      <p className={styles.errorTitle}>{errorDescription.title}</p>
+                      <p>{errorDescription.description}</p>
+                      <div className={styles.errorActions}>
+                        {errorDescription.retryable && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={handleRetryFailedMessage}
+                          >
+                            Try again
+                          </Button>
+                        )}
+                        <Button type="button" variant="outline" onClick={handleEditFailedMessage}>
+                          Edit message
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
             {showThinkingIndicator && <p className={styles.thinking}>Thinking…</p>}
             {isBusy && isSlowTurn && (
@@ -299,7 +416,13 @@ export function ChatWidget({ writingEntries }: ChatWidgetProps) {
             )}
           </div>
 
-          {errorDescription && (
+          {/*
+            Panel-level banner only for a failure with no orphan bubble to
+            attach to (issue 253) — a mid-stream error, where the assistant
+            message already shows what it managed to say and "Try again"
+            means regenerating that turn.
+          */}
+          {errorDescription && failedMessage === undefined && (
             <div className={styles.errorBanner} role="alert">
               <p className={styles.errorTitle}>{errorDescription.title}</p>
               <p>{errorDescription.description}</p>

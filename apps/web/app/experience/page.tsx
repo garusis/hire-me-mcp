@@ -6,6 +6,7 @@ import {
   getProfileView,
   getProjectsListView,
 } from "../../src/lib/content";
+import { toSlug } from "../../src/lib/content/slug";
 import { buildPageMetadata } from "../../src/lib/seo/page-metadata";
 import { Badge } from "../design-system/primitives/badge";
 import { Card } from "../design-system/primitives/card";
@@ -102,7 +103,11 @@ function EducationEntryCard({ item }: { item: EducationListItemView }) {
   const period = formatEducationPeriod(entry.startDate, entry.endDate);
 
   return (
-    <Card as="article" id={entry.id}>
+    // Anchor derived through `toSlug`, exactly like the role cards above and
+    // like `citation-href.ts`'s `education` case — so an `[cite:education:...]`
+    // citation's `#fragment` always lands on a card that really exists
+    // (issue 227).
+    <Card as="article" id={toSlug(entry.id)}>
       <Heading level={3}>{entry.institution}</Heading>
       <div className={styles.meta}>
         <p>{entry.credential}</p>

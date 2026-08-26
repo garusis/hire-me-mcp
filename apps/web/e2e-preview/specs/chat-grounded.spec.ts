@@ -1,4 +1,9 @@
-import { parseCitations } from "@hire-me-mcp/agent/citations";
+import { parseCitationMarker } from "@hire-me-mcp/agent/citations";
+import {
+  answerParagraph,
+  CITATION_LINK_SELECTOR,
+  CITATION_SOURCE_SELECTOR,
+} from "../helpers/chat-answer";
 import { expect, test } from "../helpers/fixtures";
 
 /**
@@ -7,8 +12,16 @@ import { expect, test } from "../helpers/fixtures";
  * a starter prompt (`apps/web/app/chat/starter-prompts.ts`'s
  * `grounded-house-numbers` entry — answerable from real
  * `packages/career-data` content), and asserts the streamed answer renders
- * with at least one `[cite:...]` citation link whose target resolves to a
- * real site section.
+ * with at least one citation reference whose target resolves to a real site
+ * section, and that the same source is listed in the message's "Sources"
+ * list.
+ *
+ * Issue 227 strengthened this: a citation now renders as a numbered
+ * superscript carrying the marker on `data-citation`, so this spec checks
+ * the marker parses, the href resolves to a real page AND fragment, the
+ * reference is not the bare home-page fallback, the "Sources" list repeats
+ * it, and — the actual reported defect — the answer prose contains no
+ * leftover `" ."` where a marker used to be deleted.
  *
  * A REAL model call — no route stubbing — against the deployed chat
  * endpoint (`POST /api/chat`, #67), which runs the embedded interview
@@ -54,15 +67,31 @@ test("grounded chat flow: streamed answer renders with a citation link to a real
   const assistantMessage = log.locator('[data-role="assistant"]').last();
   await expect(assistantMessage).toBeVisible({ timeout: LIVE_MODEL_TIMEOUT_MS });
 
-  // A citation renders as a literal "[cite:entityType:entityId]" link
-  // (`apps/web/app/chat/citation-text.tsx`) — wait for at least one to
-  // stream in, real model latency included.
-  const citationLink = assistantMessage.locator("a", { hasText: /^\[cite:/ });
+  // A citation renders as a numbered superscript link carrying its marker on
+  // `data-citation` (`apps/web/app/chat/citation-text.tsx`) — wait for at
+  // least one to stream in, real model latency included.
+  const citationLink = assistantMessage.locator(CITATION_LINK_SELECTOR);
   await expect(citationLink.first()).toBeVisible({ timeout: LIVE_MODEL_TIMEOUT_MS });
 
-  const linkText = await citationLink.first().innerText();
-  const [marker] = parseCitations(linkText);
-  expect(marker, `expected "${linkText}" to parse as a well-formed citation marker`).toBeDefined();
+  const markerText = await citationLink.first().getAttribute("data-citation");
+  expect(markerText, "citation reference must carry its marker on data-citation").toBeTruthy();
+  expect(
+    parseCitationMarker(markerText as string),
+    `expected "${markerText}" to parse as a well-formed citation marker`,
+  ).not.toBeNull();
+
+  // Machine syntax must never reach the reader's sentence, and deleting a
+  // marker must not leave the space in front of it behind — issue 227's two
+  // visible symptoms, both asserted against the real streamed answer.
+  const answerText = await answerParagraph(assistantMessage).innerText();
+  expect(answerText).not.toContain("[cite:");
+  expect(answerText, `stray citation gap in: "${answerText}"`).not.toMatch(/ [.,]/);
+
+  // The same source is repeated in the message's own "Sources" list, which
+  // is what makes the citation checkable rather than just clickable.
+  const sourceEntry = assistantMessage.locator(CITATION_SOURCE_SELECTOR);
+  await expect(sourceEntry.first()).toBeVisible({ timeout: LIVE_MODEL_TIMEOUT_MS });
+  await expect(sourceEntry.first()).not.toHaveText("");
 
   const href = await citationLink.first().getAttribute("href");
   expect(href, "citation link must carry an href").toBeTruthy();
@@ -84,9 +113,9 @@ test("grounded chat flow: streamed answer renders with a citation link to a real
   await expect(secondAssistantMessage).toBeVisible({ timeout: LIVE_MODEL_TIMEOUT_MS });
   // Turn complete: the input re-enables only once the stream finishes.
   await expect(chatInput).toBeEnabled({ timeout: LIVE_MODEL_TIMEOUT_MS });
-  // The answer paragraph (the bubble's last <p>) must carry real text —
-  // the bubble alone would also render for an errored/blank turn.
-  await expect(secondAssistantMessage.locator("p").last()).not.toHaveText("");
+  // The answer paragraph must carry real text — the bubble alone would also
+  // render for an errored/blank turn.
+  await expect(answerParagraph(secondAssistantMessage)).not.toHaveText("");
   // Scoped to the chat panel: a page-level getByRole("alert") also matches
   // Next.js's own route announcer (an always-present, empty alert element),
   // which false-positived this assertion on an otherwise fully green turn.
