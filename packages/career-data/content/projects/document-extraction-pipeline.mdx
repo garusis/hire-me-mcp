@@ -2,11 +2,11 @@
 id: document-extraction-pipeline
 name: AI Document Extraction Pipeline
 summary: >-
-  Production LLM pipeline for extracting structured data from documents —
-  across the vendor-replacement experiments, accuracy went from roughly 30%
-  to 87%, with wider coverage than the incumbent OCR vendor at about 3% of
-  its cost.
-role: Lead engineer
+  Two pieces of work on the same problem: the production LLM extraction
+  service I originated for the documents the incumbent OCR vendor could not
+  extract, and a separate proof-of-concept evaluation — measured, costed and
+  never shipped — of replacing that vendor outright.
+role: Originator of the shipped service; sole author of the evaluation
 tech:
   - typescript
   - nodejs
@@ -27,34 +27,63 @@ Getting structured, field-level data out of them reliably — not "usually" —
 is the difference between straight-through processing and a human re-keying
 everything by hand.
 
-## What I built
+## The shipped piece
 
-The incumbent OCR vendor was doing real work: it extracted roughly 66% of
-the documents in the pipeline at 80–90% accuracy. The remaining third it
-only classified — those documents were never extracted at all. The project
-was to prove the vendor could be replaced, by testing competing theories
-about how to split, index, categorize and extract documents more reliably,
-with more coverage, and cheaper.
+The incumbent OCR vendor did real work, but a large share of documents came
+back classified and never extracted — the vendor knew what the document was
+and had no schema to read it with. I originated the production LLM
+extraction service that covers exactly that gap: it fires when the vendor
+fails to classify or extract, and it has been in production since February
+2026.
 
-Across those experiments, field accuracy measured against a human-graded
-ground truth went from roughly 30% on the first pass to 87% — at least as
-reliable as the vendor's scores, extending coverage past the third of
-documents it never extracted, with better categorization and indexing, at
-about 3% of the vendor's cost.
+Mine from the first commit onward: the rearchitecture into three
+independently retriable message-bus consumers with their own job records,
+the migration off a hosted LLM gateway onto direct provider APIs, and the
+multi-provider failover package that other services now share.
 
-The pipeline is not a single prompt. It is a set of typed extraction
-contracts per document type, a routing layer that decides which lane a
-document takes, and a scoring step that measures every lane against the
-same human-graded ground truth instead of trusting any of them.
+## The evaluation, kept separate
 
-I led the team evaluating vision-LLM document classification and extraction
-for the replacement, personally designing and testing the competing
-pipeline architectures — which made 80+ page closing packets processable
-at a small fraction of the vendor's per-loan cost.
+Whether the vendor could be replaced altogether is a different question, and
+I answered it as a proof of concept rather than a deployment — eight rounds
+over four weeks, sole author, never shipped. Every figure below is reported
+with the sample it came from:
+
+- Splitting a multi-document PDF into its constituent documents: **94.0%**
+  segment F1 and **95.6%** page-assignment accuracy (n=250 ground-truth
+  documents, scored deterministically, no LLM judge).
+- Classification: **88.4%** exact document type, **95.0%** type family
+  (n=242 matched pairs).
+- Field reading: **74.7%** correctness over the **48%** of the answer key
+  the scorer could actually compare (n=202 documents). The uncovered half is
+  a live caveat, not a rounding detail, and the correctness figure should
+  never be quoted without it.
+- Cost: about **$0.30 per loan** on the reviewed corpus, against the
+  incumbent vendor's flat **$25**.
+
+Ground truth was drafted by review agents reading every page against the
+production extraction, then reviewed and accuracy-confirmed by the
+operations team, with a deterministic hygiene audit run over the answer key
+itself.
+
+## The finding I would lead with
+
+Classification was a vocabulary problem, not a capability problem. Asked to
+name a document type in free text, the model matched the target vocabulary
+**14.3%** of the time. The same model, constrained to a closed 81-type
+enum, reached **82.4%**. The fix was the output contract, not a bigger
+model — and that result generalizes well past this pipeline.
+
+I also disproved my own headline. Round one produced a dramatic accuracy gap
+in my favour; a second corpus on the vendor's home turf showed it was corpus
+bias, so I retracted the accuracy argument and rebuilt the case on coverage
+and cost. A later round found a scoring bug that had inflated a number I had
+already published internally, and I withdrew that too.
 
 ## Why it mattered
 
-Every extraction claim here is backed by a measured before/after on real
-documents, not a demo. That distinction — an AI feature that is tested,
-scored and cost-traced like any other production system — is the throughline
-of most of what I have shipped with LLMs since.
+Every claim here is backed by a measured result on real documents, with its
+sample size and its caveats attached, and the shipped work is stated
+separately from the experiment. That distinction — an AI feature that is
+tested, scored and cost-traced like any other production system, and honest
+about which parts are live — is the throughline of most of what I have
+shipped with LLMs.
