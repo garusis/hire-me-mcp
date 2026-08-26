@@ -142,14 +142,16 @@ describe("Projects page", () => {
     expect(reactFilterLink).toHaveAttribute("href", "/projects?tags=python%2Creact");
   });
 
-  it("renders the documented empty state, not a blank page, for a filter combination with no matches", async () => {
+  it("renders an empty state that names the active filters and states the AND semantics (#252), not a blank page", async () => {
     getProjectsListView.mockReturnValue(projectsView());
 
     await renderProjectsPage({ tags: "react,python" });
 
     expect(screen.queryByRole("link", { name: /Alpha Project/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /Beta Project/i })).toBeNull();
-    expect(screen.getByText(/no projects match/i)).toBeDefined();
+    expect(screen.getByText(/no single project uses all of the selected tags/i)).toBeDefined();
+    expect(screen.getByText(/react, python/)).toBeDefined();
+    expect(screen.getByText(/combine as AND/i)).toBeDefined();
   });
 
   it("offers a way back to the unfiltered list from the empty state", async () => {
@@ -157,8 +159,33 @@ describe("Projects page", () => {
 
     await renderProjectsPage({ tags: "react,python" });
 
-    const clearLink = screen.getByRole("link", { name: /clear/i });
-    expect(clearLink).toHaveAttribute("href", "/projects");
+    const clearLinks = screen.getAllByRole("link", { name: /clear/i });
+    for (const clearLink of clearLinks) {
+      expect(clearLink).toHaveAttribute("href", "/projects");
+    }
+    expect(clearLinks.length).toBeGreaterThan(0);
+  });
+
+  it("shows a visible filter label rather than only an accessible nav name (#252)", async () => {
+    getProjectsListView.mockReturnValue(projectsView());
+
+    await renderProjectsPage({});
+
+    expect(screen.getByText("Filter by technology")).toBeDefined();
+    expect(screen.getByText(/narrows to projects matching all of them/i)).toBeDefined();
+  });
+
+  it("calls out and ignores an unknown tag instead of silently emptying the page (#252)", async () => {
+    getProjectsListView.mockReturnValue(projectsView());
+
+    await renderProjectsPage({ tags: "not-a-real-tag" });
+
+    // The unknown tag is reported…
+    expect(screen.getByText(/ignored an unknown tag/i)).toBeDefined();
+    expect(screen.getByText(/not-a-real-tag/)).toBeDefined();
+    // …and filtering proceeds without it: the full list still renders.
+    expect(screen.getByRole("link", { name: /Alpha Project/i })).toBeDefined();
+    expect(screen.getByRole("link", { name: /Beta Project/i })).toBeDefined();
   });
 
   it("each project card links through to its detail route", async () => {

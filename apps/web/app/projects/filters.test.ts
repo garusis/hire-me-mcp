@@ -4,6 +4,7 @@ import {
   computeTagOptions,
   filterProjectsByTags,
   parseSelectedTags,
+  partitionSelectedTags,
   toggleTagHref,
 } from "./filters.js";
 
@@ -92,5 +93,27 @@ describe("toggleTagHref", () => {
 
   it("returns the bare index path when removing the last selected tag", () => {
     expect(toggleTagHref(["react"], "react")).toBe("/projects");
+  });
+});
+
+describe("partitionSelectedTags (issue 252)", () => {
+  const options = ["aws", "react", "typescript"];
+
+  it("splits URL-provided tags into known options and unknown leftovers", () => {
+    expect(partitionSelectedTags(["react", "not-a-tag"], options)).toEqual({
+      knownTags: ["react"],
+      unknownTags: ["not-a-tag"],
+    });
+  });
+
+  it("returns everything known when every tag is a real option", () => {
+    expect(partitionSelectedTags(["aws", "react"], options)).toEqual({
+      knownTags: ["aws", "react"],
+      unknownTags: [],
+    });
+  });
+
+  it("returns empty lists for an empty selection", () => {
+    expect(partitionSelectedTags([], options)).toEqual({ knownTags: [], unknownTags: [] });
   });
 });

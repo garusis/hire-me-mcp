@@ -82,3 +82,15 @@
   padding: 0;
   margin: 0;
 }
+
+/* Visible filter label + stated AND semantics (issue 252). */
+.filterLabel {
+  margin: 0 0 var(--space-2);
+  font-weight: 600;
+}
+
+.filterHint {
+  font-weight: 400;
+  color: var(--color-fg-muted);
+  font-size: var(--text-sm);
+}

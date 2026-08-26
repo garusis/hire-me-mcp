@@ -72,3 +72,32 @@
 .examplePrompt::after {
   content: "\201D";
 }
+
+/* One-click add-connector deep links (issue 250) — same treatment as the home
+   connect widget's (connect-panel.module.css), so the "full setup" page
+   offers everything the teaser does. */
+.deepLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deepLink {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.deepLink:hover,
+.deepLink:focus-visible {
+  border-color: var(--color-accent);
+}
