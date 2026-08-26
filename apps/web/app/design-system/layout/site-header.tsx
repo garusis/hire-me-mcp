@@ -1,4 +1,4 @@
-import { getCvView } from "../../../src/lib/content";
+import { getCvView, getWritingListView } from "../../../src/lib/content";
 import { Container } from "../primitives/container";
 import { Link } from "../primitives/link";
 import { ThemeToggle } from "../theme/theme-toggle";
@@ -16,6 +16,10 @@ import styles from "./site-header.module.css";
  */
 export function SiteHeader() {
   const { filename } = getCvView();
+  // issue 233 — Writing is promoted in the primary nav only once something is
+  // actually published there. The route itself stays live (its honest
+  // empty state remains reachable by URL); what's removed is the promise.
+  const hasWriting = getWritingListView().items.length > 0;
 
   return (
     <header className={styles.header}>
@@ -28,7 +32,7 @@ export function SiteHeader() {
           <Link href="/experience">Experience</Link>
           <Link href="/projects">Projects</Link>
           <Link href="/skills">Skills</Link>
-          <Link href="/writing">Writing</Link>
+          {hasWriting ? <Link href="/writing">Writing</Link> : null}
           <Link href="/recommendations">Recommendations</Link>
           <Link href={`/cv/${filename}`}>Download CV</Link>
         </nav>

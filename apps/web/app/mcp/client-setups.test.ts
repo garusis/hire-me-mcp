@@ -1,17 +1,23 @@
-import { renderClaudeCodeSnippet, renderMcpServersJson } from "@hire-me-mcp/connect-metadata";
+import {
+  buildClientSnippets,
+  renderClaudeCodeSnippet,
+  renderMcpServersJson,
+} from "@hire-me-mcp/connect-metadata";
 import { describe, expect, it } from "vitest";
 import { buildConnectionMetadata } from "../../lib/mcp/connection-metadata";
 import { buildClientSetups } from "./client-setups";
 
 const ENDPOINT_URL = "https://example.vercel.app/api/mcp";
 
-describe("buildClientSetups (#43 per-client setup snippets)", () => {
-  it("builds exactly one setup per supported client: Claude web/desktop, Claude Code, Cursor, generic MCP client", () => {
+describe("buildClientSetups (#43 per-client setup snippets, full parity per #250)", () => {
+  it("builds exactly one setup per shared connect-metadata client — the same six the home widget renders", () => {
     const setups = buildClientSetups(ENDPOINT_URL);
     expect(setups.map((setup) => setup.id)).toEqual([
       "claude-web-desktop",
       "claude-code",
-      "cursor",
+      "claude-desktop-json",
+      "vscode-cursor",
+      "curl-jsonrpc",
       "generic",
     ]);
   });
@@ -39,27 +45,36 @@ describe("buildClientSetups (#43 per-client setup snippets)", () => {
     expect(claudeCode?.snippet).toContain("--transport http");
   });
 
-  it("gives Cursor a valid mcp.json object with the endpoint under mcpServers.<name>.url", () => {
+  it("gives VS Code / Cursor a valid mcp.json object with the endpoint under mcpServers.<name>.url", () => {
     const setups = buildClientSetups(ENDPOINT_URL);
-    const cursor = setups.find((setup) => setup.id === "cursor");
-    if (cursor === undefined) {
-      throw new Error("expected a cursor setup entry");
+    const vscodeCursor = setups.find((setup) => setup.id === "vscode-cursor");
+    if (vscodeCursor === undefined) {
+      throw new Error("expected a vscode-cursor setup entry");
     }
-    const parsed = JSON.parse(cursor.snippet) as {
+    const parsed = JSON.parse(vscodeCursor.snippet) as {
       mcpServers: Record<string, { url: string }>;
     };
     const [server] = Object.values(parsed.mcpServers);
     expect(server?.url).toBe(ENDPOINT_URL);
   });
 
-  it("delegates to @hire-me-mcp/connect-metadata's shared renderers (#17) instead of re-deriving snippets of its own", () => {
+  it("includes the raw curl snippet — the no-client-needed option #250 found missing from /mcp", () => {
+    const setups = buildClientSetups(ENDPOINT_URL);
+    const curl = setups.find((setup) => setup.id === "curl-jsonrpc");
+    expect(curl?.snippet).toContain("curl");
+    expect(curl?.snippet).toContain(ENDPOINT_URL);
+  });
+
+  it("delegates wholesale to @hire-me-mcp/connect-metadata's buildClientSnippets (#250) — /mcp can never again offer a subset of the home widget", () => {
     const metadata = buildConnectionMetadata(ENDPOINT_URL);
     const setups = buildClientSetups(ENDPOINT_URL);
+
+    expect(setups).toEqual(buildClientSnippets(metadata));
 
     const claudeCode = setups.find((setup) => setup.id === "claude-code");
     expect(claudeCode?.snippet).toBe(renderClaudeCodeSnippet(metadata));
 
-    const cursor = setups.find((setup) => setup.id === "cursor");
-    expect(cursor?.snippet).toBe(renderMcpServersJson(metadata));
+    const vscodeCursor = setups.find((setup) => setup.id === "vscode-cursor");
+    expect(vscodeCursor?.snippet).toBe(renderMcpServersJson(metadata));
   });
 });

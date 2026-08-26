@@ -21,6 +21,11 @@ export {
   getCvView,
 } from "./cv";
 export {
+  type EducationListItemView,
+  type EducationListView,
+  getEducationListView,
+} from "./education";
+export {
   type ExperienceEntryView,
   type ExperienceListItemView,
   type ExperienceListView,

@@ -98,6 +98,20 @@ describe("getExperience", () => {
     expect(result.data.map((e) => e.id).sort()).toEqual(["middle-role-b", "oldest-role"]);
   });
 
+  it("matches technology tags case-insensitively, like company and search-projects' tags (#226)", () => {
+    const result = getExperience(fixtureRepository(), { tech: ["TypeScript"] });
+
+    expect(result.data.map((e) => e.id).sort()).toEqual(["current-role", "recent-role"]);
+  });
+
+  it("matches mixed-case and padded technology tags identically to their canonical form (#226)", () => {
+    const canonical = getExperience(fixtureRepository(), { tech: ["php"] });
+    const variant = getExperience(fixtureRepository(), { tech: ["  PHP  "] });
+
+    expect(variant.data).toEqual(canonical.data);
+    expect(variant.data.map((e) => e.id)).toEqual(["oldest-role"]);
+  });
+
   it("filters by date range, matching entries that overlap it", () => {
     const result = getExperience(fixtureRepository(), { from: "2017-01", to: "2019-01" });
 

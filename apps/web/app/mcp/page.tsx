@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { buildConnectionMetadata } from "../../lib/mcp/connection-metadata";
 import { MCP_TOOL_CATALOGUE } from "../../lib/mcp/tool-catalogue";
 import { getMcpEndpointUrl } from "../../src/lib/config/site-url";
 import { getProfileView } from "../../src/lib/content";
@@ -9,6 +10,7 @@ import { Heading } from "../design-system/primitives/heading";
 import { Link } from "../design-system/primitives/link";
 import { Prose } from "../design-system/primitives/prose";
 import { Section } from "../design-system/primitives/section";
+import { getDeepLinksForClient } from "./client-deep-links";
 import { buildClientSetups } from "./client-setups";
 import { ClientTabs } from "./client-tabs";
 import { DemoTranscript } from "./demo-transcript";
@@ -47,6 +49,10 @@ export function generateMetadata(): Metadata {
 export default function McpPage() {
   const endpointUrl = getMcpEndpointUrl();
   const clientSetups = buildClientSetups(endpointUrl);
+  // issue 250 — the same verified one-click add-connector deep links the home
+  // page's connect widget renders, so the "full setup" page is a superset
+  // of the teaser that links to it, never a subset.
+  const { serverName } = buildConnectionMetadata(endpointUrl);
 
   return (
     <>
@@ -79,21 +85,38 @@ export default function McpPage() {
             Connect your client
           </Heading>
           <ClientTabs
-            items={clientSetups.map((setup) => ({
-              id: setup.id,
-              label: setup.label,
-              panel: (
-                <div>
-                  <p className={styles.clientInstructions}>{setup.instructions}</p>
-                  <div className={styles.snippetRow}>
-                    <pre className={styles.snippet}>
-                      <code>{setup.snippet}</code>
-                    </pre>
-                    <CopyToClipboard value={setup.snippet} label={`Copy ${setup.label} snippet`} />
+            items={clientSetups.map((setup) => {
+              const deepLinks = getDeepLinksForClient(setup.id, endpointUrl, serverName);
+              return {
+                id: setup.id,
+                label: setup.label,
+                panel: (
+                  <div>
+                    <p className={styles.clientInstructions}>{setup.instructions}</p>
+                    <div className={styles.snippetRow}>
+                      <pre className={styles.snippet}>
+                        <code>{setup.snippet}</code>
+                      </pre>
+                      <CopyToClipboard
+                        value={setup.snippet}
+                        label={`Copy ${setup.label} snippet`}
+                      />
+                    </div>
+                    {deepLinks.length > 0 ? (
+                      <ul className={styles.deepLinks}>
+                        {deepLinks.map((deepLink) => (
+                          <li key={deepLink.id}>
+                            <a className={styles.deepLink} href={deepLink.href}>
+                              {deepLink.label}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
-                </div>
-              ),
-            }))}
+                ),
+              };
+            })}
           />
         </Container>
       </Section>
