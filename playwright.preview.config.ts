@@ -27,6 +27,23 @@ import { bypassHeaders } from "./apps/web/e2e-preview/helpers/bypass";
  */
 const baseURL = resolveBaseUrl();
 
+/**
+ * Marks a test that makes a REAL `gemini-3.5-flash-lite` call (#264).
+ *
+ * `preview-e2e` is a required check, so nothing it runs may depend on a
+ * third party's free-tier daily allowance — when the Preview-scoped Google
+ * project hit its 500 requests/day cap, the live chat specs failed on every
+ * open PR regardless of content, and the merge queue was effectively gated
+ * on a quota reset. Tagging (rather than moving files) keeps the split
+ * declarative and file-layout-independent: the required projects below
+ * `grepInvert` this tag, and the `chromium-live-model` project runs exactly
+ * the tagged tests, in the separate, NON-required `preview-chat-live` job.
+ *
+ * Add the tag to any new test that calls the model for real. A required
+ * assertion must never need one.
+ */
+const LIVE_MODEL_TAG = /@live-model/;
+
 export default defineConfig({
   testDir: "./apps/web/e2e-preview/specs",
   fullyParallel: true,
@@ -59,9 +76,23 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-      // Every spec except latency.spec.ts — see the "chromium-latency"
-      // project below for why that one file is split out.
-      testIgnore: ["**/latency.spec.ts"],
+      // Every spec except latency.spec.ts and chat-deterministic.spec.ts —
+      // see the two projects below for why each is split out.
+      testIgnore: ["**/latency.spec.ts", "**/chat-deterministic.spec.ts"],
+      grepInvert: LIVE_MODEL_TAG,
+    },
+    {
+      // #264: the model-free chat contract specs. Its own project purely so
+      // a run can EXCLUDE it by name: these specs need the target to serve a
+      // scripted turn, and a Production deployment refuses to (by design —
+      // see `apps/web/lib/chat/test-scenarios.ts`). `scripts/certify-production.mjs`
+      // therefore omits this project when it points the suite at production,
+      // and asserts the refusal directly instead. A tag + `--grep-invert`
+      // could not express that: a project-level `grepInvert` (which the two
+      // required projects need for `@live-model`) overrides the CLI one.
+      name: "chromium-scripted-chat",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: ["**/chat-deterministic.spec.ts"],
     },
     {
       name: "chromium-latency",
@@ -79,6 +110,15 @@ export default defineConfig({
       // own budgeted sample size is the only consumer of the limit at that
       // point — never a reason to weaken mcp.spec.ts's own burst assertion.
       dependencies: ["chromium"],
+      grepInvert: LIVE_MODEL_TAG,
+    },
+    {
+      // #264: every `@live-model` test, wherever it lives — the two chat
+      // conversation specs and latency.spec.ts's chat probe. Never run by
+      // the required `preview-e2e` job; see the LIVE_MODEL_TAG doc above.
+      name: "chromium-live-model",
+      use: { ...devices["Desktop Chrome"] },
+      grep: LIVE_MODEL_TAG,
     },
   ],
 });

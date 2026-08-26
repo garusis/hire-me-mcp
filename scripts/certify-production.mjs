@@ -23,14 +23,21 @@
  *                           safety rationale as agent-evals.yml).
  *   6. agent-evals        — `pnpm eval:agent`, real budget-capped Gemini
  *                           calls with the production model config.
- *   7. production-e2e     — the full preview-gate Playwright suite
+ *   7. production-scripted-chat-refused
+ *                         — the scripted, model-free chat path (#264) must
+ *                           be unreachable on a production deployment.
+ *   8. production-e2e     — the preview-gate Playwright suite
  *                           (navigation, content, a11y, SEO, security
- *                           headers, MCP endpoint smoke, chat flows,
- *                           latency budgets) against `BASE_URL` — the
- *                           production site by default. The latency
- *                           project drains the per-IP rate window before
- *                           sampling (latency.spec.ts, #76).
- *   8. production-lighthouse — the Lighthouse budget gate against
+ *                           headers, MCP endpoint smoke, guardrail chat
+ *                           rendering, MCP latency budgets) against
+ *                           `BASE_URL` — the production site by default.
+ *                           The latency project drains the per-IP rate
+ *                           window before sampling (latency.spec.ts, #76).
+ *   9. production-chat-live — the live-model chat conversations and the
+ *                           chat latency budget (#264 moved these out of
+ *                           the required PR gate; a release run is where
+ *                           real-model proof belongs).
+ *  10. production-lighthouse — the Lighthouse budget gate against
  *                           `BASE_URL`.
  *
  * Safety, by construction: this script never runs `pnpm ingest`, never
@@ -147,6 +154,17 @@ const STEPS = [
     env: () => process.env,
   },
   {
+    // #264: the scripted, model-free chat path must be UNREACHABLE on a
+    // production deployment. Asserted end to end here (zero model calls —
+    // the refusal happens before the agent is constructed) because the
+    // `chromium-scripted-chat` Playwright project below is deliberately NOT
+    // run against production: those specs need the target to SERVE a script,
+    // which production refuses by design.
+    name: "production-scripted-chat-refused",
+    command: ["node", "scripts/ci/assert-scripted-chat-refused.mjs"],
+    env: () => ({ ...process.env, BASE_URL: baseUrl }),
+  },
+  {
     name: "production-e2e",
     // --workers=1 / --retries=2 mirror what playwright.preview.config.ts
     // already enforces when process.env.CI is set, made explicit so a
@@ -160,7 +178,31 @@ const STEPS = [
     // release-readiness dispatch run 32748181900 saw the last sampled
     // tool 429 on the suite's own leftover window consumption before that
     // guard existed.
-    command: ["pnpm", "test:e2e:preview", "--workers=1", "--retries=2"],
+    //
+    // `--project` is spelled out rather than reusing `test:e2e:preview`'s
+    // default set so `chromium-scripted-chat` (#264) is omitted: those specs
+    // ask the deployment for a scripted, model-free turn, which production
+    // refuses by design — the `production-scripted-chat-refused` step above
+    // asserts that refusal instead.
+    command: [
+      "pnpm",
+      "test:e2e:preview",
+      "--project=chromium",
+      "--project=chromium-latency",
+      "--workers=1",
+      "--retries=2",
+    ],
+    env: () => ({ ...process.env, BASE_URL: baseUrl }),
+  },
+  {
+    // #264: live-model chat verification (the grounded/gap conversations and
+    // the chat latency budget) moved OUT of the required `preview-e2e` lane,
+    // where a rate-limited free tier blocked every merge. A release
+    // certification is exactly where real-model proof belongs, so it runs
+    // here — against production's own Google project, sequentially, after
+    // the other model-calling steps above.
+    name: "production-chat-live",
+    command: ["pnpm", "test:e2e:preview:live", "--workers=1", "--retries=2"],
     env: () => ({ ...process.env, BASE_URL: baseUrl }),
   },
   {

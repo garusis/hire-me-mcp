@@ -255,8 +255,14 @@ pnpm --filter @hire-me-mcp/web dev      # dev server
 pnpm --filter @hire-me-mcp/web build    # production build
 pnpm --filter @hire-me-mcp/web test     # vitest
 pnpm test:e2e                           # Playwright smoke + screenshot specs (repo root)
-BASE_URL=<url> pnpm test:e2e:preview    # preview e2e gate — navigation/a11y/content-correctness/responsive/SEO/latency (#58/#62, repo root)
+BASE_URL=<url> pnpm test:e2e:preview    # preview e2e gate — navigation/a11y/content-correctness/responsive/SEO/MCP latency, plus the model-free chat contract specs (#58/#62/#264, repo root)
+BASE_URL=<url> pnpm test:e2e:preview:live  # live-model chat lane — real Gemini calls, never a required check (#264, repo root)
 BASE_URL=<url> pnpm run lighthouse      # Lighthouse performance-budget gate — per-page score/CWV/byte budgets (#58/#62, repo root)
 ```
+
+`test:e2e:preview` makes **no** model calls: its chat assertions drive a scripted, deterministic
+`/api/chat` response (`apps/web/lib/chat/test-scenarios.ts`), which needs the target build started
+with the same `VERCEL_AUTOMATION_BYPASS_SECRET` the suite passes. See `docs/development.md` >
+"Chat specs: two lanes, one required and model-free (#264)".
 
 See the root README's "Preview gates: e2e + Lighthouse against a deployed URL (#58)" section for the full mechanism (the Vercel Deployment Protection bypass, how routes/specs are organized, and the SEO assertion's `is-crawlable` caveat), including its "MCP endpoint smoke suite (#69)" paragraph describing `apps/web/e2e-preview/specs/mcp.spec.ts` — the same `test:e2e:preview` command above also runs it against `/api/mcp` on `BASE_URL`. See `docs/development.md`'s "Performance budgets (#62)" section for the committed `performance-budgets.json` config, the latency spec (`apps/web/e2e-preview/specs/latency.spec.ts`), and how to change a budget deliberately.
