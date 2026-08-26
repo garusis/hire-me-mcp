@@ -13,6 +13,8 @@ import type { Profile } from "../schemas/profile.js";
 import { profileSchema } from "../schemas/profile.js";
 import type { Project } from "../schemas/project.js";
 import { projectSchema } from "../schemas/project.js";
+import type { Recommendation } from "../schemas/recommendation.js";
+import { recommendationSchema } from "../schemas/recommendation.js";
 import type { Skill } from "../schemas/skill.js";
 import { skillSchema } from "../schemas/skill.js";
 import type { WritingEntry } from "../schemas/writing.js";
@@ -59,6 +61,12 @@ const contentLayout: ContentLayoutEntry[] = [
     schema: educationEntrySchema.array(),
   },
   { entityType: "writing", kind: "per-file-mdx", dir: "writing", schema: writingEntrySchema },
+  {
+    entityType: "recommendation",
+    kind: "per-file-json",
+    dir: "recommendations",
+    schema: recommendationSchema,
+  },
 ];
 
 /** Formats a Zod issue path as a readable field path, e.g. `[0].evidence`. */
@@ -193,6 +201,7 @@ export interface CareerDataset {
   gaps: Gap[];
   education: EducationEntry[];
   writing: WritingEntry[];
+  recommendations: Recommendation[];
 }
 
 /** Which file backs a given loaded entity — the cross-reference the content lint (#51) needs to name an offending file per violation. */
@@ -340,6 +349,7 @@ export function loadContentDirWithSources(
     gaps: [],
     education: [],
     writing: [],
+    recommendations: [],
   };
   const sources: EntitySource[] = [];
 
@@ -388,6 +398,15 @@ export function loadContentDirWithSources(
     "writing",
     writingEntrySchema,
     dataset.writing,
+    sources,
+  );
+  readPerFileInto(
+    contentDir,
+    "recommendations",
+    "json",
+    "recommendation",
+    recommendationSchema,
+    dataset.recommendations,
     sources,
   );
 

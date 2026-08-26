@@ -7,6 +7,7 @@ import { getSkillEvidenceTool } from "./tools/get-skill-evidence";
 import { listEducationTool } from "./tools/list-education";
 import { listGapsTool } from "./tools/list-gaps";
 import { listProjectsTool } from "./tools/list-projects";
+import { listRecommendationsTool } from "./tools/list-recommendations";
 import { listSkillsTool } from "./tools/list-skills";
 import { listWritingTool } from "./tools/list-writing";
 import { pingTool } from "./tools/ping";
@@ -26,6 +27,7 @@ const REAL_TOOLS_BY_NAME = new Map(
     listGapsTool,
     listProjectsTool,
     listWritingTool,
+    listRecommendationsTool,
   ].map((tool) => [tool.name, tool]),
 );
 

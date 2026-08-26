@@ -21,6 +21,7 @@ export const ROUTES: ReadonlyArray<{ path: string; name: string; heading: string
   },
   { path: "/skills", name: "skills", heading: "Skills" },
   { path: "/writing", name: "writing", heading: "Writing" },
+  { path: "/recommendations", name: "recommendations", heading: "Recommendations" },
   { path: "/mcp", name: "mcp", heading: "Add me to your AI" },
 ] as const;
 

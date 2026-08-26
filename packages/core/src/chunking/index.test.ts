@@ -101,6 +101,18 @@ function buildDataset(overrides: Partial<CareerDataset> = {}): CareerDataset {
         ).join(" "),
       },
     ],
+    recommendations: [
+      {
+        id: "recommendation-john-smith-2024",
+        recommenderName: "John Smith",
+        recommenderTitle: "VP of Engineering at Example Corp",
+        relationship: "John was Jane's direct manager",
+        date: "2024-06-15",
+        text: "Jane is a fantastic engineer who ships reliable systems and mentors everyone around her.",
+        recommenderProfileUrl: "https://www.linkedin.com/in/john-smith/",
+        sourceUrl: "https://www.linkedin.com/in/jane-doe/details/recommendations/",
+      },
+    ],
   };
   return { ...base, ...overrides };
 }
@@ -283,6 +295,7 @@ describe("chunkCareerData — citations resolve to real source records", () => {
       gap: new Set(dataset.gaps.map((g) => g.id)),
       education: new Set(dataset.education.map((e) => e.id)),
       writing: new Set(dataset.writing.map((w) => w.id)),
+      recommendation: new Set(dataset.recommendations.map((r) => r.id)),
     };
 
     expect(chunks.length).toBeGreaterThan(0);
@@ -365,6 +378,7 @@ describe("chunkCareerData — empty dataset", () => {
       gaps: [],
       education: [],
       writing: [],
+      recommendations: [],
     };
     expect(chunkCareerData(empty)).toEqual([]);
   });

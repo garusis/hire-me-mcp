@@ -4,6 +4,7 @@ import type {
   Gap,
   Profile,
   Project,
+  Recommendation,
   Skill,
   WritingEntry,
 } from "@hire-me-mcp/career-data";
@@ -14,6 +15,7 @@ import {
   renderGap,
   renderProfile,
   renderProject,
+  renderRecommendation,
   renderSkill,
   renderWriting,
 } from "./render.js";
@@ -188,5 +190,34 @@ describe("renderWriting", () => {
     expect(rendered.label).toBe("Some Article");
     expect(rendered.url).toBe("https://example.com/article");
     expect(rendered.metadata).toEqual({ dateFrom: "2023-05-01" });
+  });
+});
+
+describe("renderRecommendation", () => {
+  const entry: Recommendation = {
+    id: "recommendation-john-smith-2024",
+    recommenderName: "John Smith",
+    recommenderTitle: "VP of Engineering at Example Corp",
+    relationship: "John was Jane's direct manager",
+    date: "2024-06-15",
+    text: "Jane is a fantastic engineer.",
+    recommenderProfileUrl: "https://www.linkedin.com/in/john-smith/",
+    sourceUrl: "https://www.linkedin.com/in/jane-doe/details/recommendations/",
+  };
+
+  it("renders recommender, relationship and date in the header, verbatim text plus the source link in the body", () => {
+    const rendered = renderRecommendation(entry);
+    expect(rendered.header).toContain(
+      "Recommendation from John Smith — VP of Engineering at Example Corp",
+    );
+    expect(rendered.header).toContain("Relationship: John was Jane's direct manager");
+    expect(rendered.header).toContain("Date: 2024-06-15");
+    expect(rendered.body).toContain("Jane is a fantastic engineer.");
+    expect(rendered.body).toContain(
+      "Verify on LinkedIn: https://www.linkedin.com/in/jane-doe/details/recommendations/",
+    );
+    expect(rendered.label).toBe("Recommendation from John Smith");
+    expect(rendered.url).toBe("https://www.linkedin.com/in/jane-doe/details/recommendations/");
+    expect(rendered.metadata).toEqual({ dateFrom: "2024-06-15", dateTo: "2024-06-15" });
   });
 });

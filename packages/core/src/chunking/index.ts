@@ -44,6 +44,7 @@ import type {
   Gap,
   Profile,
   Project,
+  Recommendation,
   Skill,
   WritingEntry,
 } from "@hire-me-mcp/career-data";
@@ -55,6 +56,7 @@ import {
   renderGap,
   renderProfile,
   renderProject,
+  renderRecommendation,
   renderSkill,
   renderWriting,
 } from "./render.js";
@@ -172,6 +174,16 @@ export function chunkEducation(entry: EducationEntry, options?: ChunkingOptions)
   return buildEntityChunks("education", entry.id, renderEducation(entry), resolveOptions(options));
 }
 
+/** Chunks a single `Recommendation`, splitting its long-form `text` as needed. */
+export function chunkRecommendation(entry: Recommendation, options?: ChunkingOptions): Chunk[] {
+  return buildEntityChunks(
+    "recommendation",
+    entry.id,
+    renderRecommendation(entry),
+    resolveOptions(options),
+  );
+}
+
 /** Chunks a single `WritingEntry`, splitting its long-form `body` as needed. */
 export function chunkWriting(entry: WritingEntry, options?: ChunkingOptions): Chunk[] {
   return buildEntityChunks("writing", entry.id, renderWriting(entry), resolveOptions(options));
@@ -180,7 +192,8 @@ export function chunkWriting(entry: WritingEntry, options?: ChunkingOptions): Ch
 /**
  * Chunks an entire `CareerDataset`: every entity across every entity type,
  * in dataset order (profile, then experience, projects, skills, gaps,
- * education, writing — each array in the order the dataset provides it).
+ * education, writing, recommendations — each array in the order the
+ * dataset provides it).
  * A dataset with no profile authored yet simply contributes no profile
  * chunk, rather than throwing — this function never throws for "nothing
  * authored", the same convention `emptyCareerDataset()` establishes
@@ -212,6 +225,11 @@ export function chunkCareerData(dataset: CareerDataset, options?: ChunkingOption
   }
   for (const entry of dataset.writing) {
     chunks.push(...buildEntityChunks("writing", entry.id, renderWriting(entry), resolved));
+  }
+  for (const entry of dataset.recommendations) {
+    chunks.push(
+      ...buildEntityChunks("recommendation", entry.id, renderRecommendation(entry), resolved),
+    );
   }
 
   return chunks;

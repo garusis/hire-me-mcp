@@ -1,15 +1,20 @@
 {
   "$comment": [
-    "#59 — link-checker ignore list. A HOST listed here still gets checked",
+    "#59 \u2014 link-checker ignore list. A HOST listed here still gets checked",
     "(its result is printed) but a 4xx/5xx or network failure against it is",
-    "logged as a WARNING instead of failing the job — reserved for hosts",
+    "logged as a WARNING instead of failing the job \u2014 reserved for hosts",
     "that are independently known to rate-limit or intermittently block",
     "automated checkers, not a place to silence a link that is actually",
     "broken. Every entry must be reviewed in the PR that adds it and carry",
     "a `reason` explaining the observed flakiness (host, date, symptom).",
-    "As of #59 landing, no entry was needed — every external link this repo",
+    "As of #59 landing, no entry was needed \u2014 every external link this repo",
     "documents returned 200 to a browser-like User-Agent when this ignore",
     "list was authored. Add entries here, with review, if that changes."
   ],
-  "hosts": []
+  "hosts": [
+    {
+      "host": "www.linkedin.com",
+      "reason": "2026-08-25 (#190/PR #246): LinkedIn rate-limits automated checkers \u2014 profile URLs (linkedin.com/in/...) on the new /recommendations page return HTTP 429 to the docs-rot crawler while loading fine in a browser. Links verified manually when the recommendations content was imported."
+    }
+  ]
 }

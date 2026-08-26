@@ -2,7 +2,8 @@ import { z } from "zod";
 
 /**
  * Stable, unique identifier shared by every citable entity (Profile,
- * ExperienceEntry, Project, Skill, Gap, EducationEntry, WritingEntry).
+ * ExperienceEntry, Project, Skill, Gap, EducationEntry, WritingEntry,
+ * Recommendation).
  *
  * Kebab-case so ids double as readable, greppable filenames/anchors — e.g.
  * `senior-engineer-acme-2021`. `Citation.entityId` addresses this field.
@@ -29,6 +30,7 @@ export const citableEntityTypeSchema = z.enum([
   "gap",
   "education",
   "writing",
+  "recommendation",
 ]);
 
 export type CitableEntityType = z.infer<typeof citableEntityTypeSchema>;
