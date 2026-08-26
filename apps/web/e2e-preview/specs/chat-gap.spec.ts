@@ -56,10 +56,12 @@ function splitSentences(text: string): string[] {
     .filter((sentence) => sentence.length > 0);
 }
 
-test("gap chat flow: honest acknowledgement, closest-evidence framing, no uncited experience claim", async ({
-  gotoRoute,
-  page,
-}) => {
+// #264: a REAL model call, so this runs only in the non-required
+// `preview-chat-live` lane — never in the required `preview-e2e` gate. See
+// `playwright.preview.config.ts`'s LIVE_MODEL_TAG for why.
+test("gap chat flow: honest acknowledgement, closest-evidence framing, no uncited experience claim", {
+  tag: "@live-model",
+}, async ({ gotoRoute, page }) => {
   test.setTimeout(LIVE_MODEL_TIMEOUT_MS + 15_000);
 
   await gotoRoute("/");

@@ -1,0 +1,205 @@
+name: Preview Chat (live model)
+
+# Live-model verification of the deployed chat surface (#264) — the half of
+# the old `preview-e2e` chat coverage that genuinely needs a real
+# `gemini-3.5-flash-lite` call: the grounded conversation with resolving
+# citations, the gap conversation's honesty, and the chat latency budget.
+#
+# ## Why this is a SEPARATE, NON-REQUIRED workflow
+#
+# Until #264 these specs ran inside `preview-e2e`, a REQUIRED check. That
+# made merging depend on a third party's free-tier daily allowance: once the
+# Preview-scoped Google project hit its 500 requests/day cap, `/api/chat`
+# answered every request with the app's own `rate_limited` envelope and both
+# chat specs failed on EVERY open PR regardless of content (#259, #262 and
+# #263 all failed identically on the same day, while production — a
+# different Google project — answered fine). A merge queue gated on a quota
+# reset.
+#
+# The fix was NOT to let the required check pass when the provider misbehaves
+# — that is a merge bypass, and a PR that genuinely broke the chat could ride
+# it through. Instead the two concerns are split:
+#
+#   - Everything that regresses because of OUR code is asserted
+#     deterministically, with zero model calls, in `preview-e2e`'s
+#     `chat-deterministic.spec.ts` (see `apps/web/lib/chat/test-scenarios.ts`).
+#     Quota cannot make that lane red OR green.
+#   - The real-provider proof lives here, where a rate-limited provider is an
+#     honest red that informs without blocking merges.
+#
+# Same standalone-workflow rationale `agent-evals.yml` documents: its own
+# trigger set and its own `gemini-free-tier` queueing semantics, rather than
+# entangling ci.yml's every-PR jobs with them.
+#
+# ## Trigger strategy — every PR, in-job relevance detection (#207, #176)
+#
+# Workflow-level `paths:` filters are BANNED here by the #176 lesson (a
+# path-filtered check leaves PRs outside its paths permanently "Expected —
+# waiting for status", and forecloses ever making this required). So this
+# triggers on EVERY pull request and decides in-job, reusing
+# `scripts/ci/eval-relevance.mjs`: the suite runs when `@hire-me-mcp/agent`
+# is in the diff's affected-package closure, when the chat surface/route or
+# the preview specs changed, or when the PR carries the `run-live-chat`
+# label. Anything else reports green in seconds having spent zero quota —
+# which is the "cut per-run consumption" half of #264.
+#
+# No `push:` trigger: a push to `main` produces a Production deploy, not a
+# Preview one, so there is no preview URL to target. Production's own
+# live-model verification is the `production-chat-live` step of
+# `pnpm certify:production` (release-readiness.yml).
+
+on:
+  pull_request:
+    # No `paths:` filter (#176/#207). `labeled` fires a fresh run the moment
+    # the `run-live-chat` override is applied.
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+
+concurrency:
+  group: preview-chat-live-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview-chat-live:
+    name: preview-chat-live
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Queue behind (never race) the other Gemini-calling jobs — they share
+    # one 15 RPM free-tier budget (#169).
+    concurrency:
+      group: gemini-free-tier
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history: the relevance step diffs against the PR's merge
+          # base via `git merge-base`/`turbo query` (#207).
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # #207's detector, reused verbatim: turborepo affected-package graph
+      # plus an explicit regex for the chat wiring the graph cannot see, with
+      # a label override. Fails OPEN (detection error → run).
+      - name: Detect chat-relevant changes (turborepo graph + asset regex)
+        id: relevance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.event.pull_request.base.ref) || '' }}
+          TARGET_PACKAGE: "@hire-me-mcp/agent"
+          EXTRA_PATH_REGEX: '^(\.github/workflows/preview-chat-live\.yml|apps/web/app/chat/|apps/web/app/api/chat/|apps/web/lib/chat/|apps/web/e2e-preview/|playwright\.preview\.config\.ts|performance-budgets\.json)'
+          OVERRIDE_LABEL: run-live-chat
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -n "$PR_NUMBER" ]; then
+            PR_LABELS=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels" --paginate -q '.[].name' || true)
+            export PR_LABELS
+          fi
+          node scripts/ci/eval-relevance.mjs
+
+      - name: Not chat-relevant — no live model calls
+        if: steps.relevance.outputs.relevant != 'true'
+        run: |
+          {
+            echo "## preview-chat-live"
+            echo
+            echo "Skipped the live-model chat suite: ${{ steps.relevance.outputs.reason }}"
+            echo
+            echo "Apply the \`run-live-chat\` label (or dispatch this workflow) to force a run."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Fork PRs never carry repo secrets, so the bypass secret is empty and
+      # the preview URL is unreachable — skip with an explicit notice rather
+      # than failing red, same pattern as ci.yml's preview-e2e.
+      - name: Check for required secrets (skips on fork PRs)
+        id: secrets-check
+        if: steps.relevance.outputs.relevant == 'true'
+        run: |
+          if [ -z "${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping preview-chat-live — VERCEL_AUTOMATION_BYPASS_SECRET is unavailable (expected for fork PRs, which never receive repo secrets)."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve Vercel preview URL
+        id: preview
+        if: steps.secrets-check.outputs.available == 'true'
+        uses: ./.github/actions/resolve-vercel-preview
+        with:
+          sha: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Build packages/core, packages/career-data and packages/agent
+        if: steps.preview.outputs.found == 'true'
+        run: pnpm turbo run build --filter=@hire-me-mcp/core --filter=@hire-me-mcp/career-data --filter=@hire-me-mcp/agent
+
+      - name: Resolve installed Playwright version
+        id: playwright-version
+        if: steps.preview.outputs.found == 'true'
+        run: echo "version=$(node -p "require('./package.json').devDependencies['@playwright/test']")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        if: steps.preview.outputs.found == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Chromium (with OS deps)
+        if: steps.preview.outputs.found == 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run the live-model chat suite against the resolved preview URL
+        if: steps.preview.outputs.found == 'true'
+        env:
+          BASE_URL: ${{ steps.preview.outputs.url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          echo "Running the live-model chat suite against: ${BASE_URL}"
+          pnpm test:e2e:preview:live
+
+      - name: No ready preview deployment found
+        if: steps.secrets-check.outputs.available == 'true' && steps.preview.outputs.found != 'true'
+        run: |
+          echo "::warning::No ready Vercel preview deployment was found for ${{ github.event.pull_request.head.sha }} within the timeout — skipping preview-chat-live. Re-run this job once the Vercel preview check on this PR is green."
+
+      - name: Upload Playwright HTML report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-chat-live-report
+          path: playwright-preview-report/
+          retention-days: 7
+
+      - name: Upload Playwright traces and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-chat-live-traces
+          path: test-results-preview/
+          retention-days: 7

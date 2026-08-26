@@ -103,6 +103,13 @@ import {
 import { buildChatRateLimitExceededResponse } from "../../../lib/chat/rate-limit-response";
 import { type ChatRequestBody, chatRequestSchema } from "../../../lib/chat/request-schema";
 import { classifyStreamError, toStreamErrorEventText } from "../../../lib/chat/stream-errors";
+import { readChatTestCitationIds } from "../../../lib/chat/test-scenario-fixture";
+import {
+  type ChatTestScenarioResolution,
+  readChatTestScenarioEnv,
+  resolveChatTestScenario,
+  scriptedChatChunks,
+} from "../../../lib/chat/test-scenarios";
 import {
   buildValidationErrorResponse,
   classifyValidationIssues,
@@ -247,6 +254,66 @@ function wrapUserMessages(messages: ChatRequestBody["messages"]): ChatRequestBod
   });
 }
 
+/**
+ * Serves a scripted, model-free turn (issue 264) — see
+ * `../../../lib/chat/test-scenarios.ts` for why this path exists and the
+ * three gates that make it unreachable in production.
+ *
+ * Deliberately reuses `createUIMessageStream`/`createUIMessageStreamResponse`,
+ * the same pair the real turn returns, so the client sees a byte-identical
+ * transport: same SSE framing, same `originalMessages` reconciliation, same
+ * incremental text parts. Only the chunk *source* differs.
+ *
+ * Records no analytics events: a scripted turn is CI traffic, not a
+ * visitor's question, and counting it would quietly corrupt the preview
+ * deployment's own usage stats.
+ *
+ * A named-but-unauthorized scenario is REFUSED here (400 `invalid_request`)
+ * rather than falling through to the real agent — failing closed is what
+ * makes "a Production deployment rejects the flag" cheaply assertable, for
+ * zero model spend (`scripts/certify-production.mjs`).
+ */
+function respondToChatTestScenario(
+  resolution: Exclude<ChatTestScenarioResolution, { outcome: "absent" }>,
+  messages: ChatRequestBody["messages"],
+): Response {
+  if (resolution.outcome === "rejected") {
+    return buildValidationErrorResponse(resolution.reason);
+  }
+  const ids = readChatTestCitationIds();
+  const stream = createUIMessageStream({
+    originalMessages: messages as unknown as Parameters<
+      typeof createUIMessageStream
+    >[0]["originalMessages"],
+    execute: ({ writer }) => {
+      for (const chunk of scriptedChatChunks(resolution.scenario, ids)) {
+        writer.write(chunk as unknown as Parameters<typeof writer.write>[0]);
+      }
+    },
+  });
+  return createUIMessageStreamResponse({ stream });
+}
+
+/**
+ * Runs a rate limiter, failing OPEN when the limiter itself throws — the
+ * same policy the MCP route's `with-rate-limit.ts` applies: a limiter
+ * outage must not take the endpoint down. Factored out so both chat
+ * guardrails (#68's per-IP backstop and per-session limit) share one
+ * fail-open policy rather than repeating the try/catch.
+ */
+async function limitFailingOpen(
+  limiter: ChatRateLimiters["ip"],
+  identifier: string,
+  label: string,
+): Promise<Awaited<ReturnType<ChatRateLimiters["ip"]["limit"]>> | undefined> {
+  try {
+    return await limiter.limit(identifier);
+  } catch (error) {
+    console.warn(`[chat] ${label} rate limiter threw — failing open for this request`, error);
+    return undefined;
+  }
+}
+
 /** Options for {@link createChatPostHandler} — `model` is the test injection seam (mirrors #63's `getInterviewAgent({ model })`); `rateLimiters` and `agentMaxSteps` are #68's. */
 export interface ChatRouteOptions {
   model?: ChatModel;
@@ -283,14 +350,11 @@ export function createChatPostHandler(options: ChatRouteOptions = {}) {
     // parsed — it needs no validated field, so there's no reason to do the
     // (comparatively expensive) JSON parse + schema validation first for a
     // caller that's going to be rejected regardless.
-    let ipOutcome: Awaited<ReturnType<ChatRateLimiters["ip"]["limit"]>> | undefined;
-    try {
-      ipOutcome = await rateLimiters.ip.limit(identifyCaller(request.headers));
-    } catch (error) {
-      // Fail open on a limiter error, same policy as the MCP route's
-      // with-rate-limit.ts — a limiter outage must not take the endpoint down.
-      console.warn("[chat] IP rate limiter threw — failing open for this request", error);
-    }
+    const ipOutcome = await limitFailingOpen(
+      rateLimiters.ip,
+      identifyCaller(request.headers),
+      "IP",
+    );
     if (ipOutcome && !ipOutcome.success) {
       // #79: the exact tool a rejected caller would have used is unknown
       // this early (the body isn't even parsed yet) — one pipeline-level
@@ -324,15 +388,22 @@ export function createChatPostHandler(options: ChatRouteOptions = {}) {
     const theme = classifyLastUserQuestionTheme(messages);
 
     // Guardrail #3: per-session limit, now that sessionId is validated.
-    let sessionOutcome: Awaited<ReturnType<ChatRateLimiters["session"]["limit"]>> | undefined;
-    try {
-      sessionOutcome = await rateLimiters.session.limit(sessionId);
-    } catch (error) {
-      console.warn("[chat] session rate limiter threw — failing open for this request", error);
-    }
+    const sessionOutcome = await limitFailingOpen(rateLimiters.session, sessionId, "session");
     if (sessionOutcome && !sessionOutcome.success) {
       recordChatToolEvent("chat", "rate_limited", Date.now() - startedAt);
       return buildChatRateLimitExceededResponse("session_rate_limited", sessionOutcome);
+    }
+
+    // issue 264: a scripted, model-free preview-gate turn — or a refusal, if the
+    // request named a scenario it isn't authorized for. Deliberately placed
+    // AFTER every guardrail above: the request-schema check in particular is
+    // the issue 222 multi-turn regression surface, so a scripted second turn is a
+    // real regression test for `app/chat/to-request-messages.ts`. From here
+    // on the script replaces the agent entirely — no provider client is
+    // constructed and no model call is made.
+    const testScenario = resolveChatTestScenario(request.headers, readChatTestScenarioEnv());
+    if (testScenario.outcome !== "absent") {
+      return respondToChatTestScenario(testScenario, messages);
     }
 
     // Guardrail #4: wrap every user text part so embedded instructions are

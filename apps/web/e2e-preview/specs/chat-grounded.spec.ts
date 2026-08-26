@@ -29,12 +29,12 @@ const GROUNDED_QUESTION = "What did Marcos build at House Numbers?";
 const FOLLOW_UP_QUESTION = "Which technologies did he use there?";
 const LIVE_MODEL_TIMEOUT_MS = 90_000;
 
-test("grounded chat flow: streamed answer renders with a citation link to a real site section, and a follow-up turn succeeds (#222)", async ({
-  gotoRoute,
-  page,
-  request,
-  baseURL,
-}) => {
+// #264: a REAL model call, so this runs only in the non-required
+// `preview-chat-live` lane — never in the required `preview-e2e` gate. See
+// `playwright.preview.config.ts`'s LIVE_MODEL_TAG for why.
+test("grounded chat flow: streamed answer renders with a citation link to a real site section, and a follow-up turn succeeds (#222)", {
+  tag: "@live-model",
+}, async ({ gotoRoute, page, request, baseURL }) => {
   // Two live model turns (the grounded question + the #222 follow-up
   // regression below), each up to LIVE_MODEL_TIMEOUT_MS.
   test.setTimeout(2 * LIVE_MODEL_TIMEOUT_MS + 15_000);
