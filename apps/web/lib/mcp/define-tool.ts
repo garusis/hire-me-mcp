@@ -38,14 +38,70 @@ export interface ToolDefinition<InputSchema extends z.ZodTypeAny, Output> {
 export type ToolExecutorResult<Output> = ToolSuccessResult<Output> | ToolErrorResult;
 
 /**
+ * Message for a field whose value failed an enum constraint — names every
+ * allowed value and the received value, so a caller can self-correct
+ * without re-reading the schema (#244). Usable both as a Zod `error`
+ * callback (so the message survives the MCP SDK's own pre-handler
+ * validation, which relays `issue.message` verbatim and, in a production
+ * bundle, can otherwise degrade to a bare "Invalid input") and by
+ * {@link formatValidationIssues} below.
+ */
+export function enumValueMessage(values: readonly string[], received: unknown): string {
+  const expected = values.map((value) => JSON.stringify(value)).join(", ");
+  return received === undefined
+    ? `expected one of ${expected}`
+    : `expected one of ${expected}; received ${JSON.stringify(received)}`;
+}
+
+/** Walks `input` along a Zod issue path to recover the offending raw value (best-effort). */
+function valueAtPath(input: unknown, path: ReadonlyArray<PropertyKey>): unknown {
+  let current: unknown = input;
+  for (const key of path) {
+    if (current === null || typeof current !== "object") {
+      return undefined;
+    }
+    current = (current as Record<PropertyKey, unknown>)[key];
+  }
+  return current;
+}
+
+/**
+ * One issue's complaint, synthesized from the issue's *structured* fields
+ * rather than trusting `issue.message` for the common cases (#244):
+ *
+ * - a missing required field says `required` — distinct from a
+ *   present-but-wrong value, which zod's default message conflates with it;
+ * - a failed enum/literal constraint names the allowed values and the
+ *   received value via {@link enumValueMessage};
+ * - everything else keeps zod's own message (custom `.regex(...)` messages
+ *   like `must be a YYYY-MM date` pass through untouched).
+ */
+function describeValidationIssue(issue: z.core.$ZodIssue, rawArgs: unknown): string {
+  const received = valueAtPath(rawArgs, issue.path);
+  if (issue.code === "invalid_type" && received === undefined) {
+    return "required";
+  }
+  if (issue.code === "invalid_value" && issue.values.length > 0) {
+    return enumValueMessage(
+      issue.values.filter((value): value is string => typeof value === "string"),
+      received,
+    );
+  }
+  return issue.message;
+}
+
+/**
  * Formats Zod's structured issues into one safe, human-readable message:
  * `field.path: complaint`, joined by `; `. Zod issue paths name parameter
  * fields declared on the tool's own input schema — never filesystem paths,
  * stack frames, or environment values — so this is safe to return verbatim.
  */
-function formatValidationIssues(error: z.ZodError): string {
+function formatValidationIssues(error: z.ZodError, rawArgs: unknown): string {
   return error.issues
-    .map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "(root)"}: ${issue.message}`)
+    .map(
+      (issue) =>
+        `${issue.path.length > 0 ? issue.path.join(".") : "(root)"}: ${describeValidationIssue(issue, rawArgs)}`,
+    )
     .join("; ");
 }
 
@@ -76,7 +132,7 @@ export function createToolExecutor<InputSchema extends z.ZodTypeAny, Output>(
       recordMcpToolEvent(definition.name, "invalid_input", Date.now() - startedAt);
       return buildToolErrorResult({
         code: "invalid_input",
-        message: formatValidationIssues(parsed.error),
+        message: formatValidationIssues(parsed.error, rawArgs),
       });
     }
     try {

@@ -7,7 +7,7 @@
 import { type ExperienceFilter, getExperience } from "@hire-me-mcp/core";
 import { z } from "zod";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
-import type { ToolDefinition } from "../define-tool";
+import { enumValueMessage, type ToolDefinition } from "../define-tool";
 
 /**
  * Derived from `getExperience`'s own return type rather than importing
@@ -38,7 +38,13 @@ const inputSchema = z.object({
   from: dateSchema.optional().describe("Inclusive lower bound (YYYY-MM) of the role's date range."),
   to: dateSchema.optional().describe("Inclusive upper bound (YYYY-MM) of the role's date range."),
   status: z
-    .enum(["current", "past"])
+    // The explicit error callback keeps the message useful on the MCP
+    // SDK's own pre-handler validation path too, where zod's locale-based
+    // default can degrade to a bare "Invalid input" in a production
+    // bundle (#244).
+    .enum(["current", "past"], {
+      error: (issue) => enumValueMessage(["current", "past"], issue.input),
+    })
     .optional()
     .describe("'current' restricts to the role(s) with no end date; 'past' to roles that ended."),
 });

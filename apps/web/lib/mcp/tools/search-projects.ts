@@ -20,9 +20,15 @@ import type { ToolDefinition } from "../define-tool";
  */
 type ProjectSearchResult = ReturnType<typeof searchProjects>["data"][number];
 
+/** Upper bound for `limit` — mirrors search-career's topK ceiling; bounds one call's payload (#243). */
+const MAX_LIMIT = 50;
+
 const inputSchema = z.object({
   query: z
-    .string()
+    // The explicit error callback keeps "required" (rather than a
+    // locale-dependent generic complaint) on the MCP SDK's own
+    // pre-handler validation path (#244).
+    .string({ error: (issue) => (issue.input === undefined ? "required" : undefined) })
     .describe(
       "Free-text keyword query matched against project names, summaries, bodies and tech " +
         "tags. An empty or whitespace-only query returns no results, not an error.",
@@ -38,8 +44,12 @@ const inputSchema = z.object({
     .number()
     .int()
     .positive()
+    .max(MAX_LIMIT)
     .optional()
-    .describe("Maximum number of ranked results to return. Omit to return every match."),
+    .describe(
+      `Maximum number of ranked results to return, an integer in [1, ${MAX_LIMIT}]. Omit to ` +
+        "return every match.",
+    ),
 });
 
 /** `search-projects` — registered against a live `McpServer` via `defineTool`. */

@@ -158,6 +158,43 @@ describe("createToolExecutor", () => {
   });
 });
 
+describe("validation error messages (#244)", () => {
+  const richSchema = z.object({
+    query: z.string().min(1).describe("Required free-text query."),
+    status: z.enum(["current", "past"]).optional().describe("Optional status filter."),
+  });
+  const richDefinition: ToolDefinition<typeof richSchema, unknown> = {
+    name: "rich-tool",
+    description: "A test tool exercising validation error message quality.",
+    inputSchema: richSchema,
+    handler: () => ({ data: null, citations: [] }),
+  };
+
+  it("reports a missing required field as 'required', not a generic invalid-input complaint", async () => {
+    const executor = createToolExecutor(richDefinition);
+
+    const result = await executor({});
+
+    expect(result.isError).toBe(true);
+    const message = (result.structuredContent as { message: string }).message;
+    expect(message).toContain("query: required");
+    expect(message).not.toContain("Invalid input");
+  });
+
+  it("reports an invalid enum value by naming the allowed values and the received value", async () => {
+    const executor = createToolExecutor(richDefinition);
+
+    const result = await executor({ query: "x", status: "CURRENT" });
+
+    expect(result.isError).toBe(true);
+    const message = (result.structuredContent as { message: string }).message;
+    expect(message).toContain("status:");
+    expect(message).toContain('"current"');
+    expect(message).toContain('"past"');
+    expect(message).toContain('"CURRENT"');
+  });
+});
+
 describe("defineTool", () => {
   it("registers the tool against the server with name, description, and input schema", () => {
     const registerTool = vi.fn();

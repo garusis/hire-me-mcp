@@ -127,6 +127,19 @@ describe("getExperienceTool", () => {
     expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
   });
 
+  it("names the allowed status values and the received value in the validation message (#244)", async () => {
+    const executor = createToolExecutor(getExperienceTool);
+
+    const result = await executor({ status: "CURRENT" });
+
+    expect(result.isError).toBe(true);
+    const message = (result.structuredContent as { message: string }).message;
+    expect(message).toContain("status:");
+    expect(message).toContain('"current"');
+    expect(message).toContain('"past"');
+    expect(message).toContain('"CURRENT"');
+  });
+
   it("maps a malformed date (wrong type) to a sanitized invalid_input error", async () => {
     const executor = createToolExecutor(getExperienceTool);
 

@@ -1,6 +1,7 @@
 import type { CareerDataRepository, DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { createToolExecutor } from "../define-tool.js";
 import { searchProjectsTool } from "./search-projects.js";
 
@@ -134,6 +135,31 @@ describe("searchProjectsTool", () => {
     const executor = createToolExecutor(searchProjectsTool);
 
     const result = await executor({ query: "typescript", limit: "three" });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
+  });
+
+  it("reports the missing required query as 'query: required' (#244)", async () => {
+    const executor = createToolExecutor(searchProjectsTool);
+
+    const result = await executor({});
+
+    const message = (result.structuredContent as { message: string }).message;
+    expect(message).toContain("query: required");
+  });
+
+  it("advertises a sane bounded maximum for limit instead of Number.MAX_SAFE_INTEGER (#243)", () => {
+    const jsonSchema = z.toJSONSchema(searchProjectsTool.inputSchema) as unknown as {
+      properties: { limit: { maximum?: number } };
+    };
+    expect(jsonSchema.properties.limit.maximum).toBe(50);
+  });
+
+  it("rejects a limit above the advertised maximum as invalid_input", async () => {
+    const executor = createToolExecutor(searchProjectsTool);
+
+    const result = await executor({ query: "typescript", limit: 51 });
 
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
