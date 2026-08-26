@@ -24,6 +24,8 @@ import { buildToolErrorResult, mapThrownError, type ToolErrorResult } from "./er
 export interface ToolDefinition<InputSchema extends z.ZodTypeAny, Output> {
   /** The tool's wire name — see `CONVENTIONS.md` for naming rules. */
   name: string;
+  /** Human-readable display name (#241) — what MCP clients show instead of the kebab-case wire name. */
+  title?: string;
   /** Model-facing description — see `CONVENTIONS.md` for the required template. */
   description: string;
   /** Validates and types `tools/call` arguments; every field needs its own `.describe()`. */
@@ -158,15 +160,41 @@ export function defineTool<InputSchema extends z.ZodTypeAny, Output>(
   definition: ToolDefinition<InputSchema, Output>,
 ): (rawArgs: unknown) => Promise<ToolExecutorResult<Output>> {
   const executor = createToolExecutor(definition);
+  const title = definition.title ?? definition.name;
   server.registerTool(
     definition.name,
     {
-      title: definition.name,
+      title,
       description: definition.description,
       inputSchema: definition.inputSchema,
       ...(definition.outputSchema === undefined ? {} : { outputSchema: definition.outputSchema }),
+      // Every tool on this server reads a static career dataset — the server
+      // is public, anonymous, and read-only by design (#241). Declaring the
+      // hints here, on the single registration path, means no future tool
+      // can be added without them; if a mutating tool ever lands (it
+      // shouldn't), this is the seam that must become per-definition.
+      annotations: {
+        title,
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
-    (async (args: unknown) => executor(args)) as never,
+    (async (args: unknown) => {
+      const result = await executor(args);
+      // A declared outputSchema describes SUCCESS structuredContent only,
+      // but strict clients (including the MCP TS SDK) validate
+      // structuredContent against it whenever the field is present — so an
+      // error result must not carry one on the wire. The executor keeps
+      // returning it for in-process consumers (tests, the chat surface),
+      // which want the sanitized { code, message } as data.
+      if (result.isError) {
+        const { structuredContent: _structuredContent, ...wireResult } = result;
+        return wireResult;
+      }
+      return result;
+    }) as never,
   );
   return executor;
 }

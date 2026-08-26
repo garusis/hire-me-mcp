@@ -334,4 +334,9 @@ describe("searchCareerTool", () => {
 
     consoleErrorSpy.mockRestore();
   });
+
+  it("declares a human-readable title and an outputSchema for its structuredContent (#241, #242)", () => {
+    expect(searchCareerTool.title).toBeTruthy();
+    expect(searchCareerTool.outputSchema).toBeDefined();
+  });
 });

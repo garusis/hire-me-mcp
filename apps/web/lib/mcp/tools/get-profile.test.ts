@@ -87,4 +87,9 @@ describe("getProfileTool", () => {
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
   });
+
+  it("declares a human-readable title and an outputSchema for its structuredContent (#241, #242)", () => {
+    expect(getProfileTool.title).toBeTruthy();
+    expect(getProfileTool.outputSchema).toBeDefined();
+  });
 });

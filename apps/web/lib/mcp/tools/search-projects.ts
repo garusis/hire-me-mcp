@@ -9,8 +9,10 @@
 
 import { searchProjects } from "@hire-me-mcp/core";
 import { z } from "zod";
+import { projectSchema } from "../../../src/lib/content/entity-schemas";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
 import type { ToolDefinition } from "../define-tool";
+import { toolSuccessSchema } from "../wire-schemas";
 
 /**
  * Derived from `searchProjects`'s own return type rather than importing
@@ -52,9 +54,32 @@ const inputSchema = z.object({
     ),
 });
 
+/** `{ data, citations }` envelope around the ranked project matches (#242). */
+const outputSchema = toolSuccessSchema(
+  z
+    .array(
+      z.object({
+        project: projectSchema.describe("The full matching project record."),
+        score: z
+          .number()
+          .describe("Deterministic keyword/tag relevance score - higher ranks first."),
+        matches: z
+          .array(
+            z.object({
+              field: z.string().describe("Which project field matched (tag, name, summary, body)."),
+              token: z.string().describe("The query token that matched."),
+            }),
+          )
+          .describe("Why this project matched."),
+      }),
+    )
+    .describe("Ranked project matches, best first; empty when nothing matches."),
+);
+
 /** `search-projects` — registered against a live `McpServer` via `defineTool`. */
 export const searchProjectsTool: ToolDefinition<typeof inputSchema, ProjectSearchResult[]> = {
   name: "search-projects",
+  title: "Search projects",
   description:
     "Searches Marcos Alvarez's project portfolio by keyword and/or technology tag and " +
     "returns ranked matches, each with a relevance score, a matched-field explanation, and a " +
@@ -67,6 +92,7 @@ export const searchProjectsTool: ToolDefinition<typeof inputSchema, ProjectSearc
     "successful result with an empty list, not an error; an empty or whitespace-only query " +
     "behaves the same way.",
   inputSchema,
+  outputSchema,
   handler: (input) =>
     searchProjects(getCareerDataRepository(), input.query, {
       tags: input.tags,

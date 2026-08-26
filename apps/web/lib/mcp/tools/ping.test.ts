@@ -16,4 +16,9 @@ describe("pingTool", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({ data: "pong", citations: [] });
   });
+
+  it("declares a human-readable title and an outputSchema for its structuredContent (#241, #242)", () => {
+    expect(pingTool.title).toBeTruthy();
+    expect(pingTool.outputSchema).toBeDefined();
+  });
 });

@@ -53,6 +53,7 @@ import { z } from "zod";
 import { resolveCitationSiteUrl } from "../citation-site-urls";
 import type { ToolDefinition } from "../define-tool";
 import { getSearchCareer } from "../search-career-instance";
+import { toolSuccessSchema } from "../wire-schemas";
 
 /** One ranked hit, reshaped so its citation travels inline with the excerpt (see module docstring). */
 export interface SearchCareerHit {
@@ -143,9 +144,41 @@ function noRelevantContentMessage(query: string): string {
   );
 }
 
+/** One ranked hit as it appears on the wire — mirrors {@link SearchCareerHit} (#242). */
+const searchCareerHitSchema = z.object({
+  text: z.string().describe("The matching career-content excerpt."),
+  score: z.number().describe("Cosine similarity in [-1, 1] - higher is more similar."),
+  sourceType: z.string().describe("The source record's entity type (experience, project, ...)."),
+  sourceId: z.string().describe("The source record's stable id."),
+  citation: z.string().describe("Human-readable citation label to quote alongside the excerpt."),
+  citationUrl: z
+    .url()
+    .describe(
+      "URL back to the source: its external canonical link when it has one, otherwise the " +
+        "record's page on this site.",
+    ),
+});
+
+/** `{ data, citations }` envelope around the found/not-found discriminated result (#242). */
+const outputSchema = toolSuccessSchema(
+  z.discriminatedUnion("found", [
+    z.object({
+      found: z.literal(true),
+      results: z.array(searchCareerHitSchema).describe("Ranked hits, most similar first."),
+    }),
+    z.object({
+      found: z.literal(false),
+      message: z
+        .string()
+        .describe("Explicit 'no relevant content found' outcome - relay it honestly."),
+    }),
+  ]),
+);
+
 /** `search-career` — registered against a live `McpServer` via `defineTool`. */
 export const searchCareerTool: ToolDefinition<typeof inputSchema, SearchCareerToolData> = {
   name: "search-career",
+  title: "Search career content",
   description:
     "Runs a fuzzy, semantic search over the full text of Marcos Alvarez's career content " +
     "(experience, projects, skills, writing) and returns ranked excerpts, each with a " +
@@ -163,6 +196,7 @@ export const searchCareerTool: ToolDefinition<typeof inputSchema, SearchCareerTo
     "server-wide rate limit as every other tool here — don't call it repeatedly for the same " +
     "question.",
   inputSchema,
+  outputSchema,
   handler: async (input) => {
     let result: Awaited<ReturnType<ReturnType<typeof getSearchCareer>>>;
     try {

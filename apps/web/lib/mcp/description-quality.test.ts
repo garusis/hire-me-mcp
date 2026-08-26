@@ -87,6 +87,29 @@ describe("career tool description quality", () => {
     },
   );
 
+  it.each([...toolsUnderTest, pingTool].map((tool) => [tool.name, tool] as const))(
+    "%s declares a human-readable title distinct from its kebab-case wire name (#241)",
+    (_name, tool) => {
+      expect(tool.title).toBeTruthy();
+      expect(tool.title).not.toBe(tool.name);
+      expect(tool.title).not.toContain("-");
+    },
+  );
+
+  it.each([...toolsUnderTest, pingTool].map((tool) => [tool.name, tool] as const))(
+    "%s declares an outputSchema documenting its structuredContent envelope (#242)",
+    (_name, tool) => {
+      expect(tool.outputSchema).toBeDefined();
+      const jsonSchema = z.toJSONSchema(tool.outputSchema as z.ZodTypeAny) as unknown as {
+        properties?: Record<string, unknown>;
+        required?: string[];
+      };
+      expect(Object.keys(jsonSchema.properties ?? {})).toEqual(
+        expect.arrayContaining(["data", "citations"]),
+      );
+    },
+  );
+
   it("search-projects's description states matching is keyword/tag-based", () => {
     expect(searchProjectsTool.description.toLowerCase()).toMatch(/keyword|tag-based/);
   });

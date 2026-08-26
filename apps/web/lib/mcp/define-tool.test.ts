@@ -216,6 +216,87 @@ describe("defineTool", () => {
     expect(config.inputSchema).toBe(inputSchema);
   });
 
+  it("registers read-only MCP annotations on every tool — this server can never mutate anything (#241)", () => {
+    const registerTool = vi.fn();
+    const server = { registerTool } as unknown as Parameters<typeof defineTool>[0];
+
+    defineTool(server, { ...makeDefinition(() => ({ data: {}, citations: [] })), title: "Test" });
+
+    const [, config] = registerTool.mock.calls[0] as [
+      string,
+      { title?: string; annotations?: Record<string, unknown> },
+    ];
+    expect(config.title).toBe("Test");
+    expect(config.annotations).toEqual({
+      title: "Test",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    });
+  });
+
+  it("strips structuredContent from ERROR results at the wire boundary — a declared outputSchema describes success only, and strict clients validate structuredContent against it whenever present (#242)", async () => {
+    const registerTool = vi.fn();
+    const server = { registerTool } as unknown as Parameters<typeof defineTool>[0];
+
+    defineTool(server, {
+      ...makeDefinition(() => {
+        throw new ToolDomainError("intentional failure");
+      }),
+      outputSchema: z.object({ data: z.string(), citations: z.array(z.unknown()) }),
+    });
+    const [, , callback] = registerTool.mock.calls[0] as [
+      string,
+      unknown,
+      (args: unknown, ctx: unknown) => Promise<Record<string, unknown>>,
+    ];
+
+    const wireResult = await callback({ skill: "x" }, {});
+
+    expect(wireResult.isError).toBe(true);
+    expect(wireResult).not.toHaveProperty("structuredContent");
+    expect((wireResult.content as Array<{ text: string }>)[0]?.text).toContain(
+      "intentional failure",
+    );
+  });
+
+  it("keeps structuredContent on SUCCESS results at the wire boundary", async () => {
+    const registerTool = vi.fn();
+    const server = { registerTool } as unknown as Parameters<typeof defineTool>[0];
+
+    defineTool(
+      server,
+      makeDefinition(() => ({ data: { ok: true }, citations: [] })),
+    );
+    const [, , callback] = registerTool.mock.calls[0] as [
+      string,
+      unknown,
+      (args: unknown, ctx: unknown) => Promise<Record<string, unknown>>,
+    ];
+
+    const wireResult = await callback({ skill: "x" }, {});
+
+    expect(wireResult).toHaveProperty("structuredContent");
+  });
+
+  it("falls back to the wire name as title when a definition declares none", () => {
+    const registerTool = vi.fn();
+    const server = { registerTool } as unknown as Parameters<typeof defineTool>[0];
+
+    defineTool(
+      server,
+      makeDefinition(() => ({ data: {}, citations: [] })),
+    );
+
+    const [, config] = registerTool.mock.calls[0] as [
+      string,
+      { title?: string; annotations?: { title?: string } },
+    ];
+    expect(config.title).toBe("test-tool");
+    expect(config.annotations?.title).toBe("test-tool");
+  });
+
   it("wires the registered callback through the same executor pipeline (errors stay sanitized)", async () => {
     const registerTool = vi.fn();
     const server = { registerTool } as unknown as Parameters<typeof defineTool>[0];

@@ -6,8 +6,10 @@
 
 import { listEducation } from "@hire-me-mcp/core";
 import { z } from "zod";
+import { educationEntrySchema } from "../../../src/lib/content/entity-schemas";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
 import type { ToolDefinition } from "../define-tool";
+import { toolSuccessSchema } from "../wire-schemas";
 
 const inputSchema = z.object({});
 
@@ -19,9 +21,15 @@ const inputSchema = z.object({});
  */
 type EducationEntry = ReturnType<typeof listEducation>["data"][number];
 
+/** `{ data, citations }` envelope around every authored education entry (#242). */
+const outputSchema = toolSuccessSchema(
+  z.array(educationEntrySchema).describe("Every authored education entry."),
+);
+
 /** `list-education` — registered against a live `McpServer` via `defineTool`. */
 export const listEducationTool: ToolDefinition<typeof inputSchema, EducationEntry[]> = {
   name: "list-education",
+  title: "List education",
   description:
     "Returns every education record — institution, credential, and optional YYYY-MM start/end " +
     "dates — as a list ordered most recent first, each entry with a citation. Use this to " +
@@ -32,5 +40,6 @@ export const listEducationTool: ToolDefinition<typeof inputSchema, EducationEntr
     "invent a date; an empty list is a successful 'no education records authored' answer, " +
     "not an error.",
   inputSchema,
+  outputSchema,
   handler: () => listEducation(getCareerDataRepository()),
 };

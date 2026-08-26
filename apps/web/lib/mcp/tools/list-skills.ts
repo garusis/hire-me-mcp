@@ -7,8 +7,10 @@
 
 import { listSkills, type SkillsFilter } from "@hire-me-mcp/core";
 import { z } from "zod";
+import { skillSchema } from "../../../src/lib/content/entity-schemas";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
 import type { ToolDefinition } from "../define-tool";
+import { toolSuccessSchema } from "../wire-schemas";
 
 /**
  * Derived from `listSkills`'s own return type rather than importing `Skill`
@@ -36,9 +38,15 @@ const inputSchema = z.object({
     ),
 });
 
+/** `{ data, citations }` envelope around the (optionally filtered) skill inventory (#242). */
+const outputSchema = toolSuccessSchema(
+  z.array(skillSchema).describe("Matching claimed skills, sorted by name."),
+);
+
 /** `list-skills` — registered against a live `McpServer` via `defineTool`. */
 export const listSkillsTool: ToolDefinition<typeof inputSchema, Skill[]> = {
   name: "list-skills",
+  title: "List skills",
   description:
     "Returns the full inventory of claimed skills — id, name, aliases, category, proficiency, " +
     "and per-skill evidence citations — as a list sorted by name, optionally AND-filtered by " +
@@ -48,6 +56,7 @@ export const listSkillsTool: ToolDefinition<typeof inputSchema, Skill[]> = {
     "also reports explicit gaps — or to enumerate what he does NOT claim (use list-gaps). A " +
     "filter matching no skills returns a successful empty list, not an error.",
   inputSchema,
+  outputSchema,
   handler: (input) => {
     const filter: SkillsFilter = input;
     return listSkills(getCareerDataRepository(), filter);

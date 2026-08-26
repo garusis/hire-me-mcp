@@ -75,13 +75,16 @@ export const getSkillEvidenceOutputSchema = z.object({
   data: z.discriminatedUnion("kind", [
     z.object({
       kind: z.literal("claimed"),
-      skill: z.object({
+      // The embedded skill record carries NO evidence array of its own —
+      // the outcome-level `evidence` is the one canonical copy (#245).
+      // `.strict()` pins that: a payload resurrecting `skill.evidence`
+      // fails this suite.
+      skill: z.strictObject({
         id: z.string().min(1),
         name: z.string().min(1),
         aliases: z.array(z.string()),
         category: z.string().min(1),
         proficiency: z.enum(["familiar", "proficient", "expert"]),
-        evidence: citationsSchema,
       }),
       evidence: citationsSchema,
     }),

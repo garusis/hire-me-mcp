@@ -6,8 +6,10 @@
 
 import { type ExperienceFilter, getExperience } from "@hire-me-mcp/core";
 import { z } from "zod";
+import { experienceEntrySchema } from "../../../src/lib/content/entity-schemas";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
 import { enumValueMessage, type ToolDefinition } from "../define-tool";
+import { toolSuccessSchema } from "../wire-schemas";
 
 /**
  * Derived from `getExperience`'s own return type rather than importing
@@ -49,9 +51,17 @@ const inputSchema = z.object({
     .describe("'current' restricts to the role(s) with no end date; 'past' to roles that ended."),
 });
 
+/** `{ data, citations }` envelope around the matching work-history entries (#242). */
+const outputSchema = toolSuccessSchema(
+  z
+    .array(experienceEntrySchema)
+    .describe("Matching work-history entries, ordered most recent first."),
+);
+
 /** `get-experience` — registered against a live `McpServer` via `defineTool`. */
 export const getExperienceTool: ToolDefinition<typeof inputSchema, ExperienceEntry[]> = {
   name: "get-experience",
+  title: "Get work experience",
   description:
     "Returns every entry from Marcos Alvarez's work history matching an optional structured " +
     "filter — company, technology tags, a YYYY-MM date range, and current/past status — as a " +
@@ -63,6 +73,7 @@ export const getExperienceTool: ToolDefinition<typeof inputSchema, ExperienceEnt
     "get-skill-evidence). A filter matching no roles returns a successful result with an empty " +
     "list, not an error.",
   inputSchema,
+  outputSchema,
   handler: (input) => {
     const filter: ExperienceFilter = input;
     return getExperience(getCareerDataRepository(), filter);
