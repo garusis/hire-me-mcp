@@ -32,13 +32,20 @@ export function generateMetadata(): Metadata {
   const siteUrl = getSiteUrl();
   const indexable = getRobotsIndexable();
 
+  // issue 236 — share previews and SERP snippets truncate around 120–200
+  // characters, so descriptions use the profile's purpose-written
+  // `shortSummary` (schema-capped at 200 chars) rather than the full About
+  // paragraph; the social title carries the headline, not just a bare name.
+  const shareTitle = `${profile.name} — ${profile.headline}`;
+  const shareDescription = profile.shortSummary ?? profile.summary;
+
   return {
     metadataBase: new URL(siteUrl),
     title: {
-      default: `${profile.name} — ${profile.headline}`,
+      default: shareTitle,
       template: `%s | ${profile.name}`,
     },
-    description: profile.summary,
+    description: shareDescription,
     applicationName: profile.name,
     icons: {
       icon: "/icon",
@@ -52,15 +59,15 @@ export function generateMetadata(): Metadata {
     openGraph: {
       type: "website",
       siteName: profile.name,
-      title: profile.name,
-      description: profile.summary,
+      title: shareTitle,
+      description: shareDescription,
       locale: "en_US",
       url: siteUrl,
     },
     twitter: {
       card: "summary_large_image",
-      title: profile.name,
-      description: profile.summary,
+      title: shareTitle,
+      description: shareDescription,
     },
   };
 }
