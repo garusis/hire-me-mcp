@@ -244,6 +244,13 @@ describe("skills, gaps and projects content (#50)", () => {
         expect(flagship?.featured).toBe(true);
       });
 
+      it("hire-me-mcp declares its work period, so tech-tag overlap can never relate it to roles that predate it (#224)", () => {
+        const flagship = dataset.projects.find((project) => project.id === "hire-me-mcp");
+        expect(flagship?.period).toBeDefined();
+        expect(flagship?.period?.start).toBe("2026-08");
+        expect(flagship?.period?.end).toBeUndefined();
+      });
+
       it("hire-me-mcp is the only featured project — the flagship treatment is singular", () => {
         const featured = dataset.projects.filter((project) => project.featured === true);
         expect(featured.map((project) => project.id)).toEqual(["hire-me-mcp"]);
