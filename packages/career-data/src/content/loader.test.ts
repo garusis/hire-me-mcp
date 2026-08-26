@@ -89,6 +89,9 @@ describe("loadContentDir", () => {
       expect.objectContaining({ id: "fixture-degree-fixture-university" }),
     ]);
     expect(dataset.writing).toEqual([expect.objectContaining({ id: "fixture-article" })]);
+    expect(dataset.recommendations).toEqual([
+      expect.objectContaining({ id: "fixture-recommendation" }),
+    ]);
   });
 
   it("merges MDX frontmatter with the trimmed body for projects and writing", () => {
@@ -109,6 +112,7 @@ describe("loadContentDir", () => {
       gaps: [],
       education: [],
       writing: [],
+      recommendations: [],
     });
   });
 

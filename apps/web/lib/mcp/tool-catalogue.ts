@@ -24,6 +24,7 @@ import { getSkillEvidenceTool } from "./tools/get-skill-evidence";
 import { listEducationTool } from "./tools/list-education";
 import { listGapsTool } from "./tools/list-gaps";
 import { listProjectsTool } from "./tools/list-projects";
+import { listRecommendationsTool } from "./tools/list-recommendations";
 import { listSkillsTool } from "./tools/list-skills";
 import { listWritingTool } from "./tools/list-writing";
 import { pingTool } from "./tools/ping";
@@ -49,6 +50,7 @@ const REGISTERED_TOOLS = [
   listGapsTool,
   listProjectsTool,
   listWritingTool,
+  listRecommendationsTool,
 ];
 
 const EXAMPLE_PROMPTS_BY_NAME: Record<string, string> = {
@@ -63,6 +65,8 @@ const EXAMPLE_PROMPTS_BY_NAME: Record<string, string> = {
   "list-gaps": "Which technologies does Marcos explicitly not claim experience with?",
   "list-projects": "Give me the complete list of Marcos's projects and open-source work.",
   "list-writing": "Has Marcos published any articles or long-form writing?",
+  "list-recommendations":
+    "What do Marcos's managers and colleagues say about working with him? Show me his LinkedIn recommendations.",
 };
 
 function examplePromptFor(toolName: string): string {

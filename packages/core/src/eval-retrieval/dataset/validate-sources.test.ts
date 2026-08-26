@@ -23,6 +23,7 @@ describe("resolveCareerSourceKeys", () => {
       gaps: [{ id: "g1" } as never],
       education: [{ id: "ed1" } as never],
       writing: [{ id: "w1" } as never],
+      recommendations: [{ id: "r1" } as never],
     };
     const keys = resolveCareerSourceKeys(dataset);
     expect(keys).toEqual(
@@ -34,6 +35,7 @@ describe("resolveCareerSourceKeys", () => {
         "gap:g1",
         "education:ed1",
         "writing:w1",
+        "recommendation:r1",
       ]),
     );
   });

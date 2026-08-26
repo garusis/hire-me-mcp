@@ -51,6 +51,12 @@ describe("SiteHeader", () => {
     }
   });
 
+  it("adds a Recommendations link to the primary navigation (#190)", () => {
+    render(<SiteHeader />);
+    const nav = screen.getByRole("navigation", { name: /primary/i });
+    expect(nav.querySelector('a[href="/recommendations"]')).not.toBeNull();
+  });
+
   it("adds a visible Download CV link pointing at the CV's stable, deterministic-filename URL (#35)", () => {
     render(<SiteHeader />);
     const nav = screen.getByRole("navigation", { name: /primary/i });

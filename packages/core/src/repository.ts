@@ -23,6 +23,7 @@ export function emptyCareerDataset(): CareerDataset {
     gaps: [],
     education: [],
     writing: [],
+    recommendations: [],
   };
 }
 

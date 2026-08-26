@@ -56,6 +56,7 @@ function idsByType(dataset: CareerDataset): Record<CitableEntityType, Set<string
     gap: new Set(dataset.gaps.map((gap) => gap.id)),
     education: new Set(dataset.education.map((entry) => entry.id)),
     writing: new Set(dataset.writing.map((entry) => entry.id)),
+    recommendation: new Set(dataset.recommendations.map((entry) => entry.id)),
   };
 }
 

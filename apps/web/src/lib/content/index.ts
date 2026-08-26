@@ -44,6 +44,12 @@ export {
   type ProjectListView,
 } from "./projects";
 export {
+  getRecommendationsListView,
+  type Recommendation,
+  type RecommendationListItemView,
+  type RecommendationsListView,
+} from "./recommendations";
+export {
   getSkillEvidenceView,
   getSkillsListView,
   type Skill,

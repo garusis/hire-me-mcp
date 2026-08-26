@@ -19,4 +19,5 @@ export const EXPECTED_TOOL_NAMES = [
   "list-gaps",
   "list-projects",
   "list-writing",
+  "list-recommendations",
 ] as const;

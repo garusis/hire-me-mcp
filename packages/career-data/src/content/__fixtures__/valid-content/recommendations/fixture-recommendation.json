@@ -1,0 +1,10 @@
+{
+  "id": "fixture-recommendation",
+  "recommenderName": "Fixture Recommender",
+  "recommenderTitle": "Engineering Manager at Fixture Corp",
+  "relationship": "Fixture Recommender was Marcos's direct manager",
+  "date": "2024-01-15",
+  "text": "A fake recommendation body used only by loader tests.",
+  "recommenderProfileUrl": "https://www.linkedin.com/in/fixture-recommender/",
+  "sourceUrl": "https://www.linkedin.com/in/garusis/details/recommendations/?detailScreenTabIndex=0"
+}
