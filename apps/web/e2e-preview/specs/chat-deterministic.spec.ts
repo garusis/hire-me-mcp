@@ -68,10 +68,22 @@ const EXPECTED_CITATION_HREFS: ReadonlyArray<{ entityType: string; href: string 
   // Writing entries are unauthored today, so the marker's id has no entry
   // to match and the site falls back to the section index — a real page.
   { entityType: "writing", href: "/writing" },
+  // #227 added the last three: `getProfile`, `listEducation`/`search-career`
+  // and `listRecommendations` emit these constantly, and the resolver used
+  // to return `undefined` for them, so every such citation was deleted from
+  // the answer mid-sentence. They now map to real sections.
+  { entityType: "profile", href: "/#profile" },
+  { entityType: "education", href: `/experience#${slugify(ids.education)}` },
+  { entityType: "recommendation", href: `/recommendations#${slugify(ids.recommendation)}` },
 ];
 
-/** The three types `resolve-chat-citation-href.ts` deliberately cannot map to a site section. */
-const UNLINKABLE_ENTITY_TYPES = ["profile", "education", "recommendation"] as const;
+/**
+ * Types the resolver cannot map to a site section. Empty since #227 taught
+ * it every `CitableEntityType` — kept (rather than deleted) so that adding a
+ * new unmappable type has an obvious place to be declared, and so the
+ * no-debris assertions below keep running against whatever it holds.
+ */
+const UNLINKABLE_ENTITY_TYPES = [] as const;
 
 const QUESTION = "What has Marcos actually shipped?";
 
