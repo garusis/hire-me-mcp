@@ -47,8 +47,12 @@ test("grounded chat flow: streamed answer renders with a citation link to a real
 
   await page.getByRole("button", { name: GROUNDED_QUESTION, exact: true }).click();
 
+  // The assistant bubble only renders once the FIRST stream chunk arrives,
+  // which on a slow free-tier turn is regularly beyond Playwright's 5s
+  // default expect timeout (issue 223 measured ~24s to first activity) —
+  // wait with the live-model budget, not the default.
   const assistantMessage = log.locator('[data-role="assistant"]').last();
-  await expect(assistantMessage).toBeVisible();
+  await expect(assistantMessage).toBeVisible({ timeout: LIVE_MODEL_TIMEOUT_MS });
 
   // A citation renders as a literal "[cite:entityType:entityId]" link
   // (`apps/web/app/chat/citation-text.tsx`) — wait for at least one to
@@ -83,7 +87,11 @@ test("grounded chat flow: streamed answer renders with a citation link to a real
   // The answer paragraph (the bubble's last <p>) must carry real text —
   // the bubble alone would also render for an errored/blank turn.
   await expect(secondAssistantMessage.locator("p").last()).not.toHaveText("");
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  // Scoped to the chat panel: a page-level getByRole("alert") also matches
+  // Next.js's own route announcer (an always-present, empty alert element),
+  // which false-positived this assertion on an otherwise fully green turn.
+  const chatPanel = page.getByRole("region", { name: "Chat with the interview agent" });
+  await expect(chatPanel.getByRole("alert")).toHaveCount(0);
 
   // Resolve the href for real: the target page must actually load, and if
   // the href carries a fragment, that fragment's element must exist on the
