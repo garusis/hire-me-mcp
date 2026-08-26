@@ -17,6 +17,13 @@ export const profileSchema = z.object({
   headline: z.string().min(1),
   location: z.string().min(1),
   availability: z.enum(["open", "selective", "not-looking"]),
+  /**
+   * Purpose-written one-liner for share previews and SERP snippets (#236)
+   * — capped at 200 characters because every consumer (og:description,
+   * twitter:description, meta description) truncates around 120–200.
+   * Optional: consumers fall back to `summary` when unauthored.
+   */
+  shortSummary: z.string().min(1).max(200).optional(),
   summary: z.string().min(1),
   contacts: z.array(contactSchema).min(1),
 });

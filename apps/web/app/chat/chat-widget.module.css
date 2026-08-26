@@ -178,7 +178,10 @@
   background: var(--color-bg);
   color: var(--color-fg);
   font-family: var(--font-body);
-  font-size: var(--text-sm);
+  /* issue 248 — never below 16px: iOS Safari auto-zooms the viewport on focusing
+     any input with a computed font-size under 16px (and doesn't zoom back
+     out on blur). --text-base is 1rem = 16px at the root default. */
+  font-size: var(--text-base);
   padding: var(--space-3);
 }
 

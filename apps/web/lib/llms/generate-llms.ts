@@ -38,6 +38,7 @@ import {
   getProfileView,
   getProjectsListView,
   getSkillsListView,
+  getWritingListView,
 } from "../../src/lib/content";
 import {
   buildConnectionMetadata,
@@ -122,12 +123,16 @@ function connectSection(siteUrl: string, endpointUrl: string): string {
 
 function siteSection(siteUrl: string): string {
   const { filename } = getCvView();
+  // #233 — Writing is advertised to agents only once something is actually
+  // published there; promising "longer-form notes" that resolve to an
+  // empty page wastes an agent's fetch and misrepresents the site.
+  const hasWriting = getWritingListView().items.length > 0;
   return linkSection("Site", [
     linkLine("Home", siteUrl, "Overview and entry point."),
     linkLine("Experience", abs(siteUrl, "/experience"), "Full work history."),
     linkLine("Projects", abs(siteUrl, "/projects"), "Selected project write-ups."),
     linkLine("Skills", abs(siteUrl, "/skills"), "Claimed skills with evidence, and honest gaps."),
-    linkLine("Writing", abs(siteUrl, "/writing"), "Longer-form notes."),
+    ...(hasWriting ? [linkLine("Writing", abs(siteUrl, "/writing"), "Longer-form notes.")] : []),
     linkLine(
       "Download CV (PDF)",
       abs(siteUrl, `/cv/${filename}`),

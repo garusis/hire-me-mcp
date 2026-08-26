@@ -55,11 +55,18 @@ function firstSentence(text: string): string {
   return match ? match[0].trim() : text.trim();
 }
 
+/**
+ * Title links into the role's own entry on `/experience` (issue 234) — the
+ * `/experience` page renders each entry card with `id={slug}`, so the
+ * fragment lands directly on this role rather than the top of the page.
+ */
 function ExperienceHighlightCard({ item }: { item: ExperienceListItemView }) {
   return (
     <Card as="article" className={styles.highlightCard}>
       <Heading level={4} className={styles.highlightCardTitle}>
-        {item.entry.role}, {item.entry.company}
+        <Link href={`/experience#${item.slug}`}>
+          {item.entry.role}, {item.entry.company}
+        </Link>
       </Heading>
       <p className={styles.highlightCardBody}>{item.entry.summary}</p>
     </Card>
@@ -88,11 +95,12 @@ function FlagshipProjectCard({ item }: { item: ProjectListItemView }) {
   );
 }
 
+/** Title links to the project's write-up (issue 234) — same treatment the flagship card already had. */
 function ProjectHighlightCard({ item }: { item: ProjectListItemView }) {
   return (
     <Card as="article" className={styles.highlightCard}>
       <Heading level={4} className={styles.highlightCardTitle}>
-        {item.project.name}
+        <Link href={`/projects/${item.slug}`}>{item.project.name}</Link>
       </Heading>
       <p className={styles.highlightCardBody}>{item.project.summary}</p>
     </Card>
@@ -134,7 +142,11 @@ export default async function Home() {
       <Section aria-labelledby="hero-heading">
         <Container>
           <RevealOnScroll>
-            <Badge variant="accent">{AVAILABILITY_LABEL[profile.availability]}</Badge>
+            <div className={styles.heroBadges}>
+              <Badge variant="accent">{AVAILABILITY_LABEL[profile.availability]}</Badge>
+              {/* issue 229 — location + remote status, straight from the profile record. */}
+              <Badge>{profile.location}</Badge>
+            </div>
             <Heading level={1} id="hero-heading" className={styles.heroName}>
               {profile.name}
             </Heading>
@@ -182,6 +194,9 @@ export default async function Home() {
                     <ExperienceHighlightCard key={item.slug} item={item} />
                   ))}
                 </div>
+                <Link href="/experience" className={styles.seeAllLink}>
+                  See full experience
+                </Link>
               </div>
             ) : null}
 
@@ -202,6 +217,9 @@ export default async function Home() {
                     <ProjectHighlightCard key={item.slug} item={item} />
                   ))}
                 </div>
+                <Link href="/projects" className={styles.seeAllLink}>
+                  See all projects
+                </Link>
               </div>
             ) : null}
 
@@ -215,6 +233,9 @@ export default async function Home() {
                     </li>
                   ))}
                 </ul>
+                <Link href="/skills" className={styles.seeAllLink}>
+                  See all skills and evidence
+                </Link>
               </div>
             ) : null}
           </RevealOnScroll>
