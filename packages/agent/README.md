@@ -574,14 +574,14 @@ breach exits non-zero.
 **$0** against the default `gemini-3.5-flash-lite` free tier — see "Budget cap" above for the
 per-token pricing safety net that exists for a future paid-provider switch, not because this
 model costs anything today. The real, non-monetary cost is **shared free-tier request quota**:
-15 RPM / 500 RPD per Google project. Since #264 the three surfaces are keyed to SEPARATE Google
-projects — production chat, Preview-deployment chat (and the non-required `preview-chat-live`
-workflow that drives `chat-grounded.spec.ts`/`chat-gap.spec.ts` against it), and CI's own
-in-process evals — so one can no longer starve another; see
-`docs/development.md` > "The three Google projects, and what a `rate_limited` failure means".
-This suite spends the CI project's allowance, shared with `retrieval-eval` and anyone running
-this suite locally against the same key. The required `preview-e2e` job spends none of it: its
-chat assertions run against a scripted, model-free response path (#264). A full 17-case run costs ~110K tokens (per the real run
+15 RPM / 500 RPD per Google project. Three separate credential slots exist, each intended to be
+its own project so one surface cannot starve another: production chat, Preview-deployment chat
+(and the non-required `preview-chat-live` workflow that drives `chat-grounded.spec.ts`/
+`chat-gap.spec.ts` against it), and CI's own in-process evals — see `docs/development.md` >
+"The three Google keys, and what a `rate_limited` failure means". This suite spends the CI slot's
+allowance, shared with `retrieval-eval` and anyone running this suite locally against the same
+key. The required `preview-e2e` job spends none of it: since #264 its chat assertions run against
+a scripted, model-free response path. A full 17-case run costs ~110K tokens (per the real run
 recorded in "Real-run results" above) and roughly one call per case (more for a multi-tool-call
 turn); the full 25-case dataset (post-#75) is expected to cost proportionally more but has not yet
 been measured against a real key (see "RAG-grounded cases and the tool-routing scorer" above) —

@@ -343,21 +343,25 @@ jobs:
   #
   # VERCEL_AUTOMATION_BYPASS_SECRET (already passed below for Deployment
   # Protection) doubles as the credential that unlocks the scripted path —
-  # no new secret. The `gemini-free-tier` concurrency group below is kept:
-  # this job no longer calls the model, but it still shares the deployment's
-  # Upstash rate-limit window with the other preview-targeting jobs.
+  # no new secret. The `gemini-free-tier` concurrency group went with the
+  # live specs — see the job's own note below for why staying in it was
+  # actively harmful once this job stopped calling the model.
   preview-e2e:
     name: preview-e2e
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Shares one Gemini free-tier RPM budget with every other job that
-    # calls the model (#169): agent-evals running concurrently starves the
-    # chat specs past Vercel's 60s function limit. The shared
-    # `gemini-free-tier` group queues those jobs instead of racing them.
-    concurrency:
-      group: gemini-free-tier
-      cancel-in-progress: false
+    # NO `gemini-free-tier` concurrency group any more (#264). It was added
+    # by #169 because this job's chat specs made real model calls and
+    # agent-evals running concurrently starved them past Vercel's function
+    # limit. Since #264 this job makes no model calls at all, so the shared
+    # budget it was queueing for no longer concerns it — and staying in the
+    # group actively harmed it: GitHub keeps only ONE pending run per
+    # concurrency group, so a newer waiter cancels the older one. With
+    # agent-evals, retrieval-eval and preview-chat-live all contending, this
+    # REQUIRED check was cancelled outright on the first run of PR #265 —
+    # the same "a required check that could not pass for reasons unrelated
+    # to the change" failure mode #176 and #264 are both about.
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -370,19 +370,24 @@ knowable in advance, and per-PR model spend on this surface dropped from **nine*
 (two grounded turns + one gap turn + six latency samples, times up to three Playwright attempts) to
 **zero**.
 
-### The three Google projects, and what a `rate_limited` failure means
+### The three Google keys, and what a `rate_limited` failure means
 
-`gemini-3.5-flash-lite` is used from three separately-keyed Google Cloud projects, each with its
-own free-tier allowance (15 requests/minute, 500 requests/day):
+`gemini-3.5-flash-lite` is reached through three separate credential slots, each intended to be a
+**different** Google Cloud project so one surface cannot starve another. The free tier is per
+project: 15 requests/minute, 500 requests/day.
 
-| Project | Backs | Key lives in |
+| Slot | Backs | Where the key lives |
 | --- | --- | --- |
-| **Production** | the live site's chat at the production domain, and the `production-chat-live`/`agent-evals` steps of a release certification | the Vercel Production environment's `GOOGLE_GENERATIVE_AI_API_KEY` |
-| **Preview** | every Vercel Preview deployment's interactive chat, and the `preview-chat-live` workflow that drives it | the Vercel Preview environment's `GOOGLE_GENERATIVE_AI_API_KEY` |
-| **CI** | in-process model calls that never go through a deployment — `agent-evals` (`pnpm eval:agent`) and `retrieval-eval` | the `GOOGLE_GENERATIVE_AI_API_KEY` GitHub Actions secret |
+| **Production** | the live site's chat on the production domain | the Vercel **Production** environment's `GOOGLE_GENERATIVE_AI_API_KEY` |
+| **Preview** | every Vercel Preview deployment's interactive chat, and the `preview-chat-live` workflow that drives it | the Vercel **Preview** environment's `GOOGLE_GENERATIVE_AI_API_KEY` |
+| **CI** | in-process model calls that never go through a deployment — `agent-evals` (`pnpm eval:agent`) and `retrieval-eval` | the `GOOGLE_GENERATIVE_AI_API_KEY` **GitHub Actions secret** |
 
-They are separate so one surface cannot starve another: CI evals cannot exhaust the preview UI's
-quota, and neither can touch production's.
+The isolation is a provisioning decision, not something the code can enforce: if two slots are ever
+pointed at the same Google project, one surface's spend eats the other's allowance and the symptom
+is two of the rows below reporting `rate_limited` in lockstep. #264 confirmed Preview and
+Production are genuinely separate — the Preview deployment returned `rate_limited` for a whole day
+while production answered the same questions normally. To check a slot, read the key's project in
+[Google AI Studio](https://ai.dev/rate-limit) and compare.
 
 A `rate_limited` failure means the *project behind that surface* is out of allowance for the day
 (it resets around 07:00 UTC) — not that the chat is broken. Concretely:
@@ -394,8 +399,11 @@ A `rate_limited` failure means the *project behind that surface* is out of allow
   fix that rather than retrying.
 - **In the deployed preview's chat UI, by hand**: the Preview project is exhausted. The banner
   ("Too many messages right now") is the honest, intended behaviour.
-- **In `agent-evals` / `retrieval-eval`**: the CI project is exhausted. Both jobs share the
-  `gemini-free-tier` concurrency group so they queue rather than race; wait for the reset.
+- **In `agent-evals` / `retrieval-eval`**: the CI key's project is exhausted. Both jobs (and
+  `preview-chat-live`) share the `gemini-free-tier` concurrency group so they queue rather than
+  race; wait for the reset. Note that GitHub keeps only one *pending* run per concurrency group, so
+  a newer waiter cancels an older one — which is why `preview-e2e`, now that it spends no quota,
+  is deliberately no longer in that group.
 
 See `packages/agent/README.md`'s quota-rationale table for the per-run call budgets.
 
