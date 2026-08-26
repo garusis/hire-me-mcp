@@ -9,6 +9,7 @@ import {
   MAX_QUERY_LENGTH,
   MAX_TOP_K,
   MIN_TOP_K,
+  RELEVANCE_FLOOR,
   StoredEmbeddingModelMismatchError,
 } from "./search-career.js";
 
@@ -269,6 +270,12 @@ describe("createSearchCareer", () => {
     expect(DEFAULT_MIN_SCORE).toBe(0);
     expect(MIN_TOP_K).toBeLessThanOrEqual(DEFAULT_TOP_K);
     expect(MAX_TOP_K).toBeGreaterThanOrEqual(DEFAULT_TOP_K);
+  });
+
+  it("exports RELEVANCE_FLOOR matching the eval-calibrated absent-topic cutoff (0.644), inside the meaningful similarity band", () => {
+    expect(RELEVANCE_FLOOR).toBe(0.644);
+    expect(RELEVANCE_FLOOR).toBeGreaterThan(DEFAULT_MIN_SCORE);
+    expect(RELEVANCE_FLOOR).toBeLessThan(1);
   });
 
   it("defaults modelId to STORED_EMBEDDING_MODEL_ID, not the raw Google API model id, so it flags rows stored under the old identifier as a mismatch", async () => {

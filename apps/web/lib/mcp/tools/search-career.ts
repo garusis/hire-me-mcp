@@ -43,7 +43,12 @@
  * upstream-failure acceptance criteria).
  */
 
-import { MAX_QUERY_LENGTH, MAX_TOP_K, MIN_TOP_K } from "@hire-me-mcp/core/search-career";
+import {
+  MAX_QUERY_LENGTH,
+  MAX_TOP_K,
+  MIN_TOP_K,
+  RELEVANCE_FLOOR,
+} from "@hire-me-mcp/core/search-career";
 import { z } from "zod";
 import type { ToolDefinition } from "../define-tool";
 import { getSearchCareer } from "../search-career-instance";
@@ -65,6 +70,24 @@ export interface SearchCareerHit {
 export type SearchCareerToolData =
   | { found: true; results: SearchCareerHit[] }
   | { found: false; message: string };
+
+/**
+ * The chunked source types a caller may filter by — exactly the entity
+ * types the ingestion pipeline chunks (`@hire-me-mcp/core`'s
+ * `chunkCareerData`, #21). Declared as a Zod enum so an unknown value is an
+ * `invalid_input` validation error naming the valid set (#238), never a
+ * silent empty "no relevant content found" result that sends the caller off
+ * rephrasing a query that was fine.
+ */
+const SEARCH_SOURCE_TYPES = [
+  "profile",
+  "experience",
+  "project",
+  "skill",
+  "gap",
+  "education",
+  "writing",
+] as const;
 
 const inputSchema = z.object({
   query: z
@@ -94,14 +117,21 @@ const inputSchema = z.object({
     .optional()
     .describe(
       "Minimum cosine-similarity score (in [-1, 1], higher is more similar) a result must " +
-        "meet. Omit for no filtering (the server's default) — every ANN match is returned.",
+        `meet. The server always applies its calibrated relevance floor of ${RELEVANCE_FLOOR} ` +
+        "— scores below it are indistinguishable from off-topic noise — so values below the " +
+        "floor have no effect. Set this above the floor for a stricter cut; omit for the " +
+        "floor itself.",
     ),
   sourceTypes: z
-    .array(z.string().min(1))
+    .array(
+      z.enum(SEARCH_SOURCE_TYPES, {
+        error: () => `expected one of ${SEARCH_SOURCE_TYPES.map((t) => `'${t}'`).join(", ")}`,
+      }),
+    )
     .optional()
     .describe(
-      "Restricts results to these source types (e.g. ['experience', 'project']). Omit for no " +
-        "constraint.",
+      "Restricts results to these source types. Valid values: " +
+        `${SEARCH_SOURCE_TYPES.map((t) => `'${t}'`).join(", ")}. Omit for no constraint.`,
     ),
 });
 
@@ -119,7 +149,8 @@ export const searchCareerTool: ToolDefinition<typeof inputSchema, SearchCareerTo
     "Runs a fuzzy, semantic search over the full text of Marcos Alvarez's career content " +
     "(experience, projects, skills, writing) and returns ranked excerpts, each with a " +
     "relevance score and a citation, or an explicit 'no relevant content found' result when " +
-    "nothing clears the similarity threshold. Use this for open-ended, cross-cutting, or " +
+    "nothing clears the server's calibrated relevance floor — off-topic questions get that " +
+    "honest empty result, not low-scoring noise. Use this for open-ended, cross-cutting, or " +
     "conceptual questions a structured lookup can't answer directly — e.g. 'has he worked " +
     "with event-driven architectures', 'what's his experience with leading teams', 'anything " +
     "about cost optimization'. Do not use it when the question maps onto a specific, " +
@@ -128,8 +159,8 @@ export const searchCareerTool: ToolDefinition<typeof inputSchema, SearchCareerTo
     "keyword/tag project search, and get-skill-evidence to check one specific named skill or " +
     "technology — prefer those first, and fall back to this tool only when they don't fit. " +
     "This tool is more expensive per call (it embeds the query) and subject to the same " +
-    "more expensive per call (it embeds the query) and subject to the same server-wide rate " +
-    "limit as every other tool here — don't call it repeatedly for the same question.",
+    "server-wide rate limit as every other tool here — don't call it repeatedly for the same " +
+    "question.",
   inputSchema,
   handler: async (input) => {
     let result: Awaited<ReturnType<ReturnType<typeof getSearchCareer>>>;
@@ -137,7 +168,11 @@ export const searchCareerTool: ToolDefinition<typeof inputSchema, SearchCareerTo
       const searchCareer = getSearchCareer();
       result = await searchCareer(input.query, {
         topK: input.topK,
-        minScore: input.minScore,
+        // The calibrated relevance floor (#237) is a hard baseline: an
+        // explicit minScore below it would reopen the door to
+        // confident-looking off-topic noise, so the effective threshold is
+        // never lower than the floor — only stricter.
+        minScore: Math.max(RELEVANCE_FLOOR, input.minScore ?? RELEVANCE_FLOOR),
         sourceTypes: input.sourceTypes,
       });
     } catch (error) {

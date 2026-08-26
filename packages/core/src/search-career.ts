@@ -50,6 +50,22 @@ export const MAX_TOP_K = 50;
 export const DEFAULT_MIN_SCORE = 0;
 /** Longest accepted query, in characters — guards against pathological input reaching the embedding API. */
 export const MAX_QUERY_LENGTH = 2000;
+/**
+ * The calibrated relevance floor: cosine-similarity scores below this value
+ * are, empirically, indistinguishable from off-topic noise against this
+ * corpus. The number comes from the retrieval eval suite's absent-topic
+ * calibration (`eval-retrieval/cli.ts`, #41): with task-type-aware
+ * embeddings, genuinely-absent-topic queries' top scores cluster below
+ * ~0.641 while real matches bottom out around 0.647 — `0.644` sits in the
+ * gap. `searchCareer` itself does NOT apply this floor (the eval suite
+ * needs raw, unfiltered rankings to measure against); consumer-facing
+ * adapters (the MCP `search-career` tool) apply it so an off-topic query
+ * produces an honest "no relevant content found" instead of
+ * confident-looking noise (#237). Recalibrate alongside
+ * `eval-retrieval/cli.ts`'s `absentTopicMinScore` — the two must move
+ * together.
+ */
+export const RELEVANCE_FLOOR = 0.644;
 
 /** Thrown for an empty/whitespace-only or oversized query — never reaches the embedder. */
 export class InvalidSearchCareerQueryError extends Error {
