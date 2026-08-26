@@ -8,15 +8,7 @@ import { getWritingListView, listProjectSlugs } from "../src/lib/content";
  * facts, so it doesn't fall under the content-layer-sourcing rule the way a
  * title or description would.
  */
-const STATIC_ROUTES = [
-  "",
-  "/experience",
-  "/projects",
-  "/skills",
-  "/writing",
-  "/mcp",
-  "/privacy",
-] as const;
+const STATIC_ROUTES = ["", "/experience", "/projects", "/skills", "/mcp", "/privacy"] as const;
 
 /**
  * `sitemap.xml`. Every dynamic segment is enumerated from the same content
@@ -37,10 +29,20 @@ export default function sitemap(): MetadataRoute.Sitemap {
     url: toUrl(`/projects/${slug}`),
   }));
 
-  const writingEntries: MetadataRoute.Sitemap = getWritingListView().items.map((item) => ({
-    url: toUrl(`/writing/${item.slug}`),
-    lastModified: new Date(item.entry.publishedDate),
-  }));
+  // issue 233 — `/writing` (and its entries) are submitted for indexing only
+  // once something is actually published there; an empty index page isn't
+  // content worth crawling, though the route itself stays live.
+  const writingItems = getWritingListView().items;
+  const writingEntries: MetadataRoute.Sitemap =
+    writingItems.length === 0
+      ? []
+      : [
+          { url: toUrl("/writing") },
+          ...writingItems.map((item) => ({
+            url: toUrl(`/writing/${item.slug}`),
+            lastModified: new Date(item.entry.publishedDate),
+          })),
+        ];
 
   return [...staticEntries, ...projectEntries, ...writingEntries];
 }

@@ -16,6 +16,7 @@ const {
   getSkillsListView,
   getGapsListView,
   getCvView,
+  getWritingListView,
 } = vi.hoisted(() => ({
   getProfileView: vi.fn(),
   getExperienceListView: vi.fn(),
@@ -23,6 +24,7 @@ const {
   getSkillsListView: vi.fn(),
   getGapsListView: vi.fn(),
   getCvView: vi.fn(),
+  getWritingListView: vi.fn(),
 }));
 
 vi.mock("../../src/lib/content", () => ({
@@ -32,6 +34,7 @@ vi.mock("../../src/lib/content", () => ({
   getSkillsListView,
   getGapsListView,
   getCvView,
+  getWritingListView,
 }));
 
 function profileView(): ProfileView {
@@ -143,6 +146,7 @@ function mockContentLayer(): void {
   getSkillsListView.mockReturnValue(skillsView());
   getGapsListView.mockReturnValue(gapsView());
   getCvView.mockReturnValue(cvView());
+  getWritingListView.mockReturnValue({ citations: [], items: [] });
 }
 
 /** Every markdown link target `[label](url)` found in `text`. */
@@ -306,7 +310,14 @@ describe("renderLlmsFullTxt", () => {
       endpointUrl: "https://stub-deploy.example.com/api/mcp",
     });
 
-    const searchCareerSection = text.slice(text.indexOf("### search-career"));
+    // Bound the slice at the next tool heading — sections after search-career
+    // (the no-parameter list tools, #211-#215) legitimately say "Parameters: none".
+    const sectionStart = text.indexOf("### search-career");
+    const nextHeading = text.indexOf("\n### ", sectionStart + 1);
+    const searchCareerSection = text.slice(
+      sectionStart,
+      nextHeading === -1 ? undefined : nextHeading,
+    );
     expect(searchCareerSection).toContain("Parameters: query");
     expect(searchCareerSection).toContain("topK");
     expect(searchCareerSection).not.toContain("Parameters: none");
@@ -384,5 +395,36 @@ describe("renderLlmsFullTxt", () => {
 
     expect(changed).not.toBe(baseline);
     expect(changed).toContain("Changed Fixture Name");
+  });
+});
+
+describe("renderLlmsTxt Writing visibility (#233)", () => {
+  it("omits the Writing link while nothing is published, and includes it once something is", async () => {
+    mockContentLayer();
+    const { renderLlmsTxt } = await import("./generate-llms.js");
+    const input = {
+      siteUrl: "https://site.example.com",
+      endpointUrl: "https://site.example.com/api/mcp",
+    };
+
+    expect(renderLlmsTxt(input)).not.toContain("/writing");
+
+    getWritingListView.mockReturnValue({
+      citations: [],
+      items: [
+        {
+          slug: "fixture-note",
+          entry: {
+            id: "fixture-note",
+            title: "Fixture Note",
+            publishedDate: "2024-01-15",
+            summary: "s",
+            body: "b",
+          },
+          citation: { entityType: "writing", entityId: "fixture-note", label: "Fixture Note" },
+        },
+      ],
+    });
+    expect(renderLlmsTxt(input)).toContain("https://site.example.com/writing");
   });
 });

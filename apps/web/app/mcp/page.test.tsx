@@ -81,12 +81,37 @@ describe("MCP page (#43)", () => {
 
     const tablist = screen.getByRole("tablist");
     const tabs = within(tablist).getAllByRole("tab");
+    // Full parity with the home connect widget's six clients (#250) — the
+    // exact list `@hire-me-mcp/connect-metadata`'s buildClientSnippets emits.
     expect(tabs.map((tab) => tab.textContent)).toEqual([
       "Claude (web/desktop)",
       "Claude Code",
-      "Cursor",
+      "Claude Desktop (JSON config)",
+      "VS Code / Cursor",
+      "Raw JSON-RPC (curl)",
       "Generic MCP client",
     ]);
+  });
+
+  it("renders the verified one-click deep links for VS Code / Cursor (#250), like the home widget", async () => {
+    getMcpEndpointUrl.mockReturnValue("https://stub-deploy.vercel.app/api/mcp");
+    const { default: McpPage } = await import("./page.js");
+
+    render(await McpPage());
+
+    const vscodeCursorTab = screen
+      .getAllByRole("tab")
+      .find((tab) => tab.textContent === "VS Code / Cursor");
+    if (vscodeCursorTab === undefined) {
+      throw new Error("expected a VS Code / Cursor tab");
+    }
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(vscodeCursorTab);
+
+    const cursorLink = screen.getByRole("link", { name: "Open in Cursor" });
+    expect(cursorLink.getAttribute("href")).toMatch(/^cursor:\/\//);
+    const vscodeLink = screen.getByRole("link", { name: "Open in VS Code" });
+    expect(vscodeLink.getAttribute("href")).toMatch(/^vscode:/);
   });
 
   it("renders the full tool catalogue, matching the actual MCP tool registry — one entry per registered tool, with its example prompt", async () => {

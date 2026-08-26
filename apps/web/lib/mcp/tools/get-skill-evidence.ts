@@ -36,8 +36,8 @@ export const getSkillEvidenceTool: ToolDefinition<typeof inputSchema, SkillEvide
     "'claimed' (the skill with its supporting evidence), 'not-claimed' (an explicit, " +
     "acknowledged gap with its own statement and related skills), or 'unknown' (the term " +
     "matches neither). Use this when asked 'do you know X' or 'have you worked with Y' about " +
-    "one specific technology. Do not use it to browse the full skill list (there is no such " +
-    "tool in this server) or to search project descriptions for a keyword (use " +
+    "one specific technology. Do not use it to browse the full skill list (use list-skills) " +
+    "or the full gap list (use list-gaps), or to search project descriptions for a keyword (use " +
     "search-projects instead), and it is not a substitute for get-experience when the " +
     "question is about a role or company rather than a single skill. A 'not-claimed' or " +
     "'unknown' result is a normal, successful answer, not an error — relay it honestly " +

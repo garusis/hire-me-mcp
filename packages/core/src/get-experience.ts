@@ -26,7 +26,10 @@ export interface ExperienceFilter {
    * Technology tags to match against an entry's `tech` array (the controlled
    * vocabulary from `@hire-me-mcp/career-data`'s `TECH_TAGS`). An entry
    * matches if it has at least one of the given tags — OR within this field.
-   * An empty array imposes no constraint, same as omitting the field.
+   * Matching is exact but case-insensitive (`"TypeScript"` matches the
+   * canonical `"typescript"` tag), the same convention as {@link company}
+   * and `searchProjects`' `tags` option (#226). An empty array imposes no
+   * constraint, same as omitting the field.
    */
   tech?: string[];
   /**
@@ -55,7 +58,12 @@ function matchesCompany(entry: ExperienceEntry, company: string): boolean {
 }
 
 function matchesTech(entry: ExperienceEntry, tags: string[]): boolean {
-  return tags.some((tag) => entry.tech.includes(tag));
+  // Case-insensitive, like `matchesCompany` and `searchProjects`' tag
+  // resolution — an LLM caller naturally writes "TypeScript", and a
+  // case-sensitive miss here silently reads as "no such experience" (#226).
+  const normalizedTags = tags.map((tag) => tag.trim().toLowerCase());
+  const entryTech = new Set(entry.tech.map((tag) => tag.toLowerCase()));
+  return normalizedTags.some((tag) => entryTech.has(tag));
 }
 
 function matchesDateRange(entry: ExperienceEntry, from?: string, to?: string): boolean {

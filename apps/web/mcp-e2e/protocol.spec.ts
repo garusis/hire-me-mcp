@@ -32,6 +32,11 @@ import {
   getExperienceOutputSchema,
   getProfileOutputSchema,
   getSkillEvidenceOutputSchema,
+  listEducationOutputSchema,
+  listGapsOutputSchema,
+  listProjectsOutputSchema,
+  listSkillsOutputSchema,
+  listWritingOutputSchema,
   searchProjectsOutputSchema,
 } from "./support/tool-output-schemas";
 
@@ -246,6 +251,137 @@ describe("tools/call — career tools", () => {
     expect(result.isError).not.toBe(true);
     const structuredContent = result.structuredContent as { data: { kind: string } };
     expect(structuredContent.data.kind).toBe("unknown");
+
+    await client.close();
+  });
+});
+
+describe("tools/call — list tools (#211-#215)", () => {
+  it("list-education succeeds against the real dataset with well-formed, aligned citations", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({ name: "list-education", arguments: {} });
+
+    expect(result.isError).not.toBe(true);
+    const parsed = listEducationOutputSchema.safeParse(result.structuredContent);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error?.issues)).toBe(
+      true,
+    );
+    const structuredContent = result.structuredContent as { data: unknown[]; citations: unknown[] };
+    expect(structuredContent.data.length).toBeGreaterThan(0);
+    expect(structuredContent.citations.length).toBe(structuredContent.data.length);
+    expectWellFormedCitations(structuredContent.citations);
+
+    await client.close();
+  });
+
+  it("list-skills with no filter returns the full inventory; a filter narrows it", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const all = await client.callTool({ name: "list-skills", arguments: {} });
+    expect(all.isError).not.toBe(true);
+    const parsedAll = listSkillsOutputSchema.safeParse(all.structuredContent);
+    expect(
+      parsedAll.success,
+      parsedAll.success ? undefined : JSON.stringify(parsedAll.error?.issues),
+    ).toBe(true);
+    const allContent = all.structuredContent as { data: unknown[]; citations: unknown[] };
+    expect(allContent.data.length).toBeGreaterThan(0);
+    expectWellFormedCitations(allContent.citations);
+
+    const filtered = await client.callTool({
+      name: "list-skills",
+      arguments: { proficiency: "expert" },
+    });
+    expect(filtered.isError).not.toBe(true);
+    const filteredContent = filtered.structuredContent as { data: unknown[] };
+    expect(filteredContent.data.length).toBeLessThanOrEqual(allContent.data.length);
+
+    await client.close();
+  });
+
+  it("list-skills with an unmatched category returns an honest empty list, not an error", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "list-skills",
+      arguments: { category: "definitely-not-a-real-category-zzz" },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual({ data: [], citations: [] });
+
+    await client.close();
+  });
+
+  it("list-gaps succeeds: every gap carries a verbatim non-empty statement and aligned citations", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({ name: "list-gaps", arguments: {} });
+
+    expect(result.isError).not.toBe(true);
+    const parsed = listGapsOutputSchema.safeParse(result.structuredContent);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error?.issues)).toBe(
+      true,
+    );
+    const structuredContent = result.structuredContent as { data: unknown[]; citations: unknown[] };
+    expect(structuredContent.data.length).toBeGreaterThan(0);
+    expect(structuredContent.citations.length).toBe(structuredContent.data.length);
+    expectWellFormedCitations(structuredContent.citations);
+
+    await client.close();
+  });
+
+  it("list-projects enumerates the whole portfolio deterministically; an unmatched tag filter is an honest empty result", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({ name: "list-projects", arguments: {} });
+    expect(result.isError).not.toBe(true);
+    const parsed = listProjectsOutputSchema.safeParse(result.structuredContent);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error?.issues)).toBe(
+      true,
+    );
+    const structuredContent = result.structuredContent as {
+      data: Array<{ id: string }>;
+      citations: unknown[];
+    };
+    expect(structuredContent.data.length).toBeGreaterThan(0);
+    expectWellFormedCitations(structuredContent.citations);
+    // Deterministic order: id ascending.
+    const ids = structuredContent.data.map((project) => project.id);
+    expect(ids).toEqual([...ids].sort());
+
+    const unmatched = await client.callTool({
+      name: "list-projects",
+      arguments: { tags: ["definitely-not-a-real-tag-zzz"] },
+    });
+    expect(unmatched.isError).not.toBe(true);
+    expect(unmatched.structuredContent).toEqual({ data: [], citations: [] });
+
+    await client.close();
+  });
+
+  it("list-writing returns a successful, well-formed result — an empty corpus is data, not an error", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({ name: "list-writing", arguments: {} });
+
+    expect(result.isError).not.toBe(true);
+    const parsed = listWritingOutputSchema.safeParse(result.structuredContent);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error?.issues)).toBe(
+      true,
+    );
+    // No non-empty assertion: the writing corpus is currently empty, and the
+    // honest empty list is exactly the documented, successful outcome. Citations
+    // stay aligned 1:1 with data either way.
+    const structuredContent = result.structuredContent as { data: unknown[]; citations: unknown[] };
+    expect(structuredContent.citations.length).toBe(structuredContent.data.length);
 
     await client.close();
   });

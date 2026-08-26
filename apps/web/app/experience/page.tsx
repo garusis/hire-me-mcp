@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
-import type { ExperienceListItemView } from "../../src/lib/content";
-import { getExperienceListView, getProfileView, getProjectsListView } from "../../src/lib/content";
+import type { EducationListItemView, ExperienceListItemView } from "../../src/lib/content";
+import {
+  getEducationListView,
+  getExperienceListView,
+  getProfileView,
+  getProjectsListView,
+} from "../../src/lib/content";
 import { buildPageMetadata } from "../../src/lib/seo/page-metadata";
 import { Badge } from "../design-system/primitives/badge";
 import { Card } from "../design-system/primitives/card";
@@ -18,7 +23,7 @@ function formatPeriod(startDate: string, endDate: string | undefined): string {
 
 function ExperienceEntryCard({ item }: { item: ExperienceListItemView }) {
   const { entry, slug } = item;
-  const relatedProjects = getRelatedProjects(entry.tech, getProjectsListView().items);
+  const relatedProjects = getRelatedProjects(entry, getProjectsListView().items);
 
   return (
     <Card as="article" id={slug}>
@@ -75,12 +80,50 @@ export function generateMetadata(): Metadata {
 }
 
 /**
+ * One education credential (issue 231) — institution, credential, and the dates
+ * exactly as authored: a missing `endDate` means in progress, a missing
+ * `startDate` is genuinely not on record, and neither is ever invented
+ * here (the schema's own documented convention).
+ */
+function formatEducationPeriod(
+  startDate: string | undefined,
+  endDate: string | undefined,
+): string | undefined {
+  if (startDate !== undefined) {
+    return formatPeriod(startDate, endDate);
+  }
+  // No start on record — show the completion date alone rather than a
+  // fabricated range; both missing renders no period at all.
+  return endDate;
+}
+
+function EducationEntryCard({ item }: { item: EducationListItemView }) {
+  const { entry } = item;
+  const period = formatEducationPeriod(entry.startDate, entry.endDate);
+
+  return (
+    <Card as="article" id={entry.id}>
+      <Heading level={3}>{entry.institution}</Heading>
+      <div className={styles.meta}>
+        <p>{entry.credential}</p>
+        {period !== undefined && <p className="tabular-nums">{period}</p>}
+      </div>
+    </Card>
+  );
+}
+
+/**
  * Chronological role timeline. Ordering, grouping and every field rendered
  * come from the content layer (issue #16) — this route contains no career
  * strings of its own.
+ *
+ * Education (issue 231) renders below the roles from the same career dataset the
+ * CV PDF and the MCP `list-education` tool already publish, so the site can
+ * no longer be the one surface that doesn't know about it.
  */
 export default function ExperiencePage() {
   const { items } = getExperienceListView();
+  const education = getEducationListView().items;
 
   return (
     <Section>
@@ -89,6 +132,16 @@ export default function ExperiencePage() {
         {items.map((item) => (
           <ExperienceEntryCard key={item.slug} item={item} />
         ))}
+        {education.length > 0 && (
+          <>
+            <Heading level={2} id="education">
+              Education
+            </Heading>
+            {education.map((item) => (
+              <EducationEntryCard key={item.entry.id} item={item} />
+            ))}
+          </>
+        )}
       </Container>
     </Section>
   );
