@@ -38,6 +38,24 @@ export function parseSelectedTags(value: string | string[] | undefined): string[
   return [...new Set(raw.flatMap(splitTagList))];
 }
 
+/**
+ * Splits the URL-provided tags into ones that exist in the computed option
+ * set and ones that don't (issue 252) — an unknown tag (a typo, a stale shared
+ * link) is reported and ignored rather than silently emptying the page.
+ */
+export function partitionSelectedTags(
+  selectedTags: readonly string[],
+  options: readonly string[],
+): { knownTags: string[]; unknownTags: string[] } {
+  const optionSet = new Set(options);
+  const knownTags: string[] = [];
+  const unknownTags: string[] = [];
+  for (const tag of selectedTags) {
+    (optionSet.has(tag) ? knownTags : unknownTags).push(tag);
+  }
+  return { knownTags, unknownTags };
+}
+
 /** Projects that carry every selected tag (AND semantics); unfiltered when `selectedTags` is empty. */
 export function filterProjectsByTags(
   items: readonly ProjectListItemView[],

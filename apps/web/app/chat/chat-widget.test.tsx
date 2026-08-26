@@ -1,9 +1,10 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { chatRequestSchema } from "../../lib/chat/request-schema";
 import type { WritingEntry } from "../../src/lib/content";
-import { ChatWidget } from "./chat-widget";
+import { CHAT_CLIENT_TIMEOUT_MS, CHAT_SLOW_TURN_NOTICE_MS, ChatWidget } from "./chat-widget";
 
 const NO_WRITING: readonly WritingEntry[] = [];
 
@@ -266,5 +267,146 @@ describe("ChatWidget", () => {
     });
 
     await screen.findByText(/consulting career data/i);
+  });
+
+  it("regression issue 222: the second turn's request body passes the endpoint schema even after a tool-using first turn", async () => {
+    // First turn: assistant reply carries step-start + tool parts, exactly
+    // what useChat replays into the next request's history — the shape
+    // that used to 400 on every follow-up.
+    const first = createControlledStreamResponse();
+    const second = createControlledStreamResponse();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(first.response)
+      .mockResolvedValueOnce(second.response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = userEvent.setup();
+    render(<ChatWidget writingEntries={NO_WRITING} />);
+    await openWidget(user);
+
+    await user.type(screen.getByLabelText(/message/i), "Is Marcos available now?");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    first.push({ type: "start", messageId: "assistant-1" });
+    first.push({ type: "start-step" });
+    first.push({ type: "tool-input-start", toolCallId: "call-1", toolName: "get-profile" });
+    first.push({
+      type: "tool-input-available",
+      toolCallId: "call-1",
+      toolName: "get-profile",
+      input: {},
+    });
+    first.push({
+      type: "tool-output-available",
+      toolCallId: "call-1",
+      output: { location: "Colombia" },
+    });
+    first.push({ type: "finish-step" });
+    first.push({ type: "start-step" });
+    first.push({ type: "text-start", id: "t1" });
+    first.push({ type: "text-delta", id: "t1", delta: "Yes, he is available." });
+    first.push({ type: "text-end", id: "t1" });
+    first.push({ type: "finish" });
+    first.done();
+    await screen.findByText("Yes, he is available.");
+
+    // Second turn: the request body must be valid against the endpoint's
+    // text-only schema — no replayed step-start/tool parts.
+    await user.type(screen.getByLabelText(/message/i), "Does he know Go?");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const [, secondInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    const body = JSON.parse(secondInit.body as string);
+    const parsed = chatRequestSchema.safeParse(body);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error.issues)).toBe(
+      true,
+    );
+    expect(body.messages).toHaveLength(3);
+    const partTypes = body.messages.flatMap((m: { parts: Array<{ type: string }> }) =>
+      m.parts.map((p) => p.type),
+    );
+    expect(new Set(partTypes)).toEqual(new Set(["text"]));
+  });
+
+  it("issue 223: keeps a visible activity indicator while streaming before any text or tool step arrives", async () => {
+    const { response, push } = createControlledStreamResponse();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    const user = userEvent.setup();
+    render(<ChatWidget writingEntries={NO_WRITING} />);
+    await openWidget(user);
+    await user.type(screen.getByLabelText(/message/i), "Tell me about Marcos");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    // Submitted: indicator up.
+    await screen.findByText(/thinking/i);
+
+    // Streaming has begun (assistant message exists) but no text and no
+    // in-flight tool part yet — this used to render a blank Agent bubble.
+    push({ type: "start", messageId: "assistant-1" });
+    push({ type: "start-step" });
+    await waitFor(() => expect(screen.getByText(/thinking/i)).toBeInTheDocument());
+
+    // Once text arrives the indicator yields to the streamed answer.
+    push({ type: "text-start", id: "t1" });
+    push({ type: "text-delta", id: "t1", delta: "Here is the answer." });
+    await screen.findByText("Here is the answer.");
+    expect(screen.queryByText(/thinking/i)).not.toBeInTheDocument();
+  });
+
+  /**
+   * Starts a busy turn against a never-resolving stream under FAKE timers,
+   * using `fireEvent` (synchronous) rather than `userEvent` — userEvent's
+   * internal delays deadlock once timers are faked.
+   */
+  async function startStalledTurnWithFakeTimers(): Promise<void> {
+    const { response } = createControlledStreamResponse();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    render(<ChatWidget writingEntries={NO_WRITING} />);
+    fireEvent.click(screen.getByRole("button", { name: /ask about marcos/i }));
+    fireEvent.change(screen.getByLabelText(/message/i), {
+      target: { value: "Stalled question" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^send$/i }));
+    // Flush the send's async state updates so the busy-effect timers register.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  }
+
+  it("issue 223: shows a still-working notice on a slow turn instead of appearing dead", async () => {
+    vi.useFakeTimers();
+    try {
+      await startStalledTurnWithFakeTimers();
+
+      expect(screen.queryByText(/still working/i)).not.toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CHAT_SLOW_TURN_NOTICE_MS + 100);
+      });
+      expect(screen.getByText(/still working/i)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("issue 223: a turn that outlives the server's maxDuration ceiling is stopped with a friendly retryable timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      await startStalledTurnWithFakeTimers();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CHAT_CLIENT_TIMEOUT_MS + 100);
+      });
+
+      const alert = screen.getByRole("alert");
+      expect(alert).toHaveTextContent(/took too long/i);
+      expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

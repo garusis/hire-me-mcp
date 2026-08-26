@@ -18,22 +18,32 @@
     color var(--motion-duration-base) var(--motion-ease);
 }
 
-.solid {
+/*
+ * Variant selectors are compounded with `.button` on purpose (issue 221): a
+ * `Button` with an `href` renders through the `Link` primitive, so the
+ * element carries both `.link` (color: var(--color-accent)) and this
+ * module's classes. `.solid` alone ties `.link` on specificity (0,1,0) and
+ * loses whenever the production CSS bundle happens to emit link.module.css
+ * later — which rendered the solid CTA's label accent-on-accent, a 1:1
+ * contrast ratio, in both themes. `.button.solid` (0,2,0) wins regardless
+ * of chunk order; never rely on CSS-module emission order for correctness.
+ */
+.button.solid {
   background: var(--color-accent);
   color: var(--color-accent-fg);
 }
 
-.solid:hover {
+.button.solid:hover {
   filter: brightness(1.08);
 }
 
-.outline {
+.button.outline {
   background: transparent;
   color: var(--color-fg);
   border-color: var(--color-border);
 }
 
-.outline:hover {
+.button.outline:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
 }

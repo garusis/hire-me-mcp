@@ -70,8 +70,12 @@ test("gap chat flow: honest acknowledgement, closest-evidence framing, no uncite
 
   await page.getByRole("button", { name: GAP_QUESTION, exact: true }).click();
 
+  // The assistant bubble only renders once the FIRST stream chunk arrives,
+  // which on a slow free-tier turn is regularly beyond Playwright's 5s
+  // default expect timeout (issue 223 measured ~24s to first activity) —
+  // wait with the live-model budget, not the default.
   const assistantMessage = log.locator('[data-role="assistant"]').last();
-  await expect(assistantMessage).toBeVisible();
+  await expect(assistantMessage).toBeVisible({ timeout: LIVE_MODEL_TIMEOUT_MS });
 
   // Wait for the answer to finish streaming: poll until the message text
   // stops changing between two checks a beat apart, real model latency

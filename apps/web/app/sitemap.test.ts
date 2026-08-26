@@ -30,10 +30,39 @@ describe("sitemap", () => {
         "https://stub-deploy.example.com/experience",
         "https://stub-deploy.example.com/projects",
         "https://stub-deploy.example.com/skills",
-        "https://stub-deploy.example.com/writing",
+        "https://stub-deploy.example.com/recommendations",
         "https://stub-deploy.example.com/mcp",
       ]),
     );
+  });
+
+  it("omits /writing while nothing is published there, and lists it once something is (#233)", async () => {
+    getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
+    listProjectSlugs.mockReturnValue([]);
+    getWritingListView.mockReturnValue(writingView());
+    const { default: sitemap } = await import("./sitemap.js");
+
+    let urls = sitemap().map((entry) => entry.url);
+    expect(urls.some((url) => url.includes("/writing"))).toBe(false);
+
+    getWritingListView.mockReturnValue(
+      writingView([
+        {
+          slug: "fixture-writing-entry",
+          entry: {
+            id: "fixture-writing-entry",
+            title: "Fixture",
+            publishedDate: "2024-01-15",
+            summary: "s",
+            body: "b",
+          },
+          citation: { entityType: "writing", entityId: "fixture-writing-entry", label: "Fixture" },
+        },
+      ]),
+    );
+    urls = sitemap().map((entry) => entry.url);
+    expect(urls).toContain("https://stub-deploy.example.com/writing");
+    expect(urls).toContain("https://stub-deploy.example.com/writing/fixture-writing-entry");
   });
 
   it("adds exactly one entry per project slug from the content layer — no stale or hardcoded entries", async () => {

@@ -85,6 +85,24 @@ describe("getExperienceTool", () => {
     },
   );
 
+  it("passes mixed-case tech tags through untouched — case normalization is the domain service's job (#226)", async () => {
+    const domainResult: DomainResult<ExperienceEntry[]> = { data: [currentEntry], citations: [] };
+    vi.mocked(core.getExperience).mockReturnValue(domainResult);
+    const executor = createToolExecutor(getExperienceTool);
+
+    const result = await executor({ tech: ["TypeScript", "NodeJS"] });
+
+    expect(core.getExperience).toHaveBeenCalledWith(expect.anything(), {
+      tech: ["TypeScript", "NodeJS"],
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("documents the tech filter's case-insensitivity in the tool description and input schema (#226)", () => {
+    expect(getExperienceTool.description).toContain("case-insensitively");
+    expect(getExperienceTool.inputSchema.shape.tech.description).toContain("case-insensitive");
+  });
+
   it("returns a SUCCESSFUL empty-list result when the domain service reports no match, not an error", async () => {
     vi.mocked(core.getExperience).mockReturnValue({ data: [], citations: [] });
     const executor = createToolExecutor(getExperienceTool);

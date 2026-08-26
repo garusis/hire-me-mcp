@@ -25,6 +25,14 @@ export interface RenderCvHtmlOptions {
   /** The site's own absolute origin, used only for the "more at" footer link — not a career fact. */
   siteUrl: string;
   /**
+   * The absolute public MCP endpoint URL (#232), used only for the footer's
+   * "query this CV over MCP" callout — site configuration (like `siteUrl`),
+   * not a career fact. The browsable route derives it via
+   * `getMcpEndpointUrl()`; the headless PDF renderer passes the fixed
+   * production value.
+   */
+  mcpUrl: string;
+  /**
    * CSP nonce to stamp on the inline `<style>` (#76). The browsable
    * `/cv/print` route serves this document under the middleware's
    * nonce-scoped `style-src` policy, so the style tag must carry the
@@ -89,6 +97,32 @@ function renderExperience(experience: CvView["experience"]): string {
   return `<section><h2>Experience</h2>${items}</section>`;
 }
 
+/**
+ * Selected projects (#232): name, role, one-line summary and the authored
+ * links with visible URL text (so, like contacts, they survive PDF text
+ * extraction and a printed copy) — for the flagship project those links
+ * include the public MCP endpoint.
+ */
+function renderProjects(projects: CvView["projects"]): string {
+  if (projects.length === 0) {
+    return "";
+  }
+  const items = projects
+    .map((project) => {
+      const links = project.links
+        .map((link) => `<a href="${escapeHtml(link.url)}">${escapeHtml(link.url)}</a>`)
+        .join('<span aria-hidden="true"> &middot; </span>');
+      return `
+      <article class="project">
+        <h3>${escapeHtml(project.name)} <span class="role-title">&mdash; ${escapeHtml(project.role)}</span></h3>
+        <p class="project-summary">${escapeHtml(project.summary)}</p>
+        ${links === "" ? "" : `<p class="project-links">${links}</p>`}
+      </article>`;
+    })
+    .join("");
+  return `<section><h2>Selected Projects</h2>${items}</section>`;
+}
+
 const PROFICIENCY_LABEL: Record<CvView["skillsByProficiency"][number]["proficiency"], string> = {
   expert: "Expert",
   proficient: "Proficient",
@@ -149,12 +183,22 @@ const STYLE = `
   .location { margin: 2pt 0 0; color: #333; }
   .contacts { margin: 4pt 0 8pt; }
   .summary { margin: 6pt 0 0; }
-  section { break-inside: avoid-page; }
+  /*
+   * #230: sections are allowed to break across pages — a blanket
+   * "break-inside: avoid-page" on every section forced any section that
+   * didn't fit the remaining space wholesale onto the next page, spilling
+   * a 3-line Education block onto a near-blank page 2. Break control is
+   * per-item instead: an individual role/project/paragraph never splits,
+   * and "break-after: avoid" on h2 keeps a heading with its content, so
+   * pages fill naturally without orphaned headings.
+   */
   section.avoid-break { break-inside: avoid; }
-  .role { break-inside: avoid; margin-bottom: 6pt; }
+  .role, .project { break-inside: avoid; margin-bottom: 6pt; }
   .role-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 8pt; }
   .role-title { font-weight: normal; }
   .period { white-space: nowrap; color: #333; margin: 0; }
+  .project-summary { margin: 1pt 0 0; }
+  .project-links { margin: 1pt 0 0; font-size: 9pt; color: #333; }
   .highlights { margin: 2pt 0 0; padding-left: 14pt; }
   .highlights li { margin: 0 0 1pt; }
   footer { margin-top: 10pt; font-size: 8pt; color: #555; }
@@ -188,9 +232,10 @@ ${styleTag}${STYLE}</style>
     <p class="summary">${escapeHtml(profile.summary)}</p>
   </header>
   ${renderExperience(view.experience)}
+  ${renderProjects(view.projects)}
   ${renderSkills(view.skillsByProficiency)}
   ${renderEducation(view.education)}
-  <footer>Generated from live career data — see ${escapeHtml(options.siteUrl)}</footer>
+  <footer>Generated from live career data — see ${escapeHtml(options.siteUrl)} &middot; Query it from any MCP client: ${escapeHtml(options.mcpUrl)}</footer>
 </body>
 </html>`;
 }

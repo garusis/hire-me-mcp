@@ -37,6 +37,7 @@ vi.mock("@hire-me-mcp/core", async (importOriginal) => {
     getExperience: vi.fn(),
     searchProjects: vi.fn(),
     getSkillEvidence: vi.fn(),
+    listRecommendations: vi.fn(),
   };
 });
 vi.mock("../../src/lib/content/repository", () => ({
@@ -90,6 +91,22 @@ const cases: Case[] = [
     sentinel: {
       data: { kind: "unknown", term: "sentinel-fixture" },
       citations: [],
+    },
+  },
+  {
+    name: "list-recommendations",
+    input: {},
+    coreFnName: "listRecommendations",
+    getCoreFn: () => core.listRecommendations as unknown as (...args: unknown[]) => unknown,
+    sentinel: {
+      data: [{ sentinel: "list-recommendations-fixture" }],
+      citations: [
+        {
+          entityType: "recommendation",
+          entityId: "sentinel-recommendation",
+          label: "Sentinel",
+        },
+      ],
     },
   },
 ];

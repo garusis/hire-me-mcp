@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { getWritingListView } from "../../../src/lib/content/index.js";
 import { SiteHeader } from "./site-header.js";
 
 describe("SiteHeader", () => {
@@ -31,11 +32,29 @@ describe("SiteHeader", () => {
     expect(nav.querySelector('a[href="/projects"]')).not.toBeNull();
   });
 
-  it("adds Skills and Writing links to the primary navigation alongside the rest", () => {
+  it("adds a Skills link to the primary navigation alongside the rest", () => {
     render(<SiteHeader />);
     const nav = screen.getByRole("navigation", { name: /primary/i });
     expect(nav.querySelector('a[href="/skills"]')).not.toBeNull();
-    expect(nav.querySelector('a[href="/writing"]')).not.toBeNull();
+  });
+
+  it("promotes Writing in the primary navigation only when something is published there (issue 233)", () => {
+    // SiteHeader reads the real content layer; the nav entry must mirror
+    // whether the writing dataset actually has entries, in either state.
+    render(<SiteHeader />);
+    const nav = screen.getByRole("navigation", { name: /primary/i });
+    const hasWriting = getWritingListView().items.length > 0;
+    if (hasWriting) {
+      expect(nav.querySelector('a[href="/writing"]')).not.toBeNull();
+    } else {
+      expect(nav.querySelector('a[href="/writing"]')).toBeNull();
+    }
+  });
+
+  it("adds a Recommendations link to the primary navigation (#190)", () => {
+    render(<SiteHeader />);
+    const nav = screen.getByRole("navigation", { name: /primary/i });
+    expect(nav.querySelector('a[href="/recommendations"]')).not.toBeNull();
   });
 
   it("adds a visible Download CV link pointing at the CV's stable, deterministic-filename URL (#35)", () => {

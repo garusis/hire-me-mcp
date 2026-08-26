@@ -27,7 +27,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateCvPdf } from "../lib/cv/generate-cv-pdf";
 import { renderCvHtml } from "../lib/cv/render-cv-html";
-import { PRODUCTION_SITE_URL } from "../src/lib/config/site-url";
+import { PRODUCTION_MCP_ENDPOINT_URL, PRODUCTION_SITE_URL } from "../src/lib/config/site-url";
 import { getCvView } from "../src/lib/content";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -35,7 +35,10 @@ const CV_OUTPUT_DIR = resolve(SCRIPT_DIR, "..", "public", "cv");
 
 async function main(): Promise<void> {
   const view = getCvView();
-  const html = renderCvHtml(view, { siteUrl: PRODUCTION_SITE_URL });
+  const html = renderCvHtml(view, {
+    siteUrl: PRODUCTION_SITE_URL,
+    mcpUrl: PRODUCTION_MCP_ENDPOINT_URL,
+  });
 
   rmSync(CV_OUTPUT_DIR, { recursive: true, force: true });
   mkdirSync(CV_OUTPUT_DIR, { recursive: true });

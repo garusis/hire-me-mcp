@@ -64,6 +64,31 @@ const SKILLS = [
   },
 ];
 
+const PROJECTS = [
+  {
+    id: "fixture-project-plain",
+    name: "Plain Fixture Project",
+    summary: "Plain fixture project summary.",
+    role: "Fixture Maintainer",
+    tech: ["typescript"],
+    links: [{ label: "GitHub", url: "https://github.com/fixture/plain" }],
+    body: "Plain fixture project body prose.",
+  },
+  {
+    id: "fixture-project-flagship",
+    name: "Flagship Fixture Project",
+    summary: "Flagship fixture project summary.",
+    role: "Fixture Creator",
+    tech: ["typescript"],
+    links: [
+      { label: "GitHub", url: "https://github.com/fixture/flagship" },
+      { label: "MCP endpoint", url: "https://fixture.example.test/api/mcp" },
+    ],
+    body: "Flagship fixture project body prose.",
+    featured: true,
+  },
+];
+
 const EDUCATION = [
   {
     id: "fixture-education",
@@ -120,6 +145,30 @@ describe("getCvView", () => {
     expect(view.skillsByProficiency).toEqual([
       { proficiency: "expert", names: ["Fixture Expert Skill"] },
       { proficiency: "familiar", names: ["Fixture Familiar Skill"] },
+    ]);
+  });
+
+  it("lists projects featured-first (#232), trimmed to name/role/summary/links — no long-form body", () => {
+    const repository = createInMemoryCareerDataRepository(
+      datasetWith({ profile: PROFILE, projects: PROJECTS }),
+    );
+    const view = getCvView(repository);
+    expect(view.projects).toEqual([
+      {
+        name: "Flagship Fixture Project",
+        role: "Fixture Creator",
+        summary: "Flagship fixture project summary.",
+        links: [
+          { label: "GitHub", url: "https://github.com/fixture/flagship" },
+          { label: "MCP endpoint", url: "https://fixture.example.test/api/mcp" },
+        ],
+      },
+      {
+        name: "Plain Fixture Project",
+        role: "Fixture Maintainer",
+        summary: "Plain fixture project summary.",
+        links: [{ label: "GitHub", url: "https://github.com/fixture/plain" }],
+      },
     ]);
   });
 

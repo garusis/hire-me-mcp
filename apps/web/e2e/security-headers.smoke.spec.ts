@@ -37,7 +37,10 @@ const HTML_ROUTES_TO_WALK = [
   // handler, not an app-shell page — the production certification run
   // caught its inline <style> being blocked by the nonce-scoped CSP (and a
   // favicon 404) because no CSP-violation walk covered it.
-  { path: "/cv/print", heading: "Marcos Javier Alvarez" },
+  // #232: the CV's Selected Projects section is asserted here too, so the
+  // CSP walk also proves the projects block renders under the enforced
+  // nonce-scoped style policy.
+  { path: "/cv/print", heading: "Marcos Javier Alvarez", sectionHeading: "Selected Projects" },
 ] as const;
 
 test.describe("HTML route headers", () => {
@@ -136,6 +139,11 @@ test.describe("zero CSP console violations across every public page", () => {
       const response = await page.goto(route.path);
       expect(response?.ok(), `expected ${route.path} to respond ok()`).toBe(true);
       await expect(page.getByRole("heading", { level: 1, name: route.heading })).toBeVisible();
+      if ("sectionHeading" in route) {
+        await expect(
+          page.getByRole("heading", { level: 2, name: route.sectionHeading }),
+        ).toBeVisible();
+      }
 
       expect(violations, `CSP violations on ${route.path}: ${violations.join("; ")}`).toEqual([]);
       expect(consoleErrors, `console errors on ${route.path}: ${consoleErrors.join("; ")}`).toEqual(

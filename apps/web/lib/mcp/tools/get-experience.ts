@@ -34,8 +34,9 @@ const inputSchema = z.object({
     .array(z.string().min(1))
     .optional()
     .describe(
-      "Technology tags to filter by; an entry matches if it has at least one of the given " +
-        "tags (OR within this field). Omit for no constraint.",
+      "Technology tags to filter by, case-insensitive ('TypeScript' matches the canonical " +
+        "'typescript' tag); an entry matches if it has at least one of the given tags (OR " +
+        "within this field). Omit for no constraint.",
     ),
   from: dateSchema.optional().describe("Inclusive lower bound (YYYY-MM) of the role's date range."),
   to: dateSchema.optional().describe("Inclusive upper bound (YYYY-MM) of the role's date range."),
@@ -64,7 +65,8 @@ export const getExperienceTool: ToolDefinition<typeof inputSchema, ExperienceEnt
   title: "Get work experience",
   description:
     "Returns every entry from Marcos Alvarez's work history matching an optional structured " +
-    "filter — company, technology tags, a YYYY-MM date range, and current/past status — as a " +
+    "filter — company, technology tags (both matched case-insensitively), a YYYY-MM date " +
+    "range, and current/past status — as a " +
     "list ordered most recent first, each entry with a citation. Use this to answer 'what did " +
     "they do at company X', 'what did they work on in year Y', or 'what are they doing now'. " +
     "Called with no filter fields, it returns the full history. Do not use it for the single " +
