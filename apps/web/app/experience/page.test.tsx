@@ -1,17 +1,25 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ExperienceListView, ProfileView, ProjectListView } from "../../src/lib/content";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  EducationListView,
+  ExperienceListView,
+  ProfileView,
+  ProjectListView,
+} from "../../src/lib/content";
 
-const { getExperienceListView, getProjectsListView, getProfileView } = vi.hoisted(() => ({
-  getExperienceListView: vi.fn(),
-  getProjectsListView: vi.fn(),
-  getProfileView: vi.fn(),
-}));
+const { getExperienceListView, getProjectsListView, getProfileView, getEducationListView } =
+  vi.hoisted(() => ({
+    getExperienceListView: vi.fn(),
+    getProjectsListView: vi.fn(),
+    getProfileView: vi.fn(),
+    getEducationListView: vi.fn(),
+  }));
 
 vi.mock("../../src/lib/content", () => ({
   getExperienceListView,
   getProjectsListView,
   getProfileView,
+  getEducationListView,
 }));
 
 function profileView(): ProfileView {
@@ -85,10 +93,46 @@ function projectsView(): ProjectListView {
   };
 }
 
+function educationView(): EducationListView {
+  return {
+    items: [
+      {
+        entry: {
+          id: "fixture-degree",
+          institution: "Fixture University",
+          credential: "B.S. Fixture Studies (in progress)",
+        },
+        citation: {
+          entityType: "education",
+          entityId: "fixture-degree",
+          label: "B.S. Fixture Studies (in progress), Fixture University",
+        },
+      },
+      {
+        entry: {
+          id: "fixture-cert",
+          institution: "Fixture Institute",
+          credential: "Fixture Certification",
+          startDate: "2020-01",
+          endDate: "2020-06",
+        },
+        citation: {
+          entityType: "education",
+          entityId: "fixture-cert",
+          label: "Fixture Certification, Fixture Institute",
+        },
+      },
+    ],
+  };
+}
+
 describe("Experience page", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+  });
+  beforeEach(() => {
+    getEducationListView.mockReturnValue(educationView());
   });
 
   it("renders every experience entry from the stubbed content layer, in the order returned", async () => {
@@ -99,7 +143,38 @@ describe("Experience page", () => {
     render(await ExperiencePage());
 
     const headings = screen.getAllByRole("heading", { level: 2 });
-    expect(headings.map((heading) => heading.textContent)).toEqual(["Later Co", "Earlier Co"]);
+    expect(headings.map((heading) => heading.textContent)).toEqual([
+      "Later Co",
+      "Earlier Co",
+      "Education",
+    ]);
+  });
+
+  it("renders an Education section from the stubbed content layer, in the order returned (#231)", async () => {
+    getExperienceListView.mockReturnValue(experienceView());
+    getProjectsListView.mockReturnValue(projectsView());
+    const { default: ExperiencePage } = await import("./page.js");
+
+    render(await ExperiencePage());
+
+    expect(screen.getByRole("heading", { level: 2, name: "Education" })).toBeDefined();
+    expect(screen.getByText("Fixture University")).toBeDefined();
+    expect(screen.getByText("B.S. Fixture Studies (in progress)")).toBeDefined();
+    expect(screen.getByText("Fixture Institute")).toBeDefined();
+    // Authored dates render as a period; the in-progress entry with no
+    // dates on record renders none rather than a fabricated one.
+    expect(screen.getByText("2020-01 – 2020-06")).toBeDefined();
+  });
+
+  it("renders no Education section at all when the content layer has no education records (#231)", async () => {
+    getExperienceListView.mockReturnValue(experienceView());
+    getProjectsListView.mockReturnValue(projectsView());
+    getEducationListView.mockReturnValue({ items: [] });
+    const { default: ExperiencePage } = await import("./page.js");
+
+    render(await ExperiencePage());
+
+    expect(screen.queryByRole("heading", { level: 2, name: "Education" })).toBeNull();
   });
 
   it("renders company, period, summary, highlights and tech for each entry", async () => {
