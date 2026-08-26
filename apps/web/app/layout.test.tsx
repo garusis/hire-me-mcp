@@ -59,6 +59,33 @@ describe("generateMetadata", () => {
     expect(metadata.description).toBe("A fixture summary of Ada.");
   });
 
+  it("prefers the profile's purpose-written shortSummary for description and social cards (issue 236)", async () => {
+    const view = profileView();
+    view.profile.shortSummary = "A short, share-sized fixture summary.";
+    getProfileView.mockReturnValue(view);
+    getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
+    getRobotsIndexable.mockReturnValue(true);
+    const { generateMetadata } = await import("./layout.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.description).toBe("A short, share-sized fixture summary.");
+    expect(metadata.openGraph?.description).toBe("A short, share-sized fixture summary.");
+    expect(metadata.twitter?.description).toBe("A short, share-sized fixture summary.");
+  });
+
+  it("carries the headline into og:title/twitter:title — a share preview titled with more than a bare name (issue 236)", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
+    getRobotsIndexable.mockReturnValue(true);
+    const { generateMetadata } = await import("./layout.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.openGraph?.title).toBe("Ada Fixture — Fixture Engineer");
+    expect(metadata.twitter?.title).toBe("Ada Fixture — Fixture Engineer");
+  });
+
   it("sets metadataBase from the configured site URL, so relative canonical/OG URLs resolve against it", async () => {
     getProfileView.mockReturnValue(profileView());
     getSiteUrl.mockReturnValue("https://stub-deploy.example.com");

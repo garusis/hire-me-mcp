@@ -46,7 +46,7 @@ const FIXTURE_VIEW: CvView = {
 const REAL_CAREER_STRINGS = [
   "House Numbers",
   "garusis@gmail.com",
-  "Cucuta",
+  "Cúcuta",
   "Marcos Javier Alvarez",
 ];
 

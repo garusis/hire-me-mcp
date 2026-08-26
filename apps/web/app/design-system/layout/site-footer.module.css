@@ -4,9 +4,21 @@
 }
 
 .inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
   padding-block: var(--space-5);
   color: var(--color-fg-muted);
   font-size: var(--text-sm);
+}
+
+/* Contact/profile + meta links (issue 228) — one wrapping row. */
+.linkRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
 }
 
 /*
@@ -14,8 +26,8 @@
  * AA contrast (4.5:1) against `--color-bg`, not against this footer's
  * `--color-bg-subtle` — 4.14:1 in the light theme, a "serious" axe
  * color-contrast violation. `--color-fg-muted` clears AA against
- * `--color-bg-subtle` in both themes (light 5.94:1, dark 7.52:1), so the
- * footer's one link uses that instead of the plain accent treatment.
+ * `--color-bg-subtle` in both themes (light 5.94:1, dark 7.52:1), so every
+ * footer link uses that instead of the plain accent treatment.
  * Two chained class selectors (0,2,0) so this reliably outranks `Link`'s
  * own single-class `.link` rule (0,1,0) regardless of CSS Modules' build
  * output order.

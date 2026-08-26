@@ -2,6 +2,20 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // #235 — every HTML route here renders dynamically (the per-request CSP
+  // nonce in `middleware.ts` forces it), and Next 15 *streams* metadata on
+  // dynamic routes for any user agent not matching `htmlLimitedBots`: the
+  // `<title>`, canonical and og:/twitter: tags arrive as tags appended
+  // ~20 KB into `<body>`, not in `<head>`. Browsers and JS-executing
+  // crawlers cope; the link-preview scrapers a portfolio URL actually
+  // travels through (Slack, LinkedIn, WhatsApp, iMessage) read only the
+  // head or a byte-limited prefix and render a bare URL. The wildcard
+  // treats every user agent as HTML-limited, disabling streaming metadata
+  // entirely (per Next's own `htmlLimitedBots` docs) so metadata always
+  // blocks into `<head>`. The TTFB cost is nil here: every
+  // `generateMetadata` in this app is a synchronous read of the local
+  // career-data content layer.
+  htmlLimitedBots: /.*/,
   // The `/api/mcp` route reads `packages/career-data/content/**` via `fs`
   // at request time, through a `node:path`-computed path
   // (`resolveDefaultContentDir()` in `packages/career-data/src/index.ts`)
