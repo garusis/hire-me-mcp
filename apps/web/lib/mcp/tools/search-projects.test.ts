@@ -2,6 +2,7 @@ import type { CareerDataRepository, DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { withCitationSiteUrls } from "../citation-site-urls.js";
 import { createToolExecutor } from "../define-tool.js";
 import { searchProjectsTool } from "./search-projects.js";
 
@@ -73,7 +74,7 @@ describe("searchProjectsTool", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({
       data: domainResult.data,
-      citations: domainResult.citations,
+      citations: withCitationSiteUrls(domainResult.citations),
     });
   });
 
@@ -119,7 +120,7 @@ describe("searchProjectsTool", () => {
     const result = await executor({ query: "typescript" });
 
     const structuredContent = result.structuredContent as { citations: unknown };
-    expect(structuredContent.citations).toStrictEqual(citations);
+    expect(structuredContent.citations).toStrictEqual(withCitationSiteUrls(citations));
   });
 
   it("maps invalid input (missing required query) to a sanitized invalid_input error", async () => {

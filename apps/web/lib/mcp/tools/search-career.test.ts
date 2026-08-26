@@ -177,13 +177,13 @@ describe("searchCareerTool", () => {
     ]);
   });
 
-  it("omits citationUrl for a hit whose citation has no url", async () => {
+  it("falls back to the canonical site page as citationUrl for a hit whose citation has no external url (#247)", async () => {
     fakeSearchCareer.mockResolvedValue(
       fixtureResult({
         results: [
           {
             text: "Built a CI/CD pipeline.",
-            score: 0.6,
+            score: 0.7,
             citation: { entityType: "project", entityId: "ci-pipeline", label: "CI Pipeline" },
             sourceType: "project",
             sourceId: "ci-pipeline",
@@ -196,8 +196,12 @@ describe("searchCareerTool", () => {
 
     const result = await executor({ query: "CI/CD" });
 
-    const structuredContent = result.structuredContent as { data: { results?: unknown[] } };
-    expect(structuredContent.data.results?.[0]).not.toHaveProperty("citationUrl");
+    const structuredContent = result.structuredContent as {
+      data: { results?: Array<{ citationUrl?: string }> };
+    };
+    expect(structuredContent.data.results?.[0]?.citationUrl).toBe(
+      "http://localhost:3000/projects/ci-pipeline",
+    );
   });
 
   it("returns an explicit found:false 'no relevant content found' result for an empty match set, not an empty blob", async () => {

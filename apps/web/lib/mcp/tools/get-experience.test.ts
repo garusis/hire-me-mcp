@@ -1,6 +1,7 @@
 import type { CareerDataRepository, DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCitationSiteUrls } from "../citation-site-urls.js";
 import { createToolExecutor } from "../define-tool.js";
 import { getExperienceTool } from "./get-experience.js";
 
@@ -59,7 +60,7 @@ describe("getExperienceTool", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({
       data: domainResult.data,
-      citations: domainResult.citations,
+      citations: withCitationSiteUrls(domainResult.citations),
     });
   });
 
@@ -104,7 +105,7 @@ describe("getExperienceTool", () => {
     const result = await executor({});
 
     const structuredContent = result.structuredContent as { citations: unknown };
-    expect(structuredContent.citations).toStrictEqual(citations);
+    expect(structuredContent.citations).toStrictEqual(withCitationSiteUrls(citations));
   });
 
   it("passes an unusual/arbitrary domain payload through unmodified — no reshaping of handler output", async () => {

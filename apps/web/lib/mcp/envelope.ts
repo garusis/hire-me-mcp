@@ -7,18 +7,21 @@
  * one object; there is no second, independently-built rendering that could
  * drift from the first.
  *
- * Citations pass through verbatim: `structuredContent.citations` IS
- * `domainResult.citations`, unmodified, so no field can be added, dropped,
- * or renamed without changing this file (see the citation contract tests in
- * `define-tool.test.ts`).
+ * Citations pass through with exactly ONE derived addition (#247): every
+ * citation is guaranteed a `url` — its own external canonical URL when the
+ * domain layer provided one, otherwise the citation's page on this site
+ * (`citation-site-urls.ts`). No authored field is ever dropped, renamed, or
+ * rewritten — see the citation contract tests in `define-tool.test.ts` and
+ * `envelope.test.ts`.
  */
 
 import type { DomainResult } from "@hire-me-mcp/core";
+import { type CitedWithUrl, withCitationSiteUrls } from "./citation-site-urls";
 
 /** The `structuredContent` shape every successful tool result carries. */
 export interface ToolSuccessContent<T> {
   data: T;
-  citations: DomainResult<T>["citations"];
+  citations: CitedWithUrl[];
 }
 
 /**
@@ -37,14 +40,14 @@ export interface ToolSuccessResult<T> {
 
 /**
  * Serializes a domain service's {@link DomainResult} into the shared success
- * envelope. `citations` passes through unmodified — this function never
- * rebuilds, reorders, or filters it; it only wraps `data` and `citations`
- * into one object and serializes that object once.
+ * envelope. `citations` keeps the domain layer's order and every authored
+ * field; the single transformation applied is `withCitationSiteUrls`
+ * (#247), which guarantees each citation a resolvable `url`.
  */
 export function buildToolSuccessResult<T>(domainResult: DomainResult<T>): ToolSuccessResult<T> {
   const structuredContent: ToolSuccessContent<T> = {
     data: domainResult.data,
-    citations: domainResult.citations,
+    citations: withCitationSiteUrls(domainResult.citations),
   };
   const text = JSON.stringify(structuredContent);
   return {

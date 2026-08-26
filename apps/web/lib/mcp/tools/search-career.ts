@@ -50,6 +50,7 @@ import {
   RELEVANCE_FLOOR,
 } from "@hire-me-mcp/core/search-career";
 import { z } from "zod";
+import { resolveCitationSiteUrl } from "../citation-site-urls";
 import type { ToolDefinition } from "../define-tool";
 import { getSearchCareer } from "../search-career-instance";
 
@@ -62,8 +63,8 @@ export interface SearchCareerHit {
   sourceId: string;
   /** Human-readable citation label — quote this alongside `text` when relaying the excerpt. */
   citation: string;
-  /** Canonical external URL for the source record, when it has one. */
-  citationUrl?: string;
+  /** The chunk's own external canonical URL when it has one, otherwise the source record's page on this site (#247). */
+  citationUrl: string;
 }
 
 /** `search-career`'s result: either ranked hits, or an explicit "nothing above threshold" outcome. */
@@ -193,7 +194,10 @@ export const searchCareerTool: ToolDefinition<typeof inputSchema, SearchCareerTo
       sourceType: item.sourceType,
       sourceId: item.sourceId,
       citation: item.citation.label,
-      ...(item.citation.url === undefined ? {} : { citationUrl: item.citation.url }),
+      // The chunk's own external canonical url when it has one, otherwise
+      // the source record's page on this site (#247) — every hit is
+      // linkable back to its source.
+      citationUrl: resolveCitationSiteUrl(item.citation),
     }));
 
     return {

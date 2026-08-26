@@ -1,6 +1,7 @@
 import type { CareerDataRepository, DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCitationSiteUrls } from "../citation-site-urls.js";
 import { createToolExecutor } from "../define-tool.js";
 import { listEducationTool } from "./list-education.js";
 
@@ -67,7 +68,7 @@ describe("listEducationTool", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({
       data: fixtureEntries,
-      citations: fixtureCitations,
+      citations: withCitationSiteUrls(fixtureCitations),
     });
   });
 
@@ -81,7 +82,7 @@ describe("listEducationTool", () => {
     const result = await executor({});
 
     const structuredContent = result.structuredContent as { citations: unknown };
-    expect(structuredContent.citations).toStrictEqual(fixtureCitations);
+    expect(structuredContent.citations).toStrictEqual(withCitationSiteUrls(fixtureCitations));
   });
 
   it("passes an empty result through as data — never converts it to an error", async () => {

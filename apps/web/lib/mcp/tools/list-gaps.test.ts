@@ -1,6 +1,7 @@
 import type { CareerDataRepository, DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCitationSiteUrls } from "../citation-site-urls.js";
 import { createToolExecutor } from "../define-tool.js";
 import { listGapsTool } from "./list-gaps.js";
 
@@ -48,7 +49,7 @@ describe("listGapsTool", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({
       data: [fixtureGap],
-      citations: fixtureCitations,
+      citations: withCitationSiteUrls(fixtureCitations),
     });
   });
 
@@ -69,7 +70,7 @@ describe("listGapsTool", () => {
     const result = await executor({});
 
     const structuredContent = result.structuredContent as { citations: unknown };
-    expect(structuredContent.citations).toStrictEqual(fixtureCitations);
+    expect(structuredContent.citations).toStrictEqual(withCitationSiteUrls(fixtureCitations));
   });
 
   it("passes an empty result through as data — never converts it to an error", async () => {

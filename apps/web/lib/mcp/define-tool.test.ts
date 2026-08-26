@@ -1,6 +1,7 @@
 import type { Citation, DomainResult } from "@hire-me-mcp/core";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { withCitationSiteUrls } from "./citation-site-urls.js";
 import { createToolExecutor, defineTool, type ToolDefinition } from "./define-tool.js";
 import { ToolDomainError } from "./errors.js";
 
@@ -33,7 +34,7 @@ describe("createToolExecutor", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({
       data: domainResult.data,
-      citations: domainResult.citations,
+      citations: withCitationSiteUrls(domainResult.citations),
     });
   });
 
@@ -50,7 +51,7 @@ describe("createToolExecutor", () => {
 
     expect(result.isError).toBeUndefined();
     const structuredContent = result.structuredContent as { citations: Citation[] };
-    expect(structuredContent.citations).toStrictEqual(citations);
+    expect(structuredContent.citations).toStrictEqual(withCitationSiteUrls(citations));
   });
 
   it("keeps a domain gap/not-claimed outcome a SUCCESSFUL result, not an error or empty result", async () => {
