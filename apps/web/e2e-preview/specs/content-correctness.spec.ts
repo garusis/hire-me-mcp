@@ -20,6 +20,41 @@ test("home page renders the real profile headline and name", async ({ gotoRoute,
   await expect(page.getByText(profile.summary, { exact: true })).toBeVisible();
 });
 
+test("home page hero surfaces the real location and remote status (#229)", async ({
+  gotoRoute,
+  page,
+}) => {
+  await gotoRoute("/");
+  await expect(page.getByText(profile.location, { exact: true })).toBeVisible();
+});
+
+test("footer surfaces every real profile contact on every page (#228)", async ({
+  gotoRoute,
+  page,
+}) => {
+  await gotoRoute("/");
+  const footer = page.getByRole("contentinfo");
+  for (const contact of profile.contacts) {
+    // External links append a hidden "(opens in a new tab)" hint to the
+    // accessible name, so match the authored label as a prefix.
+    const link = footer.getByRole("link", { name: new RegExp(`^${contact.label}`) });
+    await expect(link).toHaveAttribute("href", contact.url);
+  }
+});
+
+test("experience page renders the real education records (#231)", async ({ gotoRoute, page }) => {
+  if (dataset.education.length === 0) {
+    test.skip(true, "no education entries authored");
+    return;
+  }
+  await gotoRoute("/experience");
+  await expect(page.getByRole("heading", { level: 2, name: "Education" })).toBeVisible();
+  for (const entry of dataset.education) {
+    await expect(page.getByText(entry.institution, { exact: true })).toBeVisible();
+    await expect(page.getByText(entry.credential, { exact: true })).toBeVisible();
+  }
+});
+
 test("experience page renders the latest real experience entry", async ({ gotoRoute, page }) => {
   const [latest] = experience;
   if (latest === undefined) {

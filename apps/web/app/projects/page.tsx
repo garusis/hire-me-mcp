@@ -14,6 +14,7 @@ import {
   computeTagOptions,
   filterProjectsByTags,
   parseSelectedTags,
+  partitionSelectedTags,
   TAGS_PARAM,
   toggleTagHref,
 } from "./filters";
@@ -71,6 +72,16 @@ function ProjectCard({ item }: { item: ProjectListItemView }) {
 function FilterControls({ options, selectedTags }: { options: string[]; selectedTags: string[] }) {
   return (
     <nav aria-label="Filter projects by technology" className={styles.filterNav}>
+      {/* issue 252 — a visible label and stated semantics, so the tag row reads
+          as a filter (and as an AND filter) to sighted visitors, not just
+          to assistive tech via the nav's accessible name. */}
+      <p className={styles.filterLabel}>
+        Filter by technology
+        <span className={styles.filterHint}>
+          {" "}
+          — selecting several tags narrows to projects matching all of them
+        </span>
+      </p>
       <ul className={styles.filterList}>
         {options.map((tag) => {
           const selected = selectedTags.includes(tag);
@@ -116,17 +127,38 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
   const params = await searchParams;
   const { items } = getProjectsListView();
   const options = computeTagOptions(items);
-  const selectedTags = parseSelectedTags(params[TAGS_PARAM]);
-  const filtered = filterProjectsByTags(items, selectedTags);
+  // issue 252 — unknown tags (typos, stale shared links) are called out and
+  // ignored rather than silently guaranteeing an empty page; filtering
+  // runs on the known tags only.
+  const { knownTags, unknownTags } = partitionSelectedTags(
+    parseSelectedTags(params[TAGS_PARAM]),
+    options,
+  );
+  const filtered = filterProjectsByTags(items, knownTags);
 
   return (
     <Section>
       <Container>
         <Heading level={1}>Projects</Heading>
-        <FilterControls options={options} selectedTags={selectedTags} />
+        <FilterControls options={options} selectedTags={knownTags} />
+        {unknownTags.length > 0 && (
+          <Prose>
+            <p>
+              Ignored {unknownTags.length === 1 ? "an unknown tag" : "unknown tags"} from the URL:{" "}
+              {unknownTags.join(", ")} — {unknownTags.length === 1 ? "it isn't" : "they aren't"} a
+              technology any project here lists.
+            </p>
+          </Prose>
+        )}
         {filtered.length === 0 ? (
           <Prose>
-            <p>No projects match the selected filters.</p>
+            {/* issue 252 — the empty state says which filters are active and why
+                nothing matched, instead of silently emptying the page. */}
+            <p>
+              No single project uses all of the selected tags ({knownTags.join(", ")}). Tags combine
+              as AND — deselect one to widen the results, or{" "}
+              <Link href="/projects">clear the filters</Link>.
+            </p>
           </Prose>
         ) : (
           <ul className={styles.list}>

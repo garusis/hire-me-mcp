@@ -1,3 +1,4 @@
+import { dataset } from "../helpers/dataset";
 import { expect, test } from "../helpers/fixtures";
 import { ROUTES } from "../helpers/routes";
 
@@ -26,13 +27,22 @@ for (const route of ROUTES) {
   });
 }
 
+// #233 — Writing is promoted in the header only once something is actually
+// published there, so it's part of the nav walk only when the dataset (the
+// same independent reader the content-correctness specs use) has entries.
+const NAV_PATHS = [
+  "/",
+  "/experience",
+  "/projects",
+  "/skills",
+  ...(dataset.writing.length > 0 ? ["/writing"] : []),
+];
+
 test("header navigation reaches every top-level route", async ({ gotoRoute, page }) => {
   await gotoRoute("/");
   const nav = page.getByRole("navigation", { name: "Primary" });
 
-  for (const { path, heading } of ROUTES.filter((route) =>
-    ["/", "/experience", "/projects", "/skills", "/writing"].includes(route.path),
-  )) {
+  for (const { path, heading } of ROUTES.filter((route) => NAV_PATHS.includes(route.path))) {
     const label = heading === "Marcos Javier Alvarez" ? "Home" : heading;
     await nav.getByRole("link", { name: label, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${path === "/" ? "/$" : `${path}$`}`));

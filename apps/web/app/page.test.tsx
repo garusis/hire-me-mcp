@@ -521,3 +521,63 @@ describe("Home page metadata", () => {
     expect(metadata.alternates?.canonical).toBe("/");
   });
 });
+
+describe("Home highlight links (issues 229 and 234)", () => {
+  beforeEach(() => {
+    stubBaseContent();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("shows the profile's location and remote status next to the availability badge (issue 229)", async () => {
+    render(await Home());
+
+    const heroRegion = screen.getByRole("region", { name: "Ada Stubwell" });
+    expect(within(heroRegion).getByText("Remote")).toBeDefined();
+  });
+
+  it("changing the stubbed location changes the hero (issue 229) — no hardcoded place", async () => {
+    getProfileView.mockReturnValue(buildProfile({ location: "Stubville, Testland (Remote)" }));
+    render(await Home());
+
+    expect(screen.getByText("Stubville, Testland (Remote)")).toBeDefined();
+  });
+
+  it("links every experience highlight card into its /experience entry anchor (issue 234)", async () => {
+    render(await Home());
+
+    for (const slug of ["recent-role", "older-role", "oldest-role"]) {
+      const link = screen.getByRole("link", { name: new RegExp(`${slug}-role, ${slug}-co`) });
+      expect(link).toHaveAttribute("href", `/experience#${slug}`);
+    }
+  });
+
+  it("links every project highlight card to its project page (issue 234), like the flagship always did", async () => {
+    render(await Home());
+
+    for (const slug of ["first-project", "second-project", "third-project"]) {
+      const link = screen.getByRole("link", { name: `${slug}-name` });
+      expect(link).toHaveAttribute("href", `/projects/${slug}`);
+    }
+  });
+
+  it("ends each highlight rail with a see-all link (issue 234)", async () => {
+    render(await Home());
+
+    expect(screen.getByRole("link", { name: "See full experience" })).toHaveAttribute(
+      "href",
+      "/experience",
+    );
+    expect(screen.getByRole("link", { name: "See all projects" })).toHaveAttribute(
+      "href",
+      "/projects",
+    );
+    expect(screen.getByRole("link", { name: "See all skills and evidence" })).toHaveAttribute(
+      "href",
+      "/skills",
+    );
+  });
+});

@@ -1,5 +1,5 @@
 import { EXPECTED_TOOL_NAMES } from "../../lib/mcp/tool-names";
-import { dataset, slugify } from "../helpers/dataset";
+import { dataset, profile, slugify } from "../helpers/dataset";
 import { expect, test } from "../helpers/fixtures";
 import { ROUTES } from "../helpers/routes";
 
@@ -83,6 +83,54 @@ for (const route of ROUTES) {
     expect(await twitterCard.getAttribute("content")).toBe("summary_large_image");
   });
 }
+
+for (const route of ROUTES) {
+  test(`${route.name} emits title and social metadata inside <head>, not streamed into <body> (#235)`, async ({
+    request,
+    baseURL,
+  }) => {
+    // Raw HTML fetch with no JS execution — exactly what a link-preview
+    // scraper (Slack, LinkedIn, WhatsApp) sees. Next 15 streams metadata
+    // into <body> on dynamic routes unless configured otherwise
+    // (`htmlLimitedBots` in next.config.ts); this pins the configuration.
+    const response = await request.get(`${baseURL}${route.path}`);
+    expect(response.ok()).toBe(true);
+    const html = await response.text();
+    const headEnd = html.indexOf("</head>");
+    expect(headEnd).toBeGreaterThan(-1);
+    for (const marker of [
+      "<title",
+      'property="og:title"',
+      'property="og:description"',
+      'property="og:image"',
+      'name="twitter:card"',
+      'rel="canonical"',
+    ]) {
+      const at = html.indexOf(marker);
+      expect(at, `${marker} must be present in the raw HTML`).toBeGreaterThan(-1);
+      expect(at, `${marker} must appear before </head>`).toBeLessThan(headEnd);
+    }
+  });
+}
+
+test("the home og:description is share-preview sized and og:title carries the headline (#236)", async ({
+  gotoRoute,
+  page,
+}) => {
+  await gotoRoute("/");
+
+  const ogDescription = await page
+    .locator('meta[property="og:description"]')
+    .getAttribute("content");
+  expect(ogDescription).toBeTruthy();
+  // The profile schema caps `shortSummary` at 200 chars; share previews and
+  // SERP snippets truncate around 120-200, so the emitted description must
+  // never regress to the full About paragraph.
+  expect(ogDescription?.length).toBeLessThanOrEqual(200);
+
+  const ogTitle = await page.locator('meta[property="og:title"]').getAttribute("content");
+  expect(ogTitle).toBe(`${profile.name} — ${profile.headline}`);
+});
 
 test("the default Open Graph image endpoint returns an image at least 1200x630", async ({
   request,
