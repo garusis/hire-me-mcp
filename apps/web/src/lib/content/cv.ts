@@ -13,9 +13,10 @@
  */
 
 import "server-only";
-import type { EducationEntry, Profile, Skill } from "@hire-me-mcp/career-data";
+import type { EducationEntry, Profile, Project, Skill } from "@hire-me-mcp/career-data";
 import type { CareerDataRepository } from "@hire-me-mcp/core";
 import { slugify } from "@hire-me-mcp/core/slugify";
+import { sortFeaturedFirst } from "./projects";
 import { getCareerDataRepository } from "./repository";
 
 /** One experience entry trimmed for the CV: authored company/role/dates plus a capped highlight list. */
@@ -33,9 +34,23 @@ export interface CvSkillGroupView {
   names: string[];
 }
 
+/**
+ * One project trimmed for the CV (#232): name, role, one-line summary and
+ * the authored links (which for the flagship project include the public
+ * MCP endpoint) — no long-form `body` prose on a 1–2 page document.
+ */
+export interface CvProjectItemView {
+  name: string;
+  role: string;
+  summary: string;
+  links: Project["links"];
+}
+
 export interface CvView {
   profile: Profile;
   experience: CvExperienceItemView[];
+  /** Featured-first (#191's content-driven flag), then dataset order — the same ordering `/projects` uses. */
+  projects: CvProjectItemView[];
   skillsByProficiency: CvSkillGroupView[];
   education: EducationEntry[];
   /** Deterministic, human-meaningful download filename derived from `profile.name` — never hardcoded. */
@@ -117,9 +132,17 @@ export function getCvView(
     }))
     .sort(compareExperienceMostRecentFirst);
 
+  const projects = sortFeaturedFirst(dataset.projects).map((project) => ({
+    name: project.name,
+    role: project.role,
+    summary: project.summary,
+    links: project.links,
+  }));
+
   return {
     profile: dataset.profile,
     experience,
+    projects,
     skillsByProficiency: buildSkillGroups(dataset.skills),
     education: dataset.education,
     filename: `${slugify(dataset.profile.name)}-cv.pdf`,
