@@ -15,8 +15,11 @@ function requestBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function jsonRequest(body: unknown, init?: { signal?: AbortSignal; ip?: string }): Request {
-  const headers: Record<string, string> = { "content-type": "application/json" };
+function jsonRequest(
+  body: unknown,
+  init?: { signal?: AbortSignal; ip?: string; headers?: Record<string, string> },
+): Request {
+  const headers: Record<string, string> = { "content-type": "application/json", ...init?.headers };
   if (init?.ip) headers["x-forwarded-for"] = init.ip;
   return new Request("http://localhost/api/chat", {
     method: "POST",
@@ -539,6 +542,108 @@ describe("POST /api/chat", () => {
       );
       expect(rejection).toBeDefined();
       expect(rejection?.sessionId).toBe(SESSION_ID);
+    });
+  });
+
+  /**
+   * #264: the scripted, model-free path the required preview gate asserts
+   * against. Every test here constructs the handler with NO injected model —
+   * if the scripted path were not taken, `getInterviewAgent()` would run and
+   * these would fail rather than quietly making a real call.
+   */
+  describe("scripted preview-gate scenarios (#264)", () => {
+    const SECRET = "test-automation-secret";
+
+    beforeEach(() => {
+      vi.stubEnv("VERCEL_ENV", "preview");
+      vi.stubEnv("VERCEL_AUTOMATION_BYPASS_SECRET", SECRET);
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    /** `secret: null` omits the automation-secret header entirely. */
+    function scenarioHeaders(scenario: string, secret: string | null = SECRET) {
+      return {
+        "x-chat-test-scenario": scenario,
+        ...(secret === null ? {} : { "x-chat-test-secret": secret }),
+      };
+    }
+
+    it("streams the scripted grounded answer without ever constructing the agent", async () => {
+      const POST = createChatPostHandler();
+
+      const response = await POST(
+        jsonRequest(requestBody(), { headers: scenarioHeaders("grounded-citations") }),
+      );
+      const chunks = await parseSseChunks(response);
+
+      expect(response.status).toBe(200);
+      expect(textOf(chunks)).toContain("deterministic-chat-fixture");
+      expect(textOf(chunks)).toContain("[cite:experience:");
+      expect(chunks.some((chunk) => chunk.type === "tool-output-available")).toBe(true);
+      expect(chunks.find((chunk) => chunk.type === "error")).toBeUndefined();
+    });
+
+    it("streams the scripted rate_limited envelope for the provider-error scenario", async () => {
+      const POST = createChatPostHandler();
+
+      const response = await POST(
+        jsonRequest(requestBody(), { headers: scenarioHeaders("provider-rate-limited") }),
+      );
+      const chunks = await parseSseChunks(response);
+
+      const errorChunk = chunks.find((chunk) => chunk.type === "error");
+      expect(errorChunk).toBeDefined();
+      expect(JSON.parse(errorChunk?.errorText as string)).toEqual({
+        code: "rate_limited",
+        message:
+          "The model provider is rate-limiting requests right now. Please try again shortly.",
+      });
+    });
+
+    it("refuses the scenario in production — never falls through to the live model", async () => {
+      vi.stubEnv("VERCEL_ENV", "production");
+      const POST = createChatPostHandler();
+
+      const response = await POST(
+        jsonRequest(requestBody(), { headers: scenarioHeaders("grounded-citations") }),
+      );
+      const body = (await response.json()) as { error: { code: string } };
+
+      expect(response.status).toBe(400);
+      expect(body.error.code).toBe("invalid_request");
+    });
+
+    it("refuses the scenario without the automation secret", async () => {
+      const POST = createChatPostHandler();
+
+      const response = await POST(
+        jsonRequest(requestBody(), { headers: scenarioHeaders("grounded-citations", null) }),
+      );
+
+      expect(response.status).toBe(400);
+    });
+
+    it("still enforces the request schema on a scripted turn (#222's regression surface)", async () => {
+      const POST = createChatPostHandler();
+
+      const response = await POST(
+        jsonRequest(
+          requestBody({
+            messages: [
+              // A replayed assistant turn's `step-start` part, which
+              // `app/chat/to-request-messages.ts` must strip before sending.
+              { id: "m1", role: "assistant", parts: [{ type: "step-start" }] },
+              { id: "m2", role: "user", parts: [{ type: "text", text: "And then?" }] },
+            ],
+          }),
+          { headers: scenarioHeaders("grounded-citations") },
+        ),
+      );
+
+      expect(response.status).toBe(400);
     });
   });
 });

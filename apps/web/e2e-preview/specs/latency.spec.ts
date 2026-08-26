@@ -153,7 +153,14 @@ for (const [toolName, toolBudget] of Object.entries(budgets.latency.mcpTools.too
   });
 }
 
-test("chat: p75 time-to-first-stream-event stays within budget", async () => {
+// #264: six REAL model calls — the single largest consumer of the shared
+// free-tier daily budget, and meaningless when the provider is capped (a
+// rate-limit error streams back in milliseconds, which would score as a
+// FASTER first event). Tagged so it runs only in the non-required
+// `preview-chat-live` lane; see playwright.preview.config.ts's LIVE_MODEL_TAG.
+test("chat: p75 time-to-first-stream-event stays within budget", {
+  tag: "@live-model",
+}, async () => {
   const chatBudget = budgets.latency.chat;
   const totalCalls = chatBudget.warmupCalls + chatBudget.sampleCalls;
   expect(
