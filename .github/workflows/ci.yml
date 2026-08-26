@@ -320,6 +320,32 @@ jobs:
   # deployed /api/mcp) — in the same run, deliberately reusing this job/config
   # rather than a separate one so preview-targeting reporting stays in one
   # place. See apps/web/README.md and the root README's preview-gates section.
+  #
+  # ## No live model calls in this job (#264)
+  #
+  # This is a REQUIRED check, so nothing it runs may depend on a third
+  # party's free-tier daily allowance. It used to: two live-model chat
+  # conversations plus six live chat-latency samples ran here, and when the
+  # Preview-scoped Google project hit its 500 requests/day cap they failed on
+  # EVERY open PR regardless of content (#259/#262/#263, same day, identical
+  # failures) — a merge queue gated on a quota reset.
+  #
+  # Letting the required check pass when the provider misbehaves was rejected
+  # as a merge bypass. Instead the chat contract is now asserted
+  # DETERMINISTICALLY here (chat-deterministic.spec.ts, driven by
+  # apps/web/lib/chat/test-scenarios.ts's scripted, production-impossible
+  # response path — citation rendering for every entity type, the honest
+  # error copy, the #222 multi-turn sanitizer), and the live-model proof moved
+  # to the separate, NON-required `preview-chat-live` workflow. The
+  # `test:e2e:preview` script pins the three model-free projects by name;
+  # anything tagged `@live-model` can only run in the other lane. Quota can
+  # no longer make this check red OR green.
+  #
+  # VERCEL_AUTOMATION_BYPASS_SECRET (already passed below for Deployment
+  # Protection) doubles as the credential that unlocks the scripted path —
+  # no new secret. The `gemini-free-tier` concurrency group below is kept:
+  # this job no longer calls the model, but it still shares the deployment's
+  # Upstash rate-limit window with the other preview-targeting jobs.
   preview-e2e:
     name: preview-e2e
     if: github.event_name == 'pull_request'

@@ -247,9 +247,13 @@ BASE_URL=http://127.0.0.1:3100 pnpm test:e2e:preview:ui   # interactive UI mode
 #    one project detail, /privacy, the CV print view and /mcp:
 BASE_URL=http://127.0.0.1:3100 pnpm run lighthouse
 
-# 4. Latency budget gate — MCP read-tool + chat time-to-first-stream-event
-#    percentile thresholds (#62):
-BASE_URL=http://127.0.0.1:3100 pnpm exec playwright test -c playwright.preview.config.ts apps/web/e2e-preview/specs/latency.spec.ts
+# 4. Latency budget gate — MCP read-tool percentile thresholds (#62):
+BASE_URL=http://127.0.0.1:3100 pnpm exec playwright test -c playwright.preview.config.ts --project=chromium-latency
+
+# 5. Live-model lane (#264) — the grounded/gap chat conversations and the chat
+#    time-to-first-stream-event budget. Real Gemini calls; never part of a
+#    required check. See "Chat specs: two lanes" below:
+BASE_URL=http://127.0.0.1:3100 pnpm test:e2e:preview:live
 ```
 
 Against a Vercel Deployment-Protection-guarded preview, also set
@@ -302,14 +306,98 @@ PR's preview URL via the shared `.github/actions/resolve-vercel-preview` composi
 (rather than fail red) when `VERCEL_AUTOMATION_BYPASS_SECRET` is unavailable (fork PRs never
 receive repo secrets) or no ready preview deployment is found within the timeout.
 
-**Chat flow specs** (`chat-grounded.spec.ts`, `chat-gap.spec.ts`, `chat-guardrail-visibility.spec.ts`,
-#73). Live alongside the other preview-gate specs. `chat-grounded.spec.ts`/`chat-gap.spec.ts` open
-the chat widget and drive it through a grounded question (must stream an answer with a resolving
-`[cite:...]` link) and a gap question (must produce an honest acknowledgement, every experience
-claim outside it cited, using the same shared citation parser the eval scorer uses). They make two
-real free-tier model calls per `preview-e2e` run — see `packages/agent/README.md`'s quota-rationale
-table for the full budget picture. `chat-guardrail-visibility.spec.ts` stubs `POST /api/chat` and
-asserts the honest, guardrail-specific banner renders.
+### Chat specs: two lanes, one required and model-free (#264)
+
+Chat coverage is split by what it can prove, not by what it exercises.
+
+**Required lane — no model calls, ever.** `preview-e2e` runs three Playwright projects, pinned by
+name in the `test:e2e:preview` script: `chromium`, `chromium-scripted-chat` and
+`chromium-latency`. None of them can reach the model.
+
+- `chat-deterministic.spec.ts` (#264) asks the deployed `/api/chat` for a **scripted** turn and
+  asserts the product contract against it: a citation marker of every citable entity type renders
+  as a link whose href resolves to a real page and fragment; the three types the site cannot link
+  to (`profile`, `education`, `recommendation`) leave neither a link nor raw `[cite:...]` syntax
+  nor a stray `" ."`; a scripted `rate_limited` stream renders the honest, retryable banner; and a
+  scripted SECOND turn proves the multi-turn transport sanitizer (#222) still strips replayed
+  `tool-*` parts. It also asserts, on every PR, that the scripted path refuses a request without
+  the automation secret.
+- `chat-guardrail-visibility.spec.ts` (#73) stubs `POST /api/chat` client-side and asserts the
+  honest, guardrail-specific banner renders.
+- `chat-accessibility.spec.ts` scans the open widget with axe.
+
+The scripted path lives in `apps/web/lib/chat/test-scenarios.ts` and is gated three ways, all of
+which must pass: the request names a known scenario in `x-chat-test-scenario`; `VERCEL_ENV` is not
+`production`; and `x-chat-test-secret` matches the deployment's `VERCEL_AUTOMATION_BYPASS_SECRET`
+(the credential this suite already holds — no new secret) compared with `timingSafeEqual`. A
+request that names a scenario without clearing the other two gates is **refused** with 400
+`invalid_request` rather than quietly served by the real model, which is what makes "a production
+deployment rejects the flag" cheaply assertable: `scripts/ci/assert-scripted-chat-refused.mjs`,
+run as a `pnpm certify:production` step, checks it end to end for zero model spend.
+
+To run this lane locally the target build must be started with the same secret:
+
+```bash
+VERCEL_AUTOMATION_BYPASS_SECRET=local pnpm --filter @hire-me-mcp/web start -p 3100
+BASE_URL=http://127.0.0.1:3100 VERCEL_AUTOMATION_BYPASS_SECRET=local pnpm test:e2e:preview
+```
+
+**Live lane — real model, NOT required.** `chat-grounded.spec.ts`, `chat-gap.spec.ts` and
+`latency.spec.ts`'s chat probe are tagged `@live-model` and run only in the `chromium-live-model`
+project (`pnpm test:e2e:preview:live`), driven by the separate `preview-chat-live` workflow. It
+triggers on every PR but decides in-job, via `scripts/ci/eval-relevance.mjs`, whether the diff can
+change chat behaviour — most PRs spend zero quota; the `run-live-chat` label or a
+`workflow_dispatch` forces a run. Production's own live-model verification is the
+`production-chat-live` step of `pnpm certify:production`.
+
+**Why the split.** `preview-e2e` is a required check, and its chat specs used to make real
+free-tier calls. When the Preview-scoped Google project hit its 500 requests/day cap, `/api/chat`
+returned the app's own `rate_limited` envelope and both specs failed on **every** open PR
+regardless of content — #259, #262 and #263 failed identically on the same day while production
+(a different Google project) answered normally. The merge queue was gated on a quota reset.
+Detecting the condition and letting the required check pass anyway was considered and **rejected**:
+a required gate that turns green because a third party misbehaved is a merge bypass, and a PR that
+genuinely broke the chat could ride it through. Splitting the lanes removes the dependency instead
+of excusing it.
+
+**The trade-off, stated plainly.** A PR no longer gets live proof that the real model still
+produces grounded, cited answers unless it touches chat code or carries the `run-live-chat` label.
+That proof still exists — in `agent-evals` (the agent in-process), in `preview-chat-live` for
+chat-relevant PRs, and in the release-readiness certification — but it is no longer on the merge
+path. In exchange, the merge path gained assertions that are *stronger* than what the live specs
+could make (every citable entity type, exact hrefs, exact error copy) because a scripted answer is
+knowable in advance, and per-PR model spend on this surface dropped from **nine** free-tier calls
+(two grounded turns + one gap turn + six latency samples, times up to three Playwright attempts) to
+**zero**.
+
+### The three Google projects, and what a `rate_limited` failure means
+
+`gemini-3.5-flash-lite` is used from three separately-keyed Google Cloud projects, each with its
+own free-tier allowance (15 requests/minute, 500 requests/day):
+
+| Project | Backs | Key lives in |
+| --- | --- | --- |
+| **Production** | the live site's chat at the production domain, and the `production-chat-live`/`agent-evals` steps of a release certification | the Vercel Production environment's `GOOGLE_GENERATIVE_AI_API_KEY` |
+| **Preview** | every Vercel Preview deployment's interactive chat, and the `preview-chat-live` workflow that drives it | the Vercel Preview environment's `GOOGLE_GENERATIVE_AI_API_KEY` |
+| **CI** | in-process model calls that never go through a deployment — `agent-evals` (`pnpm eval:agent`) and `retrieval-eval` | the `GOOGLE_GENERATIVE_AI_API_KEY` GitHub Actions secret |
+
+They are separate so one surface cannot starve another: CI evals cannot exhaust the preview UI's
+quota, and neither can touch production's.
+
+A `rate_limited` failure means the *project behind that surface* is out of allowance for the day
+(it resets around 07:00 UTC) — not that the chat is broken. Concretely:
+
+- **In `preview-chat-live`**: expected and non-blocking. The lane is not a required check; re-run it
+  after the reset, or dispatch it. Nothing about a PR's mergeability changes.
+- **In `preview-e2e`**: impossible by construction since #264 — that job makes no model calls. If
+  you ever see `rate_limited` there, something has reintroduced a live call into the required lane;
+  fix that rather than retrying.
+- **In the deployed preview's chat UI, by hand**: the Preview project is exhausted. The banner
+  ("Too many messages right now") is the honest, intended behaviour.
+- **In `agent-evals` / `retrieval-eval`**: the CI project is exhausted. Both jobs share the
+  `gemini-free-tier` concurrency group so they queue rather than race; wait for the reset.
+
+See `packages/agent/README.md`'s quota-rationale table for the per-run call budgets.
 
 ## Performance budgets (#62)
 
@@ -335,8 +423,11 @@ server-side latency, so v1.0 quality can't regress silently after launch.
   sizes, and warm-up counts, consumed directly (not just documented) by
   `apps/web/e2e-preview/specs/latency.spec.ts`.
 
-**MCP + chat latency assertions** (`apps/web/e2e-preview/specs/latency.spec.ts`, runs inside the
-`preview-e2e` CI job — see below): one warm-up call per tool/endpoint (discarded, so a cold Lambda
+**MCP + chat latency assertions** (`apps/web/e2e-preview/specs/latency.spec.ts`). The MCP read-tool
+cases run inside the required `preview-e2e` CI job; the chat case is tagged `@live-model` and runs
+only in the non-required `preview-chat-live` lane (#264 — six real model calls must not sit on the
+merge path, and a rate-limited provider would score a *faster* first stream event, a falsely green
+measurement). Both work the same way: one warm-up call per tool/endpoint (discarded, so a cold Lambda
 invocation never pollutes the sample), then `sampleCalls` timed calls, asserting the
 `percentile`-th value (computed by `apps/web/lib/perf/percentile.ts`, unit-tested independently)
 stays under `thresholdMs`. MCP read tools (`get-profile`, `get-experience`, `search-projects`,
@@ -346,8 +437,7 @@ connection handshake never leaks into the measured duration). Chat is timed as
 completion — because free-tier `gemini-3.5-flash-lite` first-token latency is volatile (#169) and
 this is the metric with real, budgetable margin. The chat case's `warmupCalls + sampleCalls` is
 capped at `maxCallsPerCiRun` (currently 6) to keep this spec's own contribution to the shared 15
-RPM Gemini quota bounded — see `packages/agent/README.md`'s quota-rationale table for the full
-picture across every Gemini-calling spec in `preview-e2e`.
+RPM Gemini quota bounded — see `packages/agent/README.md`'s quota-rationale table.
 
 **Changing a budget deliberately.** A budget change (tightening OR loosening a threshold) must be
 its own small, reviewed commit to `performance-budgets.json` and/or `lighthouserc.json` — never
@@ -476,7 +566,10 @@ push to `main`, with five jobs:
   Playwright smoke spec against a production build).
 - **`mcp-integration`** — also runs in parallel with `quality`. A single step, `pnpm test:mcp`.
 - **`preview-e2e`** and **`lighthouse`** (`pull_request` only) — the real product e2e suite and the
-  Lighthouse gate, both run against the PR's actual Vercel preview deployment.
+  Lighthouse gate, both run against the PR's actual Vercel preview deployment. Since #264
+  `preview-e2e` makes no model calls at all: its chat assertions run against a scripted,
+  deterministic `/api/chat` response (see "Chat specs: two lanes" above), so a rate-limited
+  provider can no longer block merges.
 - **`db-integration`** (#14, #24) — runs `packages/core`'s real-Neon integration suites (see
   "Database integration tests" above) with `NEON_API_KEY`/`NEON_PROJECT_ID` available. Not in the
   required-status-checks list: like `agent-evals`/the `docs-rot-*` jobs, a Neon API hiccup or a
@@ -492,10 +585,17 @@ stays **not** in the required-status-checks list for the same fork-PR reason as 
 (no repo secrets → the skip must not block unrelated merges) — see `packages/agent/README.md`'s
 "Running evals in CI" section.
 
+A SEVENTH, [`.github/workflows/preview-chat-live.yml`](../.github/workflows/preview-chat-live.yml)
+(`preview-chat-live`, #264) drives the live-model chat conversations and the chat latency budget
+against the PR's preview deployment. It uses the same every-PR + in-job-relevance pattern
+(`run-live-chat` is its override label) and is deliberately **not** required: a rate-limited
+free tier there is an honest red that informs without blocking merges. See "Chat specs: two lanes"
+above for why that coverage moved out of `preview-e2e`.
+
 ### What triggers the eval workflows (#207)
 
-Both Gemini-spending eval workflows (`agent-evals`, `retrieval-eval`) trigger on every PR and
-decide **in-job** whether to run the real suite, via the shared
+The Gemini-spending workflows (`agent-evals`, `retrieval-eval`, `preview-chat-live`) trigger on
+every PR and decide **in-job** whether to run the real suite, via the shared
 [`scripts/ci/eval-relevance.mjs`](../scripts/ci/eval-relevance.mjs) (unit-tested:
 `pnpm ci:eval-relevance:test`). A run happens when ANY of these is true:
 
