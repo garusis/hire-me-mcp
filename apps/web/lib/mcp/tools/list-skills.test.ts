@@ -1,6 +1,7 @@
 import type { CareerDataRepository, DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCitationSiteUrls } from "../citation-site-urls.js";
 import { createToolExecutor } from "../define-tool.js";
 import { listSkillsTool } from "./list-skills.js";
 
@@ -52,7 +53,7 @@ describe("listSkillsTool", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({
       data: [fixtureSkill],
-      citations: fixtureCitations,
+      citations: withCitationSiteUrls(fixtureCitations),
     });
     expect(vi.mocked(core.listSkills)).toHaveBeenCalledWith(expect.anything(), {});
   });
@@ -89,7 +90,7 @@ describe("listSkillsTool", () => {
     const result = await executor({});
 
     const structuredContent = result.structuredContent as { citations: unknown };
-    expect(structuredContent.citations).toStrictEqual(fixtureCitations);
+    expect(structuredContent.citations).toStrictEqual(withCitationSiteUrls(fixtureCitations));
   });
 
   it("maps an invalid proficiency value to a sanitized invalid_input error", async () => {
@@ -108,5 +109,10 @@ describe("listSkillsTool", () => {
 
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
+  });
+
+  it("declares a human-readable title and an outputSchema for its structuredContent (#241, #242)", () => {
+    expect(listSkillsTool.title).toBeTruthy();
+    expect(listSkillsTool.outputSchema).toBeDefined();
   });
 });

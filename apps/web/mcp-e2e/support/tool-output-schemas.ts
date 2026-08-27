@@ -1,24 +1,18 @@
 /**
  * Structural output validation for each career tool's `structuredContent`.
  *
- * None of the five tools registered in `app/api/mcp/route.ts` currently
- * declares a Zod `outputSchema` on its `ToolDefinition` (see
- * `lib/mcp/define-tool.ts` — the field is optional, and every tool in
- * `lib/mcp/tools/` omits it today), so `tools/list` never advertises a wire
- * `outputSchema`, and the MCP SDK client therefore performs no automatic
- * output validation of its own. Rather than silently skip AC 4 ("validates
- * against the tool's declared output schema") this module builds the
- * closest honest equivalent: the real `@hire-me-mcp/career-data` Zod
- * schemas (`profileSchema`, `experienceEntrySchema`, `projectSchema`,
- * `citationSchema`) — the actual shape every domain-service `DomainResult`
- * is built from (`packages/core/src/result.ts`) — wrapped in the
- * `{ data, citations }` envelope every tool result carries
- * (`lib/mcp/envelope.ts`). This validates the real contract without
- * asserting exact career content strings (out of scope per the issue).
- *
- * Adding real per-tool `outputSchema`s to `lib/mcp/tools/*.ts` so the wire
- * protocol advertises them too is a reasonable follow-up, tracked as a
- * documented deviation in the #49 PR rather than folded into this suite.
+ * Every tool now declares its own Zod `outputSchema` (#242), so `tools/list`
+ * advertises one and the MCP SDK client validates `structuredContent`
+ * automatically. These schemas are deliberately kept as a SECOND, independent
+ * statement of the same contract: they're built here from the real
+ * `@hire-me-mcp/career-data` schemas (`profileSchema`,
+ * `experienceEntrySchema`, `projectSchema`, `citationSchema` — the actual
+ * shape every domain-service `DomainResult` is built from, see
+ * `packages/core/src/result.ts`) wrapped in the `{ data, citations }`
+ * envelope from `lib/mcp/envelope.ts`. A tool whose declared `outputSchema`
+ * drifted from the data it actually serves would pass its own self-check and
+ * still fail here. Structural only — never an exact career content string,
+ * which is out of scope per #49.
  */
 import {
   citationSchema,
@@ -26,6 +20,7 @@ import {
   experienceEntrySchema,
   profileSchema,
   projectSchema,
+  recommendationSchema,
   skillSchema,
   writingEntrySchema,
 } from "@hire-me-mcp/career-data";
@@ -75,13 +70,16 @@ export const getSkillEvidenceOutputSchema = z.object({
   data: z.discriminatedUnion("kind", [
     z.object({
       kind: z.literal("claimed"),
-      skill: z.object({
+      // The embedded skill record carries NO evidence array of its own —
+      // the outcome-level `evidence` is the one canonical copy (#245).
+      // `.strict()` pins that: a payload resurrecting `skill.evidence`
+      // fails this suite.
+      skill: z.strictObject({
         id: z.string().min(1),
         name: z.string().min(1),
         aliases: z.array(z.string()),
         category: z.string().min(1),
         proficiency: z.enum(["familiar", "proficient", "expert"]),
-        evidence: citationsSchema,
       }),
       evidence: citationsSchema,
     }),
@@ -147,5 +145,16 @@ export const listProjectsOutputSchema = z.object({
 /** `list-writing` result (#215): a list of WritingEntry plus citations (currently empty corpus). */
 export const listWritingOutputSchema = z.object({
   data: z.array(writingEntrySchema),
+  citations: citationsSchema,
+});
+
+/**
+ * `list-recommendations` result (#190): full Recommendation records —
+ * verbatim `text` plus both LinkedIn verification URLs — and citations.
+ * `.strict()` on each entry pins the wire shape: the tool is a thin
+ * adapter that must not add, rename, or drop an authored field.
+ */
+export const listRecommendationsOutputSchema = z.object({
+  data: z.array(recommendationSchema.strict()),
   citations: citationsSchema,
 });

@@ -1,6 +1,7 @@
 import type { CareerDataRepository, DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCitationSiteUrls } from "../citation-site-urls.js";
 import { createToolExecutor } from "../define-tool.js";
 import { getExperienceTool } from "./get-experience.js";
 
@@ -59,7 +60,7 @@ describe("getExperienceTool", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({
       data: domainResult.data,
-      citations: domainResult.citations,
+      citations: withCitationSiteUrls(domainResult.citations),
     });
   });
 
@@ -122,7 +123,7 @@ describe("getExperienceTool", () => {
     const result = await executor({});
 
     const structuredContent = result.structuredContent as { citations: unknown };
-    expect(structuredContent.citations).toStrictEqual(citations);
+    expect(structuredContent.citations).toStrictEqual(withCitationSiteUrls(citations));
   });
 
   it("passes an unusual/arbitrary domain payload through unmodified — no reshaping of handler output", async () => {
@@ -145,6 +146,19 @@ describe("getExperienceTool", () => {
     expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
   });
 
+  it("names the allowed status values and the received value in the validation message (#244)", async () => {
+    const executor = createToolExecutor(getExperienceTool);
+
+    const result = await executor({ status: "CURRENT" });
+
+    expect(result.isError).toBe(true);
+    const message = (result.structuredContent as { message: string }).message;
+    expect(message).toContain("status:");
+    expect(message).toContain('"current"');
+    expect(message).toContain('"past"');
+    expect(message).toContain('"CURRENT"');
+  });
+
   it("maps a malformed date (wrong type) to a sanitized invalid_input error", async () => {
     const executor = createToolExecutor(getExperienceTool);
 
@@ -152,5 +166,10 @@ describe("getExperienceTool", () => {
 
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
+  });
+
+  it("declares a human-readable title and an outputSchema for its structuredContent (#241, #242)", () => {
+    expect(getExperienceTool.title).toBeTruthy();
+    expect(getExperienceTool.outputSchema).toBeDefined();
   });
 });

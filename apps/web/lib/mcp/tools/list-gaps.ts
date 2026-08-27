@@ -7,8 +7,10 @@
 
 import { listGaps } from "@hire-me-mcp/core";
 import { z } from "zod";
+import { gapSchema } from "../../../src/lib/content/entity-schemas";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
 import type { ToolDefinition } from "../define-tool";
+import { dataCitationSchema, toolSuccessSchema } from "../wire-schemas";
 
 const inputSchema = z.object({});
 
@@ -19,9 +21,21 @@ const inputSchema = z.object({});
  */
 type GapListEntry = ReturnType<typeof listGaps>["data"][number];
 
+/** `{ data, citations }` envelope around every authored gap, related skills resolved to citations (#242). */
+const outputSchema = toolSuccessSchema(
+  z.array(
+    gapSchema.omit({ relatedSkills: true }).extend({
+      relatedSkills: z
+        .array(dataCitationSchema)
+        .describe("The gap's adjacent claimed skills, resolved to citations."),
+    }),
+  ),
+);
+
 /** `list-gaps` — registered against a live `McpServer` via `defineTool`. */
 export const listGapsTool: ToolDefinition<typeof inputSchema, GapListEntry[]> = {
   name: "list-gaps",
+  title: "List skill gaps",
   description:
     "Returns the complete, authoritative list of acknowledged skill gaps — technologies " +
     "explicitly NOT claimed — each with its verbatim authored statement and citations to " +
@@ -33,5 +47,6 @@ export const listGapsTool: ToolDefinition<typeof inputSchema, GapListEntry[]> = 
     "them. Takes no input; an empty list would mean no gaps are authored and is a successful " +
     "result, not an error.",
   inputSchema,
+  outputSchema,
   handler: () => listGaps(getCareerDataRepository()),
 };

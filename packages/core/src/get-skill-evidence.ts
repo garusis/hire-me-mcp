@@ -13,16 +13,26 @@ import type { CareerDataRepository } from "./repository.js";
 import { createDomainResult, type DomainResult } from "./result.js";
 import { buildAliasIndex } from "./search/alias-resolver.js";
 
-/** A resolved, real `Skill` record together with its own resolving citations. */
+/**
+ * A `Skill` record as embedded in a {@link SkillEvidenceOutcome}: every
+ * authored field EXCEPT its own `evidence` array. The outcome carries
+ * exactly one canonical, freshly-resolved evidence list per skill (the
+ * sibling `evidence` field); embedding the record's raw copy too shipped
+ * every evidence array twice per response and left consumers guessing
+ * which one was authoritative (#245).
+ */
+export type SkillSummary = Omit<Skill, "evidence">;
+
+/** A resolved, real skill record (sans its raw evidence array) together with its own resolving citations. */
 export interface RelatedSkillEvidence {
-  skill: Skill;
+  skill: SkillSummary;
   evidence: Citation[];
 }
 
-/** The term resolves to a claimed `Skill`: its record plus resolving evidence citations. */
+/** The term resolves to a claimed `Skill`: its record (sans raw evidence) plus resolving evidence citations. */
 export interface ClaimedSkillOutcome {
   kind: "claimed";
-  skill: Skill;
+  skill: SkillSummary;
   evidence: Citation[];
 }
 
@@ -79,6 +89,12 @@ function resolveEvidence(repository: CareerDataRepository, evidence: Citation[])
   );
 }
 
+/** Drops the raw `evidence` array from a `Skill` record for embedding in an outcome — see {@link SkillSummary}. */
+function toSkillSummary(skill: Skill): SkillSummary {
+  const { evidence: _evidence, ...summary } = skill;
+  return summary;
+}
+
 function resolveRelatedSkills(
   repository: CareerDataRepository,
   relatedSkillIds: string[],
@@ -91,7 +107,7 @@ function resolveRelatedSkills(
       continue;
     }
     resolved.push({
-      skill: relatedSkill,
+      skill: toSkillSummary(relatedSkill),
       evidence: resolveEvidence(repository, relatedSkill.evidence),
     });
   }
@@ -138,7 +154,11 @@ export function getSkillEvidence(
     const skillRecord = skillsById.get(resolvedSkillId);
     if (skillRecord !== undefined) {
       const evidence = resolveEvidence(repository, skillRecord.evidence);
-      const outcome: ClaimedSkillOutcome = { kind: "claimed", skill: skillRecord, evidence };
+      const outcome: ClaimedSkillOutcome = {
+        kind: "claimed",
+        skill: toSkillSummary(skillRecord),
+        evidence,
+      };
       const skillCitation = buildCitation(repository, "skill", skillRecord.id);
       return createDomainResult(outcome, [skillCitation, ...evidence]);
     }

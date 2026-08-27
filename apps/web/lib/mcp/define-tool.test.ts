@@ -1,6 +1,7 @@
 import type { Citation, DomainResult } from "@hire-me-mcp/core";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { withCitationSiteUrls } from "./citation-site-urls.js";
 import { createToolExecutor, defineTool, type ToolDefinition } from "./define-tool.js";
 import { ToolDomainError } from "./errors.js";
 
@@ -33,7 +34,7 @@ describe("createToolExecutor", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({
       data: domainResult.data,
-      citations: domainResult.citations,
+      citations: withCitationSiteUrls(domainResult.citations),
     });
   });
 
@@ -50,7 +51,7 @@ describe("createToolExecutor", () => {
 
     expect(result.isError).toBeUndefined();
     const structuredContent = result.structuredContent as { citations: Citation[] };
-    expect(structuredContent.citations).toStrictEqual(citations);
+    expect(structuredContent.citations).toStrictEqual(withCitationSiteUrls(citations));
   });
 
   it("keeps a domain gap/not-claimed outcome a SUCCESSFUL result, not an error or empty result", async () => {
@@ -158,6 +159,43 @@ describe("createToolExecutor", () => {
   });
 });
 
+describe("validation error messages (#244)", () => {
+  const richSchema = z.object({
+    query: z.string().min(1).describe("Required free-text query."),
+    status: z.enum(["current", "past"]).optional().describe("Optional status filter."),
+  });
+  const richDefinition: ToolDefinition<typeof richSchema, unknown> = {
+    name: "rich-tool",
+    description: "A test tool exercising validation error message quality.",
+    inputSchema: richSchema,
+    handler: () => ({ data: null, citations: [] }),
+  };
+
+  it("reports a missing required field as 'required', not a generic invalid-input complaint", async () => {
+    const executor = createToolExecutor(richDefinition);
+
+    const result = await executor({});
+
+    expect(result.isError).toBe(true);
+    const message = (result.structuredContent as { message: string }).message;
+    expect(message).toContain("query: required");
+    expect(message).not.toContain("Invalid input");
+  });
+
+  it("reports an invalid enum value by naming the allowed values and the received value", async () => {
+    const executor = createToolExecutor(richDefinition);
+
+    const result = await executor({ query: "x", status: "CURRENT" });
+
+    expect(result.isError).toBe(true);
+    const message = (result.structuredContent as { message: string }).message;
+    expect(message).toContain("status:");
+    expect(message).toContain('"current"');
+    expect(message).toContain('"past"');
+    expect(message).toContain('"CURRENT"');
+  });
+});
+
 describe("defineTool", () => {
   it("registers the tool against the server with name, description, and input schema", () => {
     const registerTool = vi.fn();
@@ -176,6 +214,87 @@ describe("defineTool", () => {
     expect(name).toBe("test-tool");
     expect(config.description).toBe("A test tool used only by the adapter's own contract tests.");
     expect(config.inputSchema).toBe(inputSchema);
+  });
+
+  it("registers read-only MCP annotations on every tool — this server can never mutate anything (#241)", () => {
+    const registerTool = vi.fn();
+    const server = { registerTool } as unknown as Parameters<typeof defineTool>[0];
+
+    defineTool(server, { ...makeDefinition(() => ({ data: {}, citations: [] })), title: "Test" });
+
+    const [, config] = registerTool.mock.calls[0] as [
+      string,
+      { title?: string; annotations?: Record<string, unknown> },
+    ];
+    expect(config.title).toBe("Test");
+    expect(config.annotations).toEqual({
+      title: "Test",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    });
+  });
+
+  it("strips structuredContent from ERROR results at the wire boundary — a declared outputSchema describes success only, and strict clients validate structuredContent against it whenever present (#242)", async () => {
+    const registerTool = vi.fn();
+    const server = { registerTool } as unknown as Parameters<typeof defineTool>[0];
+
+    defineTool(server, {
+      ...makeDefinition(() => {
+        throw new ToolDomainError("intentional failure");
+      }),
+      outputSchema: z.object({ data: z.string(), citations: z.array(z.unknown()) }),
+    });
+    const [, , callback] = registerTool.mock.calls[0] as [
+      string,
+      unknown,
+      (args: unknown, ctx: unknown) => Promise<Record<string, unknown>>,
+    ];
+
+    const wireResult = await callback({ skill: "x" }, {});
+
+    expect(wireResult.isError).toBe(true);
+    expect(wireResult).not.toHaveProperty("structuredContent");
+    expect((wireResult.content as Array<{ text: string }>)[0]?.text).toContain(
+      "intentional failure",
+    );
+  });
+
+  it("keeps structuredContent on SUCCESS results at the wire boundary", async () => {
+    const registerTool = vi.fn();
+    const server = { registerTool } as unknown as Parameters<typeof defineTool>[0];
+
+    defineTool(
+      server,
+      makeDefinition(() => ({ data: { ok: true }, citations: [] })),
+    );
+    const [, , callback] = registerTool.mock.calls[0] as [
+      string,
+      unknown,
+      (args: unknown, ctx: unknown) => Promise<Record<string, unknown>>,
+    ];
+
+    const wireResult = await callback({ skill: "x" }, {});
+
+    expect(wireResult).toHaveProperty("structuredContent");
+  });
+
+  it("falls back to the wire name as title when a definition declares none", () => {
+    const registerTool = vi.fn();
+    const server = { registerTool } as unknown as Parameters<typeof defineTool>[0];
+
+    defineTool(
+      server,
+      makeDefinition(() => ({ data: {}, citations: [] })),
+    );
+
+    const [, config] = registerTool.mock.calls[0] as [
+      string,
+      { title?: string; annotations?: { title?: string } },
+    ];
+    expect(config.title).toBe("test-tool");
+    expect(config.annotations?.title).toBe("test-tool");
   });
 
   it("wires the registered callback through the same executor pipeline (errors stay sanitized)", async () => {

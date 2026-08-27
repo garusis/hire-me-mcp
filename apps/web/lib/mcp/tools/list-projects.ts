@@ -7,8 +7,10 @@
 
 import { type ListProjectsOptions, listProjects } from "@hire-me-mcp/core";
 import { z } from "zod";
+import { projectSchema } from "../../../src/lib/content/entity-schemas";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
 import type { ToolDefinition } from "../define-tool";
+import { toolSuccessSchema } from "../wire-schemas";
 
 /**
  * Derived from `listProjects`'s own return type rather than importing
@@ -30,9 +32,15 @@ const inputSchema = z.object({
     ),
 });
 
+/** `{ data, citations }` envelope around the full project portfolio (#242). */
+const outputSchema = toolSuccessSchema(
+  z.array(projectSchema).describe("Every authored project, featured entries first."),
+);
+
 /** `list-projects` — registered against a live `McpServer` via `defineTool`. */
 export const listProjectsTool: ToolDefinition<typeof inputSchema, Project[]> = {
   name: "list-projects",
+  title: "List projects",
   description:
     "Returns every project record — name, summary, role, tech tags, links, and the full " +
     "write-up body — as a complete list in a deterministic order (no relevance ranking, no " +
@@ -43,6 +51,7 @@ export const listProjectsTool: ToolDefinition<typeof inputSchema, Project[]> = {
     "get-experience). A tags filter matching no projects returns a successful empty list, " +
     "not an error.",
   inputSchema,
+  outputSchema,
   handler: (input) => {
     const options: ListProjectsOptions = input;
     return listProjects(getCareerDataRepository(), options);

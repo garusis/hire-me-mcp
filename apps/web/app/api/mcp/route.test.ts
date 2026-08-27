@@ -302,11 +302,16 @@ describe("MCP endpoint (app/api/mcp/route.ts)", () => {
         });
 
         expect(result.isError).toBe(true);
-        const structuredContent = result.structuredContent as { code: string; message: string };
-        expect(structuredContent.code).toBe("internal_error");
+        // Error results carry no structuredContent on the wire (a declared
+        // outputSchema describes success only — #242); the sanitized
+        // { code, message } envelope is serialized in the text block.
+        expect(result.structuredContent).toBeUndefined();
+        const textBlock = (result.content as Array<{ type: string; text: string }>)[0];
+        const payload = JSON.parse(textBlock?.text ?? "{}") as { code: string; message: string };
+        expect(payload.code).toBe("internal_error");
         // Never leak the fact that a specific env var is missing, a connection
         // string, or any other implementation detail to the client.
-        expect(structuredContent.message).not.toMatch(
+        expect(payload.message).not.toMatch(
           /DATABASE_URL|GOOGLE_GENERATIVE_AI_API_KEY|postgres:\/\//i,
         );
 

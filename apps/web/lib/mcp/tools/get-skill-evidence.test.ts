@@ -1,6 +1,7 @@
 import type { CareerDataRepository, DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCitationSiteUrls } from "../citation-site-urls.js";
 import { createToolExecutor } from "../define-tool.js";
 import { getSkillEvidenceTool } from "./get-skill-evidence.js";
 
@@ -28,21 +29,25 @@ describe("getSkillEvidenceTool", () => {
   });
 
   it("calls the domain service with the given term and returns a 'claimed' outcome unmodified (happy path)", async () => {
+    const evidence = [
+      { entityType: "experience" as const, entityId: "fixture-role", label: "Fixture Role" },
+    ];
     const claimed: SkillEvidenceOutcome = {
       kind: "claimed",
+      // The embedded skill record carries no `evidence` of its own — the
+      // outcome-level `evidence` array is the one canonical copy (#245).
       skill: {
         id: "typescript",
         name: "TypeScript",
         aliases: ["ts"],
         category: "language",
         proficiency: "expert",
-        evidence: [],
       },
-      evidence: [{ entityType: "experience", entityId: "fixture-role", label: "Fixture Role" }],
+      evidence,
     };
     const domainResult: DomainResult<SkillEvidenceOutcome> = {
       data: claimed,
-      citations: claimed.evidence,
+      citations: evidence,
     };
     vi.mocked(core.getSkillEvidence).mockReturnValue(domainResult);
     const executor = createToolExecutor(getSkillEvidenceTool);
@@ -53,7 +58,7 @@ describe("getSkillEvidenceTool", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({
       data: domainResult.data,
-      citations: domainResult.citations,
+      citations: withCitationSiteUrls(domainResult.citations),
     });
   });
 
@@ -122,7 +127,7 @@ describe("getSkillEvidenceTool", () => {
     const result = await executor({ term: "typescript" });
 
     const structuredContent = result.structuredContent as { citations: unknown };
-    expect(structuredContent.citations).toStrictEqual(citations);
+    expect(structuredContent.citations).toStrictEqual(withCitationSiteUrls(citations));
   });
 
   it("maps invalid input (missing required term) to a sanitized invalid_input error", async () => {
@@ -141,5 +146,10 @@ describe("getSkillEvidenceTool", () => {
 
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
+  });
+
+  it("declares a human-readable title and an outputSchema for its structuredContent (#241, #242)", () => {
+    expect(getSkillEvidenceTool.title).toBeTruthy();
+    expect(getSkillEvidenceTool.outputSchema).toBeDefined();
   });
 });

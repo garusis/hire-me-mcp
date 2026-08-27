@@ -7,8 +7,10 @@
 
 import { listRecommendations } from "@hire-me-mcp/core";
 import { z } from "zod";
+import { recommendationSchema } from "../../../src/lib/content/entity-schemas";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
 import type { ToolDefinition } from "../define-tool";
+import { toolSuccessSchema } from "../wire-schemas";
 
 const inputSchema = z.object({});
 
@@ -20,9 +22,17 @@ const inputSchema = z.object({});
  */
 type Recommendation = ReturnType<typeof listRecommendations>["data"][number];
 
+/** `{ data, citations }` envelope around every received recommendation (#242). */
+const outputSchema = toolSuccessSchema(
+  z
+    .array(recommendationSchema)
+    .describe("Every recommendation received, verbatim, most recent first."),
+);
+
 /** `list-recommendations` — registered against a live `McpServer` via `defineTool`. */
 export const listRecommendationsTool: ToolDefinition<typeof inputSchema, Recommendation[]> = {
   name: "list-recommendations",
+  title: "List recommendations",
   description:
     "Returns every recommendation Marcos Alvarez has received on LinkedIn — recommender name, " +
     "their title at the time of writing, the working relationship (e.g. direct manager, peer, " +
@@ -36,5 +46,6 @@ export const listRecommendationsTool: ToolDefinition<typeof inputSchema, Recomme
     "specific skill is claimed (use get-skill-evidence). Takes no input. An empty list is a " +
     "normal, successful result — it means no recommendations are authored yet, not an error.",
   inputSchema,
+  outputSchema,
   handler: () => listRecommendations(getCareerDataRepository()),
 };

@@ -21,23 +21,25 @@ describe("getSkillEvidenceTool", () => {
   });
 
   it("delegates to packages/core's getSkillEvidence with the term, returning a claimed DomainResult unmodified", async () => {
+    const evidence = [
+      { entityType: "project" as const, entityId: "fixture-project", label: "Fixture Project" },
+    ];
     const outcome: SkillEvidenceOutcome = {
       kind: "claimed",
+      // The embedded skill record carries no `evidence` of its own — the
+      // outcome-level `evidence` array is the one canonical copy (#245).
       skill: {
         id: "fixture-skill",
         name: "TypeScript",
         aliases: ["ts"],
         category: "language",
         proficiency: "expert",
-        evidence: [
-          { entityType: "project", entityId: "fixture-project", label: "Fixture Project" },
-        ],
       },
-      evidence: [{ entityType: "project", entityId: "fixture-project", label: "Fixture Project" }],
+      evidence,
     };
     const domainResult: DomainResult<SkillEvidenceOutcome> = {
       data: outcome,
-      citations: outcome.evidence,
+      citations: evidence,
     };
     vi.mocked(core.getSkillEvidence).mockReturnValue(domainResult);
 
