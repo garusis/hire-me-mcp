@@ -225,6 +225,12 @@ question text, tool arguments, IPs, user agents, or session identifiers, ever. S
 `docs/analytics.md` at the repo root for the full schema, taxonomies, and the documented retention
 window (currently 90 days, `RETENTION_WINDOW_DAYS` in `packages/core/src/analytics/retention.ts`).
 
+That "no session identifiers" is a statement about the *stored event*, not about the request:
+`POST /api/chat` does require a client-generated `sessionId` (rate limiting and log correlation —
+see "Chat guardrails" above), it just never reaches an analytics row. `app/privacy/` says exactly
+that, in public, and its drift test (issue 239) fails if either the chat request schema or the
+analytics event shape changes underneath it.
+
 - `apps/web/lib/analytics/` — `getAnalyticsStore()` (memoized, never throws) and
   `record.ts`'s fire-and-forget wrappers every instrumentation call site uses.
 - Instrumented at `apps/web/lib/mcp/define-tool.ts` (every MCP tool call),

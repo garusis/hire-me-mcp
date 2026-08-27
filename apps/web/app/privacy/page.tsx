@@ -27,6 +27,11 @@ export function generateMetadata(): Metadata {
  * directly from `@hire-me-mcp/core/analytics`'s exported metadata — see
  * `privacy-content.test.ts` for the drift test binding the two together.
  *
+ * The "Chat session identifier" section (issue 239) is the correction to
+ * this note's original claim that session identifiers were never collected:
+ * `POST /api/chat` requires one. Its field list and rate-limit window come
+ * from the live chat request schema and rate-limit config, same rule.
+ *
  * The site has no contact/write tools (all cut per epic #8's scope) — "how
  * to reach Marcos" below reuses the same public contact links the rest of
  * the site already surfaces (`profile.contacts`, e.g. the JSON-LD
@@ -61,6 +66,24 @@ export default function PrivacyPage() {
           <ul>
             {content.neverCollected.map((item) => (
               <li key={item}>{item}</li>
+            ))}
+          </ul>
+
+          <h2>Chat session identifier</h2>
+          <ul>
+            {content.sessionIdentifier.statements.map((statement) => (
+              <li key={statement}>{statement}</li>
+            ))}
+          </ul>
+          <p>
+            Nothing else is sent with a chat request — these are all of the fields the endpoint
+            accepts:
+          </p>
+          <ul>
+            {content.chatRequestFields.map((field) => (
+              <li key={field.name}>
+                <code>{field.name}</code> — {field.purpose}
+              </li>
             ))}
           </ul>
 
