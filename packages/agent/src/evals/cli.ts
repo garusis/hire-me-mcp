@@ -5,7 +5,10 @@
  *
  * Wires the pure `./runner.ts` up to the REAL interview agent
  * (`getInterviewAgent()`, real Gemini calls via the local `.env` key — see
- * `packages/agent/README.md`'s provider table), runs the curated dataset
+ * `packages/agent/README.md`'s provider table) whose model is wrapped in
+ * the sliding-window request limiter from `./rate-limit.ts` (#282 — the
+ * throttle belongs at the model boundary, because one case makes several
+ * provider requests), runs the curated dataset
  * (`./dataset/cases.ts`) under the configured case/budget caps
  * (`./budget.ts`), writes the machine-readable report (`./report.ts`) to
  * disk, prints a short human summary, and exits non-zero when the verdict
@@ -24,8 +27,15 @@
 import { writeFile } from "node:fs/promises";
 import { resolveChatModelConfig } from "../config.js";
 import { getInterviewAgent, PROMPT_VERSION } from "../index.js";
+import { createChatModel } from "../model-provider.js";
 import { EVAL_CASES } from "./dataset/index.js";
 import type { EvalCase } from "./dataset/schema.js";
+import {
+  createRateLimitedModel,
+  createRequestRateLimiter,
+  DEFAULT_EVAL_RPM_LIMIT,
+  toLanguageModel,
+} from "./rate-limit.js";
 import { runEvalSuite } from "./runner.js";
 import type { ReturnedCitation } from "./scorers/types.js";
 import { EVAL_THRESHOLDS } from "./thresholds.js";
@@ -37,6 +47,11 @@ export interface RunnerEnvConfig {
   maxCases: number;
   maxTotalTokens: number;
   maxCostUsd: number;
+  /**
+   * Max real PROVIDER REQUESTS per rolling minute (`EVAL_RPM_LIMIT`) — not
+   * cases per minute, which is what this knob silently meant before #282.
+   * Enforced at the model boundary by `./rate-limit.ts`.
+   */
   rpmLimit: number;
   reportPath: string;
   /**
@@ -60,7 +75,9 @@ const DEFAULTS: RunnerEnvConfig = {
   maxCases: 8,
   maxTotalTokens: 60_000,
   maxCostUsd: 0.5,
-  rpmLimit: 10,
+  // Derived from the documented free-tier ceiling — see `./rate-limit.ts`,
+  // the single source of truth this, the limiter and the README share.
+  rpmLimit: DEFAULT_EVAL_RPM_LIMIT,
   reportPath: "eval-report.json",
 };
 
@@ -204,8 +221,24 @@ async function main(): Promise<void> {
     `Running eval suite: up to ${envConfig.maxCases} case(s)` +
       (envConfig.caseIds ? ` (filtered to: ${envConfig.caseIds.join(", ")})` : "") +
       `, max ${envConfig.maxTotalTokens} tokens / $${envConfig.maxCostUsd} budget, ` +
-      `${envConfig.rpmLimit} RPM throttle, model ${modelId}.`,
+      `${envConfig.rpmLimit} model requests/min, model ${modelId}.`,
   );
+
+  // #282: the throttle wraps the MODEL, not the case loop — one eval case
+  // is 2-3 provider requests (model call -> tool call -> composing model
+  // call), so only a model-boundary limiter counts what the provider
+  // counts. Built once and shared by every case, since the sliding window
+  // has to span the whole run.
+  const limiter = createRequestRateLimiter({
+    rpmLimit: envConfig.rpmLimit,
+    onRetry: ({ attempt, delayMs, message }) => {
+      console.warn(
+        `Rate limited by the provider (retry ${attempt}, waiting ${delayMs}ms): ${message}`,
+      );
+    },
+  });
+  const model = createRateLimitedModel({ model: toLanguageModel(createChatModel()), limiter });
+  const agent = getInterviewAgent({ model });
 
   const report = await runEvalSuite(
     {
@@ -218,11 +251,9 @@ async function main(): Promise<void> {
       promptVersion: PROMPT_VERSION,
       modelId,
       thresholds: EVAL_THRESHOLDS,
-      rpmLimit: envConfig.rpmLimit,
     },
     {
       runCase: async (question) => {
-        const agent = getInterviewAgent();
         const result = await agent.generate(question);
         return {
           answer: result.text,

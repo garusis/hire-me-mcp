@@ -6,6 +6,7 @@ import {
   resolveRunnerEnvConfig,
 } from "./cli.js";
 import type { EvalCase } from "./dataset/schema.js";
+import { DEFAULT_EVAL_RPM_LIMIT, FREE_TIER_RPM_CEILING } from "./rate-limit.js";
 
 describe("resolveRunnerEnvConfig", () => {
   it("falls back to conservative defaults when env is empty", () => {
@@ -35,6 +36,13 @@ describe("resolveRunnerEnvConfig", () => {
       reportPath: "custom-report.json",
       caseIds: ["grounded-nodejs-experience", "gap-golang"],
     });
+  });
+
+  it("takes EVAL_RPM_LIMIT's default from the single documented quota source, not a literal (#282)", () => {
+    // The limiter, this config and the README quota table all read the same
+    // constant, so they cannot drift apart.
+    expect(resolveRunnerEnvConfig({}).rpmLimit).toBe(DEFAULT_EVAL_RPM_LIMIT);
+    expect(DEFAULT_EVAL_RPM_LIMIT).toBeLessThan(FREE_TIER_RPM_CEILING);
   });
 
   it("ignores a non-numeric override and falls back to the default", () => {

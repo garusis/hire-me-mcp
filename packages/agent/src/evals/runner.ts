@@ -16,8 +16,8 @@
  * makes zero real model calls while still exercising the full budget-abort
  * and case-cap logic for real.
  *
- * `sleep` is injected the same way, so the RPM throttle below never
- * touches a real timer in tests.
+ * This module has NO timer of its own (see "Rate limiting" below), so its
+ * test suite needs no clock seam either — every test here is pure.
  *
  * ## Budget enforcement
  *
@@ -30,15 +30,22 @@
  * caller (`./cli.ts`) never gets a "successful" report for a run that
  * overspent its budget.
  *
- * ## RPM throttle
+ * ## Rate limiting is NOT this module's job (#282)
  *
- * Verified against the AI Studio dashboard (`packages/agent/README.md`'s
- * quota rationale table): the default model, `gemini-3.5-flash-lite`, gets
- * 15 RPM / 500 RPD on the free tier. `rpmLimit` (default 10) stays a
- * polite margin under that 15 RPM ceiling rather than running right up
- * against it; it converts to a minimum delay between calls, and the
- * throttle sleeps BEFORE every case after the first, never after the last
- * (no pointless trailing wait once the run is done).
+ * This runner used to sleep between CASES, converting an `rpmLimit` into a
+ * minimum per-case delay. That was wrong, and it broke `agent-evals` for
+ * real: one case is not one request. A single `deps.runCase` — a real
+ * `agent.generate()` turn — is a model call, then a tool call, then another
+ * model call to compose the answer, so a nominal 10 "RPM" issued 20-30
+ * actual requests per minute and blew straight through
+ * `gemini-3.5-flash-lite`'s 15 RPM free-tier ceiling.
+ *
+ * Throttling now lives at the MODEL boundary, where the provider counts
+ * requests: `./rate-limit.ts` wraps the language model itself, so every
+ * request a case makes — including retries and any future extra step —
+ * waits its turn in one sliding 60-second window. There is deliberately no
+ * second, competing throttle here; this loop runs cases back to back and
+ * lets the limiter pace the real calls underneath.
  */
 
 import {
@@ -74,10 +81,9 @@ export interface CaseRunResult {
   toolCallNames?: string[];
 }
 
-/** Injected dependencies — the real-call and real-timer seam. See module docs. */
+/** Injected dependencies — the real-model-call seam. See module docs. */
 export interface RunnerDeps {
   runCase: (question: string) => Promise<CaseRunResult>;
-  sleep?: (ms: number) => Promise<void>;
 }
 
 /** Configuration for one eval suite run. */
@@ -87,14 +93,6 @@ export interface RunnerConfig {
   promptVersion: string;
   modelId: string;
   thresholds?: ScorerThresholds;
-  /** Requests-per-minute ceiling used to throttle between real calls. Defaults to 10 — conservative for Gemini's free tier. */
-  rpmLimit?: number;
-}
-
-const DEFAULT_RPM_LIMIT = 10;
-
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
@@ -128,9 +126,6 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
 
 /** Run the eval suite: execute up to `config.budget.maxCases` dataset cases against the real agent (via `deps.runCase`), score each, and assemble the final report. Throws `BudgetExceededError` (see `./budget.ts`) the instant the token or cost cap is crossed. */
 export async function runEvalSuite(config: RunnerConfig, deps: RunnerDeps): Promise<EvalReport> {
-  const sleep = deps.sleep ?? defaultSleep;
-  const rpmLimit = config.rpmLimit ?? DEFAULT_RPM_LIMIT;
-  const minIntervalMs = Math.ceil(60_000 / rpmLimit);
   const pricing = getModelPricing(config.modelId);
 
   const casesToRun = config.cases.slice(0, config.budget.maxCases);
@@ -141,10 +136,6 @@ export async function runEvalSuite(config: RunnerConfig, deps: RunnerDeps): Prom
   let costUsd = 0;
 
   for (const [index, evalCase] of casesToRun.entries()) {
-    if (index > 0) {
-      await sleep(minIntervalMs);
-    }
-
     const run = await deps.runCase(evalCase.question);
     caseReports.push(scoreCase(evalCase, run));
 
