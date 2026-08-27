@@ -19,12 +19,13 @@ export default mergeConfig(
     test: {
       environment: "happy-dom",
       setupFiles: ["./vitest.setup.ts"],
-      // `middleware.ts` (#42) must live at the app root per Next.js's own
+      // `proxy.ts` (#42; `middleware.ts` before Next 16 renamed the
+      // convention) must live at the app root per Next.js's own
       // convention (it can't move under `app/`/`src/`/`lib/`, the only
       // globs `vitest.config.base.ts` includes), so its co-located test is
       // added explicitly here rather than by relaxing the shared glob for
       // every package.
-      include: ["middleware.test.ts"],
+      include: ["proxy.test.ts"],
     },
   }),
 );

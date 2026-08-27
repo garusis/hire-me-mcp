@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { middleware } from "./middleware";
+import { proxy } from "./proxy";
 import {
   buildApiSecurityHeaders,
   HSTS_HEADER_VALUE,
@@ -10,13 +10,13 @@ function request(path: string): NextRequest {
   return new NextRequest(new URL(path, "https://hire-me-mcp-web.vercel.app"));
 }
 
-describe("middleware", () => {
+describe("proxy", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
   it("does not allow vercel.live when VERCEL_ENV is unset (production/local default)", () => {
-    const response = middleware(request("/"));
+    const response = proxy(request("/"));
 
     expect(response.headers.get("Content-Security-Policy")).not.toContain("vercel.live");
   });
@@ -24,7 +24,7 @@ describe("middleware", () => {
   it("does not allow vercel.live on a production deploy (VERCEL_ENV=production)", () => {
     vi.stubEnv("VERCEL_ENV", "production");
 
-    const response = middleware(request("/"));
+    const response = proxy(request("/"));
 
     expect(response.headers.get("Content-Security-Policy")).not.toContain("vercel.live");
   });
@@ -32,7 +32,7 @@ describe("middleware", () => {
   it("allows the documented Vercel Toolbar CSP origins on a preview deploy (VERCEL_ENV=preview), so the Toolbar Vercel injects there doesn't trip the enforcing CSP", () => {
     vi.stubEnv("VERCEL_ENV", "preview");
 
-    const response = middleware(request("/"));
+    const response = proxy(request("/"));
     const csp = response.headers.get("Content-Security-Policy") ?? "";
 
     expect(csp).toContain("https://vercel.live");
@@ -40,7 +40,7 @@ describe("middleware", () => {
   });
 
   it("applies the HTML header set, including a CSP with a fresh nonce, to a page route", async () => {
-    const response = middleware(request("/experience"));
+    const response = proxy(request("/experience"));
 
     const csp = response.headers.get("Content-Security-Policy") ?? "";
     expect(csp).toMatch(/script-src 'self' 'nonce-[^']+' 'strict-dynamic'/);
@@ -49,7 +49,7 @@ describe("middleware", () => {
   });
 
   it("carries the same nonce on the response's own x-nonce header, so a Server Component reading `headers()` sees the value that was actually enforced", () => {
-    const response = middleware(request("/"));
+    const response = proxy(request("/"));
 
     const cspNonce = /nonce-([^']+)/.exec(
       response.headers.get("Content-Security-Policy") ?? "",
@@ -60,8 +60,8 @@ describe("middleware", () => {
   });
 
   it("generates a different nonce on every request", () => {
-    const first = middleware(request("/"));
-    const second = middleware(request("/"));
+    const first = proxy(request("/"));
+    const second = proxy(request("/"));
 
     const firstNonce = /nonce-([^']+)/.exec(
       first.headers.get("Content-Security-Policy") ?? "",
@@ -76,7 +76,7 @@ describe("middleware", () => {
   });
 
   it("applies the API header set (no nonce, default-src none, no-store) to /api/mcp", () => {
-    const response = middleware(request("/api/mcp"));
+    const response = proxy(request("/api/mcp"));
     const expected = buildApiSecurityHeaders();
 
     for (const [name, value] of Object.entries(expected)) {
@@ -86,7 +86,7 @@ describe("middleware", () => {
   });
 
   it("applies the API header set to every route under /api, not just /api/mcp", () => {
-    const response = middleware(request("/api/chat"));
+    const response = proxy(request("/api/chat"));
 
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(response.headers.get("Content-Security-Policy")).toBe(

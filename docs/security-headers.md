@@ -2,7 +2,7 @@
 
 Every response from `apps/web` — HTML pages, the MCP endpoint, the chat stream, and the other
 `/api/*` routes — carries a reviewed set of HTTP security headers, defined once in
-`apps/web/src/lib/security/build-security-headers.ts` and applied by `apps/web/middleware.ts` on
+`apps/web/src/lib/security/build-security-headers.ts` and applied by `apps/web/proxy.ts` on
 every request. The header set is split into two route groups because a browser document and a
 JSON API need different things:
 
@@ -12,7 +12,7 @@ JSON API need different things:
 - **API/MCP route group** — everything under `/api/*`: `/api/mcp`, `/api/chat`, `/api/stats`,
   `/api/cron/*`.
 
-This is the same policy an automated test locks in (`middleware.test.ts`,
+This is the same policy an automated test locks in (`proxy.test.ts`,
 `src/lib/security/build-security-headers.test.ts`,
 `apps/web/e2e/security-headers.smoke.spec.ts`, `apps/web/mcp-e2e/security-headers.spec.ts`,
 `apps/web/e2e-preview/specs/security-headers.spec.ts`) — a change to any value here must change
@@ -53,7 +53,7 @@ specific directive it belongs to — never widen `default-src`.
 ### The nonce mechanism
 
 Per [Next.js's own CSP guide](https://nextjs.org/docs/app/building-your-application/configuring/content-security-policy)
-(not a third-party blog post — those are commonly stale for this exact topic), `apps/web/middleware.ts`
+(not a third-party blog post — those are commonly stale for this exact topic), `apps/web/proxy.ts`
 generates a fresh, cryptographically random nonce per request, embeds it in the CSP's `script-src`
 and `style-src`, and forwards it two ways: as the `x-nonce` request header (read by Server
 Components via `src/lib/security/get-request-nonce.ts`'s `getRequestNonce()`) and as the `x-nonce`
@@ -95,7 +95,7 @@ on any page-rendered element (the two components that do use `style={{}}`, `appl
 `icon.tsx`, are `ImageResponse`-generated PNGs, never HTML a browser CSP applies to) — so losing
 the nonce on `style-src`, on Preview only, costs nothing real.
 
-`apps/web/middleware.ts` passes `allowVercelToolbar: process.env.VERCEL_ENV === "preview"` — `true`
+`apps/web/proxy.ts` passes `allowVercelToolbar: process.env.VERCEL_ENV === "preview"` — `true`
 only on a genuine Vercel Preview deployment, `false` in Production, local dev, and every other
 context (unit tests, the `apps/web/e2e` smoke suite's local `next start`). Production's CSP is
 exactly as strict as documented above, with zero Vercel-specific allowances — this is a
@@ -114,7 +114,7 @@ Preview-only accommodation for a Vercel platform feature, not a general weakenin
 
 `/api/mcp`'s `Cache-Control` specifically: when the deployed origin actually negotiates a
 streaming (SSE) response, `mcp-handler` sets its own `Cache-Control: no-cache, no-transform` —
-applied later in the response pipeline than this middleware's header, so it wins for those
+applied later in the response pipeline than this proxy's header, so it wins for those
 responses. Confirmed against a real Vercel preview; a locally started `next start` server didn't
 reproduce it for every request shape tried, so this reads as a platform/transport-timing
 difference rather than something this app's own code controls. Both values are equally

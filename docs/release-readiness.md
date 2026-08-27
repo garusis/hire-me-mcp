@@ -83,7 +83,7 @@ step" column ties it into the pyramid above.
 | SEO artifacts: canonical/OG/Twitter meta, sitemap, robots, OG images, manifest (#4, #7) | `e2e-preview/specs/seo.spec.ts`, OG/manifest unit tests, `og-image-content-trace.smoke.spec.ts` | 3, 7 |
 | Agent-first onboarding: `llms.txt` / `llms-full.txt`, `.well-known/mcp.json`, connect snippets (#7) | `generate:llms:check` (CI `quality`), `seo.spec.ts` mcp.json contract, `llms-content-trace` / `mcp-content-trace` / `no-js-client-snippets` smoke specs, docs-rot snippet check against the live endpoint | 1, 3, 7 |
 | CV: HTML render, PDF generation, `/cv/print` route incl. CSP nonce (#35, #76) | `render-cv-html.test.ts`, `generate-cv-pdf.test.ts` (real headless Chromium), `app/cv/print/route.test.ts`, `/cv/print` in the smoke CSP walk, Lighthouse page budget | 1, 3, 8 |
-| Document security headers + nonce-scoped CSP (#42, #57) | `middleware.test.ts`, `security-headers.smoke.spec.ts` (every public page, zero violations), deployed re-proof spec | 1, 3, 7 |
+| Document security headers + nonce-scoped CSP (#42, #57) | `proxy.test.ts`, `security-headers.smoke.spec.ts` (every public page, zero violations), deployed re-proof spec | 1, 3, 7 |
 | Analytics pipeline + `/api/stats` + retention cron (#8) | `packages/core/src/analytics` unit tests, `analytics.integration.test.ts` (real Neon branch), stats/cron route unit tests | 1, 2 |
 | Performance budgets: latency + Lighthouse (#62) | `e2e-preview/specs/latency.spec.ts`, `lighthouserc.json` gate | 7, 8 |
 | Contact evaluation domain logic (#8) | `packages/core/src/contact/*` unit tests | 1 |

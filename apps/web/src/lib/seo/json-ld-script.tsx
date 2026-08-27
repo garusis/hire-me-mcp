@@ -6,7 +6,7 @@
  * standard, safe way to emit JSON-LD (same rationale as the theme script in
  * `app/layout.tsx`).
  *
- * `nonce` (#42) is the per-request CSP nonce middleware.ts generates and
+ * `nonce` (#42) is the per-request CSP nonce proxy.ts generates and
  * every caller reads via `(await headers()).get("x-nonce")` — required so
  * this inline script is permitted under the nonce-scoped `style-src`/
  * `script-src` policy without an `unsafe-inline` fallback.

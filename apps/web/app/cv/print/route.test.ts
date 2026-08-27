@@ -45,7 +45,7 @@ describe("GET /cv/print", () => {
     });
   });
 
-  it("forwards the middleware's x-nonce request header so the inline print CSS passes CSP (#76)", async () => {
+  it("forwards the proxy's x-nonce request header so the inline print CSS passes CSP (#76)", async () => {
     getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
     getMcpEndpointUrl.mockReturnValue("https://stub-deploy.example.com/api/mcp");
     const stubView = { profile: { name: "Stub Person" } };
