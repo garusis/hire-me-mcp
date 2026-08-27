@@ -62,8 +62,26 @@ jobs:
       - name: Dependency audit
         run: pnpm run audit
 
+      # Biome intermittently dies with exit 254 ("Linter process terminated
+      # abnormally", an out-of-memory-ish crash in its own process) instead of
+      # reporting diagnostics. It is not a lint result: the same tree passes on
+      # the next attempt. Retry ONLY that exit code — any real lint failure
+      # (exit 1) fails the step immediately, so this cannot mask a diagnostic.
       - name: Biome check
-        run: pnpm biome check .
+        run: |
+          for attempt in 1 2 3; do
+            set +e
+            pnpm biome check .
+            status=$?
+            set -e
+            if [ "$status" -ne 254 ]; then
+              exit "$status"
+            fi
+            echo "::warning::Biome exited 254 (crash, not a lint result) on attempt ${attempt}; retrying."
+            sleep 5
+          done
+          echo "::error::Biome exited 254 on three consecutive attempts."
+          exit 254
 
       - name: Typecheck
         run: pnpm turbo typecheck
