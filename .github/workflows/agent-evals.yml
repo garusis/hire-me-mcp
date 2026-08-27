@@ -139,7 +139,7 @@ jobs:
       EVAL_MAX_COST_USD: "1"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Full history: the relevance step diffs against the PR's merge
           # base (or the pre-push sha) via `git merge-base`/`turbo query`,
@@ -160,7 +160,7 @@ jobs:
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - name: Cache pnpm store
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -168,7 +168,7 @@ jobs:
             pnpm-store-${{ runner.os }}-
 
       - name: Cache Turborepo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
@@ -269,7 +269,7 @@ jobs:
 
       - name: Upload eval report artifact
         if: always() && steps.secrets-check.outputs.available == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agent-eval-report
           path: packages/agent/eval-report.json
