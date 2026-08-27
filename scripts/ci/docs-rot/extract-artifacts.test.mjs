@@ -24,7 +24,7 @@ import {
   parseToolTable,
   stripFence,
 } from "./lib/extract-artifacts.mjs";
-import { runSnippetChecks } from "./lib/run-snippet-checks.mjs";
+import { resolveToolsListUrl, runSnippetChecks } from "./lib/run-snippet-checks.mjs";
 
 const TOOLS = [
   { name: "ping", description: "diagnostic", examplePrompt: "ping?" },
@@ -323,5 +323,96 @@ test("runSnippetChecks checks the documented tool table against targetUrl, not t
   } finally {
     prodServer.close();
     previewServer.close();
+  }
+});
+
+// #174's explicit acceptance criterion — "unit-test the target selection".
+// The end-to-end fixture test above proves the PREVIEW direction; these
+// pin the rule itself, including the production/cron direction, so a
+// future refactor cannot quietly send the tool-table check back to
+// production on PRs (or, just as bad, away from production on the cron).
+const DOCUMENTED_ENDPOINT = "https://hire-me-mcp-web.vercel.app/api/mcp";
+
+test("resolveToolsListUrl maps the documented path onto the PR preview's origin", () => {
+  assert.equal(
+    resolveToolsListUrl("https://hire-me-mcp-web-git-feat-x.vercel.app", DOCUMENTED_ENDPOINT),
+    "https://hire-me-mcp-web-git-feat-x.vercel.app/api/mcp",
+  );
+});
+
+test("resolveToolsListUrl is the identity on the cron/push run, where targetUrl IS production", () => {
+  assert.equal(
+    resolveToolsListUrl("https://hire-me-mcp-web.vercel.app", DOCUMENTED_ENDPOINT),
+    DOCUMENTED_ENDPOINT,
+  );
+});
+
+test("resolveToolsListUrl keeps the documented PATH, not a re-typed literal", () => {
+  assert.equal(
+    resolveToolsListUrl("https://preview.example.test", "https://prod.example.test/mcp/v2"),
+    "https://preview.example.test/mcp/v2",
+  );
+});
+
+test("resolveToolsListUrl tolerates a trailing slash and a port on the target", () => {
+  assert.equal(
+    resolveToolsListUrl("http://127.0.0.1:8123/", DOCUMENTED_ENDPOINT),
+    "http://127.0.0.1:8123/api/mcp",
+  );
+});
+
+// The other half of #174's acceptance criteria: "daily production cron
+// behavior unchanged". Targeting the preview on PRs must NOT have turned
+// the tool-table check into a tautology — when the run IS the production
+// run, a tool documented but absent from production still has to fail.
+test("on the production run, a documented tool missing from production still fails — #174", async () => {
+  const prodServer = await startFixtureServer({ tools: TOOLS }); // no search-career
+  try {
+    const prodOrigin = `http://127.0.0.1:${prodServer.address().port}`;
+    const { readmeText, docsMcpText } = buildDocs(prodOrigin);
+    const readmeWithUndeployedTool = readmeText.replace(
+      "<!-- END GENERATED: mcp-tool-table -->",
+      "| `search-career` | search | search? |\n<!-- END GENERATED: mcp-tool-table -->",
+    );
+
+    const result = await runSnippetChecks({
+      targetUrl: prodOrigin, // the daily cron / push-to-main target
+      readmeText: readmeWithUndeployedTool,
+      docsMcpText,
+      checkClaudeCli: skipClaudeCli,
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(
+      result.failures.some(
+        (failure) =>
+          failure.includes("README.md#mcp-tool-table") && failure.includes("search-career"),
+      ),
+      `expected the tool-table check to still fail against production, got:\n${result.failures.join("\n")}`,
+    );
+  } finally {
+    prodServer.close();
+  }
+});
+
+test("the run reports which deployment the tool table was checked against — #174", async () => {
+  const server = await startFixtureServer();
+  try {
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    const { readmeText, docsMcpText } = buildDocs(origin);
+
+    const result = await runSnippetChecks({
+      targetUrl: origin,
+      readmeText,
+      docsMcpText,
+      checkClaudeCli: skipClaudeCli,
+    });
+
+    assert.ok(
+      result.notes.some((note) => note.includes(`${origin}/api/mcp`)),
+      `expected a note naming the tool-table target, got:\n${result.notes.join("\n")}`,
+    );
+  } finally {
+    server.close();
   }
 });

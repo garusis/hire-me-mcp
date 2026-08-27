@@ -28,8 +28,8 @@ name: Preview Chat (live model)
 #     honest red that informs without blocking merges.
 #
 # Same standalone-workflow rationale `agent-evals.yml` documents: its own
-# trigger set and its own `gemini-free-tier` queueing semantics, rather than
-# entangling ci.yml's every-PR jobs with them.
+# trigger set and its own `preview-generation` queueing semantics, rather
+# than entangling ci.yml's every-PR jobs with them.
 #
 # ## Trigger strategy — every PR, in-job relevance detection (#207, #176)
 #
@@ -63,12 +63,19 @@ jobs:
   preview-chat-live:
     name: preview-chat-live
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    # Queue behind (never race) the other Gemini-calling jobs — they share
-    # one 15 RPM free-tier budget (#169).
-    concurrency:
-      group: gemini-free-tier
-      cancel-in-progress: false
+    # Raised from 25 with the slot lease below: the bounded wait must not
+    # eat the suite's own budget.
+    timeout-minutes: 40
+    # NO shared GitHub concurrency group (#264 follow-up). `gemini-free-tier`
+    # promised queueing GitHub does not provide: one run in progress, ONE
+    # pending, and a third contender CANCELS the pending one — which is how
+    # this workflow helped evict the REQUIRED `retrieval-eval` check.
+    # Worse, the group was serializing jobs that cannot starve each other:
+    # this suite drives a deployed PREVIEW, whose chat uses the Vercel
+    # Preview environment's key — a different Google project from the
+    # Actions secret `agent-evals`/`retrieval-eval` spend (see
+    # docs/development.md > "The three Google keys"). Its real budget is
+    # `preview-generation`, leased in-job below.
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -153,6 +160,20 @@ jobs:
         uses: ./.github/actions/resolve-vercel-preview
         with:
           sha: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      # In-job serialization, replacing the old `gemini-free-tier` group
+      # (#264 follow-up — see the job comment above and
+      # `scripts/ci/gemini-slot.mjs`). Placed after relevance/secrets/preview
+      # resolution: a PR that is going to spend nothing waits for nothing.
+      # `preview-generation` is this lane's own budget (the Vercel Preview
+      # environment's Google project), so it no longer queues against — or
+      # evicts — the CI-key jobs. Fails open on timeout or API error.
+      - name: Wait for a Gemini free-tier slot (preview-generation)
+        if: steps.preview.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLOT_BUDGET: "preview-generation"
+        run: node scripts/ci/gemini-slot.mjs
 
       - name: Build packages/core, packages/career-data and packages/agent
         if: steps.preview.outputs.found == 'true'

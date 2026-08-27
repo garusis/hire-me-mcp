@@ -57,7 +57,9 @@
     "docs-rot:test": "node --test scripts/ci/docs-rot/*.test.mjs",
     "ci:neon-cleanup": "node scripts/ci/neon-branch-cleanup.mjs",
     "ci:neon-cleanup:test": "node --test scripts/ci/neon-branch-cleanup.test.mjs scripts/ci/retrieval-eval/summary.test.mjs",
-    "ci:eval-relevance:test": "node --test scripts/ci/eval-relevance.test.mjs"
+    "ci:eval-relevance:test": "node --test scripts/ci/eval-relevance.test.mjs",
+    "ci:gemini-slot:test": "node --test scripts/ci/gemini-slot.test.mjs",
+    "ci:scripts:test": "node --test scripts/ci/*.test.mjs scripts/ci/docs-rot/*.test.mjs scripts/ci/retrieval-eval/*.test.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

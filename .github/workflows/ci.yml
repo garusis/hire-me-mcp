@@ -125,6 +125,15 @@ jobs:
       - name: Verify README local-development commands (#23)
         run: node scripts/ci/verify-readme-local-dev.mjs
 
+      # The `scripts/ci/**` helpers live outside the pnpm workspace, so
+      # `pnpm turbo test` above never sees their `node --test` suites — they
+      # were runnable but unrun, documented in docs/development.md and
+      # nowhere enforced. They gate real merge behaviour (relevance
+      # detection, the Gemini slot lease, the docs-rot target selection),
+      # so `quality` runs them here.
+      - name: CI helper script unit tests
+        run: pnpm ci:scripts:test
+
   # No `needs: quality` — e2e runs in parallel with quality so a broken page
   # is reported as an e2e failure (not skipped because quality also failed)
   # and both are independently required status checks on main.

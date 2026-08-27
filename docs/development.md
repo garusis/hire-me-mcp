@@ -399,11 +399,10 @@ A `rate_limited` failure means the *project behind that surface* is out of allow
   fix that rather than retrying.
 - **In the deployed preview's chat UI, by hand**: the Preview project is exhausted. The banner
   ("Too many messages right now") is the honest, intended behaviour.
-- **In `agent-evals` / `retrieval-eval`**: the CI key's project is exhausted. Both jobs (and
-  `preview-chat-live`) share the `gemini-free-tier` concurrency group so they queue rather than
-  race; wait for the reset. Note that GitHub keeps only one *pending* run per concurrency group, so
-  a newer waiter cancels an older one — which is why `preview-e2e`, now that it spends no quota,
-  is deliberately no longer in that group.
+- **In `agent-evals` / `retrieval-eval`**: the CI key's project is exhausted. Wait for the reset.
+  These two jobs no longer queue against each other or against `preview-chat-live` — they spend
+  three different allowances, and each waits only for its own. See "Serializing the Gemini-spending
+  workflows" below.
 
 See `packages/agent/README.md`'s quota-rationale table for the per-run call budgets.
 
@@ -498,8 +497,9 @@ the default-config server.
 One command runs the **entire** pyramid above — unit, Neon integration, e2e smoke, MCP protocol,
 retrieval evals, agent evals, the full deployed-URL suite and the Lighthouse gate — against the
 production configuration and domain, and reports a single pass/fail. In CI it's the manually
-dispatched **Release Readiness** workflow (`.github/workflows/release-readiness.yml`, same
-`gemini-free-tier` concurrency group as the other model-calling jobs). The committed checklist —
+dispatched **Release Readiness** workflow (`.github/workflows/release-readiness.yml`, which leases
+both Actions-secret Gemini budgets before it starts — see "Serializing the Gemini-spending
+workflows" above). The committed checklist —
 what "green" means at each level, the per-surface coverage inventory, and the
 production-safety/no-pollution rationale — lives in
 [`docs/release-readiness.md`](release-readiness.md).
@@ -626,6 +626,65 @@ evals rather than silently skipping a gate. Irrelevant PRs report green in secon
 model calls — never a workflow-level `paths:` filter, which would permanently block PRs on a
 required check that never reports (#176).
 
+### Serializing the Gemini-spending workflows (#264 follow-up)
+
+Relevance detection decides *whether* a run spends quota. This decides *when*, so that two runs
+that would spend the same allowance don't collide — without any run ever being cancelled.
+
+**A GitHub concurrency group is a canceller, not a queue.** Every Gemini-spending job used to
+carry `concurrency: { group: gemini-free-tier, cancel-in-progress: false }`, commented as "queue
+rather than race". GitHub does not do that. A group holds **one** run in progress and **one**
+pending; a third contender **cancels** the pending one. `gh pr checks` reports a cancelled run as
+`fail`. With `retrieval-eval` (required), `agent-evals` and `preview-chat-live` all in the group,
+an ordinary day with two or three open PRs turned a required check red for reasons unrelated to
+the change — #176's failure mode, reintroduced by the mechanism meant to protect the quota — and
+every merge needed hand-serialized re-runs. There is no setting that makes GitHub queue more than
+one run, so the queue had to move somewhere it can exist.
+
+**Budgets, not "is this a Gemini job".** The free tier is per Google project *and* per model, and
+the old single group serialized jobs that cannot starve each other at all:
+
+| Budget | Credential slot | Model | Workflows |
+| --- | --- | --- | --- |
+| `ci-embedding` | `GOOGLE_GENERATIVE_AI_API_KEY` Actions secret | `gemini-embedding-001` | `retrieval-eval`, `reindex-production`, `release-readiness` |
+| `ci-generation` | the same Actions secret | `gemini-3.5-flash-lite` | `agent-evals`, `release-readiness` |
+| `preview-generation` | the Vercel **Preview** environment's key | `gemini-3.5-flash-lite` | `preview-chat-live` |
+
+`preview-chat-live` drives a deployed *preview*, whose chat runs on the Preview project's key — a
+different Google project from the Actions secret (see "The three Google keys" above). It never
+shared an allowance with `retrieval-eval`; queueing them together bought nothing and cost a
+required check.
+
+**The lease.** [`scripts/ci/gemini-slot.mjs`](../scripts/ci/gemini-slot.mjs) (unit-tested:
+`pnpm ci:gemini-slot:test`) implements the queue in-job. A job names its budget(s) in `SLOT_BUDGET`
+and waits until no **older** live run (lower run id, `queued` or `in_progress`) of any workflow in
+that budget's cohort remains. Because "blocks" only ever points from a higher run id to a lower
+one, the relation is a strict order: it cannot cycle, the oldest live run in a cohort is always
+free to proceed, and every waiter eventually becomes the oldest. `release-readiness` spends two
+budgets and waits on both; overlapping cohorts are safe for the same reason.
+
+**Where the step goes, and what it costs.** The lease step runs *after* relevance and secrets
+detection, so a PR that is going to spend nothing waits for nothing. Waiting costs runner minutes
+(free on this public repo), not merge health. Job timeouts were raised to leave room for it.
+
+**Fail-open, bounded, loud.** The wait is capped by `SLOT_MAX_WAIT_SECONDS` (default 600; 1800 for
+release-readiness). On timeout — or on any API error — the script emits a `::warning::`, records it
+in the job summary, and exits 0 so the job runs anyway. A queueing mechanism must never be able to
+redden a required gate; the worst case of giving up is the contention we had before, not a blocked
+merge. Either way the job summary says which budget was held and how long the wait was, so "this
+run waited" and "this run failed" are never confused.
+
+**Consequences for reading a red check.** Since no cohort run is ever queue-cancelled, a red
+Gemini-spending check now means the product regressed or the provider refused — never that another
+PR evicted it. `retrieval-eval`, the only required member, is in no shared group at all, so nothing
+another PR does can cancel it. Two unit tests keep this true: one asserts every workflow's declared
+`SLOT_BUDGET` matches the budget table in both directions; the other fails if any workflow
+re-introduces a `gemini-free-tier` concurrency group.
+
+Those `node --test` suites (and the other `scripts/ci/**` helpers') run in CI as the `quality` job's
+"CI helper script unit tests" step — `pnpm ci:scripts:test`. They live outside the pnpm workspace,
+so `pnpm turbo test` never sees them.
+
 A SEVENTH workflow, [`.github/workflows/docs-rot.yml`](../.github/workflows/docs-rot.yml) (#59),
 makes documentation rot impossible to merge or leave running unnoticed: two independent jobs,
 `docs-rot-snippets` and `docs-rot-links`, run on every pull request (against the PR's Vercel
@@ -644,6 +703,20 @@ preview), on every push to `main`, and on a daily `06:17 UTC` schedule (both als
   none is re-typed in the workflow or the script — so a stale/bogus documented endpoint fails the
   job instead of silently passing (proved by a fixture-server test,
   `scripts/ci/docs-rot/extract-artifacts.test.mjs`).
+
+  **Which deployment answers which check (#61/#174).** The generated snippets' literal endpoint is
+  always *production* — that is what a reader copy-pastes — so the curl, Claude Code CLI and JSON
+  client-config checks execute against production even on a PR: they are assertions about whether
+  the published snippet works. The **tool table** is different. It asserts that the doc's *content*
+  matches the deployment under test, and on a PR that is the PR's own preview, which is routinely
+  ahead of production — a PR that adds an MCP tool and documents it in the same commit (the correct,
+  atomic thing to do) has the tool in its preview and not in production. Checking it against
+  production made that PR unmergeable: chicken-and-egg. `resolveToolsListUrl` therefore maps the
+  documented endpoint's *path* onto `--target-url`'s origin — the preview on a PR, production itself
+  on the push/cron run, where the mapping is the identity and behaviour is unchanged. Both
+  directions are unit-tested, and the check now names the deployment it queried in its output and in
+  any failure, because the original bug was invisible in the logs: the failure read as a missing
+  tool, not as a misdirected question.
 - **`docs-rot-links`** — crawls every Markdown file in the repo plus every page of the deployed site
   (breadth-first from `/`, seeded with `/llms.txt`'s own links), checking every discovered URL (HEAD
   falling back to GET, retried with exponential backoff) and failing on 4xx/5xx. A documented,
@@ -690,16 +763,16 @@ can change what gets indexed or how retrieval scores (`packages/core/**`, the ca
 the workflow/helper script), plus `workflow_dispatch` for an on-demand full run — not on every PR
 unconditionally, since a still-new eval suite making real embedding calls on every unrelated PR
 would be needless cost even though ingestion's incremental behavior keeps the marginal cost near
-zero once content is unchanged. Shares the job-level `gemini-free-tier` concurrency group with
-`agent-evals`/`preview-e2e` (below) — see that group's own note for why a job can be cancelled
-while queued and what to do about it. Skips (rather than fails red) on fork PRs, same pattern as
-`db-integration`.
+zero once content is unchanged. Serializes against the other `ci-embedding` spenders with the
+in-job slot lease — never a shared concurrency group, which would let another PR cancel this
+REQUIRED check (see "Serializing the Gemini-spending workflows" above). Skips (rather than fails
+red) on fork PRs, same pattern as `db-integration`.
 
 A NINTH workflow, [`.github/workflows/reindex-production.yml`](../.github/workflows/reindex-production.yml)
 (#52), is the production loop: on every push to `main` touching the same paths, it runs migrations
 and a real, incremental `pnpm ingest` directly against production's `DATABASE_URL` — no Neon
 branch — failing loudly on a permanent ingest error rather than leaving a stale/partial index. Also
-in the `gemini-free-tier` concurrency group. Deliberately **not** wired into Vercel's own build —
+an `ci-embedding` slot-lease holder. Deliberately **not** wired into Vercel's own build —
 see "How re-indexing works" above and `docs/deployment.md`'s "CI vs. Vercel" section.
 
 A TENTH workflow, [`.github/workflows/neon-branch-cleanup.yml`](../.github/workflows/neon-branch-cleanup.yml)

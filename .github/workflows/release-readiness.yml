@@ -25,11 +25,15 @@ on:
         required: false
         default: "https://hire-me-mcp-web.vercel.app"
 
-# Same shared-quota queueing as preview-e2e / agent-evals / retrieval-eval
-# (#169): never race another Gemini-calling job for the free-tier RPM.
-concurrency:
-  group: gemini-free-tier
-  cancel-in-progress: false
+# NO shared GitHub concurrency group (#264 follow-up). The old
+# `gemini-free-tier` group promised queueing GitHub does not implement —
+# one run in progress, ONE pending, and a third contender cancels the
+# pending one, which is how a REQUIRED PR check kept ending up red. A
+# cancelled certification run is just as wrong. This workflow spends BOTH
+# Actions-secret budgets (retrieval evals on `gemini-embedding-001`, agent
+# evals on `gemini-3.5-flash-lite`), so it leases both in-job before the
+# certification step — see `scripts/ci/gemini-slot.mjs` and
+# docs/development.md > "Serializing the Gemini-spending workflows".
 
 jobs:
   certify:
@@ -84,6 +88,19 @@ jobs:
 
       - name: Install Chromium (with OS deps)
         run: pnpm exec playwright install --with-deps chromium
+
+      # In-job serialization, replacing the old `gemini-free-tier` group
+      # (#264 follow-up). A certification spends both Actions-secret
+      # budgets, so it waits for both; overlapping cohorts stay deadlock-free
+      # because the lease is FIFO by run id. A 60-minute certification can
+      # out-wait a PR job's own lease budget — that is the documented
+      # fail-open path, not a failure.
+      - name: Wait for Gemini free-tier slots (ci-embedding, ci-generation)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLOT_BUDGET: "ci-embedding,ci-generation"
+          SLOT_MAX_WAIT_SECONDS: "1800"
+        run: node scripts/ci/gemini-slot.mjs
 
       # Strict, not skip-on-missing: unlike the per-PR jobs (which skip
       # cleanly on fork PRs), a certification run with a missing secret

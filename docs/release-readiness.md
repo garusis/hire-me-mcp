@@ -32,9 +32,13 @@ gh workflow run release-readiness.yml -f base_url=<origin>
 
 It is `workflow_dispatch`-only (never scheduled, never PR-triggered) because a
 run spends real shared Gemini free-tier quota and drives real traffic at the
-production domain, and it sits in the `gemini-free-tier` concurrency group so
-it queues behind — never races — `preview-e2e`, `agent-evals` and
-`retrieval-eval` (#169).
+production domain. Before the certification step it leases both Actions-secret
+Gemini budgets in-job (`ci-embedding` and `ci-generation`,
+`scripts/ci/gemini-slot.mjs`), so it queues behind — never races, and is never
+cancelled by — `agent-evals`, `retrieval-eval` and `reindex-production`. See
+[`docs/development.md`](development.md) > "Serializing the Gemini-spending
+workflows" for why that is an in-job lease rather than a GitHub concurrency
+group.
 
 ## The checklist — what "green" means at each level
 
@@ -116,8 +120,8 @@ per risk:
   run's own assertions loudly rather than locking anything out (limits are
   per-IP sliding windows; they self-reset).
 - **Gemini free-tier quota (shared with live chat).** All model-calling steps
-  run sequentially in one job inside the `gemini-free-tier` concurrency
-  group; `eval:agent` is RPM-capped (`EVAL_RPM_LIMIT`) below the 15 RPM
+  run sequentially in one job, which holds both Actions-secret Gemini budgets
+  for its duration; `eval:agent` is RPM-capped (`EVAL_RPM_LIMIT`) below the 15 RPM
   ceiling. One full certification spends a bounded, documented slice of the
   500 RPD budget — do not loop it.
 - **Analytics pollution.** Tool-call and chat analytics are anonymized
