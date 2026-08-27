@@ -28,8 +28,8 @@ name: Preview Chat (live model)
 #     honest red that informs without blocking merges.
 #
 # Same standalone-workflow rationale `agent-evals.yml` documents: its own
-# trigger set and its own `gemini-free-tier` queueing semantics, rather than
-# entangling ci.yml's every-PR jobs with them.
+# trigger set and its own `preview-generation` queueing semantics, rather
+# than entangling ci.yml's every-PR jobs with them.
 #
 # ## Trigger strategy — every PR, in-job relevance detection (#207, #176)
 #

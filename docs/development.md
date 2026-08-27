@@ -497,8 +497,9 @@ the default-config server.
 One command runs the **entire** pyramid above — unit, Neon integration, e2e smoke, MCP protocol,
 retrieval evals, agent evals, the full deployed-URL suite and the Lighthouse gate — against the
 production configuration and domain, and reports a single pass/fail. In CI it's the manually
-dispatched **Release Readiness** workflow (`.github/workflows/release-readiness.yml`, same
-`gemini-free-tier` concurrency group as the other model-calling jobs). The committed checklist —
+dispatched **Release Readiness** workflow (`.github/workflows/release-readiness.yml`, which leases
+both Actions-secret Gemini budgets before it starts — see "Serializing the Gemini-spending
+workflows" above). The committed checklist —
 what "green" means at each level, the per-surface coverage inventory, and the
 production-safety/no-pollution rationale — lives in
 [`docs/release-readiness.md`](release-readiness.md).
@@ -762,16 +763,16 @@ can change what gets indexed or how retrieval scores (`packages/core/**`, the ca
 the workflow/helper script), plus `workflow_dispatch` for an on-demand full run — not on every PR
 unconditionally, since a still-new eval suite making real embedding calls on every unrelated PR
 would be needless cost even though ingestion's incremental behavior keeps the marginal cost near
-zero once content is unchanged. Shares the job-level `gemini-free-tier` concurrency group with
-`agent-evals`/`preview-e2e` (below) — see that group's own note for why a job can be cancelled
-while queued and what to do about it. Skips (rather than fails red) on fork PRs, same pattern as
-`db-integration`.
+zero once content is unchanged. Serializes against the other `ci-embedding` spenders with the
+in-job slot lease — never a shared concurrency group, which would let another PR cancel this
+REQUIRED check (see "Serializing the Gemini-spending workflows" above). Skips (rather than fails
+red) on fork PRs, same pattern as `db-integration`.
 
 A NINTH workflow, [`.github/workflows/reindex-production.yml`](../.github/workflows/reindex-production.yml)
 (#52), is the production loop: on every push to `main` touching the same paths, it runs migrations
 and a real, incremental `pnpm ingest` directly against production's `DATABASE_URL` — no Neon
 branch — failing loudly on a permanent ingest error rather than leaving a stale/partial index. Also
-in the `gemini-free-tier` concurrency group. Deliberately **not** wired into Vercel's own build —
+an `ci-embedding` slot-lease holder. Deliberately **not** wired into Vercel's own build —
 see "How re-indexing works" above and `docs/deployment.md`'s "CI vs. Vercel" section.
 
 A TENTH workflow, [`.github/workflows/neon-branch-cleanup.yml`](../.github/workflows/neon-branch-cleanup.yml)

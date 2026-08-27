@@ -11,17 +11,17 @@ name: Agent Evals
 # agent's new `search-career` semantic-search tool — this job's "the
 # extended agent eval suite runs in CI" acceptance criterion — and is what
 # this workflow means by "wired in alongside the retrieval evals from #52"
-# (`retrieval-eval.yml`): both jobs share the `gemini-free-tier`
-# concurrency group below so they queue rather than race for the same
-# free-tier quota, and this job now also requires `DATABASE_URL` (the same
-# repo secret `reindex-production.yml` uses) so `search-career` has a real
-# store to query.
+# (`retrieval-eval.yml`). Those two jobs no longer queue against each other
+# at all — they spend different models' allowances (see the job-level note
+# below and `scripts/ci/gemini-slot.mjs`) — and this job now also requires
+# `DATABASE_URL` (the same repo secret `reindex-production.yml` uses) so
+# `search-career` has a real store to query.
 #
 # ## Why a SEPARATE workflow file, not a job in ci.yml
 #
 # This job has its own trigger set (`labeled` PRs for the run-evals
 # override, `workflow_dispatch` with a `max_cases` input, `push` to main)
-# and its own `gemini-free-tier` queueing semantics — a standalone
+# and its own `ci-generation` queueing semantics — a standalone
 # workflow keeps that self-contained instead of entangling it with
 # quality/e2e/mcp-integration's plain every-PR triggers.
 #
@@ -117,6 +117,7 @@ jobs:
     # protection now lives in the in-job `ci-generation` slot lease (see
     # `scripts/ci/gemini-slot.mjs`), which queues any number of runs and
     # cancels none.
+    #
     # Budget caps below cover a full 25-case dataset run — #143's real
     # 17-case run used 111,137 tokens; #75 (this comment's own change) added
     # 8 more cases (three RAG-grounded fuzzy/cross-cutting, two RAG-grounded

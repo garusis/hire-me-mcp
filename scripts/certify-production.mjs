@@ -45,9 +45,10 @@
  * `DATABASE_URL` — production data is only ever READ (retrieval/agent
  * evals, search-career MCP calls). Gemini-calling steps run strictly
  * sequentially, sharing the same 15 RPM free-tier budget production chat
- * uses; in CI the workflow additionally sits in the `gemini-free-tier`
- * concurrency group. See docs/release-readiness.md for the analytics /
- * rate-limit / outbound-contact pollution notes.
+ * uses; in CI the workflow additionally leases both Actions-secret Gemini
+ * budgets in-job first (`scripts/ci/gemini-slot.mjs`). See
+ * docs/release-readiness.md for the analytics / rate-limit /
+ * outbound-contact pollution notes.
  *
  * Usage:
  *   pnpm certify:production                # against production
