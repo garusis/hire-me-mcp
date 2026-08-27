@@ -29,7 +29,19 @@ function WritingEntryCard({ item }: { item: WritingListItemView }) {
   );
 }
 
-/** Description lists every writing entry's title, or names the documented empty state. */
+/**
+ * Description lists every writing entry's title, or names the documented
+ * empty state.
+ *
+ * The route is `noindex` while the dataset is empty (issue 278): issue 233
+ * already removed Writing from the nav, the sitemap and llms.txt, but the
+ * route stayed live and `index, follow` — so the one page saying nothing has
+ * been published was the one page still inviting crawlers. The route keeps
+ * returning 200 rather than redirecting or 404ing, so any existing inbound
+ * link still resolves; it just stops asking to be indexed. This is driven by
+ * the same `items.length` the body renders from, never a hardcoded flag: the
+ * first authored entry makes the page indexable again on its own.
+ */
 export function generateMetadata(): Metadata {
   const { profile } = getProfileView();
   const { items } = getWritingListView();
@@ -37,7 +49,12 @@ export function generateMetadata(): Metadata {
     items.length === 0
       ? `${profile.name} hasn't published any writing here yet.`
       : `${profile.name}'s writing: ${items.map((item) => item.entry.title).join(", ")}.`;
-  return buildPageMetadata({ title: "Writing", description, path: "/writing" });
+  return buildPageMetadata({
+    title: "Writing",
+    description,
+    path: "/writing",
+    indexable: items.length > 0,
+  });
 }
 
 /**

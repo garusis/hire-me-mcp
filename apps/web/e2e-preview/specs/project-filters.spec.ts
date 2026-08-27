@@ -22,6 +22,26 @@ function firstSharedTag(): string {
   return shared[0];
 }
 
+/**
+ * A tag that at least one project carries, at least one does NOT, and whose
+ * upper-cased spelling differs from the authored one — so a case-insensitive
+ * match is observably different from both "no filter" and "no results".
+ */
+function narrowingTag(): string {
+  const tag = [...new Set(dataset.projects.flatMap((project) => project.tech))].find(
+    (candidate) => {
+      const matches = dataset.projects.filter((project) => project.tech.includes(candidate)).length;
+      return (
+        matches > 0 && matches < dataset.projects.length && candidate.toUpperCase() !== candidate
+      );
+    },
+  );
+  if (tag === undefined) {
+    throw new Error("preview e2e: no tag both narrows the project list and has a distinct casing");
+  }
+  return tag;
+}
+
 test("filtering by a tag narrows the list and produces a shareable URL", async ({
   gotoRoute,
   page,
@@ -43,4 +63,24 @@ test("filtering by a tag narrows the list and produces a shareable URL", async (
   await page.getByRole("link", { name: "Clear filters" }).click();
   await expect(page).toHaveURL(/\/projects$/);
   await expect(page.getByRole("article")).toHaveCount(dataset.projects.length);
+});
+
+/**
+ * Issue 274 — the tag filter used to be case-sensitive while the MCP server
+ * guaranteed case-insensitive matching (issue 226), so `?tags=TypeScript`
+ * (exactly what an agent builds from the sample prompt the `/mcp` page
+ * advertises) returned the whole unfiltered portfolio, under a notice
+ * claiming no project lists that technology.
+ */
+test("a differently-cased tag in the URL filters the same way the canonical one does", async ({
+  gotoRoute,
+  page,
+}) => {
+  const tag = narrowingTag();
+  const expectedCount = dataset.projects.filter((project) => project.tech.includes(tag)).length;
+
+  await gotoRoute(`/projects?tags=${encodeURIComponent(tag.toUpperCase())}`);
+
+  await expect(page.getByRole("article")).toHaveCount(expectedCount);
+  await expect(page.getByText(/ignored an unknown tag/i)).toHaveCount(0);
 });

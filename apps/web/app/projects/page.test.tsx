@@ -188,6 +188,45 @@ describe("Projects page", () => {
     expect(screen.getByRole("link", { name: /Beta Project/i })).toBeDefined();
   });
 
+  // Issue 274 — `?tags=TypeScript` used to return the whole unfiltered list
+  // AND print a notice claiming the tag isn't one any project lists, right
+  // under a chip row showing exactly that tag.
+  it.each(["TypeScript", "TYPESCRIPT"])(
+    "filters case-insensitively for ?tags=%s, matching the MCP server (#274)",
+    async (tag) => {
+      getProjectsListView.mockReturnValue(projectsView());
+
+      await renderProjectsPage({ tags: tag });
+
+      expect(screen.getByRole("link", { name: /Alpha Project/i })).toBeDefined();
+      expect(screen.queryByRole("link", { name: /Beta Project/i })).toBeNull();
+      expect(screen.queryByText(/ignored an unknown tag/i)).toBeNull();
+    },
+  );
+
+  it("marks the canonical chip as selected for a differently-cased URL tag (#274)", async () => {
+    getProjectsListView.mockReturnValue(projectsView());
+
+    await renderProjectsPage({ tags: "TypeScript" });
+
+    // Toggling the already-selected tag clears it, so the canonical chip's
+    // href proves the page recognised the title-cased URL value.
+    expect(screen.getByRole("link", { name: /^typescript/ })).toHaveAttribute("href", "/projects");
+  });
+
+  it("the unknown-tag notice claims nothing the page contradicts (#274)", async () => {
+    getProjectsListView.mockReturnValue(projectsView());
+
+    await renderProjectsPage({ tags: "not-a-real-tag" });
+
+    // The old copy said the tag "isn't a technology any project here lists"
+    // even when it plainly was — the notice now only ever fires for a tag
+    // no project carries under case-insensitive matching, and points at the
+    // chip row as the authoritative set.
+    expect(screen.getByText(/no project here lists it as a technology/i)).toBeDefined();
+    expect(screen.getByText(/matched regardless of capitalisation/i)).toBeDefined();
+  });
+
   it("each project card links through to its detail route", async () => {
     getProjectsListView.mockReturnValue(projectsView());
 

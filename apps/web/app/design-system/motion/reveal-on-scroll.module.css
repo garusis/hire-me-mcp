@@ -1,9 +1,13 @@
+/*
+ * `.pending` carries no transition on purpose (issue 273): it is applied by
+ * client JS, only ever to a wrapper the observer has just reported as
+ * off-screen, so hiding must be instantaneous — a transition here would
+ * animate content *out* if it were ever applied to something on screen.
+ * The transition lives on `.revealed`, the only direction a visitor watches.
+ */
 .pending {
   opacity: 0;
   transform: translateY(1rem);
-  transition:
-    opacity var(--motion-duration-slow) var(--motion-ease),
-    transform var(--motion-duration-slow) var(--motion-ease);
 }
 
 .revealed {

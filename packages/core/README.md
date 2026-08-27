@@ -78,7 +78,7 @@ multi-value field**. There is no cross-field OR.
 same-start ties, ahead of one that has since ended. Any remaining tie is broken by `id` ascending,
 so the order is fully deterministic regardless of the input array's order.
 
-### `searchProjects(repository: CareerDataRepository, query: string, options?: SearchProjectsOptions): DomainResult<ProjectSearchResult[]>`
+### `searchProjects(repository: CareerDataRepository, query: string | undefined, options?: SearchProjectsOptions): DomainResult<ProjectSearchResult[]>`
 
 Deterministic keyword/tag search over the repository's `Project` entries — **no embeddings, no
 randomness, no semantic ranking** (that's epic #6, deliberately out of scope here). The same query
@@ -133,8 +133,15 @@ The same query against the same dataset, run any number of times, returns byte-i
   goes through, so `tags: ["postgres"]` and `tags: ["postgresql"]` pre-filter identically. Omitted
   or an empty array imposes no constraint.
 
-An empty/whitespace-only `query`, or a `query` that matches nothing, returns
-`{ data: [], citations: [] }` — never throws. Every returned result carries a citation resolving to
+**Tag-only search (#275).** `query` is optional. Omitted, empty or whitespace-only, *with* a
+non-empty `tags`, the resolved tags become the search terms themselves: every project the
+pre-filter selected comes back ranked, each with an ordinary `{ field: "tag", token }` explanation.
+This is what makes "by keyword **and/or** technology tag" true — either argument alone is a valid
+search, so `searchProjects(repo, undefined, { tags: ["typescript"] })` answers "what has he built
+with TypeScript?" without inventing a keyword to go with it.
+
+With neither a usable `query` nor any `tags`, or when nothing matches, the result is
+`{ data: [], citations: [] }` — never a throw. Every returned result carries a citation resolving to
 its `Project` (`citations[i]` corresponds to `data[i]`).
 
 ### The reusable `./search/` module

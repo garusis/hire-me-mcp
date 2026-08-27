@@ -116,32 +116,42 @@ function buildProjectDocument(project: Project) {
  * `options.limit` truncates the ranked results afterward without changing
  * their relative order.
  *
- * Returns `{ data: [], citations: [] }` — never throws — for an empty or
- * whitespace-only query, or a query that matches nothing. Every returned
- * result carries a citation resolving to its project (`citations[i]`
- * corresponds to `data[i]`).
+ * `query` is optional (#275): a **tag-only** search — no query, or an empty
+ * or whitespace-only one, plus a non-empty `options.tags` — ranks the
+ * tag-filtered candidates by those tags instead, so every project carrying
+ * a requested tag comes back with an ordinary `tag` match explanation. This
+ * is what the tools built on top advertise ("by keyword and/or technology
+ * tag"): either argument alone is a valid search.
+ *
+ * Returns `{ data: [], citations: [] }` — never throws — when there is
+ * neither a usable query nor any tag to search by, or when nothing matches.
+ * Every returned result carries a citation resolving to its project
+ * (`citations[i]` corresponds to `data[i]`).
  */
 export function searchProjects(
   repository: CareerDataRepository,
-  query: string,
+  query: string | undefined,
   options: SearchProjectsOptions = {},
 ): DomainResult<ProjectSearchResult[]> {
   const { projects } = repository.getDataset();
   const aliasIndex = buildTagAliasIndex(repository);
 
+  const resolvedTags = (options.tags ?? []).map((tag) => resolveTag(tag, aliasIndex));
   const candidateProjects =
-    options.tags === undefined || options.tags.length === 0
+    resolvedTags.length === 0
       ? projects
-      : projects.filter((project) => {
-          const resolvedTags = (options.tags ?? []).map((tag) => resolveTag(tag, aliasIndex));
-          return project.tech.some((tag) => resolvedTags.includes(tag));
-        });
+      : projects.filter((project) => project.tech.some((tag) => resolvedTags.includes(tag)));
 
-  const rawTokens = tokenize(query);
-  if (rawTokens.length === 0) {
+  const rawTokens = tokenize(query ?? "");
+  // No usable query: fall back to searching for the requested tags
+  // themselves, which ranks (and explains) every candidate the pre-filter
+  // already selected. With neither a query nor tags there is nothing to
+  // search for at all.
+  const queryTokens =
+    rawTokens.length === 0 ? resolvedTags : expandWithResolvedTags(rawTokens, aliasIndex);
+  if (queryTokens.length === 0) {
     return createDomainResult([], []);
   }
-  const queryTokens = expandWithResolvedTags(rawTokens, aliasIndex);
 
   const documents = candidateProjects.map(buildProjectDocument);
   const matches = search(documents, queryTokens, { limit: options.limit });

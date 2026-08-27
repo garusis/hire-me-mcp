@@ -181,4 +181,29 @@ describe("Writing page metadata", () => {
       description: metadata.description,
     });
   });
+
+  // Issue 278 — #233 removed Writing from the nav, sitemap and llms.txt but
+  // left the route `index, follow`, so the one page saying nothing has been
+  // published was the one page still inviting crawlers.
+  it("asks search engines not to index the route while the dataset is empty (#278)", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getWritingListView.mockReturnValue({ items: [], citations: [] });
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+  });
+
+  it("stops overriding robots as soon as the dataset has entries — no hardcoded flag (#278)", async () => {
+    getProfileView.mockReturnValue(profileView());
+    getWritingListView.mockReturnValue(writingView());
+    const { generateMetadata } = await import("./page.js");
+
+    const metadata = generateMetadata();
+
+    // Unset, so the route inherits app/layout.tsx's site-wide directive —
+    // which is itself `noindex` on every preview/local deploy.
+    expect(metadata.robots).toBeUndefined();
+  });
 });

@@ -35,11 +35,32 @@ export interface PageMetadataInput {
   type?: "website" | "article";
   /** Path to this route's OG image, combined with the site URL. Defaults to `/opengraph-image` (the site-wide default, #44) — override for a route with its own `opengraph-image.tsx`. */
   image?: string;
+  /**
+   * Set to `false` for a route that should not be indexed *right now* —
+   * emits `robots: { index: false, follow: true }` (#278). Left unset (the
+   * default), the route inherits `app/layout.tsx`'s site-wide directive,
+   * which is already `noindex` on every preview and local deploy.
+   *
+   * Intended for a route whose worth indexing depends on its content: pass
+   * a real predicate over the content layer (e.g. "the writing list is
+   * empty"), never a hardcoded `false` — the route then starts being
+   * indexable by itself the moment the content exists, with no code change.
+   * `follow` stays true so the route's own outbound links keep being
+   * crawled, and so nothing linking *to* it needs to 404.
+   */
+  indexable?: boolean;
 }
 
 /** Builds `title`/`description`/`alternates.canonical`/`openGraph`/`twitter` for one route, from that route's own title, description and image. */
 export function buildPageMetadata(
-  { title, description, path, type = "website", image = "/opengraph-image" }: PageMetadataInput,
+  {
+    title,
+    description,
+    path,
+    type = "website",
+    image = "/opengraph-image",
+    indexable = true,
+  }: PageMetadataInput,
   siteUrl: string = getSiteUrl(),
 ): Metadata {
   const imageUrl = `${siteUrl}${image}`;
@@ -47,6 +68,7 @@ export function buildPageMetadata(
     title,
     description,
     alternates: { canonical: path },
+    ...(indexable ? {} : { robots: { index: false, follow: true } }),
     openGraph: {
       title,
       description,

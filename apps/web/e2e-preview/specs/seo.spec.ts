@@ -27,6 +27,27 @@ test("sitemap.xml is reachable and well-formed", async ({ request, baseURL }) =>
   expect(body).toContain("<loc>");
 });
 
+/**
+ * Issue 278 — #233 removed Writing from the nav, the sitemap and llms.txt,
+ * but the route stayed live and `index, follow`: the one page whose entire
+ * content is "nothing published yet" was the only one still inviting
+ * crawlers. It keeps returning 200 (so no inbound link 404s) and is
+ * `noindex` for exactly as long as the dataset is empty.
+ */
+test("the empty /writing route is reachable but not indexable", async ({ request, baseURL }) => {
+  const response = await request.get(`${baseURL}/writing`);
+  expect(response.status()).toBe(200);
+
+  const html = await response.text();
+  const robots = html.match(/<meta name="robots" content="([^"]*)"/)?.[1];
+  expect(robots, "/writing has no robots meta tag at all").toBeTruthy();
+  expect(robots).toContain("noindex");
+
+  // The dataset really is empty — otherwise this assertion is checking the
+  // wrong branch and the route should be indexable again.
+  expect(html).toContain("Nothing published here yet");
+});
+
 test("robots.txt is reachable, well-formed, and points at the sitemap", async ({
   request,
   baseURL,

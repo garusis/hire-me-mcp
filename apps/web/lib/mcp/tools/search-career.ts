@@ -51,7 +51,7 @@ import {
 } from "@hire-me-mcp/core/search-career";
 import { z } from "zod";
 import { resolveCitationSiteUrl } from "../citation-site-urls";
-import type { ToolDefinition } from "../define-tool";
+import { numberRangeMessage, stringLengthMessage, type ToolDefinition } from "../define-tool";
 import { getSearchCareer } from "../search-career-instance";
 import { toolSuccessSchema } from "../wire-schemas";
 
@@ -93,29 +93,35 @@ const SEARCH_SOURCE_TYPES = [
 
 const inputSchema = z.object({
   query: z
-    .string()
+    // The explicit error callbacks keep these messages useful on the MCP
+    // SDK's own pre-handler validation path too, where zod's locale-based
+    // default degrades to a bare "Invalid input" in a production bundle
+    // (#244 for the required/enum cases, #276 for range and length).
+    .string({ error: (issue) => (issue.input === undefined ? "required" : undefined) })
     .trim()
-    .min(1)
-    .max(MAX_QUERY_LENGTH)
+    .min(1, { error: () => stringLengthMessage(1, MAX_QUERY_LENGTH, { trimmed: true }) })
+    .max(MAX_QUERY_LENGTH, {
+      error: () => stringLengthMessage(1, MAX_QUERY_LENGTH, { trimmed: true }),
+    })
     .describe(
       `Free-text question or phrase to search Marcos Alvarez's career content for, ` +
         `semantically — e.g. 'event-driven architecture experience' or 'has he led a team'. ` +
         `1-${MAX_QUERY_LENGTH} characters after trimming; empty or whitespace-only is invalid.`,
     ),
   topK: z
-    .number()
-    .int()
-    .min(MIN_TOP_K)
-    .max(MAX_TOP_K)
+    .number({ error: () => numberRangeMessage(MIN_TOP_K, MAX_TOP_K, { integer: true }) })
+    .int({ error: () => numberRangeMessage(MIN_TOP_K, MAX_TOP_K, { integer: true }) })
+    .min(MIN_TOP_K, { error: () => numberRangeMessage(MIN_TOP_K, MAX_TOP_K, { integer: true }) })
+    .max(MAX_TOP_K, { error: () => numberRangeMessage(MIN_TOP_K, MAX_TOP_K, { integer: true }) })
     .optional()
     .describe(
       `Maximum number of ranked excerpts to return, an integer in [${MIN_TOP_K}, ${MAX_TOP_K}]. ` +
         "Omit for the server's default (currently 10).",
     ),
   minScore: z
-    .number()
-    .min(-1)
-    .max(1)
+    .number({ error: () => numberRangeMessage(-1, 1) })
+    .min(-1, { error: () => numberRangeMessage(-1, 1) })
+    .max(1, { error: () => numberRangeMessage(-1, 1) })
     .optional()
     .describe(
       "Minimum cosine-similarity score (in [-1, 1], higher is more similar) a result must " +

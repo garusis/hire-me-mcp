@@ -2,7 +2,13 @@ import type { Citation, DomainResult } from "@hire-me-mcp/core";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { withCitationSiteUrls } from "./citation-site-urls.js";
-import { createToolExecutor, defineTool, type ToolDefinition } from "./define-tool.js";
+import {
+  createToolExecutor,
+  defineTool,
+  numberRangeMessage,
+  stringLengthMessage,
+  type ToolDefinition,
+} from "./define-tool.js";
 import { ToolDomainError } from "./errors.js";
 
 const inputSchema = z.object({
@@ -193,6 +199,107 @@ describe("validation error messages (#244)", () => {
     expect(message).toContain('"current"');
     expect(message).toContain('"past"');
     expect(message).toContain('"CURRENT"');
+  });
+});
+
+/**
+ * Issue 276 — #244 gave enum and format constraints self-correcting error
+ * text but missed numeric ranges and string/array lengths, which kept
+ * emitting a bare "Invalid input" (identical for `limit: 0`, `limit: -1` and
+ * `limit: 101`, so not even hinting which end of the range was violated).
+ */
+describe("range and length validation error messages (#276)", () => {
+  function executorFor(schema: z.ZodTypeAny) {
+    return createToolExecutor({
+      name: "bounded-tool",
+      description: "A test tool exercising range/length validation message quality.",
+      inputSchema: schema,
+      handler: () => ({ data: null, citations: [] }),
+    });
+  }
+
+  async function messageFor(schema: z.ZodTypeAny, args: unknown): Promise<string> {
+    const result = await executorFor(schema)(args);
+    expect(result.isError).toBe(true);
+    return (result.structuredContent as { message: string }).message;
+  }
+
+  it("names the field, the constraint and the whole range for a schema-declared numeric range", async () => {
+    const schema = z.object({
+      limit: z
+        .number({ error: () => numberRangeMessage(1, 50, { integer: true }) })
+        .int({ error: () => numberRangeMessage(1, 50, { integer: true }) })
+        .min(1, { error: () => numberRangeMessage(1, 50, { integer: true }) })
+        .max(50, { error: () => numberRangeMessage(1, 50, { integer: true }) })
+        .optional()
+        .describe("Bounded limit."),
+    });
+
+    for (const limit of [0, -1, 51, 2.5, "three"]) {
+      const message = await messageFor(schema, { limit });
+      expect(message).toBe("limit: must be an integer between 1 and 50");
+      expect(message).not.toContain("Invalid input");
+    }
+  });
+
+  it("names the field and the whole length range for a schema-declared string length", async () => {
+    const schema = z.object({
+      query: z
+        .string()
+        .trim()
+        .min(1, { error: () => stringLengthMessage(1, 10, { trimmed: true }) })
+        .max(10, { error: () => stringLengthMessage(1, 10, { trimmed: true }) })
+        .describe("Bounded query."),
+    });
+
+    expect(await messageFor(schema, { query: "   " })).toBe(
+      "query: must be 1-10 characters after trimming",
+    );
+    expect(await messageFor(schema, { query: "a".repeat(11) })).toBe(
+      "query: must be 1-10 characters after trimming",
+    );
+  });
+
+  // The synthesized fallback: a schema author who forgets an explicit
+  // message must still never ship a bare "Invalid input".
+  it.each([
+    [z.object({ n: z.number().min(5).describe("n") }), { n: 1 }, "n: must be >= 5"],
+    [z.object({ n: z.number().max(5).describe("n") }), { n: 9 }, "n: must be <= 5"],
+    [z.object({ n: z.number().positive().describe("n") }), { n: 0 }, "n: must be > 0"],
+    [z.object({ s: z.string().min(1).describe("s") }), { s: "" }, "s: must be a non-empty string"],
+    [
+      z.object({ s: z.string().min(3).describe("s") }),
+      { s: "ab" },
+      "s: must have 3 characters or more",
+    ],
+    [
+      z.object({ s: z.string().max(2).describe("s") }),
+      { s: "abc" },
+      "s: must have 2 characters or fewer",
+    ],
+    [
+      z.object({ a: z.array(z.string()).max(2).describe("a") }),
+      { a: ["x", "y", "z"] },
+      "a: must have 2 items or fewer",
+    ],
+  ])(
+    "synthesizes a bound-naming message when the schema declares none (case %#)",
+    async (schema, args, expected) => {
+      const message = await messageFor(schema, args);
+      expect(message).toBe(expected);
+      expect(message).not.toContain("Invalid input");
+    },
+  );
+
+  it("never overrides a message the schema author wrote themselves", async () => {
+    const schema = z.object({
+      from: z
+        .string()
+        .regex(/^\d{4}-\d{2}$/, "must be a YYYY-MM date")
+        .describe("Date bound."),
+    });
+
+    expect(await messageFor(schema, { from: "nope" })).toBe("from: must be a YYYY-MM date");
   });
 });
 
