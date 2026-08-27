@@ -81,8 +81,6 @@ export function resolveCitationHref(
       return `/#${PROFILE_SECTION_ID}`;
     case "education":
       return `/experience#${toSlug(citation.entityId)}`;
-    case "recommendation":
-      return `/recommendations#${toSlug(citation.entityId)}`;
     default:
       return "/";
   }
