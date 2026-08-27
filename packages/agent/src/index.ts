@@ -6,8 +6,13 @@
  * chat model provider.
  */
 
-export type { CitableEntityType, CitationMarker } from "./citations.js";
-export { parseCitationMarker, parseCitations, serializeCitation } from "./citations.js";
+export type { CitableEntityType, CitationMarker, CitationSpan } from "./citations.js";
+export {
+  parseCitationMarker,
+  parseCitationSpans,
+  parseCitations,
+  serializeCitation,
+} from "./citations.js";
 export type { ChatModelConfig, ChatProvider, EnvSource } from "./config.js";
 export { InvalidChatProviderError, MissingEnvVarError, resolveChatModelConfig } from "./config.js";
 export type { GetInterviewAgentOptions } from "./interview-agent.js";

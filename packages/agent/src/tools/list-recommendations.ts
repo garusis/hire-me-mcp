@@ -9,6 +9,7 @@
 import { listRecommendations } from "@hire-me-mcp/core";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+import { withCitationMarkers } from "./citation-markers.js";
 import { getAgentCareerDataRepository } from "./repository.js";
 
 export const listRecommendationsInputSchema = z.object({}).strict();
@@ -30,6 +31,6 @@ export const listRecommendationsTool = createTool({
     "normal, successful result — it means no recommendations are authored yet, not an error.",
   inputSchema: listRecommendationsInputSchema,
   execute: async () => {
-    return listRecommendations(getAgentCareerDataRepository());
+    return withCitationMarkers(listRecommendations(getAgentCareerDataRepository()));
   },
 });

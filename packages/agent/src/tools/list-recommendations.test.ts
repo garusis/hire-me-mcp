@@ -1,6 +1,7 @@
 import type { DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCitationMarkers } from "./citation-markers.js";
 import { listRecommendationsInputSchema, listRecommendationsTool } from "./list-recommendations.js";
 
 vi.mock("@hire-me-mcp/core", async (importOriginal) => {
@@ -32,7 +33,7 @@ describe("listRecommendationsTool", () => {
     expect(listRecommendationsTool.description.length).toBeGreaterThan(0);
   });
 
-  it("delegates to packages/core's listRecommendations and returns its DomainResult unmodified (citations included)", async () => {
+  it("delegates to packages/core's listRecommendations and returns its DomainResult with every citation marker-annotated (#270)", async () => {
     const domainResult: DomainResult<Recommendation[]> = {
       data: [fixtureRecommendation],
       citations: [
@@ -48,7 +49,7 @@ describe("listRecommendationsTool", () => {
     const result = await listRecommendationsTool.execute?.({}, {} as never);
 
     expect(core.listRecommendations).toHaveBeenCalledTimes(1);
-    expect(result).toEqual(domainResult);
+    expect(result).toEqual(withCitationMarkers(domainResult));
   });
 
   it("rejects unexpected input fields (strict schema)", () => {
@@ -62,6 +63,6 @@ describe("listRecommendationsTool", () => {
 
     const result = await listRecommendationsTool.execute?.({}, {} as never);
 
-    expect(result).toEqual(domainResult);
+    expect(result).toEqual(withCitationMarkers(domainResult));
   });
 });

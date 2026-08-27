@@ -52,10 +52,10 @@
  * by `searchCareer`, so truncation always drops the WEAKEST matches first.
  */
 
-import type { Citation } from "@hire-me-mcp/core";
 import type { SearchCareerResultItem } from "@hire-me-mcp/core/search-career";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+import { type MarkedCitation, markCitation } from "./citation-markers.js";
 import { getAgentSearchCareer } from "./search-career-client.js";
 
 /** Max retrieved chunks ever returned to the model in one call — the count half of the retrieval budget. */
@@ -106,8 +106,8 @@ export interface SearchCareerToolResult {
   /** Present only when `available` is `false` — never includes a secret value, only a description. */
   reason?: string;
   results: SearchCareerToolResultItem[];
-  /** Flattened `{ entityType, entityId, fragment?, label }` per result — DomainResult-shaped for citation-extraction parity. See module docs. */
-  citations: Citation[];
+  /** Flattened `{ entityType, entityId, fragment?, label, marker }` per result — DomainResult-shaped for citation-extraction parity, plus the copy-ready marker every other tool now returns (#270). See module docs. */
+  citations: MarkedCitation[];
   /** `true` when the retrieval budget (`MAX_RESULTS`/`MAX_TOTAL_CHARACTERS`) dropped or trimmed a result that `searchCareer` itself returned. */
   truncated: boolean;
 }
@@ -148,9 +148,11 @@ export function applyRetrievalBudget(results: readonly SearchCareerResultItem[])
   return { results: budgeted, truncated };
 }
 
-function toCitation(item: SearchCareerResultItem): Citation {
+function toCitation(item: SearchCareerResultItem): MarkedCitation {
   const { entityType, entityId, fragment, label } = item.citation;
-  return fragment ? { entityType, entityId, fragment, label } : { entityType, entityId, label };
+  return markCitation(
+    fragment ? { entityType, entityId, fragment, label } : { entityType, entityId, label },
+  );
 }
 
 function unavailableResult(query: string, reason: string): SearchCareerToolResult {

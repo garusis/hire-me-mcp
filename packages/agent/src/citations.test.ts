@@ -3,6 +3,7 @@ import type { CitationMarker } from "./citations.js";
 import {
   CITABLE_ENTITY_TYPES,
   parseCitationMarker,
+  parseCitationSpans,
   parseCitations,
   serializeCitation,
 } from "./citations.js";
@@ -116,5 +117,48 @@ describe("CITABLE_ENTITY_TYPES", () => {
 
   it("has no duplicates", () => {
     expect(new Set(CITABLE_ENTITY_TYPES).size).toBe(CITABLE_ENTITY_TYPES.length);
+  });
+});
+
+describe("parseCitationSpans (issue 270)", () => {
+  it("reports a tool-name-shaped marker as marker-shaped but unresolved", () => {
+    expect(parseCitationSpans("He hasn't used Rust [cite:get-skill-evidence:rust].")).toEqual([
+      { offset: 20, text: "[cite:get-skill-evidence:rust]", marker: null },
+    ]);
+  });
+
+  it("reports a valid marker with its parsed form and offset", () => {
+    expect(parseCitationSpans("a [cite:gap:rust] b")).toEqual([
+      { offset: 2, text: "[cite:gap:rust]", marker: { entityType: "gap", entityId: "rust" } },
+    ]);
+  });
+
+  it("keeps valid and invalid markers in order of appearance", () => {
+    expect(
+      parseCitationSpans(
+        "[cite:gap:rust] x [cite:get-skill-evidence:golang] y [cite:skill:ts]",
+      ).map((span) => [span.text, span.marker === null]),
+    ).toEqual([
+      ["[cite:gap:rust]", false],
+      ["[cite:get-skill-evidence:golang]", true],
+      ["[cite:skill:ts]", false],
+    ]);
+  });
+
+  it("ignores brackets that are not marker-shaped at all", () => {
+    expect(parseCitationSpans("[not a marker] (cite:gap:rust) [cite:unterminated")).toEqual([]);
+  });
+
+  it("does not let an unterminated `[cite:` swallow the rest of a long answer", () => {
+    expect(parseCitationSpans(`[cite:${"x".repeat(400)}]`)).toEqual([]);
+  });
+
+  it("agrees with parseCitations on the valid markers", () => {
+    const text = "[cite:gap:rust] [cite:get-skill-evidence:rust] [cite:project:cowork]";
+    expect(
+      parseCitationSpans(text)
+        .map((span) => span.marker)
+        .filter((marker) => marker !== null),
+    ).toEqual(parseCitations(text));
   });
 });

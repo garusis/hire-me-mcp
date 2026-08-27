@@ -26,19 +26,40 @@
  * markers pointing at the same record share one number — the source list is
  * a list of *sources*, not of mentions.
  *
- * ## Whitespace
+ * ## Whitespace (issues 227 and 277)
  *
  * Horizontal whitespace immediately before a rendered reference is dropped,
- * so the reference hugs the word it supports (`opportunities¹.`). Newlines
- * are left alone — the bubble renders `white-space: pre-wrap`, so eating
- * them would silently reflow the agent's paragraphs. A marker that can't be
- * mapped at all is left in the text verbatim, spacing included: nothing is
- * ever deleted from an answer, because a silent deletion is the failure
- * mode issue 227 was made of.
+ * so the reference hugs the word it supports (`opportunities¹.`), and
+ * horizontal whitespace immediately *after* one is dropped too when the next
+ * thing in the sentence is punctuation — that is issue 277's `costs ¹ . He`
+ * artifact, which survives whether the model wrote the space or not.
+ * Newlines are left alone — a paragraph's text still renders
+ * `white-space: pre-wrap`, so eating them would silently reflow the agent's
+ * prose.
+ *
+ * ## Markers that do not resolve (issue 270)
+ *
+ * This module used to leave an unmappable marker in the prose verbatim, on
+ * the reasoning that a silent deletion is what issue 227 was made of. Issue
+ * 270 showed the cost of that: the model wrote
+ * `[cite:get-skill-evidence:rust]` — a TOOL name in the entity-type slot —
+ * and, since `parseCitations` cannot match a non-citable type, the raw
+ * machine syntax was not even recognised as a marker. It was prose, and a
+ * recruiter read it.
+ *
+ * So marker-shaped text is now always recognised (`parseCitationSpans`), and
+ * one that does not resolve becomes an `unresolved` segment: removed from
+ * what the reader sees, with the same whitespace repair as a real reference,
+ * but preserved in the DOM as a hidden `data-unresolved-citation` attribute.
+ * That keeps the failure loud where it needs to be loud (tests, a browser
+ * inspector, the preview e2e suite) and silent where machine syntax has no
+ * business appearing. The real fix for 270 is upstream — `packages/agent`
+ * hands the model a copy-ready `marker` string per citation — this is the
+ * backstop that guarantees a mistake there can never be *read*.
  */
 
 import type { CitableEntityType, CitationMarker } from "@hire-me-mcp/agent/citations";
-import { parseCitations, serializeCitation } from "@hire-me-mcp/agent/citations";
+import { parseCitationSpans } from "@hire-me-mcp/agent/citations";
 import type { WritingEntry } from "../../src/lib/content";
 import { resolveChatCitationHref } from "./resolve-chat-citation-href";
 
@@ -68,7 +89,20 @@ export interface CitedCitationSegment {
   offset: number;
 }
 
-export type CitedSegment = CitedTextSegment | CitedCitationSegment;
+/**
+ * Marker-shaped text that is not a citation — issue 270's
+ * `[cite:get-skill-evidence:rust]`. Renders nothing a reader can see; the
+ * literal text is kept so the DOM can carry it as a hidden attribute.
+ */
+export interface CitedUnresolvedSegment {
+  kind: "unresolved";
+  /** The literal marker-shaped substring, e.g. `[cite:get-skill-evidence:rust]`. */
+  marker: string;
+  /** Offset in the original text — a stable React key for a given message. */
+  offset: number;
+}
+
+export type CitedSegment = CitedTextSegment | CitedCitationSegment | CitedUnresolvedSegment;
 
 export interface CitedAnswer {
   segments: CitedSegment[];
@@ -120,6 +154,16 @@ function trimHorizontalEnd(text: string): string {
   return text.replace(/[ \t]+$/u, "");
 }
 
+/**
+ * Issue 277: drops spaces/tabs that a reference left stranded in front of the
+ * sentence's own punctuation, so `costs¹ . He` reads `costs¹. He`. Only
+ * punctuation triggers it — a space before the next *word* is real prose
+ * spacing and is left alone.
+ */
+function trimHorizontalStartBeforePunctuation(text: string): string {
+  return text.replace(/^[ \t]+(?=[.,;:!?)\]}])/u, "");
+}
+
 function pushText(segments: CitedSegment[], text: string): void {
   if (text.length > 0) {
     segments.push({ kind: "text", text });
@@ -153,55 +197,59 @@ export function buildCitedAnswer(
   const sources: ChatCitationSource[] = [];
   const sourcesByHref = new Map<string, ChatCitationSource>();
   let cursor = 0;
+  // Whether the previous emitted segment was a reference — decides whether
+  // the next run of prose gets issue 277's leading-whitespace repair.
+  let afterReference = false;
 
-  for (const marker of parseCitations(text)) {
-    const markerText = serializeCitation(marker);
-    const markerIndex = text.indexOf(markerText, cursor);
-    if (markerIndex === -1) {
-      // Already consumed (a duplicate marker matched earlier) — skip rather
-      // than mis-split the surrounding prose.
+  const takeProse = (until: number): string => {
+    const raw = text.slice(cursor, until);
+    return trimHorizontalEnd(afterReference ? trimHorizontalStartBeforePunctuation(raw) : raw);
+  };
+
+  for (const span of parseCitationSpans(text)) {
+    if (span.offset < cursor) {
+      // Overlaps something already consumed — skip rather than mis-split the
+      // surrounding prose.
       continue;
     }
 
-    const before = text.slice(cursor, markerIndex);
-    cursor = markerIndex + markerText.length;
+    // Whitespace in front of a reference belongs to the reference, not the
+    // prose: eating it is what stops both `"opportunities ¹."` and issue
+    // 227's `"opportunities ."`.
+    pushText(segments, takeProse(span.offset));
+    cursor = span.offset + span.text.length;
 
-    const href = resolveHref(marker, writingEntries);
-    if (href === undefined) {
-      // No site surface for this entity type at all — only reachable if the
-      // shared marker format grows a type this app hasn't mapped yet. The
-      // marker stays in the text verbatim rather than being deleted: a
-      // silent drop is what produced issue 227's invisible failure, and a
-      // visible oddity is easier to notice and fix than a missing citation.
-      // Whitespace is left alone here so the marker keeps its own spacing.
-      pushText(segments, before);
-      pushText(segments, markerText);
+    const href = span.marker === null ? undefined : resolveHref(span.marker, writingEntries);
+    if (span.marker === null || href === undefined) {
+      // Either not a citable entity type at all (issue 270's tool-name
+      // marker) or a type this app has no site surface for. Neither is
+      // something a reader should ever see — it is machine syntax — so it
+      // leaves the prose, and `citation-text.tsx` keeps it in the DOM as a
+      // hidden attribute so the failure is still findable.
+      segments.push({ kind: "unresolved", marker: span.text, offset: span.offset });
+      afterReference = true;
       continue;
     }
-
-    // Whitespace in front of a rendered reference belongs to the reference,
-    // not the prose: eating it is what stops both `"opportunities ¹."` and
-    // issue 227's `"opportunities ."`.
-    pushText(segments, trimHorizontalEnd(before));
 
     const existing = sourcesByHref.get(href);
     const source =
       existing ??
       ({
         index: sources.length + 1,
-        marker: markerText,
+        marker: span.text,
         href,
-        label: buildLabel(marker.entityType, marker.entityId, writingEntries),
+        label: buildLabel(span.marker.entityType, span.marker.entityId, writingEntries),
       } satisfies ChatCitationSource);
     if (existing === undefined) {
       sourcesByHref.set(href, source);
       sources.push(source);
     }
 
-    segments.push({ kind: "citation", source, offset: markerIndex });
+    segments.push({ kind: "citation", source, offset: span.offset });
+    afterReference = true;
   }
 
-  pushText(segments, text.slice(cursor));
+  pushText(segments, takeProse(text.length));
 
   return { segments, sources };
 }

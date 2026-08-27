@@ -1,6 +1,7 @@
 import type { DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCitationMarkers } from "./citation-markers.js";
 import { searchProjectsInputSchema, searchProjectsTool } from "./search-projects.js";
 
 vi.mock("@hire-me-mcp/core", async (importOriginal) => {
@@ -34,7 +35,7 @@ describe("searchProjectsTool", () => {
     expect(searchProjectsTool.description.length).toBeGreaterThan(0);
   });
 
-  it("delegates to packages/core's searchProjects with query and options, returning the DomainResult unmodified", async () => {
+  it("delegates to packages/core's searchProjects with query and options, returning the DomainResult with every citation marker-annotated (#270)", async () => {
     const domainResult: DomainResult<ProjectSearchResult[]> = {
       data: [fixtureResult],
       citations: [{ entityType: "project", entityId: "fixture-project", label: "Fixture Project" }],
@@ -51,7 +52,7 @@ describe("searchProjectsTool", () => {
       tags: ["typescript"],
       limit: 5,
     });
-    expect(result).toEqual(domainResult);
+    expect(result).toEqual(withCitationMarkers(domainResult));
   });
 
   // Issue 275 — "keyword and/or technology tag" is only true if either

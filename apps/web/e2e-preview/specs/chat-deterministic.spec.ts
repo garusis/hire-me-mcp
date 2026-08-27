@@ -1,5 +1,6 @@
 import { readChatTestCitationIds } from "../../lib/chat/test-scenario-fixture";
 import { CHAT_TEST_FIXTURE_SENTINEL } from "../../lib/chat/test-scenarios";
+import { CHAT_ANSWER_SELECTOR } from "../helpers/chat-answer";
 import { useScriptedChat } from "../helpers/chat-scenario";
 import { slugify } from "../helpers/dataset";
 import { expect, test } from "../helpers/fixtures";
@@ -148,8 +149,29 @@ test("scripted answer: every citable entity type renders as the link it should, 
     ).not.toContain(`[cite:${entityType}:`);
   }
   // Removing a marker must not strand the space that preceded it (#227's
-  // visible symptom: a sentence ending " .").
+  // visible symptom: a sentence ending " ."), nor the space in front of the
+  // punctuation that follows it (#277's "costs ¹ . He also built").
   expect(answerText, `stray citation gap in: "${answerText}"`).not.toMatch(/ [.,]/);
+
+  // #270: the scripted answer contains `[cite:get-skill-evidence:<id>]` — a
+  // TOOL's name where an entity type belongs, exactly what the live model
+  // wrote. No marker syntax of ANY shape may survive into the prose.
+  expect(answerText, `raw marker syntax reached the reader in: "${answerText}"`).not.toContain(
+    "[cite:",
+  );
+  expect(answerText).not.toContain("get-skill-evidence");
+  // …and it is not silently deleted either: the DOM keeps the evidence.
+  await expect(assistantMessage.locator("[data-unresolved-citation]")).toHaveCount(1);
+
+  // #272: the answer's Markdown is rendered, not printed. The fixture's last
+  // paragraph is a two-item bulleted list with bold, emphasis and code.
+  const answerBody = assistantMessage.locator(CHAT_ANSWER_SELECTOR);
+  await expect(answerBody.locator("ul li")).toHaveCount(2);
+  await expect(answerBody.locator("strong")).toHaveCount(2);
+  await expect(answerBody.locator("em")).toHaveCount(1);
+  await expect(answerBody.locator("code")).toHaveCount(1);
+  expect(answerText, `unrendered Markdown in: "${answerText}"`).not.toContain("**");
+  expect(answerText, `unrendered bullet syntax in: "${answerText}"`).not.toMatch(/^\s*\* /m);
 
   // Each citation target must really exist — a link that 404s is a
   // dishonest citation, not a rendering detail.
@@ -225,6 +247,53 @@ test("scripted second turn succeeds: the replayed tool parts are sanitized befor
     timeout: SCRIPTED_TURN_TIMEOUT_MS,
   });
   await expect(chatInput).toBeEnabled({ timeout: SCRIPTED_TURN_TIMEOUT_MS });
+  await expect(chatPanel(page).getByRole("alert")).toHaveCount(0);
+});
+
+test("scripted multi-turn: every question scrolls its own turn into view (#271)", async ({
+  gotoRoute,
+  page,
+}) => {
+  test.setTimeout(SCRIPTED_TURN_TIMEOUT_MS * 4);
+  await useScriptedChat(page, "grounded-citations");
+  await gotoRoute("/");
+  await openChatAndAsk(page);
+
+  const log = page.getByRole("log");
+  const chatInput = page.getByLabel("Message");
+  const send = page.getByRole("button", { name: "Send", exact: true });
+
+  await expect(log.locator('[data-role="assistant"]').first()).toContainText(
+    CHAT_TEST_FIXTURE_SENTINEL,
+    { timeout: SCRIPTED_TURN_TIMEOUT_MS },
+  );
+
+  // From the second question onward the transcript overflows its container.
+  // #271: nothing moved it, so a submitted question produced no visible
+  // change at all — no new bubble, no "Thinking…", nothing — and a tester
+  // who knew the chat worked still concluded it had swallowed the question.
+  for (const question of ["And what did he do before that role?", "Anything else?"]) {
+    await expect(chatInput).toBeEnabled({ timeout: SCRIPTED_TURN_TIMEOUT_MS });
+    await chatInput.fill(question);
+    await send.click();
+
+    const ownBubble = log.locator('[data-role="user"]').last();
+    await expect(ownBubble).toHaveText(new RegExp(question.slice(0, 20).replace(/[?]/g, "\\?")));
+    await expect(
+      ownBubble,
+      "the question just asked must be visible without scrolling — that is the whole of #271",
+    ).toBeInViewport({ timeout: SCRIPTED_TURN_TIMEOUT_MS });
+
+    const answer = log.locator('[data-role="assistant"]').last();
+    await expect(answer).toContainText(CHAT_TEST_FIXTURE_SENTINEL, {
+      timeout: SCRIPTED_TURN_TIMEOUT_MS,
+    });
+    await expect(
+      answer.locator(CHAT_ANSWER_SELECTOR),
+      "the answer must follow into view as it streams",
+    ).toBeInViewport({ timeout: SCRIPTED_TURN_TIMEOUT_MS });
+  }
+
   await expect(chatPanel(page).getByRole("alert")).toHaveCount(0);
 });
 

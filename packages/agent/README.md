@@ -225,8 +225,20 @@ import rather than re-encode:
 without translation. Markers are **inline**, immediately after the clause they support, rather
 than a trailing footnote list — chosen so a streaming consumer can resolve a citation the moment
 its sentence finishes, without waiting for the full response. `serializeCitation`,
-`parseCitationMarker` (single marker), and `parseCitations` (scan free text for every marker) are
-the only supported way to produce or read this format; both never throw on malformed input.
+`parseCitationMarker` (single marker), `parseCitations` (scan free text for every valid marker) and
+`parseCitationSpans` (scan free text for every *marker-shaped* substring, valid or not) are the only
+supported way to produce or read this format; none of them ever throw on malformed input.
+
+**Markers are handed to the model, not composed by it (#270).** Asked whether the candidate knows
+Rust, a free-tier model wrote `[cite:get-skill-evidence:rust]` — the TOOL's name in the entity-type
+slot. That is not a citable entity type, so nothing downstream matched it and the raw syntax
+survived into the sentence a recruiter read. Every tool now returns each citation with a
+ready-made `marker` field (`src/tools/citation-markers.ts`) holding its literal
+`[cite:<entityType>:<entityId>]` text, and the prompt tells the model to copy that string verbatim
+— copying a provided literal is far more reliable for a small model than assembling one from two
+fields of a nested JSON object. `parseCitationSpans` is the matching backstop on the reading side:
+a consumer can see that something was marker-shaped and did not resolve, instead of silently
+treating machine syntax as prose.
 
 ## One-off smoke verification (not part of CI)
 

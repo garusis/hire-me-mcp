@@ -1,6 +1,7 @@
 import type { DomainResult, ExperienceFilter } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCitationMarkers } from "./citation-markers.js";
 import { getExperienceInputSchema, getExperienceTool } from "./get-experience.js";
 
 vi.mock("@hire-me-mcp/core", async (importOriginal) => {
@@ -31,7 +32,7 @@ describe("getExperienceTool", () => {
     expect(getExperienceTool.description.length).toBeGreaterThan(0);
   });
 
-  it("delegates to packages/core's getExperience with the parsed filter, returning the DomainResult unmodified", async () => {
+  it("delegates to packages/core's getExperience with the parsed filter, returning the DomainResult with every citation marker-annotated (#270)", async () => {
     const domainResult: DomainResult<ExperienceEntry[]> = {
       data: [fixtureEntry],
       citations: [{ entityType: "experience", entityId: "fixture-role", label: "Fixture Co" }],
@@ -43,7 +44,7 @@ describe("getExperienceTool", () => {
 
     expect(core.getExperience).toHaveBeenCalledTimes(1);
     expect(core.getExperience).toHaveBeenCalledWith(expect.anything(), filter);
-    expect(result).toEqual(domainResult);
+    expect(result).toEqual(withCitationMarkers(domainResult));
   });
 
   it("accepts an empty filter (no constraints)", () => {

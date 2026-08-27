@@ -67,6 +67,21 @@ import "./configure-zod-jitless";
  * A failure that arrives mid-stream (the assistant bubble already carries
  * partial text) is not an orphan and keeps the panel-level banner, whose
  * "Try again" still regenerates that assistant turn.
+ *
+ * ## Scroll follow (issue 271)
+ *
+ * The transcript scrolls with the conversation — see
+ * `use-transcript-auto-scroll.ts` for the pinning rules, why a deliberate
+ * scroll up wins, and why submitting always re-pins. Without it, the second
+ * and every later question produced no visible feedback whatsoever: the new
+ * bubble and the "Thinking…" indicator were rendered below the fold of a
+ * viewport that never moved, so a working chat looked like a broken one.
+ *
+ * ## Rendered answers (issue 272)
+ *
+ * Answers are rendered Markdown, not `pre-wrap` source text — see
+ * `chat-markdown.ts` for the subset supported, and for why it produces a
+ * typed node tree rather than an HTML string.
  */
 
 import { useChat } from "@ai-sdk/react";
@@ -81,6 +96,7 @@ import { CitationSources, CitationText } from "./citation-text";
 import { STARTER_PROMPTS } from "./starter-prompts";
 import { toRequestMessages } from "./to-request-messages";
 import { useChatSessionId } from "./use-chat-session-id";
+import { useTranscriptAutoScroll } from "./use-transcript-auto-scroll";
 
 const CHAT_API = "/api/chat";
 
@@ -174,6 +190,16 @@ function isInFlightToolPart(part: MessagePart): boolean {
   return typeof state !== "string" || !FINISHED_TOOL_STATES.has(state);
 }
 
+/**
+ * The value `useTranscriptAutoScroll` re-runs on (issue 271): message count,
+ * the length of the last message's text (so a streaming answer keeps the view
+ * following it, not just its first chunk), and the turn's status.
+ */
+function transcriptActivityKey(messages: readonly UIMessage[], status: string): string {
+  const last = messages[messages.length - 1];
+  return `${messages.length}:${last === undefined ? 0 : messageText(last.parts).length}:${status}`;
+}
+
 export interface ChatWidgetProps {
   writingEntries: readonly WritingEntry[];
 }
@@ -225,6 +251,16 @@ export function ChatWidget({ writingEntries }: ChatWidgetProps) {
   const lastMessage = messages[messages.length - 1];
   const showThinkingIndicator = isBusy && !hasVisibleAssistantActivity(lastMessage);
 
+  /*
+   * issue 271: the transcript follows the conversation. The key changes on
+   * every message added, every streamed token, and every status transition,
+   * so a pinned viewport tracks a streaming answer instead of stopping at
+   * its first chunk — and the "Thinking…" indicator below is in view on the
+   * second and every later turn, not only the first.
+   */
+  const transcript = useTranscriptAutoScroll(transcriptActivityKey(messages, status));
+  const { followNow } = transcript;
+
   /**
    * issue 253: the message this failure belongs to — the trailing "You"
    * bubble the assistant never replied to. `undefined` when the turn failed
@@ -255,8 +291,9 @@ export function ChatWidget({ writingEntries }: ChatWidgetProps) {
     }
     const text = messageText(failedMessage.parts);
     forgetFailedMessage(failedMessage.id);
+    followNow();
     sendMessage({ text });
-  }, [failedMessage, forgetFailedMessage, sendMessage]);
+  }, [failedMessage, followNow, forgetFailedMessage, sendMessage]);
 
   /** Hand the failed message's text back to the input box so it is never stranded in the transcript. */
   const handleEditFailedMessage = useCallback(() => {
@@ -275,6 +312,9 @@ export function ChatWidget({ writingEntries }: ChatWidgetProps) {
     }
     clearTimedOut();
     clearError();
+    // issue 271: sending is an explicit "show me the answer", so it re-pins
+    // the transcript even if the visitor had scrolled up to re-read.
+    followNow();
     // issue 253: the previous turn's unanswered question is dropped, not
     // stacked on top of — the server never saw it, so it is not history.
     if (failedMessage !== undefined) {
@@ -316,6 +356,8 @@ export function ChatWidget({ writingEntries }: ChatWidgetProps) {
           </div>
 
           <div
+            ref={transcript.ref}
+            onScroll={transcript.onScroll}
             className={styles.messages}
             role="log"
             aria-live="polite"
@@ -377,9 +419,15 @@ export function ChatWidget({ writingEntries }: ChatWidgetProps) {
                     citations out of `data-citation` attributes rather than
                     out of raw marker syntax in the text.
                   */}
-                  <p className={styles.text} data-chat-answer="true">
+                  {/*
+                    A `div`, not a `p`: since issue 272 the answer is rendered
+                    Markdown and may contain lists, which are invalid inside a
+                    paragraph (and get reparented by the browser, breaking the
+                    bubble's layout).
+                  */}
+                  <div className={styles.text} data-chat-answer="true">
                     <CitationText text={text} writingEntries={writingEntries} />
-                  </p>
+                  </div>
                   {message.role === "assistant" && (
                     <CitationSources text={text} writingEntries={writingEntries} />
                   )}
@@ -407,7 +455,11 @@ export function ChatWidget({ writingEntries }: ChatWidgetProps) {
               );
             })}
 
-            {showThinkingIndicator && <p className={styles.thinking}>Thinking…</p>}
+            {showThinkingIndicator && (
+              <p className={styles.thinking} data-chat-pending="true">
+                Thinking…
+              </p>
+            )}
             {isBusy && isSlowTurn && (
               <p className={styles.thinking}>
                 Still working — detailed answers can take a couple of minutes on this free model

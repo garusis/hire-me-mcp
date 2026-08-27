@@ -11,6 +11,7 @@
 import { searchProjects } from "@hire-me-mcp/core";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+import { withCitationMarkers } from "./citation-markers.js";
 import { getAgentCareerDataRepository } from "./repository.js";
 
 /**
@@ -72,8 +73,10 @@ export const searchProjectsTool = createTool({
     "query nor any tags.",
   inputSchema: searchProjectsInputSchema,
   execute: async (input) =>
-    searchProjects(getAgentCareerDataRepository(), input.query, {
-      tags: input.tags,
-      limit: input.limit,
-    }),
+    withCitationMarkers(
+      searchProjects(getAgentCareerDataRepository(), input.query, {
+        tags: input.tags,
+        limit: input.limit,
+      }),
+    ),
 });
