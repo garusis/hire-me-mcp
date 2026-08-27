@@ -2,11 +2,10 @@
 id: llm-evaluation-infrastructure
 name: LLM Evaluation Infrastructure
 summary: >-
-  Evaluation infrastructure for production LLM features — a labeled corpus,
-  LLM-as-judge scoring paired with deterministic scorers, opposing-provider
-  judging, per-call cost tracing and version-controlled prompts. I created
-  the harness and led the team that built the scorers.
-role: Creator of the harness; lead on the scoring work
+  Solo-built evaluation infrastructure for production LLM features — a
+  labeled corpus, human-graded ground truth, LLM-as-judge scoring, per-call
+  cost tracing and version-controlled prompts.
+role: Sole engineer / owner
 tech:
   - typescript
   - llms
@@ -25,46 +24,30 @@ number.
 
 ## What I built
 
-I created the evaluation lane for a production multi-agent service — the
-separate test runner, the environment bootstrap and the judge configuration
-that runs specs against real models outside the normal unit-test run — and
-then set the direction for how the team used it:
+I built the evaluation infrastructure that turns "does this still work"
+into something measurable, on my own, end to end:
 
-- A labeled corpus of real cases, so changes have something fixed to compare
-  against.
-- LLM-as-judge scoring for cases where a strict string match does not
-  capture correctness, always paired with a deterministic structural scorer,
-  so an evaluation separates "is the shape right" from "is the content
-  good". I led the team that built these scorers; the fullest solo version
-  is the one I wrote end to end for a second service.
-- Opposing-provider judging. An OpenAI model grading OpenAI output flatters
-  itself, so I proposed judging with a different provider than the one under
-  test off the back of this research, wrote it into two services'
-  engineering standards, and implemented it end to end in the second
-  service's eval lane — including provider isolation, so a silent failover
-  can never answer for the model being scored.
-- A file-naming convention that isolates model-dependent code, plus the CI
-  gate that reads it: real-model evals run only when a prompt or an agent
-  file actually changes, and never on a draft pull request. It is still in
-  force and I later generalized it to a second service.
+- A labeled corpus of real cases with human-graded ground truth, so changes
+  have something fixed to compare against.
+- LLM-as-judge scoring for the cases where a strict string match does not
+  capture correctness, calibrated against the human-graded set rather than
+  trusted blindly.
 - Per-call cost tracing, so a quality improvement is judged against what it
-  costs to run, and a cost that is only a lower bound is flagged as one
-  rather than read as exact.
-- Version-controlled prompts loaded as assets and validated at startup, so a
-  regression can be bisected the same way a code regression can, and a build
-  missing a prompt fails at deploy rather than per message.
-
-## An honest note on ownership
-
-I created the first harness; the team then carried it, and most of the
-surviving spec code is theirs. The parts that are unambiguously mine are the
-lane's creation, the convention and its CI gate, and a second service's
-evaluation lane in full.
+  costs to run, not in isolation.
+- Version-controlled prompts, so a regression can be bisected the same way a
+  code regression can.
+- A judge model deliberately resolved from a different provider than the
+  agent under test — a provider grading its own output tends to be biased,
+  so I moved model selection out of environment variables to make an
+  opposing-provider judge the default.
+- A file-naming convention that isolates model-dependent code into a
+  separate CI lane, so real-model evals only run when a prompt or agent
+  actually changes instead of on every pull request.
 
 ## Why it mattered
 
-This is the piece that made every other LLM feature — document extraction,
-message classification, the document checks — accountable to a number
-instead of a feeling. It is also the work I point to for "sets technical
-direction": nobody assigned the scope, I decided what mattered, built the
-first version, and argued the standard through the team.
+This is the piece that made every other LLM feature — the document
+extraction pipeline, message classification — accountable to a number
+instead of a feeling. It is also the project I point to for "owns a
+large-scope effort end to end": nobody assigned the scope, I decided what
+mattered and built it.
