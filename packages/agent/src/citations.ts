@@ -49,7 +49,19 @@ export type CitableEntityType =
   | "writing"
   | "recommendation";
 
-const CITABLE_ENTITY_TYPES: readonly CitableEntityType[] = [
+/**
+ * Every {@link CitableEntityType}, as a runtime value.
+ *
+ * Exported (issue 227) so a consumer that has to map EVERY citable type onto
+ * something of its own — the chat UI's marker -> site-section href
+ * resolution, for one — can iterate the real set in a test instead of
+ * hand-maintaining a duplicate list. That duplicate list is exactly how
+ * issue 227 happened: the chat surface silently dropped `profile`,
+ * `education` and `recommendation` markers on the belief they were "never
+ * emitted", while `get-profile`, `list-education` and `list-recommendations`
+ * emit them on most answers.
+ */
+export const CITABLE_ENTITY_TYPES: readonly CitableEntityType[] = [
   "profile",
   "experience",
   "project",

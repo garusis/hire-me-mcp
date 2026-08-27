@@ -1,88 +1,92 @@
 /**
  * Renders a streamed assistant message's text with inline `[cite:...]`
- * markers turned into links to the matching site section (#70).
+ * markers turned into numbered superscript links to the source record
+ * (#70, reworked for issue 227), plus the matching per-message "Sources"
+ * list.
  *
- * Uses `parseCitations`/`serializeCitation` from
- * `@hire-me-mcp/agent/citations` — the single shared definition of the
- * marker format (#65) — to find markers and split the surrounding text
- * around them. It deliberately does not write its own marker regex:
- * `parseCitations` finds every well-formed marker (in order), and
- * re-serializing each one with `serializeCitation` gives back the exact
- * literal substring to split on via `String#indexOf`, so locating a
- * marker's position in the text never re-derives the format.
+ * The parsing, numbering, labelling and whitespace rules all live in
+ * `chat-citation-sources.ts` — see that module for why a marker becomes a
+ * number rather than the literal `[cite:experience:house-numbers]` string
+ * this used to print into the sentence, and why the space in front of a
+ * marker is always eaten. That module builds on
+ * `parseCitations`/`serializeCitation` from `@hire-me-mcp/agent/citations`,
+ * the single shared definition of the marker format (#65), rather than any
+ * regex of its own.
  *
- * Imported from the package's `./citations` subpath, not its default `.`
- * export: the default export re-exports the full embedded Mastra agent
- * runtime (`getInterviewAgent`, `@mastra/core`, model providers — all
- * Node-only), which breaks a Next.js client-component build if reached
- * from this client-rendered component. `citations.ts` is framework-free
- * and hermetic on its own (see that module's doc comment), so
- * `packages/agent` exposes it as its own subpath for exactly this
+ * Those parsers are imported from the package's `./citations` subpath, not
+ * its default `.` export: the default export re-exports the full embedded
+ * Mastra agent runtime (`getInterviewAgent`, `@mastra/core`, model
+ * providers — all Node-only), which breaks a Next.js client-component build
+ * if reached from this client-rendered component. `citations.ts` is
+ * framework-free and hermetic on its own (see that module's doc comment),
+ * so `packages/agent` exposes it as its own subpath for exactly this
  * client-safe reuse — see `packages/agent/package.json`'s `exports` map.
  *
- * A marker that `resolveChatCitationHref` can't map to a known site
- * section (e.g. a `profile`/`education` citation) degrades to plain text —
- * no broken link is ever rendered.
+ * Each superscript carries `data-citation` with the original marker text.
+ * That's what the preview e2e specs read to check citation coverage now
+ * that the marker syntax no longer appears in the rendered prose, and it
+ * keeps the DOM self-describing without showing machine syntax to a reader.
  */
 
-import { parseCitations, serializeCitation } from "@hire-me-mcp/agent/citations";
 import { Fragment, type ReactNode } from "react";
 import type { WritingEntry } from "../../src/lib/content";
 import { Link } from "../design-system/primitives/link";
-import { resolveChatCitationHref } from "./resolve-chat-citation-href";
+import { buildCitedAnswer, type CitedSegment } from "./chat-citation-sources";
+import styles from "./citation-text.module.css";
 
 export interface CitationTextProps {
   text: string;
   writingEntries: readonly WritingEntry[];
 }
 
-/** Splits `text` into an ordered list of plain-text and citation-link nodes. */
-function renderSegments(text: string, writingEntries: readonly WritingEntry[]): ReactNode[] {
-  const markers = parseCitations(text);
-  const nodes: ReactNode[] = [];
-  let cursor = 0;
-
-  for (const marker of markers) {
-    const markerText = serializeCitation(marker);
-    const markerIndex = text.indexOf(markerText, cursor);
-    if (markerIndex === -1) {
-      // Marker was already consumed (e.g. a duplicate marker earlier in the
-      // string) — skip rather than mis-split.
-      continue;
-    }
-
-    const before = text.slice(cursor, markerIndex);
-    if (before) {
-      // Keyed by its start offset in `text` — stable for a given message,
-      // not the loop position (which would shift if an earlier marker were
-      // skipped above).
-      nodes.push(<Fragment key={`text-${cursor}`}>{before}</Fragment>);
-    }
-
-    const href = resolveChatCitationHref(marker, writingEntries);
-    if (href) {
-      nodes.push(
-        <Link key={`citation-${markerIndex}`} href={href}>
-          {markerText}
-        </Link>,
-      );
-    }
-    // Unresolvable citation (e.g. `profile`/`education`, never emitted by
-    // the agent's tool set today): the marker is simply dropped from the
-    // rendered text rather than shown as a broken link or raw
-    // `[cite:...]` syntax — the surrounding prose still reads cleanly.
-
-    cursor = markerIndex + markerText.length;
+function renderSegment(segment: CitedSegment, position: number): ReactNode {
+  if (segment.kind === "text") {
+    return <Fragment key={`text-${position}`}>{segment.text}</Fragment>;
   }
-
-  const rest = text.slice(cursor);
-  if (rest) {
-    nodes.push(<Fragment key="text-end">{rest}</Fragment>);
-  }
-
-  return nodes;
+  const { source } = segment;
+  return (
+    <sup key={`citation-${segment.offset}`} className={styles.marker}>
+      <Link
+        href={source.href}
+        data-citation={source.marker}
+        title={source.label}
+        aria-label={`Source ${source.index}: ${source.label}`}
+      >
+        {source.index}
+      </Link>
+    </sup>
+  );
 }
 
+/** The answer's prose, with each citation marker rendered as a numbered superscript link. */
 export function CitationText({ text, writingEntries }: CitationTextProps) {
-  return <>{renderSegments(text, writingEntries)}</>;
+  const { segments } = buildCitedAnswer(text, writingEntries);
+  return <>{segments.map(renderSegment)}</>;
+}
+
+/**
+ * The message's "Sources" list — one numbered entry per distinct record the
+ * answer cited, matching the superscripts above it. Renders nothing when
+ * the answer cited nothing (a clarifying question, an honest "not in the
+ * data" reply), so an empty heading never appears.
+ */
+export function CitationSources({ text, writingEntries }: CitationTextProps) {
+  const { sources } = buildCitedAnswer(text, writingEntries);
+  if (sources.length === 0) {
+    return null;
+  }
+  return (
+    <div className={styles.sources}>
+      <p className={styles.sourcesHeading}>Sources</p>
+      <ol className={styles.sourcesList}>
+        {sources.map((source) => (
+          <li key={source.href}>
+            <Link href={source.href} data-citation-source={source.marker}>
+              {source.label}
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
 }

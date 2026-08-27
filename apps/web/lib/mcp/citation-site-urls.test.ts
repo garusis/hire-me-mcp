@@ -43,8 +43,12 @@ describe("resolveCitationSiteUrl", () => {
     ).toBe(`${ORIGIN}/recommendations#andre-treib-2026`);
   });
 
-  it("maps a profile citation to the home page", () => {
-    expect(resolveCitationSiteUrl(citation({ entityType: "profile" }))).toBe(`${ORIGIN}/`);
+  it("maps a profile citation to the home page's profile section", () => {
+    // Before #227 this fell through to a bare `/` because the shared
+    // resolver had no `profile` case — a citation that pointed at the whole
+    // site rather than at the record it came from. It now anchors on the
+    // section that renders the profile.
+    expect(resolveCitationSiteUrl(citation({ entityType: "profile" }))).toBe(`${ORIGIN}/#profile`);
   });
 
   it("maps a writing citation to the entry's canonical external url when the writing list has it", () => {

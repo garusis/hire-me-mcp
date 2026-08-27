@@ -139,57 +139,74 @@ describe("ChatWidget", () => {
     await screen.findByText("Hello, world!");
   });
 
-  it("renders a citation marker as an inline, keyboard-focusable link to its site section", async () => {
+  /** Streams one complete assistant answer and returns once it has rendered. */
+  async function streamAnswer(question: string, answer: string): Promise<void> {
     const { response, push, done } = createControlledStreamResponse();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
 
     const user = userEvent.setup();
     render(<ChatWidget writingEntries={NO_WRITING} />);
     await openWidget(user);
-    await user.type(screen.getByLabelText(/message/i), "Tell me about House Numbers");
+    await user.type(screen.getByLabelText(/message/i), question);
     await user.click(screen.getByRole("button", { name: /^send$/i }));
 
     push({ type: "start", messageId: "assistant-1" });
     push({ type: "text-start", id: "t1" });
-    push({
-      type: "text-delta",
-      id: "t1",
-      delta: "He worked there. [cite:experience:house-numbers]",
-    });
+    push({ type: "text-delta", id: "t1", delta: answer });
     push({ type: "text-end", id: "t1" });
     push({ type: "finish" });
     done();
 
-    const link = await screen.findByRole("link");
+    await screen.findByRole("log");
+  }
+
+  it("renders a citation as a keyboard-focusable numbered reference linking to its site section", async () => {
+    await streamAnswer(
+      "Tell me about House Numbers",
+      "He worked there. [cite:experience:house-numbers]",
+    );
+
+    const link = await screen.findByRole("link", { name: /source 1/i });
     expect(link).toHaveAttribute("href", "/experience#house-numbers");
+    expect(link).toHaveAttribute("data-citation", "[cite:experience:house-numbers]");
     link.focus();
     expect(link).toHaveFocus();
   });
 
-  it("renders an unresolvable citation as plain text with no broken link", async () => {
-    const { response, push, done } = createControlledStreamResponse();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+  it("lists the answer's sources under the message, so a reader can see what it was grounded in", async () => {
+    await streamAnswer(
+      "Tell me about House Numbers",
+      "He worked there. [cite:experience:house-numbers]",
+    );
 
-    const user = userEvent.setup();
-    render(<ChatWidget writingEntries={NO_WRITING} />);
-    await openWidget(user);
-    await user.type(screen.getByLabelText(/message/i), "Who are you?");
-    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    await screen.findByText("Sources");
+    // Exact accessible name: the inline superscript for the same source is
+    // named "Source 1: Experience · House Numbers", so a substring match
+    // would find both.
+    expect(screen.getByRole("link", { name: "Experience · House Numbers" })).toHaveAttribute(
+      "href",
+      "/experience#house-numbers",
+    );
+  });
 
-    push({ type: "start", messageId: "assistant-1" });
-    push({ type: "text-start", id: "t1" });
-    push({ type: "text-delta", id: "t1", delta: "That's me. [cite:profile:marcos]" });
-    push({ type: "text-end", id: "t1" });
-    push({ type: "finish" });
-    done();
+  // Issue 227, exactly as reported from the live widget: profile citations
+  // were dropped, and the space in front of them was left behind — real
+  // answers read "…open to new opportunities ." mid-paragraph.
+  it("issue 227: renders a profile citation as a link and leaves no stray space where the marker was", async () => {
+    await streamAnswer(
+      "Is Marcos available now?",
+      "Marcos is currently open to new opportunities [cite:profile:marcos-alvarez]. He works remotely.",
+    );
 
-    await screen.findByText(/That's me\./);
-    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    const answer = await screen.findByText(/open to new opportunities/);
+    expect(answer.textContent).toContain("opportunities1.");
+    expect(answer.textContent).not.toContain(" .");
+    expect(screen.getByRole("link", { name: /source 1/i })).toHaveAttribute("href", "/#profile");
   });
 
   it.each([
     ["rate_limited", "Too many messages right now"],
-    ["conversation_too_long", "This conversation has run long"],
+    ["conversation_too_long", "This conversation has hit its length limit"],
     ["upstream_error", "The model provider had an error"],
   ])(
     "renders a distinct, human-readable message for the %s error code",
@@ -391,6 +408,103 @@ describe("ChatWidget", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  /**
+   * Issue 253 helper: sends `question` against a stream that immediately
+   * fails with `code`, and leaves the widget rendered with that failure on
+   * screen. Returns the fetch mock so a follow-up request can be asserted.
+   */
+  async function failOneTurn(
+    user: ReturnType<typeof userEvent.setup>,
+    question: string,
+    code = "invalid_request",
+  ): Promise<ReturnType<typeof vi.fn>> {
+    const first = createControlledStreamResponse();
+    const second = createControlledStreamResponse();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(first.response)
+      .mockResolvedValueOnce(second.response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ChatWidget writingEntries={NO_WRITING} />);
+    await openWidget(user);
+    await user.type(screen.getByLabelText(/message/i), question);
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    first.push({ type: "error", errorText: JSON.stringify({ code, message: "server said so" }) });
+    await screen.findByRole("alert");
+    await waitFor(() => expect(screen.getByLabelText(/message/i)).toBeEnabled());
+
+    return fetchMock;
+  }
+
+  function userBubbles(): HTMLElement[] {
+    return Array.from(document.querySelectorAll<HTMLElement>('[data-role="user"]'));
+  }
+
+  it("issue 253: attaches the failure to the message that failed rather than to an anonymous banner", async () => {
+    const user = userEvent.setup();
+    await failOneTurn(user, "Does Marcos have production Go experience?");
+
+    const [bubble] = userBubbles();
+    expect(bubble).toHaveAttribute("data-failed", "true");
+    expect(bubble).toHaveTextContent(/not sent/i);
+    // The alert lives INSIDE the failed bubble — the whole point of the
+    // issue was that one banner at the bottom named neither the message it
+    // belonged to nor the real cause.
+    expect(bubble?.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it("issue 253: does not tell the visitor to rephrase a request this site rejected before the model saw it", async () => {
+    const user = userEvent.setup();
+    await failOneTurn(user, "Has Marcos worked with Go?");
+
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent?.toLowerCase()).not.toContain("rephras");
+    expect(alert).toHaveTextContent(/this site|endpoint/i);
+  });
+
+  it("issue 253: a new question replaces the unanswered one instead of stacking a wall of orphan bubbles", async () => {
+    const user = userEvent.setup();
+    const fetchMock = await failOneTurn(user, "Does Marcos have production Go experience?");
+
+    await user.type(screen.getByLabelText(/message/i), "Has Marcos worked with Go?");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const bubbles = userBubbles();
+    expect(bubbles).toHaveLength(1);
+    expect(bubbles[0]).toHaveTextContent("Has Marcos worked with Go?");
+  });
+
+  it("issue 253: Try again re-sends that message's own text and replaces its bubble rather than adding a twin", async () => {
+    const user = userEvent.setup();
+    const fetchMock = await failOneTurn(user, "Does Marcos have production Go experience?");
+
+    await user.click(screen.getByRole("button", { name: /try again/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const [, retryInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    const body = JSON.parse(retryInit.body as string);
+    expect(body.messages).toHaveLength(1);
+    expect(body.messages[0].parts[0].text).toBe("Does Marcos have production Go experience?");
+    expect(userBubbles()).toHaveLength(1);
+  });
+
+  it("issue 253: Edit message returns the text to the input box and leaves no orphan bubble behind", async () => {
+    const user = userEvent.setup();
+    await failOneTurn(user, "Does Marcos have production Go experience?");
+
+    await user.click(screen.getByRole("button", { name: /edit message/i }));
+
+    await waitFor(() => expect(userBubbles()).toHaveLength(0));
+    expect(screen.getByLabelText(/message/i)).toHaveValue(
+      "Does Marcos have production Go experience?",
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("issue 223: a turn that outlives the server's maxDuration ceiling is stopped with a friendly retryable timeout", async () => {

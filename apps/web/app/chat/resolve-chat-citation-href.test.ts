@@ -1,3 +1,4 @@
+import { CITABLE_ENTITY_TYPES, type CitationMarker } from "@hire-me-mcp/agent/citations";
 import { describe, expect, it } from "vitest";
 import type { WritingEntry } from "../../src/lib/content";
 import { resolveChatCitationHref } from "./resolve-chat-citation-href";
@@ -45,16 +46,48 @@ describe("resolveChatCitationHref", () => {
     );
   });
 
-  it("returns undefined (unresolvable) for a profile citation, so the caller can fall back to plain text", () => {
-    expect(
-      resolveChatCitationHref({ entityType: "profile", entityId: "marcos" }, NO_WRITING),
-    ).toBeUndefined();
+  // Issue 227: these three used to return `undefined` on the (wrong) belief
+  // that the agent's tool set never emitted them. `get-profile`,
+  // `list-recommendations` and `search-career` over education chunks all do,
+  // so the chat dropped the citation on most answers.
+  it("resolves a profile citation to the home page's profile section", () => {
+    expect(resolveChatCitationHref({ entityType: "profile", entityId: "marcos" }, NO_WRITING)).toBe(
+      "/#profile",
+    );
   });
 
-  it("returns undefined (unresolvable) for an education citation", () => {
+  it("resolves an education citation to its credential card on /experience", () => {
     expect(
-      resolveChatCitationHref({ entityType: "education", entityId: "some-degree" }, NO_WRITING),
-    ).toBeUndefined();
+      resolveChatCitationHref(
+        { entityType: "education", entityId: "unad-bs-systems-engineering" },
+        NO_WRITING,
+      ),
+    ).toBe("/experience#unad-bs-systems-engineering");
+  });
+
+  it("resolves a recommendation citation to its card on /recommendations", () => {
+    expect(
+      resolveChatCitationHref(
+        { entityType: "recommendation", entityId: "some-recommender" },
+        NO_WRITING,
+      ),
+    ).toBe("/recommendations#some-recommender");
+  });
+
+  // The drift detector this bug needed: every type the shared marker format
+  // can carry must map to a real site surface, or answers quietly lose their
+  // citations again.
+  it("resolves every citable entity type the agent can emit, to something other than the bare home page", () => {
+    for (const entityType of CITABLE_ENTITY_TYPES) {
+      const href = resolveChatCitationHref({ entityType, entityId: "some-entity" }, NO_WRITING);
+      expect(href, `"${entityType}" citations are unresolvable`).toBeDefined();
+      expect(href, `"${entityType}" citations fall back to the home page`).not.toBe("/");
+    }
+  });
+
+  it("returns undefined only for an entity type outside the shared marker format, so no broken link is ever rendered", () => {
+    const unknown = { entityType: "sighting", entityId: "whatever" } as unknown as CitationMarker;
+    expect(resolveChatCitationHref(unknown, NO_WRITING)).toBeUndefined();
   });
 
   it("carries a #fragment through to the resolved href when the marker has one", () => {

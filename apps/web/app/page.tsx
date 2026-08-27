@@ -26,6 +26,7 @@ import { Section } from "./design-system/primitives/section";
 import { getDeepLinksForClient } from "./mcp/client-deep-links";
 import { ConnectPanel } from "./mcp/connect-panel";
 import styles from "./page.module.css";
+import { PROFILE_SECTION_ID } from "./skills/citation-href";
 
 /** Canonical for the home route — title/description fall back to `app/layout.tsx`'s site-wide default, which is already sourced from this same profile view. */
 export function generateMetadata(): Metadata {
@@ -166,7 +167,13 @@ export default async function Home() {
         </Container>
       </Section>
 
-      <Section aria-labelledby="bio-heading">
+      {/*
+        `id` from `citation-href.ts`'s `PROFILE_SECTION_ID`, not a literal:
+        this section is where a `[cite:profile:...]` citation points (issue
+        227), and sharing the constant keeps the anchor and the citation
+        target from drifting apart.
+      */}
+      <Section id={PROFILE_SECTION_ID} aria-labelledby="bio-heading">
         <Container>
           <RevealOnScroll>
             <Heading level={2} id="bio-heading">

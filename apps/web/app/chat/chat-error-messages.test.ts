@@ -108,4 +108,45 @@ describe("describeChatError", () => {
     expect(description.title).not.toBe(describeChatError("unknown").title);
     expect(description.retryable).toBe(false);
   });
+
+  // Issue 253: every failure used to end in "Try rephrasing and sending it
+  // again", including the ones nothing about the visitor's wording could
+  // fix. `invalid_request` is a schema rejection that happens on this site's
+  // side, before the model is called at all; `tool_input_rejected` is the
+  // AGENT calling one of its own tools wrongly.
+  it.each(["invalid_request", "tool_input_rejected"] as const)(
+    "does not blame the visitor's wording for the server-side %s failure",
+    (code) => {
+      const description = describeChatError(code);
+      expect(`${description.title} ${description.description}`.toLowerCase()).not.toContain(
+        "rephras",
+      );
+      expect(description.editable).toBe(false);
+    },
+  );
+
+  it("names this site, not the visitor, as the cause of an invalid_request failure", () => {
+    const description = describeChatError("invalid_request");
+    expect(description.description).toMatch(/this site|endpoint/i);
+  });
+
+  it("marks the message editable only where changing the text is what actually helps", () => {
+    // Too long -> shorten it; a turn that needed too many steps -> narrow it.
+    expect(describeChatError("message_size_exceeded").editable).toBe(true);
+    expect(describeChatError("step_limit_exceeded").editable).toBe(true);
+    // A provider outage or a rate limit has nothing to do with the wording.
+    expect(describeChatError("upstream_error").editable).toBe(false);
+    expect(describeChatError("session_rate_limited").editable).toBe(false);
+    expect(describeChatError("ip_rate_limited").editable).toBe(false);
+  });
+
+  it("distinguishes a rate limit, an upstream failure and a validation rejection by title", () => {
+    const titles = [
+      describeChatError("session_rate_limited").title,
+      describeChatError("ip_rate_limited").title,
+      describeChatError("upstream_error").title,
+      describeChatError("invalid_request").title,
+    ];
+    expect(new Set(titles).size).toBe(titles.length);
+  });
 });

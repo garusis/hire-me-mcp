@@ -1,4 +1,5 @@
 import { parseCitations } from "@hire-me-mcp/agent/citations";
+import { answerParagraph, readAnswerWithMarkers } from "../helpers/chat-answer";
 import { expect, test } from "../helpers/fixtures";
 
 /**
@@ -21,6 +22,12 @@ import { expect, test } from "../helpers/fixtures";
  * (`@hire-me-mcp/agent/citations`'s `parseCitations`) rather than a
  * separate ad hoc regex, so this spec and `packages/agent/src/evals/scorers/groundedness.ts`
  * agree on what counts as a citation marker.
+ *
+ * Since issue 227 the rendered answer no longer prints raw `[cite:...]`
+ * syntax into the prose — a citation is a numbered superscript carrying its
+ * marker on `data-citation`. `readAnswerWithMarkers` reconstructs the
+ * marker-bearing text from those attributes, so the sentence-level
+ * attribution checks below are unchanged in what they assert.
  */
 
 const GAP_QUESTION = "Has he worked with Golang?";
@@ -88,23 +95,22 @@ test("gap chat flow: honest acknowledgement, closest-evidence framing, no uncite
   await expect
     .poll(
       async () => {
-        const first = await assistantMessage.innerText();
-        if (first.trim().length <= "Agent".length) {
+        const first = await answerParagraph(assistantMessage).innerText();
+        if (first.trim().length === 0) {
           return null;
         }
         await page.waitForTimeout(500);
-        const second = await assistantMessage.innerText();
+        const second = await answerParagraph(assistantMessage).innerText();
         return first === second ? first : null;
       },
       { timeout: LIVE_MODEL_TIMEOUT_MS, message: "assistant answer never stabilized" },
     )
     .not.toBeNull();
 
-  // Strip the leading "Agent" role label (`chat-widget.tsx`'s
-  // `<span className={styles.role}>Agent</span>`) so assertions below
-  // only ever see the model's own answer text.
-  const rawText = await assistantMessage.innerText();
-  const answerText = rawText.replace(/^Agent\s*/i, "").trim();
+  // The answer's own prose with each rendered citation reference expanded
+  // back to its `[cite:...]` marker — no role label, no Sources list — so
+  // the assertions below see exactly what the model wrote.
+  const answerText = await readAnswerWithMarkers(assistantMessage);
 
   expect(
     GAP_ACKNOWLEDGEMENT_REGEX.test(answerText),
