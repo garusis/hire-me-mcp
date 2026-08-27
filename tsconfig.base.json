@@ -12,6 +12,13 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "skipLibCheck": true,
+    // TypeScript 7 (the native Go compiler) no longer auto-includes every
+    // `@types/*` package it finds under `node_modules/@types`; a project
+    // that wants the Node globals has to name them. Verified against
+    // 7.0.2: without this, every package fails with TS2591 ("Cannot find
+    // name 'process'") and TS2304 on `URL`/`structuredClone`, and adding
+    // it makes all six workspaces type-clean again. Harmless under 5.9.
+    "types": ["node"],
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
     "declarationMap": true

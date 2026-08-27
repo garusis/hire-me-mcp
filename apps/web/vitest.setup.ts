@@ -51,6 +51,9 @@ if (typeof window !== "undefined" && !window.matchMedia) {
 class MockIntersectionObserver implements IntersectionObserver {
   readonly root: Element | null = null;
   readonly rootMargin: string = "";
+  // Required by the newer `lib.dom.d.ts` TypeScript 7 bundles (the CSS
+  // scroll-margin integration); 5.9's DOM lib did not declare it.
+  readonly scrollMargin: string = "";
   readonly thresholds: ReadonlyArray<number> = [];
   callback: IntersectionObserverCallback;
 
