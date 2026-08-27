@@ -28,6 +28,43 @@ test("the privacy note states the retention window and third-party services", as
   await expect(page.getByText(/vercel/i).first()).toBeVisible();
 });
 
+/**
+ * Issue 239: the note used to claim session identifiers were never
+ * collected while `POST /api/chat` required one — a copy-vs-reality gap that
+ * only showed up against a deployed environment. These two tests close it
+ * from both ends against the *same* deployment: the page says a session
+ * identifier is sent, and the live endpoint proves it by rejecting a body
+ * without one. A request that fails schema validation never reaches the
+ * agent, so this costs no model tokens.
+ */
+test("the privacy note discloses the chat session identifier the API requires", async ({
+  gotoRoute,
+  page,
+}) => {
+  await gotoRoute("/privacy");
+  await expect(page.getByRole("heading", { name: /chat session identifier/i })).toBeVisible();
+  await expect(page.getByText(/never written to this site's usage database/i)).toBeVisible();
+  await expect(page.getByText("sessionId", { exact: true })).toBeVisible();
+});
+
+test("POST /api/chat really does require the sessionId the privacy note describes", async ({
+  request,
+  baseURL,
+}) => {
+  // No `sessionId` — rejected by `chatRequestSchema` (guardrail #2) before
+  // the agent is ever constructed. The `request` fixture carries the
+  // Deployment Protection bypass header via the config's `extraHTTPHeaders`.
+  const response = await request.post(`${baseURL}/api/chat`, {
+    data: {
+      messages: [{ id: crypto.randomUUID(), role: "user", parts: [{ type: "text", text: "hi" }] }],
+    },
+  });
+  expect(response.status()).toBe(400);
+  const payload = (await response.json()) as { error?: { code?: string; message?: string } };
+  expect(payload.error?.code).toBe("invalid_request");
+  expect(payload.error?.message).toContain("sessionId");
+});
+
 test("sitemap.xml lists /privacy but never the private stats route", async ({
   request,
   baseURL,
