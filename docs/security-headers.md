@@ -3,8 +3,11 @@
 Every response from `apps/web` — HTML pages, the MCP endpoint, the chat stream, and the other
 `/api/*` routes — carries a reviewed set of HTTP security headers, defined once in
 `apps/web/src/lib/security/build-security-headers.ts` and applied by `apps/web/proxy.ts` on
-every request. The header set is split into two route groups because a browser document and a
-JSON API need different things:
+every request. (`proxy.ts` was `middleware.ts` until Next.js 16 renamed the root file convention
+and its exported function; older issues and Next's own docs still say "middleware" for the same
+thing. Next 16 also dropped the edge runtime for it, so this runs on the Node.js runtime.) The
+header set is split into two route groups because a browser document and a JSON API need
+different things:
 
 - **HTML route group** — every page under `apps/web/app/**` (and the handful of non-HTML document
   routes: `/llms.txt`, `/llms-full.txt`, `/manifest.webmanifest`, `/robots.txt`, `/sitemap.xml`,
