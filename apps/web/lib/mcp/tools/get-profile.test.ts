@@ -1,6 +1,7 @@
 import type { CareerDataRepository, DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCitationSiteUrls } from "../citation-site-urls.js";
 import { createToolExecutor } from "../define-tool.js";
 import { getProfileTool } from "./get-profile.js";
 
@@ -50,7 +51,7 @@ describe("getProfileTool", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({
       data: domainResult.data,
-      citations: domainResult.citations,
+      citations: withCitationSiteUrls(domainResult.citations),
     });
   });
 
@@ -64,7 +65,7 @@ describe("getProfileTool", () => {
     const result = await executor({});
 
     const structuredContent = result.structuredContent as { citations: unknown };
-    expect(structuredContent.citations).toStrictEqual(citations);
+    expect(structuredContent.citations).toStrictEqual(withCitationSiteUrls(citations));
   });
 
   it("passes an unusual/arbitrary domain payload through unmodified — no reshaping of handler output", async () => {
@@ -85,5 +86,10 @@ describe("getProfileTool", () => {
 
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
+  });
+
+  it("declares a human-readable title and an outputSchema for its structuredContent (#241, #242)", () => {
+    expect(getProfileTool.title).toBeTruthy();
+    expect(getProfileTool.outputSchema).toBeDefined();
   });
 });

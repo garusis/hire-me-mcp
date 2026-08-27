@@ -1,6 +1,7 @@
 import type { CareerDataRepository, DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCitationSiteUrls } from "../citation-site-urls.js";
 import { createToolExecutor } from "../define-tool.js";
 import { listWritingTool } from "./list-writing.js";
 
@@ -52,7 +53,7 @@ describe("listWritingTool", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({
       data: [fixtureEntry],
-      citations: fixtureCitations,
+      citations: withCitationSiteUrls(fixtureCitations),
     });
   });
 
@@ -76,7 +77,7 @@ describe("listWritingTool", () => {
     const result = await executor({});
 
     const structuredContent = result.structuredContent as { citations: unknown };
-    expect(structuredContent.citations).toStrictEqual(fixtureCitations);
+    expect(structuredContent.citations).toStrictEqual(withCitationSiteUrls(fixtureCitations));
   });
 
   it("maps invalid input (non-object arguments) to a sanitized invalid_input error", async () => {
@@ -86,5 +87,10 @@ describe("listWritingTool", () => {
 
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
+  });
+
+  it("declares a human-readable title and an outputSchema for its structuredContent (#241, #242)", () => {
+    expect(listWritingTool.title).toBeTruthy();
+    expect(listWritingTool.outputSchema).toBeDefined();
   });
 });

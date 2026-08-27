@@ -6,8 +6,10 @@
 
 import { type ExperienceFilter, getExperience } from "@hire-me-mcp/core";
 import { z } from "zod";
+import { experienceEntrySchema } from "../../../src/lib/content/entity-schemas";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
-import type { ToolDefinition } from "../define-tool";
+import { enumValueMessage, type ToolDefinition } from "../define-tool";
+import { toolSuccessSchema } from "../wire-schemas";
 
 /**
  * Derived from `getExperience`'s own return type rather than importing
@@ -39,14 +41,28 @@ const inputSchema = z.object({
   from: dateSchema.optional().describe("Inclusive lower bound (YYYY-MM) of the role's date range."),
   to: dateSchema.optional().describe("Inclusive upper bound (YYYY-MM) of the role's date range."),
   status: z
-    .enum(["current", "past"])
+    // The explicit error callback keeps the message useful on the MCP
+    // SDK's own pre-handler validation path too, where zod's locale-based
+    // default can degrade to a bare "Invalid input" in a production
+    // bundle (#244).
+    .enum(["current", "past"], {
+      error: (issue) => enumValueMessage(["current", "past"], issue.input),
+    })
     .optional()
     .describe("'current' restricts to the role(s) with no end date; 'past' to roles that ended."),
 });
 
+/** `{ data, citations }` envelope around the matching work-history entries (#242). */
+const outputSchema = toolSuccessSchema(
+  z
+    .array(experienceEntrySchema)
+    .describe("Matching work-history entries, ordered most recent first."),
+);
+
 /** `get-experience` — registered against a live `McpServer` via `defineTool`. */
 export const getExperienceTool: ToolDefinition<typeof inputSchema, ExperienceEntry[]> = {
   name: "get-experience",
+  title: "Get work experience",
   description:
     "Returns every entry from Marcos Alvarez's work history matching an optional structured " +
     "filter — company, technology tags (both matched case-insensitively), a YYYY-MM date " +
@@ -59,6 +75,7 @@ export const getExperienceTool: ToolDefinition<typeof inputSchema, ExperienceEnt
     "get-skill-evidence). A filter matching no roles returns a successful result with an empty " +
     "list, not an error.",
   inputSchema,
+  outputSchema,
   handler: (input) => {
     const filter: ExperienceFilter = input;
     return getExperience(getCareerDataRepository(), filter);

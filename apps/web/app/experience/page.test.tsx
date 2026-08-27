@@ -6,6 +6,7 @@ import type {
   ProfileView,
   ProjectListView,
 } from "../../src/lib/content";
+import { resolveCitationHref } from "../skills/citation-href";
 
 const { getExperienceListView, getProjectsListView, getProfileView, getEducationListView } =
   vi.hoisted(() => ({
@@ -164,6 +165,27 @@ describe("Experience page", () => {
     // Authored dates render as a period; the in-progress entry with no
     // dates on record renders none rather than a fabricated one.
     expect(screen.getByText("2020-01 – 2020-06")).toBeDefined();
+  });
+
+  // Issue 227: an `[cite:education:...]` chat citation resolves to
+  // `/experience#<slug>` — the anchor has to be the card that citation names,
+  // or the link lands nowhere.
+  it("anchors each education card at the id a citation to it resolves to (issue 227)", async () => {
+    getExperienceListView.mockReturnValue(experienceView());
+    getProjectsListView.mockReturnValue(projectsView());
+    const { default: ExperiencePage } = await import("./page.js");
+
+    const { container } = render(await ExperiencePage());
+
+    for (const item of educationView().items) {
+      const href = resolveCitationHref(item.citation, []);
+      const [, fragment] = href.split("#");
+      expect(fragment, `no fragment in "${href}"`).toBeTruthy();
+      expect(
+        container.querySelector(`#${fragment}`),
+        `no element for the "${href}" citation target`,
+      ).not.toBeNull();
+    }
   });
 
   it("renders no Education section at all when the content layer has no education records (#231)", async () => {

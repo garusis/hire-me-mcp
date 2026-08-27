@@ -10,6 +10,7 @@ import type {
   Skill,
 } from "../src/lib/content";
 import Home from "./page.js";
+import { resolveCitationHref } from "./skills/citation-href";
 
 /**
  * Stubs the entire content-layer barrel `Home` imports from. Every value
@@ -198,6 +199,20 @@ describe("Home", () => {
       expect(
         within(bioRegion).getByText(/mentors engineers on reliability practice\./),
       ).toBeDefined();
+    });
+
+    // Issue 227: an `[cite:profile:...]` chat citation resolves to
+    // `/#profile`, so that anchor has to exist on this page.
+    it("anchors the profile section at the id a profile citation resolves to (issue 227)", async () => {
+      const { container } = render(await Home());
+
+      const href = resolveCitationHref(
+        { entityType: "profile", entityId: "marcos", label: "Marcos" },
+        [],
+      );
+      const [, fragment] = href.split("#");
+      expect(fragment, `no fragment in "${href}"`).toBeTruthy();
+      expect(container.querySelector(`#${fragment}`)).not.toBeNull();
     });
 
     it("changes the rendered bio when the stubbed summary changes", async () => {

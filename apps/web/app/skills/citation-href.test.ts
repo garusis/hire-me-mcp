@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { CITABLE_ENTITY_TYPES } from "@hire-me-mcp/agent/citations";
 import { describe, expect, it } from "vitest";
-import { resolveCitationHref } from "./citation-href";
+import { PROFILE_SECTION_ID, resolveCitationHref } from "./citation-href";
 
 const SOURCE_PATH = path.join(process.cwd(), "app", "skills", "citation-href.ts");
 
@@ -81,6 +82,19 @@ describe("resolveCitationHref", () => {
     expect(href).toBe("/writing#local-post");
   });
 
+  it("points a recommendation citation at the matching anchor on /recommendations", () => {
+    const href = resolveCitationHref(
+      {
+        entityType: "recommendation",
+        entityId: "andre-treib-2026",
+        label: "Recommendation from Andre Treib",
+      },
+      [],
+    );
+
+    expect(href).toBe("/recommendations#andre-treib-2026");
+  });
+
   it("falls back to /writing for a writing citation whose entry can't be resolved", () => {
     const href = resolveCitationHref(
       { entityType: "writing", entityId: "missing", label: "Missing" },
@@ -90,9 +104,56 @@ describe("resolveCitationHref", () => {
     expect(href).toBe("/writing");
   });
 
-  it("falls back to the home page for an entity type with no dedicated citation surface", () => {
+  // Issue 227: `profile`, `education` and `recommendation` citations are
+  // emitted constantly by `getProfile`/`listEducation`/`listRecommendations`,
+  // but fell through to the bare home-page fallback here — which the chat
+  // surface then treated as "unresolvable" and deleted from the answer.
+  it("points a profile citation at the home page's profile section", () => {
     const href = resolveCitationHref(
       { entityType: "profile", entityId: "marcos", label: "Marcos" },
+      [],
+    );
+
+    expect(href).toBe(`/#${PROFILE_SECTION_ID}`);
+  });
+
+  it("points an education citation at its credential card on /experience", () => {
+    const href = resolveCitationHref(
+      {
+        entityType: "education",
+        entityId: "unad-bs-systems-engineering",
+        label: "B.S. Systems Engineering",
+      },
+      [],
+    );
+
+    expect(href).toBe("/experience#unad-bs-systems-engineering");
+  });
+
+  it("points a recommendation citation at its card on /recommendations", () => {
+    const href = resolveCitationHref(
+      { entityType: "recommendation", entityId: "some-recommender", label: "Some Recommender" },
+      [],
+    );
+
+    expect(href).toBe("/recommendations#some-recommender");
+  });
+
+  it("maps every citable entity type to a real surface, never the bare home-page fallback", () => {
+    for (const entityType of CITABLE_ENTITY_TYPES) {
+      const href = resolveCitationHref(
+        { entityType, entityId: "some-entity", label: "Some Entity" },
+        [],
+      );
+      expect(href, `"${entityType}" citations fall back to the home page`).not.toBe("/");
+    }
+  });
+
+  it("still falls back to the home page for an entity type outside the shared citation format", () => {
+    const href = resolveCitationHref(
+      { entityType: "sighting", entityId: "whatever", label: "Whatever" } as unknown as Parameters<
+        typeof resolveCitationHref
+      >[0],
       [],
     );
 

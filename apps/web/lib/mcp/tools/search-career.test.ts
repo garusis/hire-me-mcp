@@ -1,5 +1,10 @@
 import type { SearchCareerResult } from "@hire-me-mcp/core/search-career";
-import { MAX_QUERY_LENGTH, MAX_TOP_K, MIN_TOP_K } from "@hire-me-mcp/core/search-career";
+import {
+  MAX_QUERY_LENGTH,
+  MAX_TOP_K,
+  MIN_TOP_K,
+  RELEVANCE_FLOOR,
+} from "@hire-me-mcp/core/search-career";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createToolExecutor } from "../define-tool.js";
 import { getSearchCareer } from "../search-career-instance.js";
@@ -55,7 +60,7 @@ describe("searchCareerTool", () => {
     expect(description).toContain("get-skill-evidence");
   });
 
-  it("calls searchCareer with the trimmed query and passes topK/minScore/sourceTypes through", async () => {
+  it("calls searchCareer with the trimmed query and passes topK/sourceTypes through, raising a below-floor minScore up to the relevance floor", async () => {
     fakeSearchCareer.mockResolvedValue(fixtureResult());
     const executor = createToolExecutor(searchCareerTool);
 
@@ -68,9 +73,76 @@ describe("searchCareerTool", () => {
 
     expect(fakeSearchCareer).toHaveBeenCalledWith("event-driven architecture experience", {
       topK: 5,
-      minScore: 0.5,
+      minScore: RELEVANCE_FLOOR,
       sourceTypes: ["experience", "project"],
     });
+  });
+
+  it("applies the relevance floor as the effective minScore when minScore is omitted (#237)", async () => {
+    fakeSearchCareer.mockResolvedValue(fixtureResult());
+    const executor = createToolExecutor(searchCareerTool);
+
+    await executor({ query: "underwater basket weaving" });
+
+    expect(fakeSearchCareer).toHaveBeenCalledWith("underwater basket weaving", {
+      topK: undefined,
+      minScore: RELEVANCE_FLOOR,
+      sourceTypes: undefined,
+    });
+  });
+
+  it("passes an above-floor minScore through unchanged", async () => {
+    fakeSearchCareer.mockResolvedValue(fixtureResult());
+    const executor = createToolExecutor(searchCareerTool);
+
+    await executor({ query: "event-driven architecture", minScore: 0.8 });
+
+    expect(fakeSearchCareer).toHaveBeenCalledWith("event-driven architecture", {
+      topK: undefined,
+      minScore: 0.8,
+      sourceTypes: undefined,
+    });
+  });
+
+  it("documents the relevance floor in the minScore parameter description", () => {
+    const minScoreDescription = (
+      searchCareerTool.inputSchema.shape as { minScore: { description?: string } }
+    ).minScore.description;
+    expect(minScoreDescription).toContain(String(RELEVANCE_FLOOR));
+  });
+
+  it("maps an unknown sourceTypes value to invalid_input naming the allowed source types, without calling searchCareer (#238)", async () => {
+    const executor = createToolExecutor(searchCareerTool);
+
+    const result = await executor({ query: "kubernetes", sourceTypes: ["blogpost"] });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
+    const message = (result.structuredContent as { message: string }).message;
+    expect(message).toContain("sourceTypes");
+    expect(message).toContain("experience");
+    expect(message).toContain("project");
+    expect(fakeSearchCareer).not.toHaveBeenCalled();
+  });
+
+  it("accepts every chunked source type in sourceTypes", async () => {
+    fakeSearchCareer.mockResolvedValue(fixtureResult());
+    const executor = createToolExecutor(searchCareerTool);
+
+    const result = await executor({
+      query: "kubernetes",
+      sourceTypes: ["profile", "experience", "project", "skill", "gap", "education", "writing"],
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(fakeSearchCareer).toHaveBeenCalled();
+  });
+
+  it("has no duplicated copy/paste clause in its description (#240)", () => {
+    const occurrences =
+      searchCareerTool.description.split("more expensive per call (it embeds the query)").length -
+      1;
+    expect(occurrences).toBe(1);
   });
 
   it("returns a found:true result with ranked hits, each carrying score and a human-readable citation", async () => {
@@ -105,13 +177,13 @@ describe("searchCareerTool", () => {
     ]);
   });
 
-  it("omits citationUrl for a hit whose citation has no url", async () => {
+  it("falls back to the canonical site page as citationUrl for a hit whose citation has no external url (#247)", async () => {
     fakeSearchCareer.mockResolvedValue(
       fixtureResult({
         results: [
           {
             text: "Built a CI/CD pipeline.",
-            score: 0.6,
+            score: 0.7,
             citation: { entityType: "project", entityId: "ci-pipeline", label: "CI Pipeline" },
             sourceType: "project",
             sourceId: "ci-pipeline",
@@ -124,8 +196,12 @@ describe("searchCareerTool", () => {
 
     const result = await executor({ query: "CI/CD" });
 
-    const structuredContent = result.structuredContent as { data: { results?: unknown[] } };
-    expect(structuredContent.data.results?.[0]).not.toHaveProperty("citationUrl");
+    const structuredContent = result.structuredContent as {
+      data: { results?: Array<{ citationUrl?: string }> };
+    };
+    expect(structuredContent.data.results?.[0]?.citationUrl).toBe(
+      "http://localhost:3000/projects/ci-pipeline",
+    );
   });
 
   it("returns an explicit found:false 'no relevant content found' result for an empty match set, not an empty blob", async () => {
@@ -257,5 +333,10 @@ describe("searchCareerTool", () => {
     expect(consoleErrorSpy).toHaveBeenCalled();
 
     consoleErrorSpy.mockRestore();
+  });
+
+  it("declares a human-readable title and an outputSchema for its structuredContent (#241, #242)", () => {
+    expect(searchCareerTool.title).toBeTruthy();
+    expect(searchCareerTool.outputSchema).toBeDefined();
   });
 });

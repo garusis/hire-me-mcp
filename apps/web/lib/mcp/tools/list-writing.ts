@@ -8,8 +8,10 @@
 
 import { listWriting } from "@hire-me-mcp/core";
 import { z } from "zod";
+import { writingEntrySchema } from "../../../src/lib/content/entity-schemas";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
 import type { ToolDefinition } from "../define-tool";
+import { toolSuccessSchema } from "../wire-schemas";
 
 const inputSchema = z.object({});
 
@@ -21,9 +23,15 @@ const inputSchema = z.object({});
  */
 type WritingEntry = ReturnType<typeof listWriting>["data"][number];
 
+/** `{ data, citations }` envelope around every authored writing entry (#242). */
+const outputSchema = toolSuccessSchema(
+  z.array(writingEntrySchema).describe("Every authored writing entry, newest first."),
+);
+
 /** `list-writing` — registered against a live `McpServer` via `defineTool`. */
 export const listWritingTool: ToolDefinition<typeof inputSchema, WritingEntry[]> = {
   name: "list-writing",
+  title: "List writing",
   description:
     "Returns every published writing entry — title, published date, summary, optional " +
     "canonical URL, and the full body — as a list ordered most recent first, each with a " +
@@ -34,5 +42,6 @@ export const listWritingTool: ToolDefinition<typeof inputSchema, WritingEntry[]>
     "successful 'nothing published yet' answer — the corpus currently has no entries — so " +
     "relay it as such rather than treating it as a failed call.",
   inputSchema,
+  outputSchema,
   handler: () => listWriting(getCareerDataRepository()),
 };
