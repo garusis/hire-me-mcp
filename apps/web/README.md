@@ -102,6 +102,12 @@ landmark). `app/layout.tsx` composes skip link → header → `<main id="main-co
 - `RevealOnScroll` — fades/slides children in via `IntersectionObserver` once they enter the
   viewport. Under reduced motion it is a true no-op: it renders a plain wrapper with **no**
   animation class and **no** `data-reveal` attribute, rather than a zero-duration transition.
+  **The hidden state is never server-rendered** (issue 273): the wrapper ships visible, and the
+  `pending` (`opacity: 0`) class is applied by client JS only after the observer reports that
+  wrapper as *off-screen*. So the first paint shows the content, a visitor with JS disabled or
+  blocked sees the content, and anything already on screen at hydration is simply never animated.
+  Regression-guarded by `e2e-preview/specs/first-paint.spec.ts`, which reads the raw server
+  response and loads the page with `javaScriptEnabled: false`.
 - All CSS transitions additionally read their durations from `--motion-duration-*`, which are
   forced to `0ms` under `@media (prefers-reduced-motion: reduce)` as a second line of defense.
 

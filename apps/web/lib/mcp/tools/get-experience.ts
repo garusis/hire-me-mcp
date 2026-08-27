@@ -8,7 +8,7 @@ import { type ExperienceFilter, getExperience } from "@hire-me-mcp/core";
 import { z } from "zod";
 import { experienceEntrySchema } from "../../../src/lib/content/entity-schemas";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
-import { enumValueMessage, type ToolDefinition } from "../define-tool";
+import { enumValueMessage, nonEmptyStringMessage, type ToolDefinition } from "../define-tool";
 import { toolSuccessSchema } from "../wire-schemas";
 
 /**
@@ -27,11 +27,11 @@ const dateSchema = z
 const inputSchema = z.object({
   company: z
     .string()
-    .min(1)
+    .min(1, { error: () => nonEmptyStringMessage() })
     .optional()
     .describe("Exact company name to filter by, case-insensitive (no fuzzy matching)."),
   tech: z
-    .array(z.string().min(1))
+    .array(z.string().min(1, { error: () => nonEmptyStringMessage() }))
     .optional()
     .describe(
       "Technology tags to filter by, case-insensitive ('TypeScript' matches the canonical " +

@@ -143,10 +143,14 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
         <FilterControls options={options} selectedTags={knownTags} />
         {unknownTags.length > 0 && (
           <Prose>
+            {/* issue 274 — the notice only ever fires for a tag no project
+                carries under case-insensitive matching, and says so without
+                claiming anything the tag row above contradicts. */}
             <p>
               Ignored {unknownTags.length === 1 ? "an unknown tag" : "unknown tags"} from the URL:{" "}
-              {unknownTags.join(", ")} — {unknownTags.length === 1 ? "it isn't" : "they aren't"} a
-              technology any project here lists.
+              {unknownTags.map((tag) => `"${tag}"`).join(", ")} — no project here lists{" "}
+              {unknownTags.length === 1 ? "it" : "them"} as a technology. The tags above are the
+              full set this page filters by, matched regardless of capitalisation.
             </p>
           </Prose>
         )}

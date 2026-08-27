@@ -123,13 +123,43 @@ describe("searchProjectsTool", () => {
     expect(structuredContent.citations).toStrictEqual(withCitationSiteUrls(citations));
   });
 
-  it("maps invalid input (missing required query) to a sanitized invalid_input error", async () => {
-    const executor = createToolExecutor(searchProjectsTool);
+  // Issue 275 — the description has always promised search "by keyword
+  // AND/OR technology tag", but `query` was required, so the tag-only call a
+  // model naturally makes from that promise failed validation instead.
+  describe("tag-only search (#275)", () => {
+    it("accepts a tags-only call and delegates it to the domain service", async () => {
+      vi.mocked(core.searchProjects).mockReturnValue({ data: [fixtureResult], citations: [] });
+      const executor = createToolExecutor(searchProjectsTool);
 
-    const result = await executor({});
+      const result = await executor({ tags: ["typescript"] });
 
-    expect(result.isError).toBe(true);
-    expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
+      expect(result.isError).toBeUndefined();
+      expect(core.searchProjects).toHaveBeenCalledWith(expect.anything(), undefined, {
+        tags: ["typescript"],
+        limit: undefined,
+      });
+    });
+
+    it("accepts a call with neither query nor tags, returning the domain service's empty result", async () => {
+      vi.mocked(core.searchProjects).mockReturnValue({ data: [], citations: [] });
+      const executor = createToolExecutor(searchProjectsTool);
+
+      const result = await executor({});
+
+      expect(result.isError).toBeUndefined();
+      expect(result.structuredContent).toEqual({ data: [], citations: [] });
+    });
+
+    it("advertises query as optional in the published input schema, matching the description", () => {
+      const jsonSchema = z.toJSONSchema(searchProjectsTool.inputSchema) as unknown as {
+        required?: string[];
+      };
+      expect(jsonSchema.required ?? []).not.toContain("query");
+    });
+
+    it("its description tells a model that either argument works on its own", () => {
+      expect(searchProjectsTool.description).toMatch(/tag-only search/i);
+    });
   });
 
   it("maps an invalid limit (wrong type) to a sanitized invalid_input error", async () => {
@@ -141,14 +171,21 @@ describe("searchProjectsTool", () => {
     expect(result.structuredContent).toMatchObject({ code: "invalid_input" });
   });
 
-  it("reports the missing required query as 'query: required' (#244)", async () => {
-    const executor = createToolExecutor(searchProjectsTool);
+  // Issue 276 — range constraints used to report a bare "limit: Invalid
+  // input", identical for 0, -1 and 101, giving a self-correcting agent
+  // nothing to correct against.
+  it.each([0, -1, 51, 1.5])(
+    "reports limit %s by naming the field, the constraint and the whole acceptable range (#276)",
+    async (limit) => {
+      const executor = createToolExecutor(searchProjectsTool);
 
-    const result = await executor({});
+      const result = await executor({ query: "typescript", limit });
 
-    const message = (result.structuredContent as { message: string }).message;
-    expect(message).toContain("query: required");
-  });
+      const message = (result.structuredContent as { message: string }).message;
+      expect(message).toBe("limit: must be an integer between 1 and 50");
+      expect(message).not.toContain("Invalid input");
+    },
+  );
 
   it("advertises a sane bounded maximum for limit instead of Number.MAX_SAFE_INTEGER (#243)", () => {
     const jsonSchema = z.toJSONSchema(searchProjectsTool.inputSchema) as unknown as {

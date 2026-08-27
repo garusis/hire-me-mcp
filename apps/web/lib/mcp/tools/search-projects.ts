@@ -11,7 +11,7 @@ import { searchProjects } from "@hire-me-mcp/core";
 import { z } from "zod";
 import { projectSchema } from "../../../src/lib/content/entity-schemas";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
-import type { ToolDefinition } from "../define-tool";
+import { nonEmptyStringMessage, numberRangeMessage, type ToolDefinition } from "../define-tool";
 import { toolSuccessSchema } from "../wire-schemas";
 
 /**
@@ -26,27 +26,32 @@ type ProjectSearchResult = ReturnType<typeof searchProjects>["data"][number];
 const MAX_LIMIT = 50;
 
 const inputSchema = z.object({
+  // Optional since #275: the description has always promised search "by
+  // keyword AND/OR technology tag", but `query` being required made a
+  // tag-only search a validation error rather than the search it advertised.
+  // `packages/core`'s `searchProjects` ranks by the tags themselves when no
+  // query is given, so the promise is now literally true.
   query: z
-    // The explicit error callback keeps "required" (rather than a
-    // locale-dependent generic complaint) on the MCP SDK's own
-    // pre-handler validation path (#244).
-    .string({ error: (issue) => (issue.input === undefined ? "required" : undefined) })
+    .string()
+    .optional()
     .describe(
       "Free-text keyword query matched against project names, summaries, bodies and tech " +
-        "tags. An empty or whitespace-only query returns no results, not an error.",
+        "tags. Optional: omit it (or pass an empty string) and give `tags` instead for a " +
+        "tag-only search. Omitting both returns no results, not an error.",
     ),
   tags: z
-    .array(z.string().min(1))
+    .array(z.string().min(1, { error: () => nonEmptyStringMessage() }))
     .optional()
     .describe(
       "Restricts candidates to projects with at least one of these technology tags (OR " +
-        "semantics) before ranking. Omit for no constraint.",
+        "semantics) before ranking. Valid on its own, with no `query`, in which case the " +
+        "tags themselves are what results are ranked by. Omit for no constraint.",
     ),
   limit: z
-    .number()
-    .int()
-    .positive()
-    .max(MAX_LIMIT)
+    .number({ error: () => numberRangeMessage(1, MAX_LIMIT, { integer: true }) })
+    .int({ error: () => numberRangeMessage(1, MAX_LIMIT, { integer: true }) })
+    .positive({ error: () => numberRangeMessage(1, MAX_LIMIT, { integer: true }) })
+    .max(MAX_LIMIT, { error: () => numberRangeMessage(1, MAX_LIMIT, { integer: true }) })
     .optional()
     .describe(
       `Maximum number of ranked results to return, an integer in [1, ${MAX_LIMIT}]. Omit to ` +
@@ -83,14 +88,17 @@ export const searchProjectsTool: ToolDefinition<typeof inputSchema, ProjectSearc
   description:
     "Searches Marcos Alvarez's project portfolio by keyword and/or technology tag and " +
     "returns ranked matches, each with a relevance score, a matched-field explanation, and a " +
-    "citation. Matching is deterministic keyword/tag search against project names, summaries, " +
-    "bodies and tech tags — there is no semantic or embedding-based understanding of the " +
+    "citation. Both inputs are optional and either works alone: pass 'query' for a keyword " +
+    "search, 'tags' for a tag-only search (every project carrying one of the tags, ranked by " +
+    "them), or both to narrow a keyword search to tagged candidates. Matching is " +
+    "deterministic keyword/tag search against project names, summaries, bodies and tech " +
+    "tags — there is no semantic or embedding-based understanding of the " +
     "query today. Use this when asked to find or describe specific projects, e.g. 'show me " +
     "projects that used React' or 'what did they build with Kubernetes'. Do not use it for a " +
     "chronological work history (use get-experience) or to check whether a skill is claimed " +
-    "at all, evidence or gap (use get-skill-evidence). A query matching no projects returns a " +
-    "successful result with an empty list, not an error; an empty or whitespace-only query " +
-    "behaves the same way.",
+    "at all, evidence or gap (use get-skill-evidence). A search matching no projects returns " +
+    "a successful result with an empty list, not an error; so does a call giving neither a " +
+    "query nor any tags.",
   inputSchema,
   outputSchema,
   handler: (input) =>

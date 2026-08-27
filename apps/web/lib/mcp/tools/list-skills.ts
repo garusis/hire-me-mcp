@@ -9,7 +9,7 @@ import { listSkills, type SkillsFilter } from "@hire-me-mcp/core";
 import { z } from "zod";
 import { skillSchema } from "../../../src/lib/content/entity-schemas";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
-import type { ToolDefinition } from "../define-tool";
+import { nonEmptyStringMessage, type ToolDefinition } from "../define-tool";
 import { toolSuccessSchema } from "../wire-schemas";
 
 /**
@@ -22,7 +22,7 @@ type Skill = ReturnType<typeof listSkills>["data"][number];
 const inputSchema = z.object({
   category: z
     .string()
-    .min(1)
+    .min(1, { error: () => nonEmptyStringMessage() })
     .optional()
     .describe(
       "Exact category to filter by, case-insensitive (no fuzzy matching), e.g. 'language', " +

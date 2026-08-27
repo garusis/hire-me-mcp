@@ -76,6 +76,15 @@ describe("filterProjectsByTags", () => {
   it("returns an empty array when no project matches every selected tag", () => {
     expect(filterProjectsByTags(items, ["typescript", "python"])).toEqual([]);
   });
+
+  // Issue 274 — the MCP server matches technology tags case-insensitively
+  // (issue 226); the site must not be the one surface that disagrees.
+  it.each(["TypeScript", "TYPESCRIPT", "typescript", " TypeScript "])(
+    "matches %j case-insensitively, like the MCP server does",
+    (tag) => {
+      expect(filterProjectsByTags(items, [tag])).toEqual([items[0], items[1]]);
+    },
+  );
 });
 
 describe("toggleTagHref", () => {
@@ -115,5 +124,32 @@ describe("partitionSelectedTags (issue 252)", () => {
 
   it("returns empty lists for an empty selection", () => {
     expect(partitionSelectedTags([], options)).toEqual({ knownTags: [], unknownTags: [] });
+  });
+
+  // Issue 274 — `?tags=TypeScript` used to be classified as UNKNOWN, which
+  // both disabled the filter and printed a notice claiming no project lists
+  // the tag, directly under a chip row showing it.
+  it.each(["TypeScript", "TYPESCRIPT", "TypeScript "])(
+    "recognises %j and canonicalises it to the option's own casing",
+    (tag) => {
+      expect(partitionSelectedTags([tag], options)).toEqual({
+        knownTags: ["typescript"],
+        unknownTags: [],
+      });
+    },
+  );
+
+  it("collapses several spellings of the same tag into one canonical selection", () => {
+    expect(partitionSelectedTags(["TypeScript", "typescript", "TYPESCRIPT"], options)).toEqual({
+      knownTags: ["typescript"],
+      unknownTags: [],
+    });
+  });
+
+  it("still reports a tag no option matches under any casing as unknown", () => {
+    expect(partitionSelectedTags(["Fortran", "React"], options)).toEqual({
+      knownTags: ["react"],
+      unknownTags: ["Fortran"],
+    });
   });
 });

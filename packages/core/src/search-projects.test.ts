@@ -219,6 +219,66 @@ describe("searchProjects", () => {
     expect(byAlias.data).toEqual(byCanonical.data);
   });
 
+  // Issue 275 — the tools built on this promise search "by keyword and/or
+  // technology tag", so a tag with no keyword has to be a real search, not
+  // an empty result (or, at the MCP boundary, a validation error).
+  describe("tag-only search (#275)", () => {
+    it("ranks every tag-filtered candidate when no query is given at all", () => {
+      const result = searchProjects(fixtureRepository(), undefined, { tags: ["typescript"] });
+
+      expect(result.data.map((r) => r.project.id)).toEqual(["typescript-tag-project"]);
+      expect(result.citations).toHaveLength(result.data.length);
+    });
+
+    it("treats an empty or whitespace-only query with tags the same as no query", () => {
+      const repository = fixtureRepository();
+
+      const omitted = searchProjects(repository, undefined, { tags: ["nodejs"] });
+      const empty = searchProjects(repository, "", { tags: ["nodejs"] });
+      const whitespace = searchProjects(repository, "   ", { tags: ["nodejs"] });
+
+      expect(empty.data).toEqual(omitted.data);
+      expect(whitespace.data).toEqual(omitted.data);
+      expect(omitted.data.map((r) => r.project.id)).toEqual([
+        "typescript-body-project",
+        "typescript-name-project",
+        "typescript-summary-project",
+      ]);
+    });
+
+    it("explains a tag-only match as a tag match, like any other result", () => {
+      const result = searchProjects(fixtureRepository(), undefined, { tags: ["aws"] });
+
+      expect(result.data[0]?.matches).toEqual([{ field: "tag", token: "aws" }]);
+    });
+
+    it("resolves tag aliases in a tag-only search, same as everywhere else", () => {
+      const repository = fixtureRepository();
+
+      const byAlias = searchProjects(repository, undefined, { tags: ["ts"] });
+      const byCanonical = searchProjects(repository, undefined, { tags: ["typescript"] });
+
+      expect(byAlias.data).toEqual(byCanonical.data);
+      expect(byCanonical.data.length).toBeGreaterThan(0);
+    });
+
+    it("still returns an empty result with neither a query nor any tags", () => {
+      const result = searchProjects(fixtureRepository(), undefined, { tags: [] });
+
+      expect(result.data).toEqual([]);
+      expect(result.citations).toEqual([]);
+    });
+
+    it("respects options.limit in a tag-only search", () => {
+      const repository = fixtureRepository();
+      const unlimited = searchProjects(repository, undefined, { tags: ["nodejs"] });
+
+      const limited = searchProjects(repository, undefined, { tags: ["nodejs"], limit: 1 });
+
+      expect(limited.data).toEqual(unlimited.data.slice(0, 1));
+    });
+  });
+
   it("an empty repository (no projects) returns an empty result list, no throw", () => {
     const repository: CareerDataRepository = createInMemoryCareerDataRepository(
       emptyCareerDataset(),

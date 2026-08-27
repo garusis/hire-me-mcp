@@ -9,7 +9,7 @@ import { type ListProjectsOptions, listProjects } from "@hire-me-mcp/core";
 import { z } from "zod";
 import { projectSchema } from "../../../src/lib/content/entity-schemas";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
-import type { ToolDefinition } from "../define-tool";
+import { nonEmptyStringMessage, type ToolDefinition } from "../define-tool";
 import { toolSuccessSchema } from "../wire-schemas";
 
 /**
@@ -22,7 +22,7 @@ type Project = ReturnType<typeof listProjects>["data"][number];
 
 const inputSchema = z.object({
   tags: z
-    .array(z.string().min(1))
+    .array(z.string().min(1, { error: () => nonEmptyStringMessage() }))
     .optional()
     .describe(
       "Technology tags to pre-filter by; a project matches if it carries at least one of the " +

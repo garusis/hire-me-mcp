@@ -55,6 +55,96 @@ export function enumValueMessage(values: readonly string[], received: unknown): 
     : `expected one of ${expected}; received ${JSON.stringify(received)}`;
 }
 
+/**
+ * Message for a numeric field outside its allowed range (#276) — the range
+ * treatment matching {@link enumValueMessage}'s treatment of enums, e.g.
+ * `must be an integer between 1 and 50`. Zod reports `too_small`/`too_big`
+ * one bound at a time and its own default text degrades to a bare "Invalid
+ * input" in a production bundle, so both bounds are named here, on both
+ * ends, giving a self-correcting caller the full target on the first error.
+ */
+export function numberRangeMessage(
+  min: number,
+  max: number,
+  { integer = false }: { integer?: boolean } = {},
+): string {
+  return `must be ${integer ? "an integer" : "a number"} between ${min} and ${max}`;
+}
+
+/** Message for a string outside its allowed length, e.g. `must be 1-2000 characters after trimming` (#276). */
+export function stringLengthMessage(
+  min: number,
+  max: number,
+  { trimmed = false }: { trimmed?: boolean } = {},
+): string {
+  return `must be ${min}-${max} characters${trimmed ? " after trimming" : ""}`;
+}
+
+/** Message for a string constrained only to be non-empty, e.g. an array's items (#276). */
+export function nonEmptyStringMessage(): string {
+  return "must be a non-empty string";
+}
+
+/** Human-readable name for the kind of value a Zod size constraint applied to. */
+const CONSTRAINT_UNIT: Record<string, { singular: string; plural: string }> = {
+  string: { singular: "character", plural: "characters" },
+  array: { singular: "item", plural: "items" },
+  set: { singular: "item", plural: "items" },
+  file: { singular: "byte", plural: "bytes" },
+};
+
+/**
+ * Zod's own un-customized text for a size/range issue: `Too small: ...` /
+ * `Too big: ...` from the bundled locale, or the bare `Invalid input` a
+ * production bundle degrades to when that locale is tree-shaken (#244,
+ * #276). Anything else came from the schema author and always wins.
+ */
+const ZOD_DEFAULT_MESSAGE = /^(Invalid input|Too small|Too big)\b/;
+
+function isDefaultZodMessage(message: string): boolean {
+  return ZOD_DEFAULT_MESSAGE.test(message);
+}
+
+/** `>=` / `>` / `<=` / `<` for a lower/upper, inclusive/exclusive bound. */
+function boundOperator(lower: boolean, inclusive: boolean): string {
+  if (lower) {
+    return inclusive ? ">=" : ">";
+  }
+  return inclusive ? "<=" : "<";
+}
+
+/** The same bound, in words, for a countable unit — e.g. `1 character or more`. */
+function boundPhrase(count: number, unit: string, lower: boolean, inclusive: boolean): string {
+  if (inclusive) {
+    return `${count} ${unit} ${lower ? "or more" : "or fewer"}`;
+  }
+  return `${lower ? "more" : "fewer"} than ${count} ${unit}`;
+}
+
+/**
+ * Fallback complaint for a size/range constraint the schema did not give an
+ * explicit message for (#276). Synthesized from the issue's own structured
+ * fields — `origin`, `minimum`/`maximum`, `inclusive` — so a schema author
+ * who forgets an `error` callback still never emits a bare "Invalid input".
+ * Returns `undefined` for anything that isn't a size/range issue.
+ */
+function describeConstraintIssue(issue: z.core.$ZodIssue): string | undefined {
+  const lower = issue.code === "too_small";
+  if (!lower && issue.code !== "too_big") {
+    return undefined;
+  }
+  const bound = Number(issue.code === "too_small" ? issue.minimum : issue.maximum);
+  const inclusive = issue.inclusive !== false;
+  const unit = CONSTRAINT_UNIT[String(issue.origin)];
+  if (unit === undefined) {
+    return `must be ${boundOperator(lower, inclusive)} ${bound}`;
+  }
+  if (issue.origin === "string" && lower && inclusive && bound === 1) {
+    return nonEmptyStringMessage();
+  }
+  return `must have ${boundPhrase(bound, bound === 1 ? unit.singular : unit.plural, lower, inclusive)}`;
+}
+
 /** Walks `input` along a Zod issue path to recover the offending raw value (best-effort). */
 function valueAtPath(input: unknown, path: ReadonlyArray<PropertyKey>): unknown {
   let current: unknown = input;
@@ -75,6 +165,10 @@ function valueAtPath(input: unknown, path: ReadonlyArray<PropertyKey>): unknown 
  *   present-but-wrong value, which zod's default message conflates with it;
  * - a failed enum/literal constraint names the allowed values and the
  *   received value via {@link enumValueMessage};
+ * - a failed range/length constraint names the bound and its unit via
+ *   `describeConstraintIssue` (#276) — but only as a *fallback*, so a
+ *   schema that states its own full range (`must be an integer between 1
+ *   and 50`) still wins over the one-sided synthesized version;
  * - everything else keeps zod's own message (custom `.regex(...)` messages
  *   like `must be a YYYY-MM date` pass through untouched).
  */
@@ -88,6 +182,13 @@ function describeValidationIssue(issue: z.core.$ZodIssue, rawArgs: unknown): str
       issue.values.filter((value): value is string => typeof value === "string"),
       received,
     );
+  }
+  // Zod's own default for a size/range issue is locale-provided, and in a
+  // production bundle degrades to a bare "Invalid input" — worthless to a
+  // caller trying to self-correct. A schema-supplied message is always
+  // richer, so only substitute when the message is still zod's own default.
+  if (isDefaultZodMessage(issue.message)) {
+    return describeConstraintIssue(issue) ?? issue.message;
   }
   return issue.message;
 }
