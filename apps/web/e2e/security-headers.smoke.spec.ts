@@ -105,7 +105,7 @@ test.describe("MCP route headers", () => {
       expect(headers[name.toLowerCase()], `expected ${name} to be "${value}"`).toBe(value);
     }
     // mcp-handler sets its own Cache-Control when it streams an SSE
-    // response, overriding the middleware default — equally non-cacheable
+    // response, overriding the proxy default — equally non-cacheable
     // either way. See MCP_STREAMING_CACHE_CONTROL_VALUE's doc comment.
     expect([expectedHeaders["Cache-Control"], MCP_STREAMING_CACHE_CONTROL_VALUE]).toContain(
       headers["cache-control"],

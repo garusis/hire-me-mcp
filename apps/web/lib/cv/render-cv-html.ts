@@ -34,7 +34,7 @@ export interface RenderCvHtmlOptions {
   mcpUrl: string;
   /**
    * CSP nonce to stamp on the inline `<style>` (#76). The browsable
-   * `/cv/print` route serves this document under the middleware's
+   * `/cv/print` route serves this document under the proxy's
    * nonce-scoped `style-src` policy, so the style tag must carry the
    * request's nonce or the browser blocks it. The headless PDF renderer
    * loads the document with no CSP at all and omits this.

@@ -6,7 +6,7 @@
  *
  * This is the "MCP endpoint still passes a full initialize + tools/list +
  * tools/call sequence with headers enforced" half of the issue's
- * acceptance criteria: the middleware (#42) sits in front of every
+ * acceptance criteria: the proxy (#42) sits in front of every
  * request, including the real `@modelcontextprotocol/sdk` client's
  * handshake, so this proves the header set doesn't interfere with the
  * transport (chunked SSE responses, `Content-Type` negotiation, etc.)
@@ -61,7 +61,7 @@ describe("MCP route header set", () => {
       expect(response.headers.get(name), `expected ${name} to be "${value}"`).toBe(value);
     }
     // mcp-handler sets its own Cache-Control when it streams an SSE
-    // response, overriding the middleware default — equally non-cacheable
+    // response, overriding the proxy default — equally non-cacheable
     // either way. See MCP_STREAMING_CACHE_CONTROL_VALUE's doc comment.
     expect([expectedHeaders["Cache-Control"], MCP_STREAMING_CACHE_CONTROL_VALUE]).toContain(
       response.headers.get("Cache-Control"),

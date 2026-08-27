@@ -5,6 +5,11 @@ import {
 } from "./src/lib/security/build-security-headers";
 
 /**
+ * Next 16 renamed the root `middleware.ts` file convention to `proxy.ts`
+ * (and the exported `middleware` function to `proxy`) and dropped the edge
+ * runtime for it — this file runs on the Node.js runtime now. Nothing else
+ * about the policy below changed; see `docs/security-headers.md`.
+ *
  * Applies the #42 security header policy to every response, split by route
  * group per the issue: `/api/*` (the MCP endpoint, the chat stream, stats,
  * cron) gets the minimal JSON-endpoint set from `buildApiSecurityHeaders`;
@@ -20,12 +25,12 @@ import {
  * forwarded on both the request (`x-nonce`, so a Server Component can read
  * it via `headers()`, e.g. `app/layout.tsx`'s theme script and
  * `src/lib/seo/json-ld-script.tsx`) and the response (so it's inspectable
- * without re-parsing the CSP header — see `middleware.test.ts`). Next.js
+ * without re-parsing the CSP header — see `proxy.test.ts`). Next.js
  * detects this same nonce from the CSP header and applies it automatically
  * to the inline scripts it generates itself (the streaming hydration
  * payload) — only this app's own inline scripts need it passed explicitly.
  */
-export function middleware(request: NextRequest): NextResponse {
+export function proxy(request: NextRequest): NextResponse {
   const isApiRoute = request.nextUrl.pathname.startsWith("/api/");
 
   if (isApiRoute) {

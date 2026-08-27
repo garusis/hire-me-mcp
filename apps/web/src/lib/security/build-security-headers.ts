@@ -1,6 +1,6 @@
 /**
  * The single, reviewed security header sets for #42 — defined once here and
- * applied by `apps/web/middleware.ts` to every response. Kept as pure
+ * applied by `apps/web/proxy.ts` to every response. Kept as pure
  * functions (no `next/server` imports) so the policy itself is unit
  * testable without booting a request; see
  * `apps/web/e2e/security-headers.smoke.spec.ts` and
@@ -62,7 +62,7 @@ export const PERMISSIONS_POLICY =
  * `allowVercelToolbar` adds exactly Vercel's own documented CSP allowances
  * (https://vercel.com/docs/vercel-toolbar/managing-toolbar) — nothing
  * broader — and is passed `true` only when `VERCEL_ENV === "preview"` (see
- * `middleware.ts`), never in Production. `style-src` drops the nonce when
+ * `proxy.ts`), never in Production. `style-src` drops the nonce when
  * this is on: since browsers ignore `unsafe-inline` once any nonce is
  * present, keeping the nonce there would silently defeat the Toolbar
  * allowance while looking like it worked. This app has no legitimate
@@ -135,7 +135,7 @@ export function buildHtmlSecurityHeaders(
  * `/api/mcp` specifically: when the deployed origin actually negotiates a
  * streaming (SSE) response for a request, mcp-handler sets its own
  * `Cache-Control: no-cache, no-transform` on that response — set later in
- * the pipeline than this middleware header, so it wins for those
+ * the pipeline than this proxy header, so it wins for those
  * responses (confirmed against a real Vercel preview; a locally started
  * `next start` server did not reproduce it for every request shape, so
  * this is a platform/transport-timing difference, not a bug in this

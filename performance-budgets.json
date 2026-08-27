@@ -2,63 +2,64 @@
   "$comment": "Committed performance-budget config for #62. This is the reviewable, diffable record of every latency threshold enforced in CI, plus the v1.0 baseline each threshold was set below. Lighthouse's own per-page category/CWV/resource-byte thresholds are enforced by lighthouserc.json (LHCI's own schema, referenced below) — the 'lighthouse' section here only records those pages' measured baselines next to it, since LHCI's schema has no baseline field of its own. The 'latency' section is both the enforced config AND consumed directly by apps/web/e2e-preview/specs/latency.spec.ts. See docs/performance-budgets.md for how to run these locally and how to change a budget deliberately.",
 
   "lighthouse": {
+    "$rebaseline": "RE-BASELINED 2026-08-27 by the Next.js 16 migration (#256, PR #286). Exactly ONE enforced threshold moved with it: resource-summary:script:size in lighthouserc.json, 250000 -> 290000 bytes, on /, /projects/<slug>, /privacy and /mcp. /cv/print's 50000 script ceiling and every resource-summary:total:size ceiling are deliberately UNCHANGED. Read this as a one-time re-baseline after a deliberate infrastructure change, not as budget rot: the step change is entirely bundler, not app code. Next 16 itself accounts for ~29KB (framework + runtime) and Turbopack's production chunking for a further ~67KB — measured by building the same commit both ways, where `next build --webpack` yields 197-199KB per page against Turbopack's 264-266KB. Turbopack emits one ~478KB shared chunk that every page loads, where webpack split it so pages loaded selectively; no dependency was added and no feature grew. Nothing user-visible regressed: on the very run these baselines come from, performance/accessibility/best-practices scored 100/100/100 on every page (up from the 99-100/100/96 they replace). The new ceiling sits ~7.3% above the worst single run measured (270316 bytes on /), far tighter than the ~1.5-1.8x the pre-Next-16 byte ceilings carried — deliberately, because script transfer size is deterministic for a given build (all 3 runs per page were byte-identical), so it needs headroom for real growth, not for measurement noise. Before loosening this again, check whether the cause is app code or infrastructure, and prefer cutting client JS: the ~478KB shared chunk is Zod-heavy, reached through the chat widget's citation helpers, and lazy-loading that path was the option deliberately NOT taken here to keep the migration reviewable.",
     "configFile": "lighthouserc.json",
     "pages": ["/", "/projects/<first project slug>", "/privacy", "/cv/print", "/mcp"],
-    "baselineMeasuredAgainst": "Production deployment https://hire-me-mcp-web.vercel.app, #76 certification run (3 LHCI runs per page, desktop preset), cross-checked against the last green CI lighthouse job on a Vercel preview (run 32720210208, job 97409814182)",
-    "baselineMeasuredAt": "2026-08-24",
+    "baselineMeasuredAgainst": "Vercel preview deployment hire-me-mcp-ah9btb5if (PR #286, the Next.js 16 migration), CI lighthouse job on workflow run 33064023587 — 3 LHCI runs per page, desktop preset, worst-of-3 recorded. Re-baselined from the #76 production certification numbers because Next 16's default bundler changed the JS chunking; see $rebaseline below.",
+    "baselineMeasuredAt": "2026-08-27",
     "baselines": {
       "/": {
-        "performance": 99,
+        "performance": 100,
         "accessibility": 100,
-        "bestPractices": 96,
-        "lcpMs": 650,
+        "bestPractices": 100,
+        "lcpMs": 600,
         "cls": 0,
         "tbtMs": 0,
-        "scriptKb": 167,
-        "totalKb": 330
+        "scriptKb": 264,
+        "totalKb": 431
       },
       "/projects/<slug>": {
         "performance": 100,
         "accessibility": 100,
-        "bestPractices": 96,
-        "lcpMs": 616,
+        "bestPractices": 100,
+        "lcpMs": 636,
         "cls": 0,
         "tbtMs": 0,
-        "scriptKb": 165,
-        "totalKb": 324
+        "scriptKb": 262,
+        "totalKb": 424
       },
       "/privacy": {
         "performance": 100,
         "accessibility": 100,
-        "bestPractices": 96,
-        "lcpMs": 609,
+        "bestPractices": 100,
+        "lcpMs": 681,
         "cls": 0,
         "tbtMs": 0,
-        "scriptKb": 165,
-        "totalKb": 324
+        "scriptKb": 262,
+        "totalKb": 425
       },
       "/cv/print": {
         "performance": 100,
         "accessibility": 100,
-        "bestPractices": 89,
-        "lcpMs": 296,
+        "bestPractices": 100,
+        "lcpMs": 364,
         "cls": 0,
         "tbtMs": 0,
         "scriptKb": 0,
-        "totalKb": 144
+        "totalKb": 7
       },
       "/mcp": {
         "performance": 100,
         "accessibility": 100,
-        "bestPractices": 96,
-        "lcpMs": 620,
+        "bestPractices": 100,
+        "lcpMs": 716,
         "cls": 0,
         "tbtMs": 0,
-        "scriptKb": 165,
-        "totalKb": 324
+        "scriptKb": 264,
+        "totalKb": 433
       }
     },
-    "note": "Category scores (0-100), worst-of-3 per-audit numericValues (LCP/CLS/TBT) and transfer sizes measured by the #76 production certification run. lighthouserc.json's thresholds sit below/above these with deliberate margin: performance >= 0.95 (measured 99-100), accessibility >= 0.98 (measured 100 everywhere; a11y audits are deterministic DOM checks, so only a hair of noise allowance is needed), best-practices >= 0.93 (measured 96 in production — kept a single-point-noise margin below, same rationale as #62). LCP thresholds are ~2.3-3x the worst clean measurement, TBT/CLS allow noise above a measured constant zero, and resource-byte thresholds are ~1.5-1.8x the measured transfer sizes so a genuinely heavy dependency or asset fails the gate while routine drift does not. /cv/print's measured best-practices of 89 was a real production bug found by this run (inline <style> blocked by the #42 nonce-scoped CSP + a favicon 404) and is fixed on this same PR; its 0.93 threshold asserts the fix stays fixed."
+    "note": "Category scores (0-100), worst-of-3 per-audit numericValues (LCP/CLS/TBT) and transfer sizes measured by the #76 production certification run. lighthouserc.json's thresholds sit below/above these with deliberate margin: performance >= 0.95 (measured 99-100), accessibility >= 0.98 (measured 100 everywhere; a11y audits are deterministic DOM checks, so only a hair of noise allowance is needed), best-practices >= 0.93 (measured 96 in production — kept a single-point-noise margin below, same rationale as #62). LCP thresholds are ~2-4x the worst clean measurement and TBT/CLS allow noise above a measured constant zero. The two byte ceilings now carry deliberately different margins: total:size keeps its original ~1.4x over measurement, while script:size was re-baselined to ~1.07x by the Next 16 migration (see $rebaseline) because script transfer size proved byte-identical run-to-run. /cv/print's best-practices of 89 in the #76 production run was a real production bug found by that run (inline <style> blocked by the #42 nonce-scoped CSP + a favicon 404), fixed on that PR; it measures 100 here and its 0.93 threshold asserts the fix stays fixed. /cv/print's totalKb now reads far below the 144 recorded pre-#256: that gap is NOT from the Next 16 migration (15.5 and 16 measure within 5 bytes of each other locally on that route) but from the preview-vs-production environment the two baselines were taken in — its 250000 ceiling is untouched and passes with room either way."
   },
 
   "latency": {

@@ -10,7 +10,7 @@
  * layer, cold starts, and, critically here, the deployment protection
  * bypass flow itself (a known risk area called out on the issue: the
  * bypass's own cookie-setting redirect must not be broken by the CSP or
- * middleware).
+ * proxy).
  *
  * `apps/web/e2e/security-headers.smoke.spec.ts` is the always-on-CI twin
  * of this suite (real local build, same assertions); `mcp.spec.ts` in this
@@ -78,7 +78,7 @@ test.describe("MCP route headers", () => {
       expect(headers[name.toLowerCase()], `expected ${name} to be "${value}"`).toBe(value);
     }
     // mcp-handler sets its own Cache-Control for a streamed (SSE) response,
-    // overriding the middleware default — equally non-cacheable either way.
+    // overriding the proxy default — equally non-cacheable either way.
     // See MCP_STREAMING_CACHE_CONTROL_VALUE's doc comment.
     expect([expectedHeaders["Cache-Control"], MCP_STREAMING_CACHE_CONTROL_VALUE]).toContain(
       headers["cache-control"],

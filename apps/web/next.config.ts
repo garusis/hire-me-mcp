@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   // #235 — every HTML route here renders dynamically (the per-request CSP
-  // nonce in `middleware.ts` forces it), and Next 15 *streams* metadata on
+  // nonce in `proxy.ts` forces it), and Next *streams* metadata on
   // dynamic routes for any user agent not matching `htmlLimitedBots`: the
   // `<title>`, canonical and og:/twitter: tags arrive as tags appended
   // ~20 KB into `<body>`, not in `<head>`. Browsers and JS-executing
@@ -70,11 +70,22 @@ const nextConfig: NextConfig = {
     // opengraph-image entries below and #119).
     "/llms.txt": ["../../packages/career-data/content/**/*"],
     "/llms-full.txt": ["../../packages/career-data/content/**/*"],
-    "/projects/[slug]/opengraph-image": [
+    //
+    // The `\\[slug\\]` escaping below is load-bearing as of Next 16: these
+    // keys are matched as globs, and an unescaped `[slug]` reads as a
+    // character class (one of `s`/`l`/`u`/`g`), so the literal `[slug]`
+    // segment never matches and the entries silently do nothing — the
+    // fonts vanished from both routes' `route.js.nft.json` on the first
+    // Next 16 build, caught by `og-image-content-trace.smoke.spec.ts`.
+    // Next 15 matched these keys literally, which is why they worked
+    // unescaped before. Verified per-route: with the escaping, only the
+    // two `[slug]` OG routes gain the font files; sibling routes' traces
+    // are unchanged.
+    "/projects/\\[slug\\]/opengraph-image": [
       "../../packages/career-data/content/**/*",
       "./assets/fonts/**/*",
     ],
-    "/writing/[slug]/opengraph-image": [
+    "/writing/\\[slug\\]/opengraph-image": [
       "../../packages/career-data/content/**/*",
       "./assets/fonts/**/*",
     ],
