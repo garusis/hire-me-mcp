@@ -224,6 +224,30 @@ describe("tools/call — career tools", () => {
     await client.close();
   });
 
+  // Issue 275 — `search-projects` advertises search "by keyword AND/OR
+  // technology tag", but `query` was in `required`, so the tag-only call
+  // that promise invites failed validation on the real wire.
+  it("search-projects accepts a TAG-ONLY call, exactly as its description promises (#275)", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "search-projects",
+      arguments: { tags: ["typescript"] },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const parsed = searchProjectsOutputSchema.safeParse(result.structuredContent);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error?.issues)).toBe(
+      true,
+    );
+    const structuredContent = result.structuredContent as { data: unknown[]; citations: unknown };
+    expect(structuredContent.data.length).toBeGreaterThan(0);
+    expectWellFormedCitations(structuredContent.citations);
+
+    await client.close();
+  });
+
   it("get-skill-evidence for a claimed term succeeds and its result validates against the discriminated-union output shape, with well-formed citations", async () => {
     const { client, transport } = connectClient();
     await client.connect(transport);
@@ -549,5 +573,47 @@ describe("error paths — documented MCP errors, not transport failures", () => 
     expect(followUp.isError).not.toBe(true);
 
     await client.close();
+  });
+
+  /**
+   * Issue 276 — #244 made enum/format validation errors self-correcting
+   * ("expected one of ...", "must be a YYYY-MM date") but left range and
+   * length constraints emitting a bare "Invalid input", identically for
+   * every violation, on this exact wire path. These assert the real text a
+   * client receives, not the in-process executor's version, because the
+   * registered `McpServer` validates first and relays the schema's own
+   * message verbatim.
+   */
+  describe("range and length validation errors name the constraint (#276)", () => {
+    async function errorTextFor(name: string, args: Record<string, unknown>): Promise<string> {
+      const { client, transport } = connectClient();
+      await client.connect(transport);
+      const result = await client.callTool({ name, arguments: args });
+      expect(result.isError).toBe(true);
+      const [firstBlock] = result.content as Array<{ type: string; text?: string }>;
+      await client.close();
+      return firstBlock?.text ?? "";
+    }
+
+    it.each([0, -1, 51])("search-projects reports limit %s with its whole range", async (limit) => {
+      const text = await errorTextFor("search-projects", { query: "typescript", limit });
+
+      expect(text).toContain("limit: must be an integer between 1 and 50");
+      expect(text).not.toContain("Invalid input");
+    });
+
+    it("search-career reports an over-length query with its whole length range", async () => {
+      const text = await errorTextFor("search-career", { query: "a".repeat(3000) });
+
+      expect(text).toMatch(/query: must be 1-\d+ characters after trimming/);
+      expect(text).not.toContain("Invalid input");
+    });
+
+    it("search-career reports an out-of-range topK with its whole range", async () => {
+      const text = await errorTextFor("search-career", { query: "typescript", topK: 0 });
+
+      expect(text).toMatch(/topK: must be an integer between \d+ and \d+/);
+      expect(text).not.toContain("Invalid input");
+    });
   });
 });

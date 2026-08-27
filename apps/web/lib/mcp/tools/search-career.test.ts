@@ -291,6 +291,50 @@ describe("searchCareerTool", () => {
     expect(fakeSearchCareer).not.toHaveBeenCalled();
   });
 
+  // Issue 276 — these all used to report a bare "Invalid input", so an
+  // agent reading the error text had nothing to correct against.
+  describe("range and length errors name the constraint and the range (#276)", () => {
+    async function messageFor(args: Record<string, unknown>): Promise<string> {
+      const result = await createToolExecutor(searchCareerTool)(args);
+      expect(result.isError).toBe(true);
+      return (result.structuredContent as { message: string }).message;
+    }
+
+    it.each(["", "   ", "a".repeat(MAX_QUERY_LENGTH + 1)])(
+      "reports an out-of-length query (%#) with its full acceptable length range",
+      async (query) => {
+        const message = await messageFor({ query });
+
+        expect(message).toBe(`query: must be 1-${MAX_QUERY_LENGTH} characters after trimming`);
+        expect(message).not.toContain("Invalid input");
+      },
+    );
+
+    it.each([MAX_TOP_K + 1, MIN_TOP_K - 1, 2.5, "many"])(
+      "reports an out-of-range topK (%s) with its full acceptable range",
+      async (topK) => {
+        const message = await messageFor({ query: "typescript", topK });
+
+        expect(message).toBe(`topK: must be an integer between ${MIN_TOP_K} and ${MAX_TOP_K}`);
+        expect(message).not.toContain("Invalid input");
+      },
+    );
+
+    it.each([-1.5, 1.5])(
+      "reports an out-of-range minScore (%s) with its bounds",
+      async (minScore) => {
+        const message = await messageFor({ query: "typescript", minScore });
+
+        expect(message).toBe("minScore: must be a number between -1 and 1");
+        expect(message).not.toContain("Invalid input");
+      },
+    );
+
+    it("still reports a missing query as 'required', not a length complaint (#244)", async () => {
+      expect(await messageFor({})).toBe("query: required");
+    });
+  });
+
   it("maps an upstream failure (embedding/database error) to a generic internal_error, logging the detail server-side without leaking it to the client", async () => {
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const upstreamError = new Error(

@@ -54,8 +54,25 @@ describe("searchProjectsTool", () => {
     expect(result).toEqual(domainResult);
   });
 
-  it("requires a query field", () => {
-    expect(searchProjectsInputSchema.safeParse({}).success).toBe(false);
+  // Issue 275 — "keyword and/or technology tag" is only true if either
+  // argument stands on its own, so a tag-only call must validate.
+  it("accepts a tag-only call, with no query at all", () => {
+    expect(searchProjectsInputSchema.safeParse({ tags: ["typescript"] }).success).toBe(true);
+  });
+
+  it("accepts a call with neither query nor tags (an honest empty result, not a validation error)", () => {
+    expect(searchProjectsInputSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("passes an omitted query straight through to packages/core, which ranks by the tags instead", async () => {
+    vi.mocked(core.searchProjects).mockReturnValue({ data: [fixtureResult], citations: [] });
+
+    await searchProjectsTool.execute?.({ tags: ["typescript"] }, {} as never);
+
+    expect(core.searchProjects).toHaveBeenCalledWith(expect.anything(), undefined, {
+      tags: ["typescript"],
+      limit: undefined,
+    });
   });
 
   it("accepts an empty-string query (a valid, honest 'no results' query)", () => {

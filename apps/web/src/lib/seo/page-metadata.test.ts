@@ -94,4 +94,31 @@ describe("buildPageMetadata", () => {
       images: [`${SITE_URL}/writing/some-article/opengraph-image`],
     });
   });
+
+  // Issue 278 — a route whose worth indexing depends on whether it currently
+  // has any content needs to say so per-render, without hardcoding it.
+  it("leaves robots unset by default, so a route inherits the site-wide directive", () => {
+    const metadata = buildPageMetadata(
+      { title: "Experience", description: "A stub description.", path: "/experience" },
+      SITE_URL,
+    );
+
+    expect(metadata.robots).toBeUndefined();
+  });
+
+  it("emits noindex, follow when a route declares itself not currently indexable (#278)", () => {
+    const metadata = buildPageMetadata(
+      {
+        title: "Writing",
+        description: "Nothing published yet.",
+        path: "/writing",
+        indexable: false,
+      },
+      SITE_URL,
+    );
+
+    // `follow` stays true: the route keeps returning 200 so inbound links
+    // still resolve, it just stops asking to be indexed.
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+  });
 });

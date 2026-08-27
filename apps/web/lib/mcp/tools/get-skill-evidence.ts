@@ -9,7 +9,7 @@ import { getSkillEvidence } from "@hire-me-mcp/core";
 import { z } from "zod";
 import { gapSchema, skillSchema } from "../../../src/lib/content/entity-schemas";
 import { getCareerDataRepository } from "../../../src/lib/content/repository";
-import type { ToolDefinition } from "../define-tool";
+import { nonEmptyStringMessage, type ToolDefinition } from "../define-tool";
 import { dataCitationSchema, toolSuccessSchema } from "../wire-schemas";
 
 /**
@@ -23,7 +23,7 @@ type SkillEvidenceOutcome = ReturnType<typeof getSkillEvidence>["data"];
 const inputSchema = z.object({
   term: z
     .string()
-    .min(1)
+    .min(1, { error: () => nonEmptyStringMessage() })
     .describe(
       "Skill or technology name to look up, e.g. 'TypeScript' or 'Kubernetes'. Matches a " +
         "canonical name or any known alias — no fuzzy or semantic matching.",
