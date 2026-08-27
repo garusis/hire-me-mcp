@@ -1,6 +1,7 @@
 import type { DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCitationMarkers } from "./citation-markers.js";
 import { getProfileInputSchema, getProfileTool } from "./get-profile.js";
 
 vi.mock("@hire-me-mcp/core", async (importOriginal) => {
@@ -31,7 +32,7 @@ describe("getProfileTool", () => {
     expect(getProfileTool.description.length).toBeGreaterThan(0);
   });
 
-  it("delegates to packages/core's getProfile and returns its DomainResult unmodified (citations included)", async () => {
+  it("delegates to packages/core's getProfile and returns its DomainResult with every citation marker-annotated (#270)", async () => {
     const domainResult: DomainResult<Profile> = {
       data: fixtureProfile,
       citations: [{ entityType: "profile", entityId: "profile-fixture", label: "Fixture Person" }],
@@ -41,7 +42,7 @@ describe("getProfileTool", () => {
     const result = await getProfileTool.execute?.({}, {} as never);
 
     expect(core.getProfile).toHaveBeenCalledTimes(1);
-    expect(result).toEqual(domainResult);
+    expect(result).toEqual(withCitationMarkers(domainResult));
   });
 
   it("accepts an empty object as input", () => {

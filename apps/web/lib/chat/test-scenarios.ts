@@ -185,11 +185,20 @@ export interface ChatTestCitationIds {
  *   `app/chat/resolve-chat-citation-href.ts` can map to a site section, so
  *   each must render as a link whose href resolves to a real page (and, for
  *   the anchored ones, a real fragment).
- * - `profile`/`education`/`recommendation` are the types that module
- *   deliberately cannot map, so each must vanish from the rendered prose —
- *   never a raw `[cite:...]` string, never a link to the home page.
- * - No unresolvable marker sits immediately before a `.` or `,`, so
- *   dropping it can never leave the stray `" ."` gap issue 227 reported.
+ * - `profile`/`education`/`recommendation` are the three types #227 taught
+ *   the resolver, which it used to drop mid-sentence — so each must render
+ *   as a link too, never as a raw `[cite:...]` string.
+ * - One marker's entity type is a TOOL NAME (`get-skill-evidence`), which is
+ *   what the live model actually wrote in issue 270. It is not a citable
+ *   entity, so it must leave the prose entirely (as a hidden
+ *   `data-unresolved-citation` trace) rather than reaching a reader as raw
+ *   machine syntax.
+ * - Two markers sit with a space between them and the sentence's own `.`
+ *   and `,`, which is issue 277's `costs ¹ . He` artifact: the rendered
+ *   reference must splice in place and close that gap.
+ * - The last paragraph is a Markdown list with bold, emphasis and inline
+ *   code — issue 272, where the career walkthrough printed its own `*` and
+ *   `**` to the reader.
  */
 export function scriptedAnswerText(ids: ChatTestCitationIds): string {
   return [
@@ -199,7 +208,19 @@ export function scriptedAnswerText(ids: ChatTestCitationIds): string {
     `[cite:writing:${ids.writing}]. Citation types this site cannot link to are dropped from `,
     `the prose entirely — profile [cite:profile:${ids.profile}] education `,
     `[cite:education:${ids.education}] recommendation [cite:recommendation:${ids.recommendation}] `,
-    `— and this sentence still reads cleanly (${CHAT_TEST_FIXTURE_SENTINEL}).`,
+    `— and this sentence still reads cleanly (${CHAT_TEST_FIXTURE_SENTINEL}).\n`,
+    // Issue 270: the entity-type slot holds a TOOL's name, exactly as the
+    // live model wrote it. Not a citation; must never be read as prose.
+    `A marker naming a tool is not a citation [cite:get-skill-evidence:${ids.gap}]; it is `,
+    `machine syntax and the reader never sees it.\n`,
+    // Issue 277: the model spaced these markers away from the punctuation.
+    `A reference splices in place [cite:skill:${ids.skill}] . And before a comma too `,
+    `[cite:project:${ids.project}] , like so.\n\n`,
+    // Issue 272: the shape every "walk me through his roles" answer takes.
+    `Roles:\n`,
+    `* **A bolded company** — a bullet the widget renders as a list item `,
+    `[cite:experience:${ids.experience}].\n`,
+    `* **A second company** — with *emphasis* and \`inline code\`.`,
   ].join("");
 }
 

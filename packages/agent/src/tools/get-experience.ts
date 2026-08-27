@@ -9,6 +9,7 @@
 import { type ExperienceFilter, getExperience } from "@hire-me-mcp/core";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+import { withCitationMarkers } from "./citation-markers.js";
 import { getAgentCareerDataRepository } from "./repository.js";
 
 /**
@@ -65,6 +66,6 @@ export const getExperienceTool = createTool({
   inputSchema: getExperienceInputSchema,
   execute: async (input) => {
     const filter: ExperienceFilter = input;
-    return getExperience(getAgentCareerDataRepository(), filter);
+    return withCitationMarkers(getExperience(getAgentCareerDataRepository(), filter));
   },
 });

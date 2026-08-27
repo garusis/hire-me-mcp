@@ -30,12 +30,14 @@ describe("buildCitedAnswer", () => {
     // package exposes it as its own subpath for exactly this kind of
     // client-safe reuse.
     expect(typeof citationsModule.parseCitations).toBe("function");
+    expect(typeof citationsModule.parseCitationSpans).toBe("function");
     expect(typeof citationsModule.serializeCitation).toBe("function");
 
     const source = readFileSync(SOURCE_PATH, "utf-8");
     expect(source).toMatch(/from\s+"@hire-me-mcp\/agent\/citations"/);
-    expect(source).toContain("parseCitations");
-    expect(source).toContain("serializeCitation");
+    expect(source).toContain("parseCitationSpans");
+    // No regex of its own — the marker's shape is defined in exactly one place.
+    expect(source).not.toMatch(/\\\[cite:/);
   });
 
   it("returns plain text untouched, with no sources, when there are no markers", () => {
@@ -76,19 +78,46 @@ describe("buildCitedAnswer", () => {
     );
   });
 
-  it("leaves prose carrying an unrecognized marker-shaped string completely alone", () => {
-    const unmapped = "He studied there [cite:future-type:whatever].";
-    // Not a well-formed marker for any known entity type, so it is not even
-    // parsed as one — the prose must survive verbatim rather than losing a
-    // chunk of itself.
-    expect(textOf(unmapped)).toBe(unmapped);
+  // Issue 270: the model wrote `[cite:get-skill-evidence:rust]` — a TOOL's
+  // name where an entity type belongs. That is not a citable marker, so it
+  // used to be treated as prose and printed to the reader verbatim.
+  it("never shows a tool-name-shaped marker to the reader", () => {
+    const answer =
+      "He doesn't have production Rust experience [cite:get-skill-evidence:rust]; the closest " +
+      "evidence is TypeScript [cite:skill:typescript].";
+    const prose = textOf(answer);
+
+    expect(prose).not.toContain("[cite:");
+    expect(prose).not.toContain("get-skill-evidence");
+    expect(prose).toBe(
+      "He doesn't have production Rust experience; the closest evidence is TypeScript.",
+    );
   });
 
-  // A citation must never fail invisibly again: an entity type the site has
-  // no surface for keeps its marker in the text rather than being deleted
-  // mid-sentence. Unreachable today (every `CitableEntityType` resolves) —
-  // this is the guard for the next type someone adds.
-  it("keeps a marker it cannot map in the text verbatim instead of deleting it", () => {
+  it("keeps an unresolvable marker in the DOM as an `unresolved` segment rather than deleting it silently", () => {
+    const { segments, sources } = buildCitedAnswer(
+      "He hasn't used it [cite:get-skill-evidence:rust].",
+      NO_WRITING,
+    );
+
+    expect(segments).toContainEqual({
+      kind: "unresolved",
+      marker: "[cite:get-skill-evidence:rust]",
+      offset: 18,
+    });
+    // Machine syntax backs no source — an unresolved marker must never invent one.
+    expect(sources).toEqual([]);
+  });
+
+  it("treats a marker-shaped string with an unknown entity type the same way", () => {
+    expect(textOf("He studied there [cite:future-type:whatever].")).toBe("He studied there.");
+  });
+
+  // An entity type the site has no surface for is machine syntax too — it
+  // leaves the prose, but it leaves a trace. Unreachable today (every
+  // `CitableEntityType` resolves) — this is the guard for the next type
+  // someone adds.
+  it("removes a marker it cannot map from the prose, keeping it as an unresolved segment", () => {
     // Injected resolver: no real entity type is unresolvable any more (see
     // the exhaustive case below), so this branch is only reachable through
     // the seam `buildCitedAnswer` exposes for it.
@@ -100,7 +129,26 @@ describe("buildCitedAnswer", () => {
         .filter((segment) => segment.kind === "text")
         .map((segment) => segment.text)
         .join(""),
-    ).toBe("A claim. [cite:project:cowork]");
+    ).toBe("A claim.");
+    expect(answer.segments).toContainEqual({
+      kind: "unresolved",
+      marker: "[cite:project:cowork]",
+      offset: 9,
+    });
+  });
+
+  // Issue 277: the reference is spliced in place, so the sentence's own
+  // punctuation stays attached to it however the model spaced the marker.
+  it("closes the gap when the model left a space between the marker and the punctuation", () => {
+    expect(
+      textOf("He built it [cite:project:cowork] . He also shipped [cite:skill:ts] , twice."),
+    ).toBe("He built it. He also shipped, twice.");
+  });
+
+  it("does not eat a space before the next word — only before punctuation", () => {
+    expect(textOf("He built it [cite:project:cowork] and shipped it.")).toBe(
+      "He built it and shipped it.",
+    );
   });
 
   it("keeps a single space between words when a marker sits mid-sentence", () => {

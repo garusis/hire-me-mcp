@@ -126,15 +126,21 @@ describe("scriptedAnswerText", () => {
     expect(text).toContain(CHAT_TEST_FIXTURE_SENTINEL);
   });
 
-  it("never places an unlinkable marker where dropping it would leave a stray gap (issue 227)", () => {
-    // The three types `resolve-chat-citation-href.ts` cannot map are
-    // removed from the rendered prose. Simulate that removal and assert the
-    // remaining text has no orphaned space before a `.` or `,`.
-    const withoutUnlinkable = text.replace(
-      /\[cite:(profile|education|recommendation):[^\]]+]/g,
-      "",
-    );
-    expect(withoutUnlinkable).not.toMatch(/ [.,]/);
+  it("carries a marker whose entity type is a tool name, the shape issue 270 reported", () => {
+    expect(text).toContain(`[cite:get-skill-evidence:${IDS.gap}]`);
+  });
+
+  it("spaces a marker away from the sentence's punctuation, the shape issue 277 reported", () => {
+    // The renderer has to close this gap; the fixture must therefore contain
+    // it, before both a full stop and a comma.
+    expect(text).toMatch(/\[cite:[^\]]+] \./);
+    expect(text).toMatch(/\[cite:[^\]]+] ,/);
+  });
+
+  it("carries Markdown a plain-text bubble would print literally (issue 272)", () => {
+    expect(text).toMatch(/^\* \*\*/m);
+    expect(text).toContain("*emphasis*");
+    expect(text).toContain("`inline code`");
   });
 });
 

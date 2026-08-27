@@ -8,6 +8,7 @@
 import { getProfile } from "@hire-me-mcp/core";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+import { withCitationMarkers } from "./citation-markers.js";
 import { getAgentCareerDataRepository } from "./repository.js";
 
 /** No input fields — the dataset always has exactly one profile. Strict: rejects any field. */
@@ -24,5 +25,5 @@ export const getProfileTool = createTool({
     "project details (use search-projects), or to check whether a particular skill or " +
     "technology is claimed (use get-skill-evidence). Takes no input.",
   inputSchema: getProfileInputSchema,
-  execute: async () => getProfile(getAgentCareerDataRepository()),
+  execute: async () => withCitationMarkers(getProfile(getAgentCareerDataRepository())),
 });

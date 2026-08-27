@@ -20,7 +20,7 @@ describe("getSkillEvidenceTool", () => {
     expect(getSkillEvidenceTool.description.length).toBeGreaterThan(0);
   });
 
-  it("delegates to packages/core's getSkillEvidence with the term, returning a claimed DomainResult unmodified", async () => {
+  it("delegates to packages/core's getSkillEvidence with the term, returning a claimed DomainResult with every citation marker-annotated (#270)", async () => {
     const evidence = [
       { entityType: "project" as const, entityId: "fixture-project", label: "Fixture Project" },
     ];
@@ -47,10 +47,13 @@ describe("getSkillEvidenceTool", () => {
 
     expect(core.getSkillEvidence).toHaveBeenCalledTimes(1);
     expect(core.getSkillEvidence).toHaveBeenCalledWith(expect.anything(), "TypeScript");
-    expect(result).toEqual(domainResult);
+    expect(result).toEqual({
+      data: outcome,
+      citations: [{ ...evidence[0], marker: "[cite:project:fixture-project]" }],
+    });
   });
 
-  it("passes through a not-claimed (gap) outcome unmodified — never converted to an error or empty result", async () => {
+  it("passes a not-claimed (gap) outcome through — never converted to an error or empty result — and marker-annotates its gap citation (#270)", async () => {
     const outcome: SkillEvidenceOutcome = {
       kind: "not-claimed",
       gap: {
@@ -70,7 +73,20 @@ describe("getSkillEvidenceTool", () => {
 
     const result = await getSkillEvidenceTool.execute?.({ term: "Rust" }, {} as never);
 
-    expect(result).toEqual(domainResult);
+    // Issue 270: the model wrote `[cite:get-skill-evidence:rust]` — the TOOL's
+    // name — for exactly this outcome. It no longer has to compose anything:
+    // the citation it must copy arrives spelled out.
+    expect(result).toEqual({
+      data: outcome,
+      citations: [
+        {
+          entityType: "gap",
+          entityId: "fixture-gap",
+          label: "Rust",
+          marker: "[cite:gap:fixture-gap]",
+        },
+      ],
+    });
   });
 
   it("requires a non-empty term", () => {

@@ -348,6 +348,106 @@ describe("ChatWidget", () => {
     expect(new Set(partTypes)).toEqual(new Set(["text"]));
   });
 
+  it("issue 271: every turn scrolls the transcript into view, and the pending indicator comes with it", async () => {
+    const first = createControlledStreamResponse();
+    const second = createControlledStreamResponse();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(first.response)
+      .mockResolvedValueOnce(second.response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = userEvent.setup();
+    render(<ChatWidget writingEntries={NO_WRITING} />);
+    await openWidget(user);
+
+    // `happy-dom` lays nothing out, so the transcript reports the geometry of
+    // a container that has overflowed — the state issue 271 only appears in.
+    const log = screen.getByRole("log");
+    const scrollTo = vi.fn();
+    Object.defineProperty(log, "scrollHeight", { value: 2000, configurable: true });
+    Object.defineProperty(log, "clientHeight", { value: 400, configurable: true });
+    log.scrollTo = scrollTo as unknown as HTMLElement["scrollTo"];
+
+    await user.type(screen.getByLabelText(/message/i), "What did he build?");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    expect(scrollTo).toHaveBeenCalled();
+    expect(screen.getByText(/thinking/i)).toBeInTheDocument();
+
+    first.push({ type: "start", messageId: "assistant-1" });
+    first.push({ type: "text-start", id: "t1" });
+    first.push({ type: "text-delta", id: "t1", delta: "He built it." });
+    first.push({ type: "text-end", id: "t1" });
+    first.push({ type: "finish" });
+    first.done();
+    await screen.findByText("He built it.");
+
+    // The defect: from the second question onward nothing moved, so the new
+    // bubble and the pending indicator were both rendered below the fold.
+    scrollTo.mockClear();
+    await user.type(screen.getByLabelText(/message/i), "And before that?");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    expect(scrollTo).toHaveBeenCalled();
+    expect(screen.getByText(/thinking/i)).toBeInTheDocument();
+  });
+
+  it("issue 271: does not yank the viewport away from a visitor who scrolled up to re-read", async () => {
+    const { response, push } = createControlledStreamResponse();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    const user = userEvent.setup();
+    render(<ChatWidget writingEntries={NO_WRITING} />);
+    await openWidget(user);
+
+    const log = screen.getByRole("log");
+    const scrollTo = vi.fn();
+    Object.defineProperty(log, "scrollHeight", { value: 2000, configurable: true });
+    Object.defineProperty(log, "clientHeight", { value: 400, configurable: true });
+    log.scrollTo = scrollTo as unknown as HTMLElement["scrollTo"];
+
+    await user.type(screen.getByLabelText(/message/i), "What did he build?");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    log.scrollTop = 0;
+    fireEvent.scroll(log);
+    scrollTo.mockClear();
+
+    push({ type: "start", messageId: "assistant-1" });
+    push({ type: "text-start", id: "t1" });
+    push({ type: "text-delta", id: "t1", delta: "He built it." });
+    await screen.findByText("He built it.");
+
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("issue 272: renders an answer's Markdown list instead of printing its asterisks", async () => {
+    const { response, push } = createControlledStreamResponse();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    const user = userEvent.setup();
+    const { container } = render(<ChatWidget writingEntries={NO_WRITING} />);
+    await openWidget(user);
+    await user.type(screen.getByLabelText(/message/i), "Walk me through his roles");
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+
+    push({ type: "start", messageId: "assistant-1" });
+    push({ type: "text-start", id: "t1" });
+    push({
+      type: "text-delta",
+      id: "t1",
+      delta: "* **FullStack Labs** (2018 to 2020): built it.\n* **Belatrix** (2018): shipped it.",
+    });
+    push({ type: "text-end", id: "t1" });
+    push({ type: "finish" });
+
+    await screen.findByText(/FullStack Labs/);
+    const answers = container.querySelectorAll("[data-chat-answer]");
+    const answer = answers[answers.length - 1];
+    expect(answer?.querySelectorAll("li")).toHaveLength(2);
+    expect(answer?.textContent).not.toContain("**");
+  });
+
   it("issue 223: keeps a visible activity indicator while streaming before any text or tool step arrives", async () => {
     const { response, push } = createControlledStreamResponse();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));

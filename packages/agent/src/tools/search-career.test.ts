@@ -95,6 +95,9 @@ describe("searchCareerTool", () => {
         entityType: "experience",
         entityId: "house-numbers-2022-senior-full-stack-engineer",
         label: "House Numbers — Senior Full-Stack Engineer",
+        // #270: parity with the deterministic tools — the marker arrives
+        // spelled out so the model copies it instead of composing it.
+        marker: "[cite:experience:house-numbers-2022-senior-full-stack-engineer]",
       },
     ]);
   });

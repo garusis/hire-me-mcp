@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CITABLE_ENTITY_TYPES } from "../citations.js";
 import { PROMPT_SECTION_ORDER, PROMPT_SECTIONS } from "./sections.js";
 
 const REQUIRED_SECTION_IDS = [
@@ -45,6 +46,26 @@ describe("PROMPT_SECTIONS", () => {
     const citationFormat = PROMPT_SECTIONS.find((section) => section.id === "citationFormat");
     expect(citationFormat?.body).toMatch(/citations (list|array|field)/i);
     expect(citationFormat?.body).toMatch(/not.*(merely|just).*(appear|present).*(elsewhere|data)/i);
+  });
+
+  it("tells the model to copy the citation's ready-made marker rather than compose one (#270)", () => {
+    const citationFormat = PROMPT_SECTIONS.find((section) => section.id === "citationFormat");
+    expect(citationFormat?.body).toMatch(/marker/i);
+    expect(citationFormat?.body).toMatch(/copy .*verbatim|verbatim/i);
+  });
+
+  it("names every legal entityType and rules out a tool name in that slot (#270)", () => {
+    const citationFormat = PROMPT_SECTIONS.find((section) => section.id === "citationFormat");
+    for (const entityType of CITABLE_ENTITY_TYPES) {
+      expect(citationFormat?.body).toContain(entityType);
+    }
+    expect(citationFormat?.body).toContain("get-skill-evidence");
+    expect(citationFormat?.body).toMatch(/tool'?s? (own )?name is never|never one of them/i);
+  });
+
+  it("tells the model a gap answer is cited like any other (#270)", () => {
+    const gapDiscipline = PROMPT_SECTIONS.find((section) => section.id === "gapDiscipline");
+    expect(gapDiscipline?.body).toContain("[cite:gap:");
   });
 
   it("tells the model not to claim a fact it has no tool citation for this turn (#143)", () => {

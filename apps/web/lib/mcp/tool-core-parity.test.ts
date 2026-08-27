@@ -141,7 +141,16 @@ describe("MCP tool set and agent tool set share one core-function source of trut
         data: sentinel.data,
         citations: withCitationSiteUrls(sentinel.citations),
       });
-      expect(agentResult).toEqual(sentinel);
+      // Same data, same citations — the agent surface additionally spells out
+      // each citation's copy-ready `[cite:...]` marker for the model (#270),
+      // which is presentation for the LLM, not a divergent domain result.
+      expect(agentResult).toEqual({
+        data: sentinel.data,
+        citations: sentinel.citations.map((citation) => ({
+          ...citation,
+          marker: `[cite:${citation.entityType}:${citation.entityId}]`,
+        })),
+      });
 
       // The registry's declared core-function reference is the literal
       // function this test just mocked — not a lookalike re-import.

@@ -81,6 +81,100 @@ describe("CitationText", () => {
     expect(link).toHaveAttribute("href", "/#profile");
   });
 
+  // Issue 270: the model wrote `[cite:get-skill-evidence:rust]` — the TOOL's
+  // name in the entity-type slot — and a recruiter read the raw syntax.
+  it("never renders a tool-name-shaped marker as text", () => {
+    const { container } = render(
+      <CitationText
+        text="He doesn't have production Rust experience [cite:get-skill-evidence:rust]."
+        writingEntries={NO_WRITING}
+      />,
+    );
+
+    expect(container.textContent).toBe("He doesn't have production Rust experience.");
+    expect(container.textContent).not.toContain("[cite:");
+    expect(container.textContent).not.toContain("get-skill-evidence");
+  });
+
+  it("keeps an unresolved marker findable in the DOM, hidden from the reader", () => {
+    const { container } = render(
+      <CitationText text="A claim [cite:get-skill-evidence:rust]." writingEntries={NO_WRITING} />,
+    );
+
+    const trace = container.querySelector("[data-unresolved-citation]");
+    expect(trace).toHaveAttribute("data-unresolved-citation", "[cite:get-skill-evidence:rust]");
+    // Not a silent deletion, but not something a reader can see either.
+    expect(trace).toHaveAttribute("hidden");
+  });
+
+  // Issue 277: a superscript reference must splice into the sentence, not
+  // push its punctuation away — "…costs 1 . He also built…".
+  it("leaves no space between the reference and the punctuation that follows it", () => {
+    const { container } = render(
+      <CitationText
+        text="OCR costs [cite:project:cowork] . He also built [cite:skill:golang] , twice."
+        writingEntries={NO_WRITING}
+      />,
+    );
+    expect(container.textContent).toBe("OCR costs1. He also built2, twice.");
+  });
+
+  it("renders Markdown bullets as a real list, never as literal asterisks (issue 272)", () => {
+    const { container } = render(
+      <CitationText
+        text={
+          "Roles:\n" +
+          "* **Senior Engineer at House Numbers** (2022): built it [cite:experience:house-numbers].\n" +
+          "* **Senior Engineer at FullStack Labs** (2018 to 2020): shipped it."
+        }
+        writingEntries={NO_WRITING}
+      />,
+    );
+
+    expect(container.querySelectorAll("ul li")).toHaveLength(2);
+    expect(container.querySelectorAll("strong")).toHaveLength(2);
+    expect(container.textContent).not.toContain("**");
+    expect(container.textContent).not.toMatch(/^\s*\*/m);
+    // The citation inside a list item still renders as a numbered link.
+    expect(screen.getByRole("link")).toHaveAttribute("href", "/experience#house-numbers");
+  });
+
+  it("renders a numbered Markdown list as an ordered list", () => {
+    const { container } = render(
+      <CitationText text={"1. First\n2. Second"} writingEntries={NO_WRITING} />,
+    );
+    expect(container.querySelectorAll("ol li")).toHaveLength(2);
+  });
+
+  it("renders emphasis and inline code without emitting any HTML the answer contained", () => {
+    const { container } = render(
+      <CitationText
+        text={"Uses *pgvector* and `pnpm test`, and <script>alert(1)</script> is just text."}
+        writingEntries={NO_WRITING}
+      />,
+    );
+
+    expect(container.querySelector("em")).toHaveTextContent("pgvector");
+    expect(container.querySelector("code")).toHaveTextContent("pnpm test");
+    // The one that matters: Markdown rendering must not become an HTML sink.
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.textContent).toContain("<script>alert(1)</script>");
+  });
+
+  it("never renders an anchor whose href came from the answer text", () => {
+    const { container } = render(
+      <CitationText
+        text={"See [my site](javascript:alert(1)) and ![x](javascript:alert(2))."}
+        writingEntries={NO_WRITING}
+      />,
+    );
+
+    // Link and image syntax is deliberately not parsed — the only anchors the
+    // chat renders are citations, whose hrefs the app itself builds.
+    expect(container.querySelectorAll("a")).toHaveLength(0);
+    expect(container.querySelectorAll("img")).toHaveLength(0);
+  });
+
   it("renders multiple citation markers as separate numbered links", () => {
     render(
       <CitationText

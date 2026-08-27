@@ -10,6 +10,7 @@
 import { getSkillEvidence } from "@hire-me-mcp/core";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+import { withCitationMarkers } from "./citation-markers.js";
 import { getAgentCareerDataRepository } from "./repository.js";
 
 /** Bounded length: model-driven input from untrusted visitor text. */
@@ -40,5 +41,6 @@ export const getSkillEvidenceTool = createTool({
     "rather than a single skill. A 'not-claimed' or 'unknown' result is a normal, successful " +
     "answer, not an error — relay it honestly rather than retrying or hallucinating around it.",
   inputSchema: getSkillEvidenceInputSchema,
-  execute: async (input) => getSkillEvidence(getAgentCareerDataRepository(), input.term),
+  execute: async (input) =>
+    withCitationMarkers(getSkillEvidence(getAgentCareerDataRepository(), input.term)),
 });

@@ -84,9 +84,27 @@ const FRAGMENT_SOURCE = "[A-Za-z0-9_.-]+";
 const ENTITY_TYPE_SOURCE = CITABLE_ENTITY_TYPES.join("|");
 const MARKER_BODY_SOURCE = `cite:(${ENTITY_TYPE_SOURCE}):(${ENTITY_ID_SOURCE})(?:#(${FRAGMENT_SOURCE}))?`;
 
-/** Matches a marker anywhere inside a larger string (used by {@link parseCitations}). */
-function createGlobalMarkerRegex(): RegExp {
-  return new RegExp(`\\[${MARKER_BODY_SOURCE}\\]`, "g");
+/**
+ * Matches anything *marker-shaped* — `[cite:` … `]` with no line break and
+ * no nested `]` — regardless of whether its entity type is citable.
+ *
+ * This is deliberately looser than {@link MARKER_BODY_SOURCE}: issue 270
+ * showed the model writing `[cite:get-skill-evidence:rust]`, i.e. a marker
+ * whose "entity type" is a TOOL NAME. The strict pattern cannot match that,
+ * so before this existed such a marker was not a citation and not an error
+ * either — it was ordinary prose, and it reached the reader as raw machine
+ * syntax. A consumer needs to be able to see "this looked like a marker and
+ * did not resolve" to handle it deliberately, which is what
+ * {@link parseCitationSpans} exposes.
+ *
+ * The length bound keeps a stray `[cite:` in free text from scanning to the
+ * end of a long answer.
+ */
+const MARKER_SHAPED_SOURCE = "\\[cite:[^\\]\\n]{1,256}\\]";
+
+/** Matches every marker-shaped substring (valid or not) — used by {@link parseCitationSpans}. */
+function createGlobalMarkerShapedRegex(): RegExp {
+  return new RegExp(MARKER_SHAPED_SOURCE, "g");
 }
 
 /** Matches a string that is *exactly* one marker, start to end (used by {@link parseCitationMarker}). */
@@ -129,17 +147,56 @@ export function parseCitationMarker(input: string): CitationMarker | null {
 }
 
 /**
+ * One marker-shaped substring found in free-form text, together with what it
+ * parsed to.
+ *
+ * `marker === null` means "this is machine syntax that is not a citation" —
+ * the issue 270 case (`[cite:get-skill-evidence:rust]`, a tool name where an
+ * entity type belongs). A renderer must handle that case explicitly rather
+ * than letting it fall through as prose.
+ */
+export interface CitationSpan {
+  /** Offset of {@link text} in the scanned string. */
+  offset: number;
+  /** The literal substring, e.g. `[cite:gap:rust]`. */
+  text: string;
+  /** The parsed marker, or `null` when the substring is marker-shaped but not a valid citation. */
+  marker: CitationMarker | null;
+}
+
+/**
+ * Scan free-form text (e.g. a full streamed answer) and return every
+ * marker-shaped substring it contains, in order of appearance, each with its
+ * parsed {@link CitationMarker} or `null` when it does not name a
+ * {@link CitableEntityType}.
+ *
+ * Never throws. Text that merely *contains* a bracket is not marker-shaped
+ * and is not reported at all.
+ */
+export function parseCitationSpans(text: string): CitationSpan[] {
+  const spans: CitationSpan[] = [];
+  for (const match of text.matchAll(createGlobalMarkerShapedRegex())) {
+    const found = match[0];
+    spans.push({
+      offset: match.index ?? 0,
+      text: found,
+      marker: parseCitationMarker(found),
+    });
+  }
+  return spans;
+}
+
+/**
  * Scan free-form text (e.g. a full streamed answer) and extract every
  * well-formed marker it contains, in order of appearance. Malformed
- * bracket-like substrings are silently skipped, never thrown on.
+ * bracket-like substrings are silently skipped, never thrown on — use
+ * {@link parseCitationSpans} when you need to *see* those instead.
  */
 export function parseCitations(text: string): CitationMarker[] {
   const results: CitationMarker[] = [];
-  for (const match of text.matchAll(createGlobalMarkerRegex())) {
-    const [, entityType, entityId, fragment] = match;
-    const marker = toCitationMarker(entityType ?? "", entityId ?? "", fragment);
-    if (marker) {
-      results.push(marker);
+  for (const span of parseCitationSpans(text)) {
+    if (span.marker) {
+      results.push(span.marker);
     }
   }
   return results;
