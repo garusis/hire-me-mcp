@@ -92,7 +92,7 @@ jobs:
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - name: Cache pnpm store
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -165,7 +165,7 @@ jobs:
 
       - name: Cache Playwright browsers
         if: steps.preview.outputs.found == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
