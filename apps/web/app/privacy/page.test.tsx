@@ -64,6 +64,27 @@ describe("Privacy note page (#81)", () => {
     expect(screen.getByText(/upstash/i)).toBeInTheDocument();
   });
 
+  it("renders the chat session identifier section, describing the browser-generated UUID (239)", async () => {
+    getProfileView.mockReturnValue(profileView());
+    const { default: PrivacyPage } = await import("./page.js");
+
+    render(await PrivacyPage());
+
+    expect(screen.getByRole("heading", { name: /chat session identifier/i })).toBeInTheDocument();
+    expect(screen.getByText(/uuid/i)).toBeInTheDocument();
+    expect(screen.getByText(/never written to this site's usage/i)).toBeInTheDocument();
+  });
+
+  it("lists every field a chat request carries, naming sessionId explicitly (239)", async () => {
+    getProfileView.mockReturnValue(profileView());
+    const { default: PrivacyPage } = await import("./page.js");
+
+    render(await PrivacyPage());
+
+    expect(screen.getByText("sessionId")).toBeInTheDocument();
+    expect(screen.getByText("messages")).toBeInTheDocument();
+  });
+
   it("links out to Marcos's public contact links from the profile, as the 'how to reach him' path — no separate contact tool", async () => {
     getProfileView.mockReturnValue(profileView());
     const { default: PrivacyPage } = await import("./page.js");
