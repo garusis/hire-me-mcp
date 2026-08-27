@@ -57,6 +57,14 @@ name: Retrieval Eval
 # error → run the eval). The `labeled` trigger type fires a fresh run when
 # the override label is added. See docs/development.md > "What triggers
 # the eval workflows".
+#
+# ## Why this job is in no shared concurrency group (#264 follow-up)
+#
+# See the job-level comment below and `scripts/ci/gemini-slot.mjs`: a
+# GitHub concurrency group cancels rather than queues, and this is a
+# REQUIRED check. Quota protection lives in the in-job `ci-embedding` slot
+# lease instead. Documented in docs/development.md > "Serializing the
+# Gemini-spending workflows".
 on:
   workflow_dispatch: {}
   pull_request:
@@ -70,18 +78,21 @@ jobs:
   retrieval-eval:
     name: retrieval-eval
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Job-level: queue behind (never race) other Gemini-calling CI jobs —
-    # this job's ingest + eval:retrieval steps make real embedding calls
-    # against the same free-tier quota agent-evals/preview-e2e's chat specs
-    # share (#169). The shared `gemini-free-tier` group queues those jobs
-    # instead of racing them; a group only ever holds one queued run, so an
-    # extra concurrent trigger is cancelled rather than run — a
-    # cancelled-while-queued run shows as a failed check on the PR and just
-    # needs a manual re-run once the group frees up.
-    concurrency:
-      group: gemini-free-tier
-      cancel-in-progress: false
+    # Raised from 15 with the slot lease below: the wait is bounded by
+    # SLOT_MAX_WAIT_SECONDS and must not eat the eval's own budget.
+    timeout-minutes: 30
+    # NO shared GitHub concurrency group (#264 follow-up). This job used to
+    # sit in `gemini-free-tier` with `cancel-in-progress: false`, described
+    # as "queue rather than race". GitHub does not queue: a group holds one
+    # run in progress and ONE pending, and a third contender CANCELS the
+    # pending one. A cancelled run reads as a failed check, so any day with
+    # two or three open PRs could turn this REQUIRED check red for reasons
+    # unrelated to the change — #176's failure mode, reintroduced by the
+    # very mechanism meant to protect the quota. Serialization now happens
+    # in-job, per budget, via the "Wait for a Gemini free-tier slot" step
+    # below; nothing is ever cancelled because nothing is ever pending.
+    # The workflow-level group above still supersedes this ref's OWN older
+    # run on a force-push, which is a self-cancel, not a foreign eviction.
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -161,6 +172,23 @@ jobs:
           else
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # In-job serialization, replacing the old `gemini-free-tier`
+      # concurrency group (#264 follow-up — see the job's comment above and
+      # `scripts/ci/gemini-slot.mjs`). Placed AFTER relevance/secrets
+      # detection on purpose: a PR that is going to spend nothing waits for
+      # nothing. `ci-embedding` is this job's actual budget — the Actions
+      # secret's Google project on `gemini-embedding-001`, which
+      # `reindex-production` and `release-readiness` also spend; the
+      # generation-model jobs (`agent-evals`, `preview-chat-live`) do not,
+      # which is why they no longer queue against this required check.
+      # Fails open: on timeout or API error it warns and runs anyway.
+      - name: Wait for a Gemini free-tier slot (ci-embedding)
+        if: steps.secrets-check.outputs.available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLOT_BUDGET: "ci-embedding"
+        run: node scripts/ci/gemini-slot.mjs
 
       # packages/core/src/repository.ts imports @hire-me-mcp/career-data at
       # the top level, which resolves via that package's own "exports" field

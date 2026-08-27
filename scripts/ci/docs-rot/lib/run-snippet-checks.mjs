@@ -116,6 +116,11 @@ async function checkCurlSnippet(docsMcp, documentedEndpoint, headers, reporter) 
  * live tools/list") means.
  */
 async function checkToolsListAgainstReadme(readme, toolsListUrl, headers, reporter) {
+  // #174: state the target out loud. The original bug was invisible in the
+  // logs — the failure said "documented tool(s) not present in live
+  // tools/list" without naming WHICH deployment answered, so it read as a
+  // product problem when it was a targeting problem.
+  reporter.note(`README tool-table checked against the deployment under test: ${toolsListUrl}`);
   let liveToolNames;
   try {
     liveToolNames = await mcpToolsList(toolsListUrl, { headers });
@@ -127,7 +132,8 @@ async function checkToolsListAgainstReadme(readme, toolsListUrl, headers, report
   if (missing.length > 0) {
     reporter.fail(
       "README.md#mcp-tool-table",
-      `documented tool(s) not present in live tools/list: ${missing.join(", ")}.`,
+      `documented tool(s) not present in the tools/list of the deployment under test ` +
+        `(${toolsListUrl}): ${missing.join(", ")}.`,
     );
   }
 }
@@ -139,8 +145,17 @@ async function checkToolsListAgainstReadme(readme, toolsListUrl, headers, report
  * on the daily cron/push-to-main run, where `targetUrl` IS production) —
  * never a literal `/api/mcp` re-typed here, matching this file's own "every
  * URL comes from extraction, never a re-typed literal" rule.
+ *
+ * On the daily cron / push-to-main run `targetUrl` IS the documented
+ * production origin, so this is the identity mapping and production
+ * behaviour is unchanged — asserted directly in
+ * `extract-artifacts.test.mjs` (#174's "unit-test the target selection"
+ * acceptance criterion), in both directions.
+ *
+ * Exported for those tests: the selection rule is the whole point of #174,
+ * so it is checked as a rule, not only through a fixture server.
  */
-function resolveToolsListUrl(targetUrl, documentedEndpoint) {
+export function resolveToolsListUrl(targetUrl, documentedEndpoint) {
   const path = new URL(documentedEndpoint).pathname;
   return new URL(path, targetUrl).toString();
 }

@@ -34,6 +34,15 @@ concurrency:
   group: docs-rot-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# One literal for both jobs (#174): the production origin was typed twice,
+# and "some check quietly points at production" is the exact bug #174 is
+# about. Mirrors `apps/web/src/lib/config/site-url.ts#PRODUCTION_SITE_URL`,
+# which is what the generated doc regions this workflow parses are built
+# from. Only the non-`pull_request` steps read it — on a PR every check
+# runs against that PR's own resolved preview deployment.
+env:
+  PRODUCTION_TARGET_URL: https://hire-me-mcp-web.vercel.app
+
 jobs:
   docs-rot-snippets:
     name: docs-rot-snippets
@@ -89,7 +98,7 @@ jobs:
 
       - name: Run snippet checks against production
         if: github.event_name != 'pull_request'
-        run: node scripts/ci/docs-rot/check-snippets.mjs --target-url=https://hire-me-mcp-web.vercel.app
+        run: node scripts/ci/docs-rot/check-snippets.mjs --target-url="$PRODUCTION_TARGET_URL"
 
   docs-rot-links:
     name: docs-rot-links
@@ -137,4 +146,4 @@ jobs:
 
       - name: Run link checks against production
         if: github.event_name != 'pull_request'
-        run: node scripts/ci/docs-rot/check-links.mjs --target-url=https://hire-me-mcp-web.vercel.app
+        run: node scripts/ci/docs-rot/check-links.mjs --target-url="$PRODUCTION_TARGET_URL"

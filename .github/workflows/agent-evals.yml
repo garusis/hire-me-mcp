@@ -105,13 +105,18 @@ jobs:
   agent-evals:
     name: agent-evals
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Job-level: queue behind (never race) other Gemini-calling CI jobs —
-    # preview-e2e's chat specs share the same 15 RPM free-tier budget and
-    # starve out when this job runs concurrently (#169).
-    concurrency:
-      group: gemini-free-tier
-      cancel-in-progress: false
+    # Raised from 15 with the slot lease below: the bounded wait must not
+    # eat the eval suite's own budget.
+    timeout-minutes: 30
+    # NO shared GitHub concurrency group (#264 follow-up). `gemini-free-tier`
+    # was described as "queue rather than race", but a GitHub group holds
+    # one run in progress and ONE pending — a third contender CANCELS the
+    # pending one, and a cancelled run reads as a failed check. With this
+    # job, `retrieval-eval` (REQUIRED) and `preview-chat-live` all in the
+    # group, a normal multi-PR day evicted whichever entered last. Quota
+    # protection now lives in the in-job `ci-generation` slot lease (see
+    # `scripts/ci/gemini-slot.mjs`), which queues any number of runs and
+    # cancels none.
     # Budget caps below cover a full 25-case dataset run — #143's real
     # 17-case run used 111,137 tokens; #75 (this comment's own change) added
     # 8 more cases (three RAG-grounded fuzzy/cross-cutting, two RAG-grounded
@@ -226,6 +231,20 @@ jobs:
           else
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # In-job serialization, replacing the old `gemini-free-tier` group
+      # (#264 follow-up — see the job comment above and
+      # `scripts/ci/gemini-slot.mjs`). Placed AFTER relevance/secrets
+      # detection: an irrelevant PR waits for nothing. `ci-generation` is
+      # this job's real budget — the Actions secret's Google project on
+      # `gemini-3.5-flash-lite`, shared only with `release-readiness`.
+      # Fails open: on timeout or API error it warns and runs anyway.
+      - name: Wait for a Gemini free-tier slot (ci-generation)
+        if: steps.secrets-check.outputs.available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLOT_BUDGET: "ci-generation"
+        run: node scripts/ci/gemini-slot.mjs
 
       - name: Build workspace packages the agent depends on
         if: steps.secrets-check.outputs.available == 'true'

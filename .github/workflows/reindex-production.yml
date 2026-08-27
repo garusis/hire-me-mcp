@@ -48,14 +48,16 @@ jobs:
   reindex-production:
     name: reindex-production
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Job-level: queue behind (never race) other Gemini-calling CI jobs —
-    # same shared free-tier embedding/chat quota `retrieval-eval`/
-    # `agent-evals`/`preview-e2e` already queue behind (#169). A production
-    # reindex must never starve, or be starved by, a PR's evals.
-    concurrency:
-      group: gemini-free-tier
-      cancel-in-progress: false
+    # Raised from 15 with the slot lease below: the bounded wait must not
+    # eat the ingest's own budget.
+    timeout-minutes: 30
+    # NO shared GitHub concurrency group (#264 follow-up). A group cancels
+    # rather than queues (one in progress, ONE pending, third contender
+    # evicts the pending one) — and a cancelled production reindex is worse
+    # than a slow one. Serialization is now the in-job `ci-embedding` slot
+    # lease below: the Actions secret's Google project on
+    # `gemini-embedding-001`, the same budget `retrieval-eval` spends. A
+    # production reindex must never starve, or be starved by, a PR's evals.
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -92,6 +94,16 @@ jobs:
             echo "::error::reindex-production requires DATABASE_URL and GOOGLE_GENERATIVE_AI_API_KEY to be configured as repository secrets."
             exit 1
           fi
+
+      # In-job serialization, replacing the old `gemini-free-tier` group
+      # (#264 follow-up — see the job comment above and
+      # `scripts/ci/gemini-slot.mjs`). Fails open: on timeout or API error
+      # it warns and reindexes anyway rather than leaving production stale.
+      - name: Wait for a Gemini free-tier slot (ci-embedding)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLOT_BUDGET: "ci-embedding"
+        run: node scripts/ci/gemini-slot.mjs
 
       # packages/core/src/repository.ts imports @hire-me-mcp/career-data at
       # the top level, resolving via that package's own "exports" field to
