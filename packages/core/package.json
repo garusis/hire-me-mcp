@@ -49,9 +49,9 @@
     "eval:retrieval": "tsx src/eval-retrieval/cli.ts"
   },
   "dependencies": {
-    "@ai-sdk/google": "4.0.48",
+    "@ai-sdk/google": "4.0.50",
     "@hire-me-mcp/career-data": "workspace:*",
-    "ai": "7.0.71",
+    "ai": "7.0.77",
     "postgres": "3.4.9",
     "zod": "4.4.3"
   },

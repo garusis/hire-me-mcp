@@ -61,7 +61,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
-    "@biomejs/biome": "2.5.9",
+    "@biomejs/biome": "2.5.10",
     "@hire-me-mcp/core": "workspace:*",
     "@lhci/cli": "0.15.1",
     "@playwright/test": "1.62.1",
