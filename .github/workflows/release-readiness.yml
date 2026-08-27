@@ -111,7 +111,7 @@ jobs:
 
       - name: Upload Playwright preview-suite report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: certification-playwright-report
           path: playwright-preview-report/
@@ -120,7 +120,7 @@ jobs:
 
       - name: Upload Lighthouse reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: certification-lighthouse-report
           path: .lighthouseci/
@@ -129,7 +129,7 @@ jobs:
 
       - name: Upload agent eval report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: certification-agent-eval-report
           path: packages/agent/eval-report.json

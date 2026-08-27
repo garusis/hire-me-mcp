@@ -207,7 +207,7 @@ jobs:
 
       - name: Upload retrieval eval report artifact
         if: always() && steps.secrets-check.outputs.available == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: retrieval-eval-report
           path: packages/core/retrieval-eval-report.json
