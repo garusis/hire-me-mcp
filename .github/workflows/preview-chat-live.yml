@@ -71,7 +71,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Full history: the relevance step diffs against the PR's merge
           # base via `git merge-base`/`turbo query` (#207).

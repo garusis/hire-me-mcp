@@ -139,7 +139,7 @@ jobs:
       EVAL_MAX_COST_USD: "1"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Full history: the relevance step diffs against the PR's merge
           # base (or the pre-push sha) via `git merge-base`/`turbo query`,
