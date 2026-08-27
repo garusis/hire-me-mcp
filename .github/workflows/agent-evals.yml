@@ -129,8 +129,14 @@ jobs:
     # `assertWithinBudget` (`packages/agent/src/evals/budget.ts`) still
     # aborts loudly if a run genuinely exceeds it, so an underestimate here
     # fails loud rather than silently truncating. EVAL_RPM_LIMIT stays at
-    # the package default (10) — a polite margin under the model's 15 RPM
-    # ceiling, shared with production chat traffic. EVAL_REPORT_PATH is
+    # the package default (10) — since #282 that means 10 real PROVIDER
+    # REQUESTS per rolling minute, throttled at the model boundary
+    # (`packages/agent/src/evals/rate-limit.ts`), not 10 cases per minute;
+    # the old case-level throttle let a 2-3-request case overshoot the
+    # model's 15 RPM ceiling, which is shared with production chat
+    # traffic. A 25-case run therefore takes several minutes of deliberate
+    # waiting — the 30-minute job timeout above covers it.
+    # EVAL_REPORT_PATH is
     # intentionally left at its default ("eval-report.json", resolved
     # relative to `pnpm eval:agent`'s own working directory,
     # `packages/agent`) rather than overridden here — `pnpm --filter

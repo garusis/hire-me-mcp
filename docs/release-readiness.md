@@ -121,8 +121,9 @@ per risk:
   per-IP sliding windows; they self-reset).
 - **Gemini free-tier quota (shared with live chat).** All model-calling steps
   run sequentially in one job, which holds both Actions-secret Gemini budgets
-  for its duration; `eval:agent` is RPM-capped (`EVAL_RPM_LIMIT`) below the 15 RPM
-  ceiling. One full certification spends a bounded, documented slice of the
+  for its duration; `eval:agent` is capped (`EVAL_RPM_LIMIT`) below the 15 RPM
+  ceiling — counted per real provider request at the model boundary since #282,
+  so a multi-request eval case can no longer overshoot it. One full certification spends a bounded, documented slice of the
   500 RPD budget — do not loop it.
 - **Analytics pollution.** Tool-call and chat analytics are anonymized
   aggregates (see [`docs/analytics.md`](analytics.md)); a certification run

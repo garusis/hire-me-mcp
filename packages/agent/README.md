@@ -66,6 +66,11 @@ The lite tier's 500 RPD gives both room to coexist on the free tier without a de
 project (#73 follow-up, still worth doing, but no longer blocking). `CHAT_MODEL_ID` remains the
 override seam if a future task needs a different model id without a code change.
 
+The **15 RPM** figure in that table is not just prose: it lives in code as
+`FREE_TIER_RPM_CEILING` (`src/evals/rate-limit.ts`), which the eval suite's request throttle and
+its default `EVAL_RPM_LIMIT` both derive from (see "Request rate limiting" below). Change the
+model, change that constant — the docs and the throttle move together.
+
 ### Swapping providers
 
 ```bash
@@ -323,9 +328,41 @@ usage is tallied. Crossing either **throws `BudgetExceededError` and stops the r
 no further cases run, no silently-truncated "success". Cost is estimated from a small, documented,
 approximate per-model pricing table; since the project's default provider is Gemini free tier, a
 real run's actual dollar cost is $0 today — the cost cap is a safety net against a future paid
-provider switch, not a live pricing feed. A conservative `EVAL_RPM_LIMIT` (default 10) throttles
-between real calls so a default run stays a polite margin under `gemini-3.5-flash-lite`'s 15 RPM
-free-tier ceiling (see the quota rationale table above).
+provider switch, not a live pricing feed. Rate limiting is a separate concern, enforced at the
+model boundary rather than by this runner — see "Request rate limiting" below.
+
+### Request rate limiting (`src/evals/rate-limit.ts`) — at the model boundary (#282)
+
+`EVAL_RPM_LIMIT` (default 10) caps **real provider requests** per rolling 60 seconds, not eval
+cases. That distinction is the whole point of #282: one eval case is not one request. A single
+`agent.generate()` turn is a model call, then a tool call, then another model call to compose the
+answer — 2-3 requests, sometimes more. The original throttle slept between *cases*, so a nominal
+10 "RPM" issued 20-30 actual requests a minute, over `gemini-3.5-flash-lite`'s 15 RPM free-tier
+ceiling, and `agent-evals` failed with
+`429 RESOURCE_EXHAUSTED` / `GenerateRequestsPerMinutePerProjectPerModel-FreeTier`.
+
+The throttle now wraps the language model itself (the AI SDK's `wrapLanguageModel` middleware:
+`wrapGenerate`/`wrapStream` await a slot before delegating), so it counts exactly what the provider
+counts — multi-step turns, retries, and anything a future change adds. It is a true **sliding
+window** over admitted-request timestamps, not a fixed inter-request delay, and acquisitions are
+serialized so concurrent callers cannot both slip through. A full 25-case run therefore paces
+itself over several minutes of deliberate waiting — that wait is the fix working, not a hang.
+
+**One source for the number.** `FREE_TIER_RPM_CEILING = 15` (the quota rationale table above) minus
+`RPM_SAFETY_MARGIN = 5` (headroom for the production chat traffic sharing this key) *is* the
+default `EVAL_RPM_LIMIT` — `src/evals/rate-limit.ts` exports it, `src/evals/cli.ts` reads it, and a
+test asserts the config default equals it, so this document, the config and the limiter cannot
+drift apart.
+
+**429s are retried, not fatal.** A rate-limit 429 waits out the provider's own hint (a
+`retry-after` header, or Gemini's `RetryInfo.retryDelay` — ~1.5s in practice) and retries, up to 3
+times, falling back to bounded exponential backoff when the error carries no hint. Only HTTP 429 is
+retried: any other failure (a 500, a tool error, a malformed response) propagates immediately and
+unchanged, and a persistently exhausted quota — a *daily* cap, say — still fails the run loudly
+instead of spinning. The retried attempt takes its own slot in the window, because the provider
+counted it too. Budget accounting is untouched: a 429 returns no usage, every attempt that does
+return usage is aggregated into the turn's `totalUsage`, and `assertWithinBudget` still runs after
+every case.
 
 ### Thresholds and verdict (`src/evals/thresholds.ts`)
 
@@ -544,7 +581,7 @@ failing score.
 | `EVAL_MAX_CASES`         | Max dataset cases run this invocation.                | `8`                       |
 | `EVAL_MAX_TOTAL_TOKENS`  | Max cumulative tokens before the run aborts.          | `60000`                   |
 | `EVAL_MAX_COST_USD`      | Max estimated USD cost before the run aborts.         | `0.5`                     |
-| `EVAL_RPM_LIMIT`         | Requests-per-minute throttle between real calls.      | `10`                      |
+| `EVAL_RPM_LIMIT`         | Real provider REQUESTS per rolling minute (not cases — see "Request rate limiting" above). | `10` (`FREE_TIER_RPM_CEILING` 15 − `RPM_SAFETY_MARGIN` 5) |
 | `EVAL_REPORT_PATH`       | Where the JSON report is written.                     | `eval-report.json`        |
 | `EVAL_CASE_IDS`          | Comma-separated dataset case ids to run instead of the full/sliced dataset (#143 — cheap single-case reproduction while debugging). | unset (runs the normal `budget.maxCases`-sliced dataset) |
 
@@ -598,8 +635,9 @@ recorded in "Real-run results" above) and roughly one call per case (more for a 
 turn); the full 25-case dataset (post-#75) is expected to cost proportionally more but has not yet
 been measured against a real key (see "RAG-grounded cases and the tool-routing scorer" above) —
 budget accordingly if running locally the same day CI or another contributor might also run it.
-`EVAL_RPM_LIMIT` (default 10) throttles between calls to stay a polite margin under the 15 RPM
-ceiling regardless.
+`EVAL_RPM_LIMIT` (default 10) caps real provider requests per rolling minute — counted at the model
+boundary, so a multi-request case can no longer overshoot the 15 RPM ceiling (see "Request rate
+limiting" above).
 
 ### Procedure when a threshold fails
 

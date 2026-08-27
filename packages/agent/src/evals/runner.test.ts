@@ -44,8 +44,6 @@ const exactFactCase = makeCase({
 describe("runEvalSuite", () => {
   it("runs every case up to the budget's case cap, scoring each with all applicable scorers", async () => {
     const runCase = stubRunCase();
-    const sleep = vi.fn().mockResolvedValue(undefined);
-
     const report = await runEvalSuite(
       {
         cases: [groundedCase, gapCase, offTopicCase],
@@ -53,7 +51,7 @@ describe("runEvalSuite", () => {
         promptVersion: "test-version",
         modelId: "gemini-3.6-flash",
       },
-      { runCase, sleep },
+      { runCase },
     );
 
     expect(runCase).toHaveBeenCalledTimes(3);
@@ -70,8 +68,6 @@ describe("runEvalSuite", () => {
 
   it("never runs more cases than the budget's maxCases", async () => {
     const runCase = stubRunCase();
-    const sleep = vi.fn().mockResolvedValue(undefined);
-
     await runEvalSuite(
       {
         cases: [groundedCase, gapCase, offTopicCase],
@@ -79,7 +75,7 @@ describe("runEvalSuite", () => {
         promptVersion: "test-version",
         modelId: "gemini-3.6-flash",
       },
-      { runCase, sleep },
+      { runCase },
     );
 
     expect(runCase).toHaveBeenCalledTimes(2);
@@ -91,8 +87,6 @@ describe("runEvalSuite", () => {
       toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
       usage: { inputTokens: 100_000, outputTokens: 100_000, totalTokens: 200_000 },
     });
-    const sleep = vi.fn().mockResolvedValue(undefined);
-
     await expect(
       runEvalSuite(
         {
@@ -101,7 +95,7 @@ describe("runEvalSuite", () => {
           promptVersion: "test-version",
           modelId: "gemini-3.6-flash",
         },
-        { runCase, sleep },
+        { runCase },
       ),
     ).rejects.toThrow(BudgetExceededError);
 
@@ -110,24 +104,30 @@ describe("runEvalSuite", () => {
     expect(runCase).toHaveBeenCalledTimes(2);
   });
 
-  it("throttles between calls via the injected sleep, never using real timers", async () => {
-    const runCase = stubRunCase();
-    const sleep = vi.fn().mockResolvedValue(undefined);
+  it("does not throttle between cases itself — rate limiting lives at the model boundary (#282)", async () => {
+    // Fake timers that are never advanced: if this runner still slept
+    // between cases (the pre-#282 per-case throttle, which counted cases
+    // rather than the 2-3 real requests each one makes), the awaited run
+    // would hang here instead of completing.
+    vi.useFakeTimers();
+    try {
+      const runCase = stubRunCase();
 
-    await runEvalSuite(
-      {
-        cases: [groundedCase, gapCase],
-        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
-        promptVersion: "test-version",
-        modelId: "gemini-3.6-flash",
-        rpmLimit: 10,
-      },
-      { runCase, sleep },
-    );
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase, gapCase, offTopicCase],
+          budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase },
+      );
 
-    // At least one throttle sleep between the two calls.
-    expect(sleep).toHaveBeenCalled();
-    expect(sleep.mock.calls[0]?.[0]).toBeGreaterThan(0);
+      expect(runCase).toHaveBeenCalledTimes(3);
+      expect(report.cases).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("scores toolRouting when a case declares expectedToolCall, using the run's toolCallNames (#75)", async () => {
@@ -137,8 +137,6 @@ describe("runEvalSuite", () => {
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
       toolCallNames: ["search-career"],
     });
-    const sleep = vi.fn().mockResolvedValue(undefined);
-
     const report = await runEvalSuite(
       {
         cases: [ragCase],
@@ -146,7 +144,7 @@ describe("runEvalSuite", () => {
         promptVersion: "test-version",
         modelId: "gemini-3.6-flash",
       },
-      { runCase, sleep },
+      { runCase },
     );
 
     const ragResult = report.cases.find((c) => c.id === "rag-1");
@@ -163,8 +161,6 @@ describe("runEvalSuite", () => {
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
       toolCallNames: ["search-career"],
     });
-    const sleep = vi.fn().mockResolvedValue(undefined);
-
     const report = await runEvalSuite(
       {
         cases: [exactFactCase],
@@ -172,7 +168,7 @@ describe("runEvalSuite", () => {
         promptVersion: "test-version",
         modelId: "gemini-3.6-flash",
       },
-      { runCase, sleep },
+      { runCase },
     );
 
     expect(report.cases.find((c) => c.id === "exact-1")?.scores.toolRouting?.score).toBe(0);
@@ -180,8 +176,6 @@ describe("runEvalSuite", () => {
 
   it("leaves toolRouting null when a case does not declare expectedToolCall — backward compatible", async () => {
     const runCase = stubRunCase();
-    const sleep = vi.fn().mockResolvedValue(undefined);
-
     const report = await runEvalSuite(
       {
         cases: [groundedCase],
@@ -189,7 +183,7 @@ describe("runEvalSuite", () => {
         promptVersion: "test-version",
         modelId: "gemini-3.6-flash",
       },
-      { runCase, sleep },
+      { runCase },
     );
 
     expect(report.cases[0]?.scores.toolRouting).toBeNull();
@@ -197,8 +191,6 @@ describe("runEvalSuite", () => {
 
   it("treats a missing toolCallNames field on the run result as an empty trace, not a crash (backward compatible with pre-#75 runCase stubs)", async () => {
     const runCase = stubRunCase(); // no toolCallNames field at all
-    const sleep = vi.fn().mockResolvedValue(undefined);
-
     const report = await runEvalSuite(
       {
         cases: [exactFactCase],
@@ -206,7 +198,7 @@ describe("runEvalSuite", () => {
         promptVersion: "test-version",
         modelId: "gemini-3.6-flash",
       },
-      { runCase, sleep },
+      { runCase },
     );
 
     // deterministic-only + empty trace = trivially satisfied
