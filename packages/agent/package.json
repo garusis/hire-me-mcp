@@ -32,11 +32,11 @@
     "eval:agent": "tsx src/evals/cli.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "4.0.41",
-    "@ai-sdk/google": "4.0.50",
+    "@ai-sdk/anthropic": "4.0.44",
+    "@ai-sdk/google": "4.0.56",
     "@hire-me-mcp/core": "workspace:*",
-    "@mastra/core": "1.61.0",
-    "ai": "7.0.77",
+    "@mastra/core": "1.63.0",
+    "ai": "7.0.83",
     "zod": "4.4.3"
   },
   "devDependencies": {
