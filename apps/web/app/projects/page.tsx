@@ -89,6 +89,7 @@ function FilterControls({ options, selectedTags }: { options: string[]; selected
             <li key={tag}>
               <Link
                 href={toggleTagHref(selectedTags, tag)}
+                rel="nofollow"
                 aria-current={selected || undefined}
                 className={cx(styles.filterTag, selected && styles.filterTagSelected)}
               >
@@ -99,7 +100,15 @@ function FilterControls({ options, selectedTags }: { options: string[]; selected
           );
         })}
       </ul>
-      {selectedTags.length > 0 && <Link href="/projects">Clear filters</Link>}
+      {/* nofollow on every filter-nav link (the tag toggles above and this
+          reset): the tag combinations form a 2^N URL space that AI crawlers
+          were walking request-by-request — see robots.ts, which also
+          disallows ?tags= URLs outright. */}
+      {selectedTags.length > 0 && (
+        <Link href="/projects" rel="nofollow">
+          Clear filters
+        </Link>
+      )}
     </nav>
   );
 }
