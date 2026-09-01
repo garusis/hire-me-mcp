@@ -133,6 +133,21 @@ describe("Projects page", () => {
     expect(screen.getByRole("link", { name: /Beta Project/i })).toBeDefined();
   });
 
+  it("marks every filter link rel=nofollow so crawlers do not walk the 2^N tag-combination URL space", async () => {
+    getProjectsListView.mockReturnValue(projectsView());
+
+    await renderProjectsPage({ tags: "python" });
+
+    const filterNav = screen.getByRole("navigation", { name: "Filter projects by technology" });
+    for (const link of within(filterNav).getAllByRole("link")) {
+      expect(link).toHaveAttribute("rel", expect.stringContaining("nofollow"));
+    }
+    expect(screen.getByRole("link", { name: "Clear filters" })).toHaveAttribute(
+      "rel",
+      expect.stringContaining("nofollow"),
+    );
+  });
+
   it("reflects the selected filter in the shareable URL of the other filter links", async () => {
     getProjectsListView.mockReturnValue(projectsView());
 
