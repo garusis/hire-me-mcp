@@ -1,0 +1,10 @@
+{
+  "id": "fixture-role-otherco-2016",
+  "company": "Otherco",
+  "role": "Earlier Fixture Engineer",
+  "startDate": "2016-01",
+  "endDate": "2019-12",
+  "summary": "A second fake role so a story can reference a related experience.",
+  "highlights": ["Did an earlier fixture thing"],
+  "tech": ["typescript"]
+}

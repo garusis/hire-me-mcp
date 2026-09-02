@@ -24,6 +24,7 @@ function fakeDataset(ids: string[]): CareerDataset {
     education: [],
     writing: [],
     recommendations: [],
+    stories: [],
   };
 }
 

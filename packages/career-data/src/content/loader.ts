@@ -17,6 +17,8 @@ import type { Recommendation } from "../schemas/recommendation.js";
 import { recommendationSchema } from "../schemas/recommendation.js";
 import type { Skill } from "../schemas/skill.js";
 import { skillSchema } from "../schemas/skill.js";
+import type { CareerStory } from "../schemas/story.js";
+import { careerStorySchema } from "../schemas/story.js";
 import type { WritingEntry } from "../schemas/writing.js";
 import { writingEntrySchema } from "../schemas/writing.js";
 
@@ -40,8 +42,9 @@ type ContentLayoutEntry =
  * which schema validates them. `content/profile.json` is a JSON singleton,
  * `content/experience/*.json` is one ExperienceEntry per file,
  * `content/projects/*.mdx` and `content/writing/*.mdx` are MDX
- * (frontmatter + body), and `skills.json`/`gaps.json`/`education.json` are
- * JSON arrays.
+ * (frontmatter + body), `skills.json`/`gaps.json`/`education.json` are
+ * JSON arrays, and `content/recommendations/*.json` and
+ * `content/stories/*.json` are one entity per JSON file.
  */
 const contentLayout: ContentLayoutEntry[] = [
   { entityType: "profile", kind: "single-json", relPath: "profile.json", schema: profileSchema },
@@ -67,6 +70,7 @@ const contentLayout: ContentLayoutEntry[] = [
     dir: "recommendations",
     schema: recommendationSchema,
   },
+  { entityType: "story", kind: "per-file-json", dir: "stories", schema: careerStorySchema },
 ];
 
 /** Formats a Zod issue path as a readable field path, e.g. `[0].evidence`. */
@@ -202,6 +206,8 @@ export interface CareerDataset {
   education: EducationEntry[];
   writing: WritingEntry[];
   recommendations: Recommendation[];
+  /** Behavioral stories (#289), each linked to one primary experience entry. */
+  stories: CareerStory[];
 }
 
 /** Which file backs a given loaded entity — the cross-reference the content lint (#51) needs to name an offending file per violation. */
@@ -350,6 +356,7 @@ export function loadContentDirWithSources(
     education: [],
     writing: [],
     recommendations: [],
+    stories: [],
   };
   const sources: EntitySource[] = [];
 
@@ -407,6 +414,15 @@ export function loadContentDirWithSources(
     "recommendation",
     recommendationSchema,
     dataset.recommendations,
+    sources,
+  );
+  readPerFileInto(
+    contentDir,
+    "stories",
+    "json",
+    "story",
+    careerStorySchema,
+    dataset.stories,
     sources,
   );
 

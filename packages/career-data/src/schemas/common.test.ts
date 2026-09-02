@@ -33,9 +33,27 @@ describe("citableEntityTypeSchema", () => {
       "gap",
       "education",
       "writing",
+      "recommendation",
+      "story",
     ]) {
       expect(citableEntityTypeSchema.safeParse(value).success).toBe(true);
     }
+  });
+
+  it("lists exactly one entity type per citable schema — a new schema must be added here deliberately", () => {
+    expect([...citableEntityTypeSchema.options].sort()).toEqual(
+      [
+        "profile",
+        "experience",
+        "project",
+        "skill",
+        "gap",
+        "education",
+        "writing",
+        "recommendation",
+        "story",
+      ].sort(),
+    );
   });
 
   it("rejects an unknown entity type", () => {

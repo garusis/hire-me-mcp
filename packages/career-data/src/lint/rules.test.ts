@@ -9,6 +9,7 @@ import {
   noOrphanEntitiesRule,
   runRules,
   skillHasEvidenceRule,
+  storyExperienceResolvesRule,
   tagInVocabularyRule,
   uniqueAliasesRule,
   uniqueIdsRule,
@@ -102,6 +103,20 @@ function baseDataset(): CareerDataset {
     ],
     writing: [],
     recommendations: [],
+    stories: [
+      {
+        id: "fixture-story",
+        experienceId: "fixture-role-fixtureco-2020",
+        title: "Fixture story",
+        primaryCompetency: "ownership",
+        supportingCompetencies: ["problem-solving"],
+        situation: "Fixture situation.",
+        task: "Fixture task.",
+        actions: ["Fixture action one.", "Fixture action two."],
+        results: ["Fixture result."],
+        retrievalTags: ["fixture-tag"],
+      },
+    ],
   };
 }
 
@@ -118,7 +133,14 @@ function baseSources(): EntitySource[] {
     { entityType: "skill", id: "mentoring", file: "skills.json" },
     { entityType: "gap", id: "fixture-gap", file: "gaps.json" },
     { entityType: "education", id: "fixture-degree-fixture-university", file: "education.json" },
+    { entityType: "story", id: "fixture-story", file: "stories/fixture-story.json" },
   ];
+}
+
+function firstStory(ctx: ReturnType<typeof context>) {
+  const story = ctx.dataset.stories[0];
+  if (story === undefined) throw new Error("fixture story missing");
+  return story;
 }
 
 function context() {
@@ -173,6 +195,35 @@ describe("citation-resolves", () => {
         message: expect.stringContaining("does-not-exist"),
       }),
     ]);
+  });
+
+  it("resolves a citation (and its fragment) pointing at a story", () => {
+    const ctx = context();
+    const skill = ctx.dataset.skills[0];
+    if (skill === undefined) throw new Error("fixture skill missing");
+    skill.evidence = [
+      {
+        entityType: "story",
+        entityId: "fixture-story",
+        fragment: "actions.1",
+        label: "Fixture story",
+      },
+    ];
+    expect(citationResolvesRule.check(ctx)).toEqual([]);
+  });
+
+  it("flags a story citation whose id or fragment does not resolve", () => {
+    const ctx = context();
+    const skill = ctx.dataset.skills[0];
+    if (skill === undefined) throw new Error("fixture skill missing");
+    skill.evidence = [
+      { entityType: "story", entityId: "no-such-story", label: "Missing" },
+      { entityType: "story", entityId: "fixture-story", fragment: "actions.9", label: "Bad" },
+    ];
+    const violations = citationResolvesRule.check(ctx);
+    expect(violations).toHaveLength(2);
+    expect(violations.map((v) => v.message).join("\n")).toMatch(/no-such-story/);
+    expect(violations.map((v) => v.message).join("\n")).toMatch(/actions\.9/);
   });
 
   it("flags a citation whose fragment does not resolve within the target entity", () => {
@@ -323,9 +374,77 @@ describe("tag-in-vocabulary", () => {
   });
 });
 
+describe("story-experience-resolves", () => {
+  it("passes when the primary and every related experience id resolve to real experience entries", () => {
+    const ctx = context();
+    ctx.dataset.experience.push({
+      id: "fixture-role-otherco-2016",
+      company: "Otherco",
+      role: "Earlier Fixture Engineer",
+      startDate: "2016-01",
+      endDate: "2019-12",
+      summary: "Earlier fixture role.",
+      highlights: ["Did an earlier thing."],
+      tech: ["typescript"],
+    });
+    ctx.sources.push({
+      entityType: "experience",
+      id: "fixture-role-otherco-2016",
+      file: "experience/fixture-role-two.json",
+    });
+    firstStory(ctx).relatedExperienceIds = ["fixture-role-otherco-2016"];
+    expect(storyExperienceResolvesRule.check(ctx)).toEqual([]);
+  });
+
+  it("passes for a story with no relatedExperienceIds at all", () => {
+    expect(storyExperienceResolvesRule.check(context())).toEqual([]);
+  });
+
+  it("flags a story whose primary experienceId does not resolve, naming the story file", () => {
+    const ctx = context();
+    firstStory(ctx).experienceId = "does-not-exist";
+    expect(storyExperienceResolvesRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: "story-experience-resolves",
+        severity: "error",
+        file: "stories/fixture-story.json",
+        entityId: "fixture-story",
+        message: expect.stringContaining("does-not-exist"),
+      }),
+    ]);
+  });
+
+  it("flags each related experience id that does not resolve", () => {
+    const ctx = context();
+    firstStory(ctx).relatedExperienceIds = ["missing-one", "missing-two"];
+    const violations = storyExperienceResolvesRule.check(ctx);
+    expect(violations).toHaveLength(2);
+    expect(violations.map((v) => v.message).join("\n")).toMatch(/missing-one/);
+    expect(violations.map((v) => v.message).join("\n")).toMatch(/missing-two/);
+  });
+
+  it("does not accept a story id, project id or other non-experience entity as the parent", () => {
+    const ctx = context();
+    firstStory(ctx).experienceId = "fixture-project";
+    expect(storyExperienceResolvesRule.check(ctx)).toHaveLength(1);
+  });
+});
+
 describe("unique-ids", () => {
   it("passes when every entity id is globally unique", () => {
     expect(uniqueIdsRule.check(context())).toEqual([]);
+  });
+
+  it("flags a story id that collides with another entity's id — stories participate in global uniqueness", () => {
+    const ctx = context();
+    firstStory(ctx).id = "fixture-project";
+    ctx.sources = ctx.sources.map((source) =>
+      source.entityType === "story" ? { ...source, id: "fixture-project" } : source,
+    );
+    const violations = uniqueIdsRule.check(ctx);
+    expect(violations.length).toBeGreaterThanOrEqual(2);
+    expect(violations.every((v) => v.entityId === "fixture-project")).toBe(true);
+    expect(violations.some((v) => v.file === "stories/fixture-story.json")).toBe(true);
   });
 
   it("flags a duplicate id shared across two entities of different types", () => {
@@ -412,6 +531,11 @@ describe("no-orphan-entities", () => {
     ]);
   });
 
+  it("does not flag stories — a story is narrative evidence, not something a skill must cite", () => {
+    const violations = noOrphanEntitiesRule.check(context());
+    expect(violations.some((v) => v.entityId === "fixture-story")).toBe(false);
+  });
+
   it("does not flag profile, skills or gaps — they are roots by design, not evidence", () => {
     const violations = noOrphanEntitiesRule.check(context());
     const flaggedTypes = new Set(
@@ -442,6 +566,7 @@ describe("ALL_RULES", () => {
         "no-claim-gap-collision",
         "no-orphan-entities",
         "skill-has-evidence",
+        "story-experience-resolves",
         "tag-in-vocabulary",
         "unique-aliases",
         "unique-ids",
@@ -465,9 +590,11 @@ describe("runRules", () => {
       { entityType: "experience", entityId: "does-not-exist", label: "Nonexistent" },
     ];
     gap.statement = "   ";
+    firstStory(ctx).experienceId = "does-not-exist";
     const violations = runRules(ctx);
     const rules = new Set(violations.map((v) => v.rule));
     expect(rules.has("citation-resolves")).toBe(true);
     expect(rules.has("gap-has-statement")).toBe(true);
+    expect(rules.has("story-experience-resolves")).toBe(true);
   });
 });

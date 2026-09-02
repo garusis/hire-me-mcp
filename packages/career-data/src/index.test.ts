@@ -3,8 +3,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  COMPETENCIES,
+  careerStorySchema,
   citationSchema,
+  competencySchema,
   formatYearRange,
+  isCompetency,
   loadContentDir,
   resolveDefaultContentDir,
 } from "./index.js";
@@ -71,6 +75,20 @@ describe("public entry point", () => {
       new URL("./content/__fixtures__/valid-content/", import.meta.url),
     );
     expect(loadContentDir(fixtureDir).profile?.id).toBe("profile-fixture");
+  });
+
+  it("re-exports the story schema and the competency taxonomy (#289)", () => {
+    expect(
+      citationSchema.safeParse({ entityType: "story", entityId: "s", label: "S" }).success,
+    ).toBe(true);
+    expect(COMPETENCIES).toContain("leadership");
+    expect(competencySchema.safeParse("leadership").success).toBe(true);
+    expect(isCompetency("leadership")).toBe(true);
+    expect(careerStorySchema.safeParse({}).success).toBe(false);
+    const fixtureDir = fileURLToPath(
+      new URL("./content/__fixtures__/valid-content/", import.meta.url),
+    );
+    expect(loadContentDir(fixtureDir).stories.map((story) => story.id)).toEqual(["fixture-story"]);
   });
 
   it("resolveDefaultContentDir points at this package's own content/ directory", () => {

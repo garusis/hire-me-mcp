@@ -113,6 +113,7 @@ function buildDataset(overrides: Partial<CareerDataset> = {}): CareerDataset {
         sourceUrl: "https://www.linkedin.com/in/jane-doe/details/recommendations/",
       },
     ],
+    stories: [],
   };
   return { ...base, ...overrides };
 }
@@ -379,6 +380,7 @@ describe("chunkCareerData — empty dataset", () => {
       education: [],
       writing: [],
       recommendations: [],
+      stories: [],
     };
     expect(chunkCareerData(empty)).toEqual([]);
   });

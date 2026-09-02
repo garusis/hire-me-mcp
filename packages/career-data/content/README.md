@@ -29,4 +29,16 @@ content/
   gaps.json             # Gap[] (JSON array)
   education.json        # EducationEntry[] (JSON array)
   writing/*.mdx          # one WritingEntry per file (frontmatter + long-form body)
+  recommendations/*.json # one Recommendation per file (LinkedIn, verbatim)
+  stories/*.json         # one CareerStory per file (#289) — empty-but-valid until #290 authors the corpus
 ```
+
+`stories/` holds behavioral stories: one concrete event each, linked to
+exactly one primary `experience` id (plus optional distinct
+`relatedExperienceIds`), with one primary competency and up to five
+supporting ones from the controlled vocabulary in
+`src/schemas/competency.ts`, and one to fifteen lower-kebab-case
+`retrievalTags` that never spell a competency. `retrievalQuestions` is
+deliberately not a story field — eval questions live in the #295 manifest,
+never in indexed story text. Coverage is evidence-driven: an experience may
+have zero stories.

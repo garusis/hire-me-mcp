@@ -70,9 +70,23 @@ function lookupEntity(
         ? { found: true, label: `Recommendation from ${entry.recommenderName}` }
         : { found: false, label: undefined };
     }
+    case "story": {
+      const entry = dataset.stories.find((item) => item.id === entityId);
+      return { found: entry !== undefined, label: entry?.title };
+    }
     default:
-      return { found: false, label: undefined };
+      return unhandledEntityType(entityType);
   }
+}
+
+/**
+ * Compile-time exhaustiveness guard for {@link lookupEntity}: adding a value
+ * to `citableEntityTypeSchema` without a matching `case` above fails
+ * `typecheck` here (the parameter is no longer `never`) instead of silently
+ * reporting every entity of the new type as unknown (#289).
+ */
+function unhandledEntityType(entityType: never): EntityLookup {
+  throw new Error(`career-data: unhandled citable entity type "${String(entityType)}"`);
 }
 
 export interface BuildCitationOptions {

@@ -33,6 +33,35 @@ describe("runLint", () => {
     });
   });
 
+  it("flags a story whose primary and related experience ids do not resolve, naming the story file", () => {
+    const result = runLint(fixtureDir("lint-broken-content"));
+    const storyViolations = result.violations.filter((v) => v.rule === "story-experience-resolves");
+    expect(storyViolations).toHaveLength(2);
+    for (const violation of storyViolations) {
+      expect(violation).toMatchObject({
+        severity: "error",
+        file: "stories/fixture-story.json",
+        entityId: "fixture-story",
+      });
+    }
+    expect(storyViolations.map((v) => v.message).join("\n")).toMatch(/does-not-exist/);
+    expect(storyViolations.map((v) => v.message).join("\n")).toMatch(/also-does-not-exist/);
+  });
+
+  it("reports a story with an invalid competency as a schema error naming the story file", () => {
+    const result = runLint(fixtureDir("invalid-content"));
+    expect(result.ok).toBe(false);
+    expect(result.schemaErrors).toContainEqual(
+      expect.objectContaining({ file: "stories/fixture-story.json", path: "primaryCompetency" }),
+    );
+  });
+
+  it("accepts a story whose related experience resolves to a second real experience entry", () => {
+    const result = runLint(fixtureDir("lint-valid-content"));
+    expect(result.ok).toBe(true);
+    expect(result.violations.some((v) => v.rule === "story-experience-resolves")).toBe(false);
+  });
+
   it("reports every violation in a run, not just the first", () => {
     const result = runLint(fixtureDir("lint-broken-content"));
     const rules = new Set(result.violations.map((v) => v.rule));

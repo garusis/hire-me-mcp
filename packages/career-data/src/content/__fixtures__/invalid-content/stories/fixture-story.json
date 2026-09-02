@@ -1,0 +1,12 @@
+{
+  "id": "fixture-story",
+  "experienceId": "fixture-role-fixtureco-2020",
+  "title": "A story with a competency outside the controlled vocabulary",
+  "primaryCompetency": "kubernetes",
+  "supportingCompetencies": [],
+  "situation": "A fixture situation.",
+  "task": "A fixture task.",
+  "actions": ["Did a fixture action."],
+  "results": ["Got a fixture result."],
+  "retrievalTags": ["fixture-tag"]
+}

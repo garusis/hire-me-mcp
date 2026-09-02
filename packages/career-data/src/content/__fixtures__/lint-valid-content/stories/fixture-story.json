@@ -1,0 +1,14 @@
+{
+  "id": "fixture-story",
+  "experienceId": "fixture-role-fixtureco-2020",
+  "relatedExperienceIds": ["fixture-role-otherco-2016"],
+  "title": "A lint-clean story with one resolvable related experience",
+  "primaryCompetency": "ownership",
+  "supportingCompetencies": ["problem-solving"],
+  "situation": "A fixture situation.",
+  "task": "A fixture task.",
+  "actions": ["Did a fixture action."],
+  "results": ["Got a fixture result."],
+  "reflection": "A fixture reflection.",
+  "retrievalTags": ["fixture-tag", "otherco"]
+}

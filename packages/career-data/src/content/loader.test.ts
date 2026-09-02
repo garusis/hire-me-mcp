@@ -58,6 +58,15 @@ describe("validateContentDir", () => {
     expect(educationError).toMatchObject({ file: "education.json", path: "[0].endDate" });
   });
 
+  it("reports an out-of-vocabulary primaryCompetency on the invalid story fixture", () => {
+    const errors = validateContentDir(fixtureDir("invalid-content"));
+    const storyError = errors.find((error) => error.file.startsWith("stories/"));
+    expect(storyError).toMatchObject({
+      file: "stories/fixture-story.json",
+      path: "primaryCompetency",
+    });
+  });
+
   it("reports every failure across a directory, not just the first", () => {
     const errors = validateContentDir(fixtureDir("multi-invalid-content"));
     const files = new Set(errors.map((error) => error.file));
@@ -92,6 +101,22 @@ describe("loadContentDir", () => {
     expect(dataset.recommendations).toEqual([
       expect.objectContaining({ id: "fixture-recommendation" }),
     ]);
+    expect(dataset.stories).toEqual([
+      expect.objectContaining({
+        id: "fixture-story",
+        experienceId: "fixture-role-fixtureco-2020",
+        primaryCompetency: "ownership",
+        retrievalTags: ["fixture-tag"],
+      }),
+    ]);
+  });
+
+  it("loads a story exactly as persisted — no relatedExperienceIds or retrievalQuestions appear that the file did not carry", () => {
+    const dataset = loadContentDir(fixtureDir("valid-content"));
+    const story = dataset.stories[0];
+    expect(story).toBeDefined();
+    expect(story).not.toHaveProperty("relatedExperienceIds");
+    expect(story).not.toHaveProperty("retrievalQuestions");
   });
 
   it("merges MDX frontmatter with the trimmed body for projects and writing", () => {
@@ -113,6 +138,7 @@ describe("loadContentDir", () => {
       education: [],
       writing: [],
       recommendations: [],
+      stories: [],
     });
   });
 
@@ -176,6 +202,16 @@ describe("loadContentDirWithSources", () => {
       entityType: "writing",
       id: "fixture-article",
       file: "writing/fixture-article.mdx",
+    });
+    expect(sources).toContainEqual({
+      entityType: "recommendation",
+      id: "fixture-recommendation",
+      file: "recommendations/fixture-recommendation.json",
+    });
+    expect(sources).toContainEqual({
+      entityType: "story",
+      id: "fixture-story",
+      file: "stories/fixture-story.json",
     });
   });
 

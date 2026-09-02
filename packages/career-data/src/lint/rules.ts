@@ -57,6 +57,7 @@ function idsByType(dataset: CareerDataset): Record<CitableEntityType, Set<string
     education: new Set(dataset.education.map((entry) => entry.id)),
     writing: new Set(dataset.writing.map((entry) => entry.id)),
     recommendation: new Set(dataset.recommendations.map((entry) => entry.id)),
+    story: new Set(dataset.stories.map((story) => story.id)),
   };
 }
 
@@ -72,6 +73,8 @@ function entityByTypeAndId(dataset: CareerDataset): Map<string, unknown> {
   for (const gap of dataset.gaps) map.set(`gap:${gap.id}`, gap);
   for (const entry of dataset.education) map.set(`education:${entry.id}`, entry);
   for (const entry of dataset.writing) map.set(`writing:${entry.id}`, entry);
+  for (const entry of dataset.recommendations) map.set(`recommendation:${entry.id}`, entry);
+  for (const story of dataset.stories) map.set(`story:${story.id}`, story);
   return map;
 }
 
@@ -251,6 +254,41 @@ export const gapRelatedSkillsResolveRule: LintRule = {
   },
 };
 
+/**
+ * `story-experience-resolves` — every CareerStory's `experienceId` and each
+ * `relatedExperienceIds` entry references an existing ExperienceEntry id
+ * (#289). The schema already guarantees related ids are distinct and never
+ * the primary; only the cross-entity resolution has to live here. Each
+ * unresolved id is its own violation so a report names every broken link.
+ */
+export const storyExperienceResolvesRule: LintRule = {
+  name: "story-experience-resolves",
+  severity: "error",
+  check({ dataset, sources }) {
+    const index = fileIndex(sources);
+    const experienceIds = new Set(dataset.experience.map((entry) => entry.id));
+    const violations: LintViolation[] = [];
+    for (const story of dataset.stories) {
+      const references = [
+        { field: "experienceId", id: story.experienceId },
+        ...(story.relatedExperienceIds ?? []).map((id) => ({ field: "relatedExperienceIds", id })),
+      ];
+      for (const { field, id } of references) {
+        if (!experienceIds.has(id)) {
+          violations.push({
+            rule: "story-experience-resolves",
+            severity: "error",
+            file: fileFor(index, "story", story.id),
+            entityId: story.id,
+            message: `story "${story.id}" ${field} references nonexistent experience id "${id}"`,
+          });
+        }
+      }
+    }
+    return violations;
+  },
+};
+
 /** Flags every `tech` tag outside the controlled vocabulary on one collection of `{ id, tech }` entities (experience entries or projects). */
 function findUnknownTechTags(
   entries: Array<{ id: string; tech: string[] }>,
@@ -397,7 +435,9 @@ export const uniqueAliasesRule: LintRule = {
  * it yet (the real content set has exactly this: two education credentials
  * no skill cites). This surfaces the gap for a human to judge rather than
  * blocking the build. `profile`, `gap` and `skill` are roots by design
- * (nothing is expected to cite them) and are not checked.
+ * (nothing is expected to cite them) and are not checked; neither are
+ * `recommendation` and `story` entries, which are narrative evidence served
+ * by their own tools rather than something a skill must cite.
  */
 export const noOrphanEntitiesRule: LintRule = {
   name: "no-orphan-entities",
@@ -439,6 +479,7 @@ export const ALL_RULES: LintRule[] = [
   noClaimGapCollisionRule,
   gapHasStatementRule,
   gapRelatedSkillsResolveRule,
+  storyExperienceResolvesRule,
   tagInVocabularyRule,
   uniqueIdsRule,
   uniqueAliasesRule,

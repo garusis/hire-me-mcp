@@ -24,6 +24,7 @@ describe("resolveCareerSourceKeys", () => {
       education: [{ id: "ed1" } as never],
       writing: [{ id: "w1" } as never],
       recommendations: [{ id: "r1" } as never],
+      stories: [],
     };
     const keys = resolveCareerSourceKeys(dataset);
     expect(keys).toEqual(
