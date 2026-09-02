@@ -302,4 +302,372 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
     expectEmpty: true,
     notes: "No mention of penetration testing or offensive security anywhere in the corpus.",
   },
+
+  // ---- behavioral-story eval manifest (#295): the locked 38-case set ----
+  // Story reference table (issue #295):
+  // 001 xogito-client-account-recovery         009 house-numbers-zod-production-incident
+  // 002 mutual-informal-leadership              010 house-numbers-vendor-extraction-contract
+  // 003 cross-team-onboarding-framework         011 house-numbers-loan-analysis-pipeline-decomposition
+  // 004 house-numbers-communication-service-... 012 mutual-sustainable-ownership-failure
+  // 005 house-numbers-deterministic-document-.. 013 rokk3r-sustainable-performance-feedback
+  // 006 fullstack-labs-sap-migration            014 belatrix-destructive-deployment-accountability
+  // 007 house-numbers-prompt-platform-migration 015 house-numbers-cross-service-debugging-skill
+  // 008 house-numbers-secure-public-document-.. 016 house-numbers-ai-pivot-after-paternity-leave
+
+  // ---- exact (10) — retrieval-plumbing sanity cases, may reuse story wording ----
+  {
+    id: "story-x01-leadership-without-authority",
+    query: "Tell me about a time Marcos stepped into leadership without formal authority.",
+    category: "exact",
+    expectedSources: [
+      { sourceType: "story", sourceId: "xogito-client-account-recovery" },
+      { sourceType: "story", sourceId: "mutual-informal-leadership" },
+      { sourceType: "story", sourceId: "cross-team-onboarding-framework" },
+      { sourceType: "story", sourceId: "house-numbers-cross-service-debugging-skill" },
+    ],
+    matchMode: "any",
+    preferredSource: { sourceType: "story", sourceId: "xogito-client-account-recovery" },
+    notes:
+      "Leadership priority invariant (#295): 001 must outrank 002 whenever both are acceptable.",
+  },
+  {
+    id: "story-x02-mission-over-financial-benefit",
+    query: "When has Marcos put a product's mission ahead of personal financial benefit?",
+    category: "exact",
+    expectedSources: [
+      { sourceType: "story", sourceId: "mutual-informal-leadership" },
+      { sourceType: "story", sourceId: "mutual-sustainable-ownership-failure" },
+    ],
+    matchMode: "any",
+    preferredSource: { sourceType: "story", sourceId: "mutual-informal-leadership" },
+  },
+  {
+    id: "story-x03-onboarding-practice-spread",
+    query:
+      "Give me an example of an onboarding practice Marcos introduced that spread across roles and teams.",
+    category: "exact",
+    expectedSources: [{ sourceType: "story", sourceId: "cross-team-onboarding-framework" }],
+  },
+  {
+    id: "story-x04-deterministic-over-ai-fashion",
+    query:
+      "Tell me about a time Marcos chose a deterministic implementation over a more technically fashionable AI approach.",
+    category: "exact",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-deterministic-document-checks" },
+    ],
+  },
+  {
+    id: "story-x05-financial-data-discrepancy",
+    query: "Give an example of Marcos investigating a subtle financial-data discrepancy.",
+    category: "exact",
+    expectedSources: [{ sourceType: "story", sourceId: "fullstack-labs-sap-migration" }],
+  },
+  {
+    id: "story-x06-sensitive-public-facing-data",
+    query: "How has Marcos handled sensitive data in a public-facing workflow?",
+    category: "exact",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-secure-public-document-upload" },
+    ],
+  },
+  {
+    id: "story-x07-dependency-upgrade-incident",
+    query:
+      "Tell me about a time a major dependency upgrade caused an unexpected production problem.",
+    category: "exact",
+    expectedSources: [{ sourceType: "story", sourceId: "house-numbers-zod-production-incident" }],
+  },
+  {
+    id: "story-x08-vendor-contract-validation",
+    query:
+      "How has Marcos validated a vendor's documented data contract against production traffic?",
+    category: "exact",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-vendor-extraction-contract" },
+    ],
+  },
+  {
+    id: "story-x09-code-review-mistake",
+    query: "Tell me about a code-review mistake Marcos made and how he responded.",
+    category: "exact",
+    expectedSources: [
+      { sourceType: "story", sourceId: "belatrix-destructive-deployment-accountability" },
+    ],
+  },
+  {
+    id: "story-x10-b2c-to-ai-b2b-pivot",
+    query:
+      "How did Marcos adapt when House Numbers pivoted from B2C to an AI-assisted B2B platform?",
+    category: "exact",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-ai-pivot-after-paternity-leave" },
+    ],
+  },
+
+  // ---- held-out fuzzy (16) — natural recruiter wording, absent verbatim from indexed chunks ----
+  {
+    id: "story-f01-rebuild-client-relationship",
+    query:
+      "Tell me about a time Marcos had to rebuild a damaged client relationship while deciding what to deliver first.",
+    category: "fuzzy",
+    expectedSources: [{ sourceType: "story", sourceId: "xogito-client-account-recovery" }],
+  },
+  {
+    id: "story-f02-stalled-mission-project",
+    query:
+      "Tell me about a time Marcos helped a stalled mission-driven project move again without formal authority.",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "mutual-informal-leadership" },
+      { sourceType: "story", sourceId: "mutual-sustainable-ownership-failure" },
+    ],
+    matchMode: "any",
+    preferredSource: { sourceType: "story", sourceId: "mutual-informal-leadership" },
+  },
+  {
+    id: "story-f03-help-teammates-independent",
+    query: "How does Marcos help new teammates become independent?",
+    category: "fuzzy",
+    expectedSources: [{ sourceType: "story", sourceId: "cross-team-onboarding-framework" }],
+  },
+  {
+    id: "story-f04-operational-system-ownership",
+    query: "Tell me about a critical operational system Marcos continued owning after launch.",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-communication-service-ownership" },
+    ],
+  },
+  {
+    id: "story-f05-decided-against-ai",
+    query: "When has Marcos decided not to use AI for a problem that could be solved with it?",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-deterministic-document-checks" },
+    ],
+  },
+  {
+    id: "story-f06-risky-legacy-migration",
+    query: "Tell me about a risky legacy migration Marcos handled.",
+    category: "fuzzy",
+    expectedSources: [{ sourceType: "story", sourceId: "fullstack-labs-sap-migration" }],
+  },
+  {
+    id: "story-f07-sustained-technical-advocacy",
+    query: "Tell me about a technical change Marcos had to advocate for over an extended period.",
+    category: "fuzzy",
+    expectedSources: [{ sourceType: "story", sourceId: "house-numbers-prompt-platform-migration" }],
+  },
+  {
+    id: "story-f08-public-facing-sensitive-info",
+    query:
+      "Tell me about a public-facing system Marcos designed to handle sensitive information safely.",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-secure-public-document-upload" },
+    ],
+  },
+  {
+    id: "story-f09-hard-to-reproduce-production-bug",
+    query:
+      "Tell me about a production problem that was difficult to reproduce outside the live environment.",
+    category: "fuzzy",
+    expectedSources: [{ sourceType: "story", sourceId: "house-numbers-zod-production-incident" }],
+  },
+  {
+    id: "story-f10-missing-info-third-party",
+    query:
+      "Tell me about a time Marcos discovered that missing information came from a third-party system rather than his team's implementation.",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-vendor-extraction-contract" },
+    ],
+  },
+  {
+    id: "story-f11-proactive-reliability-architecture",
+    query:
+      "Tell me about an architecture Marcos changed proactively to prevent future reliability problems.",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-loan-analysis-pipeline-decomposition" },
+    ],
+  },
+  {
+    id: "story-f12-shipped-work-considered-unsuccessful",
+    query: "Tell me about something Marcos shipped that he still considers unsuccessful.",
+    category: "fuzzy",
+    expectedSources: [{ sourceType: "story", sourceId: "mutual-sustainable-ownership-failure" }],
+  },
+  {
+    id: "story-f13-feedback-changed-unhealthy-habit",
+    query: "Tell me about feedback that made Marcos change an unhealthy way of working.",
+    category: "fuzzy",
+    expectedSources: [{ sourceType: "story", sourceId: "rokk3r-sustainable-performance-feedback" }],
+  },
+  {
+    id: "story-f14-serious-mistake-accountability",
+    query:
+      "Tell me about a serious mistake Marcos accepted responsibility for as a technical leader.",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "belatrix-destructive-deployment-accountability" },
+    ],
+  },
+  {
+    id: "story-f15-agentic-tooling-process-improvement",
+    query: "Tell me about a team process Marcos improved using agentic tooling.",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-cross-service-debugging-skill" },
+    ],
+  },
+  {
+    id: "story-f16-new-field-personal-transition",
+    query:
+      "Tell me about a time Marcos had to learn a new technical field while navigating a major personal transition.",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-ai-pivot-after-paternity-leave" },
+    ],
+  },
+
+  // ---- multiple-valid-answer fuzzy (8), matchMode: any ----
+  {
+    id: "story-a01-challenged-technical-direction",
+    query: "Tell me about a time Marcos challenged a technical direction others preferred.",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-deterministic-document-checks" },
+      { sourceType: "story", sourceId: "house-numbers-prompt-platform-migration" },
+    ],
+    matchMode: "any",
+    preferredSource: {
+      sourceType: "story",
+      sourceId: "house-numbers-deterministic-document-checks",
+    },
+  },
+  {
+    id: "story-a02-diagnosing-production-failure",
+    query: "Give me one example of Marcos diagnosing a difficult production failure.",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-zod-production-incident" },
+      { sourceType: "story", sourceId: "house-numbers-vendor-extraction-contract" },
+    ],
+    matchMode: "any",
+    preferredSource: { sourceType: "story", sourceId: "house-numbers-zod-production-incident" },
+  },
+  {
+    id: "story-a03-psychological-safety",
+    query:
+      "Tell me about a time psychological safety changed how Marcos or someone he supported handled work.",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "cross-team-onboarding-framework" },
+      { sourceType: "story", sourceId: "rokk3r-sustainable-performance-feedback" },
+      { sourceType: "story", sourceId: "house-numbers-ai-pivot-after-paternity-leave" },
+    ],
+    matchMode: "any",
+  },
+  {
+    id: "story-a04-internal-tool-adopted",
+    query:
+      "What is an internal engineering practice or developer tool Marcos introduced that other engineers adopted?",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "cross-team-onboarding-framework" },
+      { sourceType: "story", sourceId: "house-numbers-prompt-platform-migration" },
+      { sourceType: "story", sourceId: "house-numbers-cross-service-debugging-skill" },
+    ],
+    matchMode: "any",
+    preferredSource: {
+      sourceType: "story",
+      sourceId: "house-numbers-cross-service-debugging-skill",
+    },
+  },
+  {
+    id: "story-a05-mutual-interview-example",
+    query: "Give me one interview example from Marcos's work on Mutual.",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "mutual-informal-leadership" },
+      { sourceType: "story", sourceId: "mutual-sustainable-ownership-failure" },
+    ],
+    matchMode: "any",
+  },
+  {
+    id: "story-a06-document-analysis-design-change",
+    query: "Tell me about a design change Marcos made inside the Document Analysis system.",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-deterministic-document-checks" },
+      { sourceType: "story", sourceId: "house-numbers-loan-analysis-pipeline-decomposition" },
+    ],
+    matchMode: "any",
+  },
+  {
+    id: "story-a07-personal-mistake-learned-from",
+    query: "Tell me about a personal mistake or judgment Marcos acknowledged and learned from.",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "mutual-sustainable-ownership-failure" },
+      { sourceType: "story", sourceId: "rokk3r-sustainable-performance-feedback" },
+      { sourceType: "story", sourceId: "belatrix-destructive-deployment-accountability" },
+    ],
+    matchMode: "any",
+  },
+  {
+    id: "story-a08-observable-debuggable-workflows",
+    query: "How has Marcos made production workflows easier to observe and debug?",
+    category: "fuzzy",
+    expectedSources: [
+      { sourceType: "story", sourceId: "house-numbers-communication-service-ownership" },
+      { sourceType: "story", sourceId: "house-numbers-cross-service-debugging-skill" },
+    ],
+    matchMode: "any",
+  },
+
+  // ---- cross-cutting (2), matchMode: all — evidence deliberately spans every listed source ----
+  {
+    id: "story-c01-preventable-risk-across-systems",
+    query:
+      "Compare how Marcos handled preventable risk in a data migration, a public upload flow, and an AI pipeline.",
+    category: "cross-cutting",
+    expectedSources: [
+      { sourceType: "story", sourceId: "fullstack-labs-sap-migration" },
+      { sourceType: "story", sourceId: "house-numbers-secure-public-document-upload" },
+      { sourceType: "story", sourceId: "house-numbers-loan-analysis-pipeline-decomposition" },
+    ],
+    matchMode: "all",
+  },
+  {
+    id: "story-c02-individual-expertise-to-team-capability",
+    query:
+      "How has Marcos turned individual expertise into repeatable team capability across onboarding and production debugging?",
+    category: "cross-cutting",
+    expectedSources: [
+      { sourceType: "story", sourceId: "cross-team-onboarding-framework" },
+      { sourceType: "story", sourceId: "house-numbers-cross-service-debugging-skill" },
+    ],
+    matchMode: "all",
+  },
+
+  // ---- absent-topic (2) — honestly-absent behavioral topics (#295) ----
+  {
+    id: "story-n01-two-equally-urgent-clients",
+    query: "Tell me about a time Marcos managed two equally urgent client projects at once.",
+    category: "absent-topic",
+    expectedSources: [],
+    expectEmpty: true,
+    notes: "No authored story covers competing, equally-urgent concurrent client priorities.",
+  },
+  {
+    id: "story-n02-immovable-deadline-scope-cut",
+    query: "Describe a deadline Marcos could not move and how he cut scope to meet it.",
+    category: "absent-topic",
+    expectedSources: [],
+    expectEmpty: true,
+    notes: "No authored story covers an immovable deadline forcing a scope cut.",
+  },
 ];

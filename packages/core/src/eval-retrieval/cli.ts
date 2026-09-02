@@ -172,7 +172,8 @@ export async function runRetrievalEvalCli(config: RunCliConfig, deps: RunCliDeps
     `Aggregates — recall@${config.envConfig.topK}: ${report.aggregates.recallAtK.toFixed(4)}, ` +
       `precision@${config.envConfig.topK}: ${report.aggregates.precisionAtK.toFixed(4)}, ` +
       `MRR: ${report.aggregates.mrr.toFixed(4)}, ` +
-      `absent-topic accuracy: ${report.aggregates.absentTopicAccuracy.toFixed(4)}.`,
+      `absent-topic accuracy: ${report.aggregates.absentTopicAccuracy.toFixed(4)}, ` +
+      `preferred-source compliance: ${report.aggregates.preferredSourceCompliance.toFixed(4)}.`,
   );
 
   await deps.writeFile(config.envConfig.reportPath, `${JSON.stringify(report, null, 2)}\n`);

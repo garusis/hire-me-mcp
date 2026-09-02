@@ -56,6 +56,14 @@ export interface RetrievalThresholds {
   precisionAtK: number;
   mrr: number;
   absentTopicAccuracy: number;
+  /**
+   * Fraction of preference-declaring golden cases (#295's `preferredSource`)
+   * whose preference passed (retrieved AND ranked above every other
+   * acceptable source) — thresholded independently so a preference
+   * regression shows up as its own number instead of being diluted into
+   * ordinary recall.
+   */
+  preferredSourceCompliance: number;
 }
 
 export const RETRIEVAL_THRESHOLDS: RetrievalThresholds = {
@@ -63,6 +71,7 @@ export const RETRIEVAL_THRESHOLDS: RetrievalThresholds = {
   precisionAtK: 0.2,
   mrr: 0.4,
   absentTopicAccuracy: 0.8,
+  preferredSourceCompliance: 0.7,
 };
 
 const THRESHOLD_LABELS: Readonly<Record<keyof RetrievalThresholds, string>> = {
@@ -70,6 +79,7 @@ const THRESHOLD_LABELS: Readonly<Record<keyof RetrievalThresholds, string>> = {
   precisionAtK: "precision@k",
   mrr: "MRR",
   absentTopicAccuracy: "absent-topic accuracy",
+  preferredSourceCompliance: "preferred-source compliance",
 };
 
 /** Verdict for one retrieval eval run: whether every aggregate met its threshold, and a human-readable failure line per aggregate that didn't. */

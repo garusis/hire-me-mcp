@@ -17,11 +17,18 @@ describe("evaluateRetrievalVerdict", () => {
     precisionAtK: 0.3,
     mrr: 0.5,
     absentTopicAccuracy: 0.8,
+    preferredSourceCompliance: 0.7,
   };
 
   it("passes when every aggregate meets its threshold", () => {
     const verdict = evaluateRetrievalVerdict(
-      { recallAtK: 0.6, precisionAtK: 0.5, mrr: 0.8, absentTopicAccuracy: 1 },
+      {
+        recallAtK: 0.6,
+        precisionAtK: 0.5,
+        mrr: 0.8,
+        absentTopicAccuracy: 1,
+        preferredSourceCompliance: 0.7,
+      },
       thresholds,
     );
     expect(verdict).toEqual({ passed: true, failures: [] });
@@ -29,7 +36,13 @@ describe("evaluateRetrievalVerdict", () => {
 
   it("fails and names each aggregate that falls below its threshold", () => {
     const verdict = evaluateRetrievalVerdict(
-      { recallAtK: 0.5, precisionAtK: 0.5, mrr: 0.8, absentTopicAccuracy: 1 },
+      {
+        recallAtK: 0.5,
+        precisionAtK: 0.5,
+        mrr: 0.8,
+        absentTopicAccuracy: 1,
+        preferredSourceCompliance: 0.7,
+      },
       thresholds,
     );
     expect(verdict.passed).toBe(false);
@@ -39,16 +52,28 @@ describe("evaluateRetrievalVerdict", () => {
 
   it("reports every failing aggregate, not just the first", () => {
     const verdict = evaluateRetrievalVerdict(
-      { recallAtK: 0, precisionAtK: 0, mrr: 0, absentTopicAccuracy: 0 },
+      {
+        recallAtK: 0,
+        precisionAtK: 0,
+        mrr: 0,
+        absentTopicAccuracy: 0,
+        preferredSourceCompliance: 0,
+      },
       thresholds,
     );
     expect(verdict.passed).toBe(false);
-    expect(verdict.failures).toHaveLength(4);
+    expect(verdict.failures).toHaveLength(5);
   });
 
   it("a value exactly at its threshold passes (>=, not >)", () => {
     const verdict = evaluateRetrievalVerdict(
-      { recallAtK: 0.6, precisionAtK: 0.3, mrr: 0.5, absentTopicAccuracy: 0.8 },
+      {
+        recallAtK: 0.6,
+        precisionAtK: 0.3,
+        mrr: 0.5,
+        absentTopicAccuracy: 0.8,
+        preferredSourceCompliance: 0.7,
+      },
       thresholds,
     );
     expect(verdict).toEqual({ passed: true, failures: [] });
@@ -60,7 +85,24 @@ describe("evaluateRetrievalVerdict", () => {
       precisionAtK: 1,
       mrr: 1,
       absentTopicAccuracy: 1,
+      preferredSourceCompliance: 1,
     });
     expect(verdict).toEqual({ passed: true, failures: [] });
+  });
+
+  it("names preferredSourceCompliance failures separately from recall/precision/MRR/absent-topic", () => {
+    const verdict = evaluateRetrievalVerdict(
+      {
+        recallAtK: 0.6,
+        precisionAtK: 0.5,
+        mrr: 0.8,
+        absentTopicAccuracy: 1,
+        preferredSourceCompliance: 0.4,
+      },
+      thresholds,
+    );
+    expect(verdict.passed).toBe(false);
+    expect(verdict.failures).toHaveLength(1);
+    expect(verdict.failures[0]).toContain("preferred-source compliance");
   });
 });
