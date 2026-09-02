@@ -331,6 +331,18 @@ describe("renderStory", () => {
     expect(relatedLabelIndex).toBeGreaterThan(primaryIndex);
   });
 
+  it("exposes a minimal header (title, primary role, primary competency only) as a fallback for tight token budgets", () => {
+    const withRelated: CareerStory = { ...story, relatedExperienceIds: ["globex-role"] };
+    const rendered = renderStory(withRelated, primaryExperience, [relatedExperience]);
+    expect(rendered.minimalHeader).toContain("Tracing an outage back to a schema migration");
+    expect(rendered.minimalHeader).toContain("Engineer, Acme");
+    expect(rendered.minimalHeader).toContain("problem solving");
+    expect(rendered.minimalHeader).not.toContain("Related context");
+    expect(rendered.minimalHeader).not.toContain("Globex");
+    expect(rendered.minimalHeader).not.toContain("ownership, technical judgment");
+    expect(rendered.minimalHeader).not.toContain("production incident, schema validation");
+  });
+
   it("never renders eval-only retrieval questions, even if present on the entity at runtime", () => {
     const withQuestions = {
       ...story,

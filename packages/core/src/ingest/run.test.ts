@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { chunkCareerData } from "../chunking/index.js";
 import type { Chunk } from "../chunking/types.js";
 import type { CareerDataset } from "../repository.js";
 import { createInMemoryCareerDataRepository } from "../repository.js";
@@ -96,6 +97,172 @@ function fakeEmbedder(embedCalls: string[][] = []) {
     },
   };
 }
+
+/**
+ * A minimal dataset with one `CareerStory` plus its primary `ExperienceEntry`,
+ * chunked through the real `chunkCareerData` (not `fakeChunker` — #292 review
+ * finding: incremental ingestion had no coverage of the real story chunking
+ * path).
+ */
+function storyDataset(overrides: Partial<CareerDataset> = {}): CareerDataset {
+  return {
+    profile: undefined,
+    experience: [
+      {
+        id: "acme-role",
+        company: "Acme",
+        role: "Engineer",
+        startDate: "2020-01",
+        endDate: "2021-01",
+        summary: "Did engineering work at Acme.",
+        highlights: ["Shipped feature X"],
+        tech: ["typescript"],
+      },
+    ],
+    projects: [],
+    skills: [],
+    gaps: [],
+    education: [],
+    writing: [],
+    recommendations: [],
+    stories: [
+      {
+        id: "acme-quick-fix-story",
+        experienceId: "acme-role",
+        title: "Fixing a flaky deploy check",
+        primaryCompetency: "problem-solving",
+        supportingCompetencies: [],
+        situation: "A flaky deploy check was blocking releases.",
+        task: "I owned tracking down the flakiness.",
+        actions: ["I added retry logging and found a race condition."],
+        results: ["The check became reliable."],
+        retrievalTags: ["ci-flakiness"],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+/** Ids of the story-sourced chunks (as opposed to the dataset's one experience chunk) among `chunks`. */
+function storyChunkIds(chunks: Chunk[]): string[] {
+  return chunks.filter((chunk) => chunk.sourceType === "story").map((chunk) => chunk.id);
+}
+
+describe("runIngest — story incremental ingestion, via the real chunkCareerData path", () => {
+  it("inserts a story's chunk(s), alongside its primary experience's, into an empty store", async () => {
+    const repository = createInMemoryCareerDataRepository(storyDataset());
+    const expectedChunks = chunkCareerData(repository.getDataset());
+    const store = fakeStore();
+    const embedder = fakeEmbedder();
+
+    const summary = await runIngest({
+      repository,
+      chunker: chunkCareerData,
+      embedder,
+      store,
+      modelId: MODEL_ID,
+    });
+
+    expect(summary.inserted).toBe(expectedChunks.length);
+    for (const id of storyChunkIds(expectedChunks)) {
+      expect(store.rows.has(id)).toBe(true);
+    }
+  });
+
+  it("leaves an unchanged story alone: zero embedding calls, zero writes on re-run", async () => {
+    const repository = createInMemoryCareerDataRepository(storyDataset());
+    const chunks = chunkCareerData(repository.getDataset());
+    const store = fakeStore(
+      chunks.map((c) => ({ id: c.id, contentHash: c.contentHash, embeddingModel: MODEL_ID })),
+    );
+    const embedder = fakeEmbedder();
+    const embedSpy = vi.spyOn(embedder, "embed");
+    const upsertSpy = vi.spyOn(store, "upsertMany");
+    const deleteSpy = vi.spyOn(store, "deleteMany");
+
+    const summary = await runIngest({
+      repository,
+      chunker: chunkCareerData,
+      embedder,
+      store,
+      modelId: MODEL_ID,
+    });
+
+    expect(summary.unchanged).toBe(chunks.length);
+    expect(summary.inserted).toBe(0);
+    expect(summary.updated).toBe(0);
+    expect(embedSpy).not.toHaveBeenCalled();
+    expect(upsertSpy).not.toHaveBeenCalled();
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it("editing a story's content re-embeds and updates only its own chunk(s), leaving its unrelated experience chunk unchanged", async () => {
+    const original = storyDataset();
+    const originalChunks = chunkCareerData(original);
+    const store = fakeStore(
+      originalChunks.map((c) => ({
+        id: c.id,
+        contentHash: c.contentHash,
+        embeddingModel: MODEL_ID,
+      })),
+    );
+
+    const edited = storyDataset({
+      stories: original.stories.map((story) =>
+        story.id === "acme-quick-fix-story"
+          ? { ...story, situation: "A flaky deploy check was blocking every release for a week." }
+          : story,
+      ),
+    });
+    const editedRepository = createInMemoryCareerDataRepository(edited);
+    const editedChunks = chunkCareerData(editedRepository.getDataset());
+    const embedder = fakeEmbedder();
+
+    const summary = await runIngest({
+      repository: editedRepository,
+      chunker: chunkCareerData,
+      embedder,
+      store,
+      modelId: MODEL_ID,
+    });
+
+    const expectedUpdated = storyChunkIds(editedChunks).length;
+    expect(summary.updated).toBe(expectedUpdated);
+    expect(summary.unchanged).toBe(editedChunks.length - expectedUpdated);
+    expect(store.upsertCalls).toBe(expectedUpdated);
+  });
+
+  it("removing a story deletes its chunk(s) and leaves no orphans, without touching its unrelated experience chunk", async () => {
+    const withStory = storyDataset();
+    const chunksWithStory = chunkCareerData(withStory);
+    const store = fakeStore(
+      chunksWithStory.map((c) => ({
+        id: c.id,
+        contentHash: c.contentHash,
+        embeddingModel: MODEL_ID,
+      })),
+    );
+
+    const withoutStory = storyDataset({ stories: [] });
+    const repository = createInMemoryCareerDataRepository(withoutStory);
+    const embedder = fakeEmbedder();
+
+    const removedStoryChunkIds = storyChunkIds(chunksWithStory);
+    const summary = await runIngest({
+      repository,
+      chunker: chunkCareerData,
+      embedder,
+      store,
+      modelId: MODEL_ID,
+    });
+
+    expect(summary.deleted).toBe(removedStoryChunkIds.length);
+    for (const id of removedStoryChunkIds) {
+      expect(store.rows.has(id)).toBe(false);
+    }
+    expect(store.rows.size).toBe(chunksWithStory.length - removedStoryChunkIds.length);
+  });
+});
 
 describe("runIngest", () => {
   it("populates an empty store: every chunk inserted, exits with a non-zero insert count", async () => {

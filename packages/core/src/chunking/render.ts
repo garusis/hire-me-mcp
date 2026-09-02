@@ -38,6 +38,14 @@ export interface RenderedEntity {
   header: string;
   /** Long-form prose, if any (project/writing bodies). Empty string when the entity has none. */
   body: string;
+  /**
+   * Story-only fallback header (title, primary role, primary competency —
+   * no related context, supporting competencies, or retrieval tags):
+   * still self-contained, but small enough to fit a tighter token budget
+   * than {@link header} when the full header doesn't (#292 review fix).
+   * Undefined for every other entity type.
+   */
+  minimalHeader?: string;
   label: string;
   url?: string;
   metadata: ChunkMetadata;
@@ -246,6 +254,12 @@ export function renderStory(
     .filter((line) => line.length > 0)
     .join("\n");
 
+  const minimalHeader = [
+    story.title,
+    `Role: ${renderExperienceLine(primaryExperience)}`,
+    `Primary competency: ${humanizeKebab(story.primaryCompetency)}`,
+  ].join("\n");
+
   const actionsBlock = ["Actions:", ...story.actions.map((action) => `- ${action}`)].join("\n");
   const resultsBlock = ["Results:", ...story.results.map((result) => `- ${result}`)].join("\n");
   const body = [
@@ -260,6 +274,7 @@ export function renderStory(
 
   return {
     header,
+    minimalHeader,
     body,
     label: story.title,
     metadata: {

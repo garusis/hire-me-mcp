@@ -376,19 +376,20 @@ describe("chunkCareerData — story coverage", () => {
 });
 
 describe("chunkCareerData — max token budget and overlap over a long-prose fixture", () => {
-  it("never exceeds the configured max token budget", () => {
+  it("never exceeds the configured max token budget, including story chunks", () => {
     const dataset = buildDataset();
     const maxTokens = 60;
     const chunks = chunkCareerData(dataset, { maxTokens, overlapTokens: 10 });
-    // Story chunks carry a mandatory self-contained header (title, primary
-    // role/dates, related context, competencies, retrieval tags — #292) that
-    // is itself larger than this test's deliberately tiny 60-token budget,
-    // used elsewhere in this suite to force ordinary long-prose bodies to
-    // split cheaply. Story budget compliance against a realistic budget is
-    // covered separately below.
-    for (const chunk of chunks.filter((c) => c.sourceType !== "story")) {
+    for (const chunk of chunks) {
       expect(chunk.tokenCount).toBeLessThanOrEqual(maxTokens);
     }
+  });
+
+  it("fails deterministically instead of returning an oversized chunk when even a story's minimal header cannot fit the configured budget", () => {
+    const dataset = buildDataset();
+    expect(() => chunkCareerData(dataset, { maxTokens: 10, overlapTokens: 2 })).toThrow(
+      /minimal.*header/i,
+    );
   });
 
   it("overlaps consecutive long-prose chunks from the same source by the configured amount", () => {

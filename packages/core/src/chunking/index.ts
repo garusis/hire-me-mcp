@@ -142,27 +142,58 @@ function buildEntityChunks(
 }
 
 /**
+ * Token budget left for body content once `header` (already reserving one
+ * token for the blank line that joins header and body) is repeated on every
+ * chunk. Negative/zero means `header` alone leaves no room for any body
+ * text within `maxTokens`.
+ */
+function storyBodyBudget(header: string, maxTokens: number): number {
+  const headerTokens = estimateTokens(header) + 1;
+  return maxTokens - headerTokens;
+}
+
+/**
  * Renders and chunks one `CareerStory` (#289/#292), guaranteeing every
- * resulting chunk stays self-contained: `rendered.header` (title, primary
+ * resulting chunk stays self-contained *and* respects `options.maxTokens`
+ * (no exemption — #292 review fix): `rendered.header` (title, primary
  * role/company/dates, related context, competencies, retrieval tags) is
  * repeated on every chunk, not just the first, so a continuation chunk of a
  * long story never reads as anonymous prose. The body's own splitting
  * budget is reduced by the header's size so the combined header+body text
- * still respects `options.maxTokens`.
+ * still respects `options.maxTokens`. If the full header doesn't leave room
+ * for any body content, this falls back to `rendered.minimalHeader`
+ * (title/primary-role/primary-competency only — still self-contained, just
+ * smaller). If even that minimal header leaves no room, chunking this
+ * story under this budget is genuinely impossible, so this throws rather
+ * than silently returning an oversized chunk.
  */
 function buildStoryChunks(
   sourceId: string,
   rendered: RenderedEntity,
   options: ResolvedOptions,
 ): Chunk[] {
-  const header = normalizeText(rendered.header);
   const body = normalizeText(rendered.body);
   if (body.length === 0) {
     return buildEntityChunks("story", sourceId, rendered, options);
   }
 
-  const headerTokens = estimateTokens(header) + 1;
-  const bodyMaxTokens = Math.max(options.maxTokens - headerTokens, options.overlapTokens + 1);
+  const fullHeader = normalizeText(rendered.header);
+  let header = fullHeader;
+  let bodyMaxTokens = storyBodyBudget(header, options.maxTokens);
+
+  if (bodyMaxTokens < 1 && rendered.minimalHeader !== undefined) {
+    header = normalizeText(rendered.minimalHeader);
+    bodyMaxTokens = storyBodyBudget(header, options.maxTokens);
+  }
+
+  if (bodyMaxTokens < 1) {
+    throw new Error(
+      `Story "${sourceId}" cannot be chunked within maxTokens=${options.maxTokens}: even its ` +
+        `minimal self-contained header (title, primary role, primary competency) leaves no room ` +
+        `for body content. Increase maxTokens, or shorten the story's title/role/competency.`,
+    );
+  }
+
   const bodyPieces = splitLongText(body, bodyMaxTokens, options.overlapTokens);
   const texts = bodyPieces.map((piece) => normalizeText(`${header}\n\n${piece}`));
 
