@@ -14,14 +14,23 @@
  */
 
 import type { EvalCaseAnswerAssertions } from "../dataset/schema.js";
-import type { ScoreResult } from "./types.js";
+import type { ReturnedCitation, ScoreResult } from "./types.js";
 import { clampScore } from "./types.js";
 
-/** Score `answer` against `assertions`: 1 when every pattern holds, proportionally lower per failed assertion. */
-export function scoreAnswerAssertions(
+function citationPresent(
+  toolCitations: readonly ReturnedCitation[],
+  ref: { entityType: string; entityId: string },
+): boolean {
+  return toolCitations.some(
+    (citation) => citation.entityType === ref.entityType && citation.entityId === ref.entityId,
+  );
+}
+
+/** Failure messages for every `mustMatch`/`mustNotMatch` text pattern that didn't hold, plus how many were checked. */
+function checkTextPatterns(
   answer: string,
   assertions: EvalCaseAnswerAssertions,
-): ScoreResult {
+): { failures: string[]; total: number } {
   const failures: string[] = [];
   let total = 0;
 
@@ -37,6 +46,54 @@ export function scoreAnswerAssertions(
       failures.push(`forbidden pattern matched /${source}/i`);
     }
   }
+
+  return { failures, total };
+}
+
+/** Failure messages for every `mustCiteEntity`/`mustNotCiteEntity` ref that didn't hold, plus how many were checked. */
+function checkCitationRefs(
+  toolCitations: readonly ReturnedCitation[],
+  assertions: EvalCaseAnswerAssertions,
+): { failures: string[]; total: number } {
+  const failures: string[] = [];
+  let total = 0;
+
+  for (const ref of assertions.mustCiteEntity ?? []) {
+    total += 1;
+    if (!citationPresent(toolCitations, ref)) {
+      failures.push(`missing required citation ${ref.entityType}:${ref.entityId}`);
+    }
+  }
+  for (const ref of assertions.mustNotCiteEntity ?? []) {
+    total += 1;
+    if (citationPresent(toolCitations, ref)) {
+      failures.push(`forbidden citation present ${ref.entityType}:${ref.entityId}`);
+    }
+  }
+
+  return { failures, total };
+}
+
+/**
+ * Score `answer` against `assertions`: 1 when every declared assertion
+ * holds, proportionally lower per failed one. `mustMatch`/`mustNotMatch`
+ * check the answer TEXT; `mustCiteEntity`/`mustNotCiteEntity` (#294
+ * independent-review correction) check `toolCitations` — the citations the
+ * run's tool calls actually returned — instead, so a required (or
+ * forbidden) piece of evidence is verified against what was actually
+ * fetched, not just what the answer happens to say. `toolCitations`
+ * defaults to an empty array so callers that only assert on text (the
+ * pre-#294 signature) keep working unchanged.
+ */
+export function scoreAnswerAssertions(
+  answer: string,
+  assertions: EvalCaseAnswerAssertions,
+  toolCitations: readonly ReturnedCitation[] = [],
+): ScoreResult {
+  const text = checkTextPatterns(answer, assertions);
+  const citations = checkCitationRefs(toolCitations, assertions);
+  const failures = [...text.failures, ...citations.failures];
+  const total = text.total + citations.total;
 
   const passed = total - failures.length;
   const reason =

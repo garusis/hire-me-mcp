@@ -349,9 +349,22 @@ export const EVAL_CASES: readonly EvalCase[] = [
     question: "Tell me about a time he showed leadership without having formal authority.",
     gapHonestyDirection: "claimed",
     expectedToolCall: "list-career-stories",
+    // #294 independent-review correction, finding 2: tool-name presence
+    // alone accepted an empty-args call or one made after a search-career
+    // fallback — expectedCompetencies additionally requires the located
+    // call to carry competencies: ['leadership'] AND to precede any
+    // search-career call (scoreListCareerStories, ../scorers/tool-routing.ts).
+    expectedCompetencies: ["leadership"],
     answerAssertions: {
       mustMatch: ["Xogito"],
       mustNotMatch: ["hackathon", "prize money", "\\bMutual\\b"],
+      // #294 independent-review correction, findings 3-4b: mustMatch text
+      // patterns can't tell "the answer is actually cited to story 001"
+      // from "the answer mentions Xogito by name while citing something
+      // else (story 002, a recommendation, an experience)" — mustCiteEntity
+      // checks the run's actual returned citations instead.
+      mustCiteEntity: [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
+      mustNotCiteEntity: [{ entityType: "story", entityId: "mutual-informal-leadership" }],
     },
     notes:
       "stories/xogito-client-account-recovery.json (story 001): primaryCompetency 'leadership', " +
@@ -370,15 +383,43 @@ export const EVAL_CASES: readonly EvalCase[] = [
   {
     id: "rag-stalled-project-no-formal-authority",
     category: "grounded",
+    // #294 independent-review correction, finding 4: the prior generic
+    // "project stalls and nobody is formally in charge" wording carried no
+    // Mutual-specific signal, so story 001 (Xogito) was also an honest
+    // candidate under the #305 001-over-002 invariant, contradicting this
+    // case's intent to exercise the 002-appropriate path. Reworded around
+    // stories/mutual-informal-leadership.json's distinguishing facts — the
+    // hackathon win, the prize-split dispute, renouncing his own share —
+    // which stories/xogito-client-account-recovery.json shares none of,
+    // while still not naming the "leadership" competency outright, so the
+    // fuzzy (not known-competency) route is still the one under test.
     question:
-      "How does he behave when a project stalls and nobody is formally in charge of fixing it?",
+      "A hackathon win once triggered a dispute over how to split the prize, stalling the " +
+      "product that came out of it — nobody felt formally in charge of getting it back on " +
+      "track. How did he handle that?",
     gapHonestyDirection: "claimed",
     expectedToolCall: "search-career-story-scoped",
+    answerAssertions: {
+      mustMatch: ["Mutual|hackathon|prize"],
+      mustNotMatch: ["\\bXogito\\b"],
+      // #294 independent-review correction, findings 3-4b: require the
+      // actual returned citation to be story 002, not just wording that
+      // sounds right, and forbid story 001 (the locked 001-over-002
+      // invariant only prefers 001 for GENERIC leadership wording — this
+      // case is deliberately Mutual-specific, so 002 is the one honest
+      // candidate here).
+      mustCiteEntity: [{ entityType: "story", entityId: "mutual-informal-leadership" }],
+      mustNotCiteEntity: [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
+    },
     notes:
-      "Deliberately fuzzy phrasing of stories/mutual-informal-leadership.json's situation that " +
-      "does not name a listed competency (e.g. 'leadership') — should route through " +
-      "search-career with sourceTypes: ['story'] first, then fetch the complete matching " +
-      "story from list-career-stories by id, per the retrieval policy's fuzzy-behavioral path.",
+      "Deliberately fuzzy phrasing of stories/mutual-informal-leadership.json's situation " +
+      "(hackathon prize dispute, personal sacrifice, stalled mission-driven product) that does " +
+      "not name a listed competency (e.g. 'leadership') — should route through search-career " +
+      "with sourceTypes: ['story'] first, then fetch the complete matching story from " +
+      "list-career-stories by id, per the retrieval policy's fuzzy-behavioral path. Unlike the " +
+      "generic story-informal-leadership case above, this wording IS Mutual-specific (hackathon, " +
+      "prize split), so story 002 — not 001 — is the correct grounding here; #305 decision 8's " +
+      "'story 001 > 002' invariant only governs the GENERIC wording case, not this one.",
   },
 
   // ---- exact-fact: a structured question the deterministic tools already answer precisely (#75) ----

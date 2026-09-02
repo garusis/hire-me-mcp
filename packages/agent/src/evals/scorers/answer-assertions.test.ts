@@ -38,4 +38,72 @@ describe("scoreAnswerAssertions", () => {
     });
     expect(result.score).toBe(0.5);
   });
+
+  /**
+   * #294 independent-review correction (findings 2-4): `mustCiteEntity` /
+   * `mustNotCiteEntity` check the run's actual returned citations
+   * (`toolCitations`, the same field `EvalTranscript` and the groundedness
+   * scorer already use), not the answer's wording — so a run that cites the
+   * WRONG entity while using the right vocabulary is caught, and one that
+   * never actually fetched the required evidence is caught even if the
+   * answer text happens to mention it.
+   */
+  describe("mustCiteEntity / mustNotCiteEntity (#294 independent-review correction)", () => {
+    it("scores 1 when a required citation is present in toolCitations", () => {
+      const result = scoreAnswerAssertions(
+        "He rebuilt client trust at Xogito.",
+        { mustCiteEntity: [{ entityType: "story", entityId: "xogito-client-account-recovery" }] },
+        [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("scores 0 when a required citation is absent from toolCitations, even if the answer mentions it by name", () => {
+      const result = scoreAnswerAssertions(
+        "He rebuilt client trust at Xogito.",
+        { mustCiteEntity: [{ entityType: "story", entityId: "xogito-client-account-recovery" }] },
+        [{ entityType: "recommendation", entityId: "some-other-rec" }],
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/missing required citation/i);
+    });
+
+    it("defaults toolCitations to empty when omitted (backward compatible), failing any mustCiteEntity", () => {
+      const result = scoreAnswerAssertions("He rebuilt client trust at Xogito.", {
+        mustCiteEntity: [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
+      });
+      expect(result.score).toBe(0);
+    });
+
+    it("scores 0 when a forbidden citation IS present in toolCitations", () => {
+      const result = scoreAnswerAssertions(
+        "He showed leadership without formal authority.",
+        { mustNotCiteEntity: [{ entityType: "story", entityId: "mutual-informal-leadership" }] },
+        [{ entityType: "story", entityId: "mutual-informal-leadership" }],
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/forbidden citation present/i);
+    });
+
+    it("scores 1 when a forbidden citation is absent from toolCitations", () => {
+      const result = scoreAnswerAssertions(
+        "He showed leadership without formal authority.",
+        { mustNotCiteEntity: [{ entityType: "story", entityId: "mutual-informal-leadership" }] },
+        [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("combines with mustMatch/mustNotMatch proportionally", () => {
+      const result = scoreAnswerAssertions(
+        "He rebuilt client trust at Xogito.",
+        {
+          mustMatch: ["Xogito"],
+          mustCiteEntity: [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
+        },
+        [],
+      );
+      expect(result.score).toBe(0.5);
+    });
+  });
 });

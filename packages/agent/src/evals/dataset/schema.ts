@@ -17,6 +17,7 @@
  */
 
 import { z } from "zod";
+import { CITABLE_ENTITY_TYPES, type CitableEntityType } from "../../citations.js";
 
 /** The four dataset categories — see the issue's scope for what each probes. */
 export const evalCaseCategorySchema = z.enum(["grounded", "gap", "off-topic", "injection"]);
@@ -70,25 +71,59 @@ const regexSourceSchema = z
   .min(1)
   .refine(isValidRegexSource, { message: "must be a valid regular-expression source" });
 
+const citableEntityTypeSchema = z.enum(
+  CITABLE_ENTITY_TYPES as [CitableEntityType, ...CitableEntityType[]],
+);
+
 /**
- * Content assertions on the answer text (#300, #295's factual boundaries):
- * `mustMatch` patterns that a correct answer has to contain (e.g. that the
- * document-extraction work was a "proof of concept") and `mustNotMatch`
- * patterns that a correct answer must never contain (a withdrawn metric, a
- * claim transferred to the wrong employer). Each entry is a
- * case-insensitive regular-expression source. Scored by
- * `../scorers/answer-assertions.ts`; a block must assert at least one
- * thing.
+ * A pointer at one returned citation — `{ entityType, entityId }`, the same
+ * pair `ReturnedCitation` (`../scorers/types.ts`) carries. Used by
+ * `mustCiteEntity`/`mustNotCiteEntity` below (#294 independent-review
+ * correction, findings 2-4): unlike a `mustMatch` text pattern, this asserts
+ * against the run's actual returned citations, so an answer that merely
+ * mentions the right words without the tool call actually having produced
+ * that citation (or that cites a DIFFERENT entity alongside the right
+ * wording) is caught.
+ */
+const citationRefSchema = z
+  .object({
+    entityType: citableEntityTypeSchema,
+    entityId: z.string().min(1),
+  })
+  .strict();
+export type EvalCaseCitationRef = z.infer<typeof citationRefSchema>;
+
+/**
+ * Content assertions on the answer (#300, #295's factual boundaries; #294
+ * independent-review correction extends this beyond text). `mustMatch` /
+ * `mustNotMatch` are case-insensitive regular-expression sources checked
+ * against the answer TEXT (e.g. that the document-extraction work is called
+ * a "proof of concept"). `mustCiteEntity` / `mustNotCiteEntity` are checked
+ * against the run's actual returned citations instead — the required (or
+ * forbidden) evidence a behavioral answer must (or must not) actually be
+ * grounded in, not just wording. Scored by `../scorers/answer-assertions.ts`;
+ * a block must assert at least one thing across all four lists.
  */
 export const answerAssertionsSchema = z
   .object({
     mustMatch: z.array(regexSourceSchema).optional(),
     mustNotMatch: z.array(regexSourceSchema).optional(),
+    mustCiteEntity: z.array(citationRefSchema).optional(),
+    mustNotCiteEntity: z.array(citationRefSchema).optional(),
   })
   .strict()
-  .refine((value) => (value.mustMatch?.length ?? 0) + (value.mustNotMatch?.length ?? 0) > 0, {
-    message: "answerAssertions must declare at least one mustMatch or mustNotMatch pattern",
-  });
+  .refine(
+    (value) =>
+      (value.mustMatch?.length ?? 0) +
+        (value.mustNotMatch?.length ?? 0) +
+        (value.mustCiteEntity?.length ?? 0) +
+        (value.mustNotCiteEntity?.length ?? 0) >
+      0,
+    {
+      message:
+        "answerAssertions must declare at least one mustMatch/mustNotMatch/mustCiteEntity/mustNotCiteEntity entry",
+    },
+  );
 export type EvalCaseAnswerAssertions = z.infer<typeof answerAssertionsSchema>;
 
 const CATEGORY_DIRECTION_PAIRS: Readonly<Record<EvalCaseCategory, EvalCaseGapHonestyDirection>> = {
@@ -106,6 +141,16 @@ export const evalCaseSchema = z
     question: z.string().min(1),
     gapHonestyDirection: gapHonestyDirectionSchema,
     expectedToolCall: expectedToolCallSchema.optional(),
+    /**
+     * Required competency values (#294 independent-review correction,
+     * finding 2) the located `list-career-stories` call's `competencies`
+     * argument must contain, checked only when `expectedToolCall` is
+     * `"list-career-stories"` — tool-name presence alone cannot prove the
+     * known-competency route actually asked for the right competency (e.g.
+     * `"leadership"`), not an empty or unrelated one. Optional: most cases
+     * asserting `"list-career-stories"` routing don't need this precision.
+     */
+    expectedCompetencies: z.array(z.string().min(1)).min(1).optional(),
     answerAssertions: answerAssertionsSchema.optional(),
     notes: z.string().min(1).optional(),
   })

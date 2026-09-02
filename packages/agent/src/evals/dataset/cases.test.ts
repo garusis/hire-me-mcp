@@ -68,6 +68,24 @@ describe("EVAL_CASES", () => {
     expect(storyCase?.answerAssertions?.mustNotMatch).toBeDefined();
   });
 
+  /**
+   * #294 independent-review correction (findings 2-4): tool-name presence
+   * and text-only assertions cannot prove the LOCATED call asked for the
+   * right competency, nor that the returned citation is actually story 001
+   * rather than a recommendation/experience/story-002 citation that happens
+   * to sit alongside on-topic prose. Both are now asserted directly.
+   */
+  it("requires the leadership case to assert its competency and the story 001 citation directly, not just tool presence or wording (#294 independent-review correction)", () => {
+    const storyCase = EVAL_CASES.find((c) => c.id === "story-informal-leadership");
+    expect(storyCase?.expectedCompetencies).toEqual(["leadership"]);
+    expect(storyCase?.answerAssertions?.mustCiteEntity).toEqual([
+      { entityType: "story", entityId: "xogito-client-account-recovery" },
+    ]);
+    expect(storyCase?.answerAssertions?.mustNotCiteEntity).toEqual([
+      { entityType: "story", entityId: "mutual-informal-leadership" },
+    ]);
+  });
+
   describe("story-informal-leadership answer assertions (#305 story-001-over-002 invariant)", () => {
     function assertionsFor(id: string) {
       const evalCase = EVAL_CASES.find((c) => c.id === id);
@@ -78,26 +96,67 @@ describe("EVAL_CASES", () => {
       return assertions;
     }
 
-    it("scores a Xogito-grounded (story 001) answer as fully passing", () => {
+    it("scores a Xogito-grounded (story 001) answer, cited as such, as fully passing", () => {
       const answer =
         "At Xogito, after the project manager resigned, Marcos became the team's main " +
         "spokesperson with no formal product-management authority, rebuilding the client's " +
-        "trust over several sprints by proposing quick wins alongside the core delivery repairs.";
-      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"));
-      expect(result.reason).not.toMatch(/forbidden pattern matched|missing required pattern/);
+        "trust over several sprints by proposing quick wins alongside the core delivery repairs " +
+        "[cite:story:xogito-client-account-recovery].";
+      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"), [
+        { entityType: "story", entityId: "xogito-client-account-recovery" },
+      ]);
+      expect(result.reason).not.toMatch(
+        /forbidden pattern matched|missing required pattern|missing required citation|forbidden citation present/,
+      );
       expect(result.score).toBe(1);
     });
 
     it("scores an answer grounded only in the Mutual hackathon story (002) as failing", () => {
       const answer =
         "After the hackathon, disagreement over the Mutual prize money stalled the project, so " +
-        "Marcos renounced his own share and kept building the backend through informal leadership.";
-      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"));
+        "Marcos renounced his own share and kept building the backend through informal leadership " +
+        "[cite:story:mutual-informal-leadership].";
+      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"), [
+        { entityType: "story", entityId: "mutual-informal-leadership" },
+      ]);
       expect(result.score).toBeLessThan(1);
+    });
+
+    /**
+     * #294 independent-review correction, finding 4b: the pre-correction
+     * `mustMatch: ["Xogito"]` alone accepted a run whose prose names Xogito
+     * but whose actual returned citation is a DIFFERENT entity — the exact
+     * gap `mustCiteEntity` closes.
+     */
+    it("scores an answer that NAMES Xogito in prose but is actually cited to story 002 as failing", () => {
+      const answer =
+        "Unlike his time at Xogito, this story is about renouncing prize money after a " +
+        "hackathon to keep a stalled product moving [cite:story:mutual-informal-leadership].";
+      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"), [
+        { entityType: "story", entityId: "mutual-informal-leadership" },
+      ]);
+      expect(result.score).toBeLessThan(1);
+      expect(result.reason).toMatch(/forbidden citation present/i);
+    });
+
+    /**
+     * #294 independent-review correction, finding 3: recommendation- or
+     * experience-only evidence must not pass as the sole event narrative
+     * for a behavioral case — an answer that never actually cites the
+     * required story fails even if it cites something else real.
+     */
+    it("scores an answer grounded only in a recommendation/experience citation (no story at all) as failing", () => {
+      const answer =
+        "Colleagues have praised his leadership under pressure [cite:recommendation:some-rec].";
+      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"), [
+        { entityType: "recommendation", entityId: "some-rec" },
+      ]);
+      expect(result.score).toBeLessThan(1);
+      expect(result.reason).toMatch(/missing required citation/i);
     });
   });
 
-  it("includes at least one fuzzy behavioral case expecting search-career (story-scoped) routing (#294)", () => {
+  it("includes at least one fuzzy behavioral case expecting search-career (story-scoped) routing, reground on the Mutual-specific story it targets (#294 independent-review correction, finding 4)", () => {
     const fuzzyStoryCase = EVAL_CASES.find(
       (c) => c.id === "rag-stalled-project-no-formal-authority",
     );
@@ -108,6 +167,19 @@ describe("EVAL_CASES", () => {
     // required so a run that calls search-career unscoped still fails.
     expect(fuzzyStoryCase?.expectedToolCall).toBe("search-career-story-scoped");
     expect(fuzzyStoryCase?.notes).toMatch(/sourceTypes.*story|story.*sourceTypes/is);
+    // Finding 4: the generic pre-correction wording carried no Mutual-
+    // specific signal, so Xogito (story 001) was also an honest candidate
+    // under the #305 001-over-002 invariant. The reworded question must
+    // name Mutual-specific facts (the hackathon prize dispute) that only
+    // story 002 supports, and the citation requirement — not text alone —
+    // must enforce that story.
+    expect(fuzzyStoryCase?.question).toMatch(/hackathon|prize/i);
+    expect(fuzzyStoryCase?.answerAssertions?.mustCiteEntity).toEqual([
+      { entityType: "story", entityId: "mutual-informal-leadership" },
+    ]);
+    expect(fuzzyStoryCase?.answerAssertions?.mustNotCiteEntity).toEqual([
+      { entityType: "story", entityId: "xogito-client-account-recovery" },
+    ]);
   });
 
   it("probes the document-extraction PoC status with answer assertions that reject the withdrawn production framing (#300)", () => {

@@ -268,6 +268,143 @@ describe("runEvalSuite", () => {
     expect(report.cases[0]?.scores.toolRouting).toBeNull();
   });
 
+  it("passes the run's toolCitations into scoreAnswerAssertions so mustCiteEntity is checked against the run's real citations, not just answer text (#294 independent-review correction)", async () => {
+    const runCase = vi.fn().mockResolvedValue({
+      answer: "He rebuilt client trust at Xogito [cite:story:xogito-client-account-recovery].",
+      toolCitations: [{ entityType: "story" as const, entityId: "xogito-client-account-recovery" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+    });
+    const citedCase = makeCase({
+      id: "cited-1",
+      answerAssertions: {
+        mustCiteEntity: [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
+        mustNotCiteEntity: [{ entityType: "story", entityId: "mutual-informal-leadership" }],
+      },
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [citedCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    expect(report.cases[0]?.scores.answerAssertions?.score).toBe(1);
+  });
+
+  it("scores answerAssertions 0 when the run's toolCitations lack the required entity, even though the answer text names it (#294 independent-review correction)", async () => {
+    const runCase = vi.fn().mockResolvedValue({
+      answer: "He rebuilt client trust at Xogito.",
+      toolCitations: [{ entityType: "recommendation" as const, entityId: "some-other-rec" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+    });
+    const citedCase = makeCase({
+      id: "cited-2",
+      answerAssertions: {
+        mustCiteEntity: [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
+      },
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [citedCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    expect(report.cases[0]?.scores.answerAssertions?.score).toBe(0);
+  });
+
+  /**
+   * #294 independent-review correction (finding 2): a `list-career-stories`
+   * case can declare `expectedCompetencies` — the located call's
+   * `competencies` argument must contain every listed value AND the call
+   * must precede any `search-career` call in the trace. Tool-name presence
+   * alone (the pre-correction check) accepted an empty-args call or one
+   * made after a `search-career` fallback.
+   */
+  it("scores toolRouting 0 for a list-career-stories case with expectedCompetencies when the located call's competencies argument omits the required value (#294 independent-review correction)", async () => {
+    const runCase = vi.fn().mockResolvedValue({
+      answer: "He does this by [cite:story:xogito-client-account-recovery].",
+      toolCitations: [{ entityType: "story" as const, entityId: "xogito-client-account-recovery" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      toolCalls: [{ toolName: "list-career-stories", args: { competencies: ["ownership"] } }],
+    });
+    const competencyCase = makeCase({
+      id: "competency-1",
+      expectedToolCall: "list-career-stories",
+      expectedCompetencies: ["leadership"],
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [competencyCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    expect(report.cases[0]?.scores.toolRouting?.score).toBe(0);
+  });
+
+  it("scores toolRouting 0 for a list-career-stories case when a search-career call precedes the list-career-stories call, even with a matching competency (#294 independent-review correction)", async () => {
+    const runCase = vi.fn().mockResolvedValue({
+      answer: "He does this by [cite:story:xogito-client-account-recovery].",
+      toolCitations: [{ entityType: "story" as const, entityId: "xogito-client-account-recovery" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      toolCalls: [
+        { toolName: "search-career", args: { query: "leadership" } },
+        { toolName: "list-career-stories", args: { competencies: ["leadership"] } },
+      ],
+    });
+    const competencyCase = makeCase({
+      id: "competency-2",
+      expectedToolCall: "list-career-stories",
+      expectedCompetencies: ["leadership"],
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [competencyCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    expect(report.cases[0]?.scores.toolRouting?.score).toBe(0);
+  });
+
+  it("scores toolRouting 1 for a list-career-stories case whose located call carries the required competency and precedes any search-career call (#294 independent-review correction)", async () => {
+    const runCase = vi.fn().mockResolvedValue({
+      answer: "He does this by [cite:story:xogito-client-account-recovery].",
+      toolCitations: [{ entityType: "story" as const, entityId: "xogito-client-account-recovery" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      toolCalls: [{ toolName: "list-career-stories", args: { competencies: ["leadership"] } }],
+    });
+    const competencyCase = makeCase({
+      id: "competency-3",
+      expectedToolCall: "list-career-stories",
+      expectedCompetencies: ["leadership"],
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [competencyCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    expect(report.cases[0]?.scores.toolRouting?.score).toBe(1);
+  });
+
   it("treats a missing toolCalls field on the run result as an empty trace, not a crash (backward compatible with pre-#75 runCase stubs)", async () => {
     const runCase = stubRunCase(); // no toolCalls field at all
     const report = await runEvalSuite(

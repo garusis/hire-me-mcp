@@ -114,11 +114,13 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
   const toolRouting =
     evalCase.expectedToolCall === undefined
       ? null
-      : scoreToolRouting(run.toolCalls ?? [], evalCase.expectedToolCall);
+      : scoreToolRouting(run.toolCalls ?? [], evalCase.expectedToolCall, {
+          expectedCompetencies: evalCase.expectedCompetencies,
+        });
   const answerAssertions =
     evalCase.answerAssertions === undefined
       ? null
-      : scoreAnswerAssertions(run.answer, evalCase.answerAssertions);
+      : scoreAnswerAssertions(run.answer, evalCase.answerAssertions, run.toolCitations);
 
   return {
     id: evalCase.id,

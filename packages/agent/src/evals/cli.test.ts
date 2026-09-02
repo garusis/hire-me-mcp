@@ -201,9 +201,63 @@ describe("extractToolCallsFromToolResults (#294)", () => {
     ];
 
     expect(extractToolCallsFromToolResults(toolResults)).toEqual([
-      { toolName: "search-career", args: { query: "how does he lead", sourceTypes: ["story"] } },
-      { toolName: "list-career-stories", args: { id: "xogito-client-account-recovery" } },
+      {
+        toolName: "search-career",
+        args: { query: "how does he lead", sourceTypes: ["story"] },
+        citations: [],
+      },
+      {
+        toolName: "list-career-stories",
+        args: { id: "xogito-client-account-recovery" },
+        citations: [],
+      },
     ]);
+  });
+
+  /**
+   * #294 independent-review correction, finding 1: `scoreToolRouting`'s
+   * `search-career-story-scoped` check needs to distinguish "this call
+   * returned a story" from "this call returned nothing", not just its
+   * name/args — so each call's `citations` (the real `DomainResult.citations`
+   * that specific call returned, same field `extractCitationsFromToolResults`
+   * flattens across the whole run) has to be captured per call, not just
+   * aggregated.
+   */
+  it("captures each call's own citations from its DomainResult payload (#294 independent-review correction)", () => {
+    const toolResults = [
+      {
+        payload: {
+          toolName: "search-career",
+          args: { query: "x", sourceTypes: ["story"] },
+          result: {
+            data: [],
+            citations: [{ entityType: "story", entityId: "mutual-informal-leadership" }],
+          },
+        },
+      },
+      {
+        payload: {
+          toolName: "search-career",
+          args: { query: "y" },
+          result: { data: [], citations: [] },
+        },
+      },
+    ];
+
+    expect(extractToolCallsFromToolResults(toolResults)).toEqual([
+      {
+        toolName: "search-career",
+        args: { query: "x", sourceTypes: ["story"] },
+        citations: [{ entityType: "story", entityId: "mutual-informal-leadership" }],
+      },
+      { toolName: "search-career", args: { query: "y" }, citations: [] },
+    ]);
+  });
+
+  it("leaves citations undefined when a tool result's shape has no parseable citations array", () => {
+    const toolResults = [{ payload: { toolName: "get-experience", args: {} } }];
+    const [call] = extractToolCallsFromToolResults(toolResults);
+    expect(call?.citations).toBeUndefined();
   });
 
   it("falls back to a top-level toolName/args when there is no payload one", () => {

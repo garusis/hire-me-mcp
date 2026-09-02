@@ -81,6 +81,85 @@ describe("evalCaseSchema", () => {
       });
       expect(result.success).toBe(false);
     });
+
+    /**
+     * #294 independent-review correction (finding 3/4b): a `mustMatch` text
+     * pattern only checks the answer's WORDING — it cannot tell whether the
+     * cited entity actually backing the answer is the required story versus
+     * some other returned citation (recommendation, experience, or the
+     * wrong story) that happens to share vocabulary. `mustCiteEntity` /
+     * `mustNotCiteEntity` assert directly against the run's actual returned
+     * citations (`EvalTranscript.toolCitations`), the same ground truth the
+     * groundedness scorer's citation-validity check already uses.
+     */
+    describe("mustCiteEntity / mustNotCiteEntity (#294 independent-review correction)", () => {
+      it("accepts a mustCiteEntity / mustNotCiteEntity ref list", () => {
+        const result = evalCaseSchema.safeParse({
+          ...validCase,
+          answerAssertions: {
+            mustCiteEntity: [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
+            mustNotCiteEntity: [{ entityType: "story", entityId: "mutual-informal-leadership" }],
+          },
+        });
+        expect(result.success).toBe(true);
+      });
+
+      it("rejects a citation ref with an unknown entityType", () => {
+        const result = evalCaseSchema.safeParse({
+          ...validCase,
+          answerAssertions: {
+            mustCiteEntity: [{ entityType: "not-a-real-type", entityId: "x" }],
+          },
+        });
+        expect(result.success).toBe(false);
+      });
+
+      it("rejects a citation ref missing entityId", () => {
+        const result = evalCaseSchema.safeParse({
+          ...validCase,
+          answerAssertions: { mustCiteEntity: [{ entityType: "story" }] },
+        });
+        expect(result.success).toBe(false);
+      });
+
+      it("counts mustCiteEntity toward the 'must assert something' minimum, alone", () => {
+        const result = evalCaseSchema.safeParse({
+          ...validCase,
+          answerAssertions: {
+            mustCiteEntity: [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
+          },
+        });
+        expect(result.success).toBe(true);
+      });
+    });
+  });
+
+  describe("expectedCompetencies (#294 independent-review correction)", () => {
+    it("accepts a case with expectedToolCall 'list-career-stories' and expectedCompetencies", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        expectedToolCall: "list-career-stories",
+        expectedCompetencies: ["leadership"],
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("omits expectedCompetencies by default", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        expectedToolCall: "list-career-stories",
+      });
+      expect(result.success && result.data.expectedCompetencies).toBeUndefined();
+    });
+
+    it("rejects an empty expectedCompetencies array", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        expectedToolCall: "list-career-stories",
+        expectedCompetencies: [],
+      });
+      expect(result.success).toBe(false);
+    });
   });
 
   it("accepts a case with an expectedToolCall of 'search-career' (#75 RAG-grounded case)", () => {

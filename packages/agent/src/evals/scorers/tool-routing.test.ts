@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { ToolCall } from "./tool-routing.js";
 import { scoreToolRouting } from "./tool-routing.js";
+import type { ReturnedCitation } from "./types.js";
 
-/** Fixture builder: a real tool call is `{ toolName, args }` — see `ToolCall`. */
-function call(toolName: string, args?: unknown): ToolCall {
-  return { toolName, args };
+/**
+ * Fixture builder: a real tool call is `{ toolName, args, citations }` — see
+ * `ToolCall`. `citations` is omitted (`undefined`, "unavailable/unknown")
+ * unless explicitly given, matching how `../cli.ts`'s
+ * `extractToolCallsFromToolResults` behaves when a tool result's shape
+ * doesn't carry a parseable `citations` array.
+ */
+function call(toolName: string, args?: unknown, citations?: ReturnedCitation[]): ToolCall {
+  return { toolName, args, ...(citations !== undefined ? { citations } : {}) };
 }
 
 describe("scoreToolRouting", () => {
@@ -80,6 +87,73 @@ describe("scoreToolRouting", () => {
       const result = scoreToolRouting([call("search-career")], "list-career-stories");
       expect(result.reason).toMatch(/list-career-stories/);
       expect(result.reason).toMatch(/search-career/);
+    });
+  });
+
+  /**
+   * #294 independent-review correction (finding 2): tool-name presence
+   * alone cannot prove the known-competency route actually asked for the
+   * right competency, or that it ran BEFORE any `search-career` fallback —
+   * an empty-args call, a wrong-competency call, or one made after
+   * `search-career` all previously scored 1. `options.expectedCompetencies`
+   * (`../runner.ts` feeds `EvalCase.expectedCompetencies`) makes both checks
+   * executable.
+   */
+  describe('expected: "list-career-stories" with expectedCompetencies (#294 independent-review correction)', () => {
+    it("scores 1 when the located call's competencies argument contains every expected value", () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["leadership", "ownership"] })],
+        "list-career-stories",
+        { expectedCompetencies: ["leadership"] },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("scores 0 when the located call's competencies argument omits an expected value", () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["ownership"] })],
+        "list-career-stories",
+        { expectedCompetencies: ["leadership"] },
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/competenc/i);
+    });
+
+    it("scores 0 when the located call carries no competencies argument at all", () => {
+      const result = scoreToolRouting([call("list-career-stories")], "list-career-stories", {
+        expectedCompetencies: ["leadership"],
+      });
+      expect(result.score).toBe(0);
+    });
+
+    it("scores 0 when a search-career call precedes the list-career-stories call, even with a matching competency", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "leadership" }),
+          call("list-career-stories", { competencies: ["leadership"] }),
+        ],
+        "list-career-stories",
+        { expectedCompetencies: ["leadership"] },
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/precede|before|first|order/i);
+    });
+
+    it("scores 1 when list-career-stories precedes a later search-career fallback", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["leadership"] }),
+          call("search-career", { query: "leadership" }),
+        ],
+        "list-career-stories",
+        { expectedCompetencies: ["leadership"] },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("ignores expectedCompetencies when not supplied — presence-only check unchanged", () => {
+      const result = scoreToolRouting([call("list-career-stories")], "list-career-stories");
+      expect(result.score).toBe(1);
     });
   });
 
@@ -166,6 +240,76 @@ describe("scoreToolRouting", () => {
         "search-career-story-scoped",
       );
       expect(wrongOrder.reason).toMatch(/precede|before|order/i);
+    });
+  });
+
+  /**
+   * #294 independent-review correction (finding 1): a name-and-args-only
+   * trace cannot tell "search-career returned a story" from "search-career
+   * returned nothing" — so it could not enforce that a NON-EMPTY scoped
+   * story result gets fetched in full via `list-career-stories`, nor that
+   * an empty/unavailable result is what licenses a broader fallback rather
+   * than one preceding it. `ToolCall.citations` (populated by
+   * `../cli.ts`'s `extractToolCallsFromToolResults` from the real
+   * `DomainResult.citations` each call returned) makes that distinction
+   * checkable.
+   */
+  describe('expected: "search-career-story-scoped" — result-state awareness (#294 independent-review correction)', () => {
+    it("scores 0 when the story-scoped search returns a NON-EMPTY result but no list-career-stories fetch follows", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, [
+            { entityType: "story", entityId: "mutual-informal-leadership" },
+          ]),
+        ],
+        "search-career-story-scoped",
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/non-empty|complete story|list-career-stories/i);
+    });
+
+    it("scores 1 when the story-scoped search returns a NON-EMPTY result and a list-career-stories fetch follows", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, [
+            { entityType: "story", entityId: "mutual-informal-leadership" },
+          ]),
+          call("list-career-stories", { id: "mutual-informal-leadership" }),
+        ],
+        "search-career-story-scoped",
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("scores 1 when the story-scoped search returns an EMPTY result and no list-career-stories fetch follows — honest gap, nothing to fetch", () => {
+      const result = scoreToolRouting(
+        [call("search-career", { query: "x", sourceTypes: ["story"] }, [])],
+        "search-career-story-scoped",
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("scores 0 when a broader (non-story-scoped) search-career call precedes the story-scoped one", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x" }),
+          call("search-career", { query: "x", sourceTypes: ["story"] }, []),
+        ],
+        "search-career-story-scoped",
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/broad|before|precede/i);
+    });
+
+    it("scores 1 when a broader (non-story-scoped) search-career call follows an empty story-scoped result — the honest fallback path", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, []),
+          call("search-career", { query: "x" }),
+        ],
+        "search-career-story-scoped",
+      );
+      expect(result.score).toBe(1);
     });
   });
 });
