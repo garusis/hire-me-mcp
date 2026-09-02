@@ -4,9 +4,10 @@
   "role": "Senior Full Stack & Mobile Developer",
   "startDate": "2015-01",
   "endDate": "2018-06",
-  "summary": "Concurrent senior full-stack and mobile engineering role alongside the Rokk3r engagement, building web and mobile products for Colombian and international clients.",
+  "summary": "Senior full-stack and mobile engineer building web and mobile products for Colombian and international clients; Kubesoft later assigned him to work directly with Rokk3r, recorded as the separate Rokk3r entry — one continuous employment rather than two parallel jobs.",
   "highlights": [
-    "Delivered full-stack web and mobile features across a portfolio of client products, working concurrently with the Rokk3r engagement."
+    "Delivered full-stack web and mobile features across Kubesoft's client products, then spent the rest of the role on the Rokk3r assignment (see that entry) with no separate Kubesoft client work carried in parallel.",
+    "Built the first backend version of Mutual, a government-supported, hackathon-winning app for parents, creating the delivery momentum that carried it to launch before its proposed deadline."
   ],
   "tech": ["nodejs", "angularjs"]
 }

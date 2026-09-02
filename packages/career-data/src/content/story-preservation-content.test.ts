@@ -105,11 +105,47 @@ describe("real content: story-preservation-map.json (#290)", () => {
     expect(entry?.note).toMatch(/won the company further work/);
   });
 
-  it("keeps every summary as role-level context", () => {
+  /**
+   * The owner's #297 comment (2026-08-29) corrected the Kubesoft / Rokk3r
+   * relationship: Kubesoft assigned him to Rokk3r, so the two entries are
+   * one employment, not two concurrent jobs. Both summaries were therefore
+   * corrected — the only summaries #297 touched.
+   */
+  const SUMMARIES_CORRECTED_IN_297 = [
+    "kubesoft-2015-senior-full-stack-and-mobile-developer",
+    "rokk3r-2016-senior-full-stack-developer-and-devops",
+  ];
+
+  it("keeps every summary as role-level context; only the Kubesoft/Rokk3r summaries record a #297 correction", () => {
     for (const entry of map.filter((candidate) => candidate.field === "summary")) {
       expect(entry.classification, entry.experienceId).toBe("role-context");
-      expect(entry.action, entry.experienceId).toBe("keep");
+      if (SUMMARIES_CORRECTED_IN_297.includes(entry.experienceId)) {
+        expect(entry.action, entry.experienceId).toBe("correct-inconsistency");
+        expect(entry.note, entry.experienceId).toMatch(/#297/);
+      } else {
+        expect(entry.action, entry.experienceId).toBe("keep");
+      }
     }
+  });
+
+  it("records, on every row #297 acted on, what was done — the map is the audit trail the issue requires", () => {
+    for (const entry of map.filter((candidate) => candidate.action !== "keep")) {
+      expect(entry.note, `${entry.experienceId}#${entry.field}`).toMatch(/#297/);
+    }
+  });
+
+  it("classifies the Kubesoft Mutual highlight #297 added as a concise outcome backed by both Mutual stories", () => {
+    const entry = map.find(
+      (candidate) =>
+        candidate.experienceId === "kubesoft-2015-senior-full-stack-and-mobile-developer" &&
+        candidate.field === "highlights.1",
+    );
+    expect(entry?.classification).toBe("concise-outcome");
+    expect(entry?.storyIds).toEqual([
+      "mutual-informal-leadership",
+      "mutual-sustainable-ownership-failure",
+    ]);
+    expect(entry?.action).toBe("keep");
   });
 
   it("records why the document-extraction PoC highlight has no story (owner paused it; #300 project is canonical)", () => {

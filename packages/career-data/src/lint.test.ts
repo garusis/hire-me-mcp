@@ -48,6 +48,20 @@ describe("runLint", () => {
     expect(storyViolations.map((v) => v.message).join("\n")).toMatch(/also-does-not-exist/);
   });
 
+  it("flags a story sentence copied verbatim into its parent experience, naming the experience file (#297)", () => {
+    const result = runLint(fixtureDir("lint-broken-content"));
+    const violations = result.violations.filter((v) => v.rule === "no-story-detail-in-experience");
+    expect(violations).toEqual([
+      expect.objectContaining({
+        severity: "error",
+        file: "experience/fixture-role.json",
+        entityId: "fixture-role-fixtureco-2020",
+      }),
+    ]);
+    expect(violations[0]?.message).toContain("fixture-copied-story");
+    expect(violations[0]?.message).toContain("highlights.1");
+  });
+
   it("reports a story with an invalid competency as a schema error naming the story file", () => {
     const result = runLint(fixtureDir("invalid-content"));
     expect(result.ok).toBe(false);

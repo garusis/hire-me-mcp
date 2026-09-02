@@ -8,6 +8,7 @@ import {
   gapRelatedSkillsResolveRule,
   noClaimGapCollisionRule,
   noOrphanEntitiesRule,
+  noStoryDetailInExperienceRule,
   runRules,
   skillHasEvidenceRule,
   storyExperienceResolvesRule,
@@ -830,6 +831,140 @@ describe("story-preservation-map-complete", () => {
   });
 });
 
+describe("no-story-detail-in-experience", () => {
+  const RULE = "no-story-detail-in-experience";
+  const FILE = "experience/fixture-role.json";
+  const COPIED =
+    "The client was deeply frustrated with our progress and several core workflows required substantial correction.";
+
+  function withStoryUnit(field: "situation" | "task" | "reflection", text: string) {
+    const ctx = context();
+    firstStory(ctx)[field] = text;
+    return ctx;
+  }
+
+  function experience(ctx: ReturnType<typeof context>) {
+    const entry = ctx.dataset.experience[0];
+    if (entry === undefined) throw new Error("fixture experience missing");
+    return entry;
+  }
+
+  it("passes when the parent experience only names the event concisely, in its own words", () => {
+    const ctx = withStoryUnit("situation", COPIED);
+    experience(ctx).highlights[1] =
+      "Recovered a frustrated client account by realigning requirements.";
+    expect(noStoryDetailInExperienceRule.check(ctx)).toEqual([]);
+  });
+
+  it("flags a story situation sentence copied verbatim into a parent highlight, naming the experience file and story", () => {
+    const ctx = withStoryUnit("situation", COPIED);
+    experience(ctx).highlights[1] = `Took over the account. ${COPIED}`;
+    const violations = noStoryDetailInExperienceRule.check(ctx);
+    expect(violations).toEqual([
+      {
+        rule: RULE,
+        severity: "error",
+        file: FILE,
+        entityId: "fixture-role-fixtureco-2020",
+        message: expect.stringContaining('story "fixture-story"'),
+      },
+    ]);
+    expect(violations[0]?.message).toContain("highlights.1");
+    expect(violations[0]?.message).toContain("situation");
+  });
+
+  it("flags near-verbatim copies that differ only in case, punctuation, or whitespace", () => {
+    const ctx = withStoryUnit("task", COPIED);
+    experience(ctx).summary =
+      `  the CLIENT was deeply frustrated with our progress, and several core workflows required substantial correction!  `;
+    const violations = noStoryDetailInExperienceRule.check(ctx);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.message).toContain("summary");
+    expect(violations[0]?.message).toContain("task");
+  });
+
+  it("flags a complete action or result sentence copied into the parent summary", () => {
+    const ctx = context();
+    firstStory(ctx).actions = [
+      "I suggested a capacity split while the frontend developer and QA refined the estimates.",
+    ];
+    firstStory(ctx).results = [
+      "Trust returned gradually over two or three sprints of working software.",
+    ];
+    experience(ctx).summary =
+      "I suggested a capacity split while the frontend developer and QA refined the estimates. Trust returned gradually over two or three sprints of working software.";
+    const violations = noStoryDetailInExperienceRule.check(ctx);
+    expect(violations.map((violation) => violation.message).join("\n")).toMatch(/actions\.0/);
+    expect(violations.map((violation) => violation.message).join("\n")).toMatch(/results\.0/);
+    expect(violations).toHaveLength(2);
+  });
+
+  it("also flags the reflection — lessons and interview follow-up belong only in the story", () => {
+    const ctx = withStoryUnit(
+      "reflection",
+      "Meaningful quick wins can reduce tension while the deeper corrective work continues.",
+    );
+    experience(ctx).highlights[0] =
+      "Meaningful quick wins can reduce tension while the deeper corrective work continues.";
+    expect(noStoryDetailInExperienceRule.check(ctx)).toHaveLength(1);
+  });
+
+  it("checks related experiences too — a related role must not carry the story's detail either", () => {
+    const ctx = withStoryUnit("situation", COPIED);
+    ctx.dataset.experience.push({
+      id: "fixture-role-otherco-2016",
+      company: "Otherco",
+      role: "Earlier Fixture Engineer",
+      startDate: "2016-01",
+      endDate: "2019-12",
+      summary: COPIED,
+      highlights: ["Did an earlier fixture thing."],
+      tech: ["typescript"],
+    });
+    ctx.sources.push({
+      entityType: "experience",
+      id: "fixture-role-otherco-2016",
+      file: "experience/fixture-role-two.json",
+    });
+    firstStory(ctx).relatedExperienceIds = ["fixture-role-otherco-2016"];
+    expect(noStoryDetailInExperienceRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        file: "experience/fixture-role-two.json",
+        entityId: "fixture-role-otherco-2016",
+      }),
+    ]);
+  });
+
+  it("ignores an unrelated experience that happens to contain the same sentence — attribution is not this rule's job", () => {
+    const ctx = withStoryUnit("situation", COPIED);
+    ctx.dataset.experience.push({
+      id: "fixture-role-unrelated-2010",
+      company: "Unrelatedco",
+      role: "Unrelated Engineer",
+      startDate: "2010-01",
+      endDate: "2011-01",
+      summary: COPIED,
+      highlights: ["Did something."],
+      tech: ["typescript"],
+    });
+    expect(noStoryDetailInExperienceRule.check(ctx)).toEqual([]);
+  });
+
+  it("ignores short sentences — a story unit under eight words is a name, not a narrative", () => {
+    const ctx = withStoryUnit("task", "I stayed and kept the account.");
+    experience(ctx).highlights[1] = "I stayed and kept the account.";
+    expect(noStoryDetailInExperienceRule.check(ctx)).toEqual([]);
+  });
+
+  it("does not flag a story whose experience id does not resolve — that is story-experience-resolves' job", () => {
+    const ctx = withStoryUnit("situation", COPIED);
+    experience(ctx).summary = COPIED;
+    firstStory(ctx).experienceId = "does-not-exist";
+    expect(noStoryDetailInExperienceRule.check(ctx)).toEqual([]);
+  });
+});
+
 describe("ALL_RULES", () => {
   it("names every rule required by #51's scope, exactly once", () => {
     const names = ALL_RULES.map((rule) => rule.name).sort();
@@ -840,6 +975,7 @@ describe("ALL_RULES", () => {
         "gap-related-skills-resolve",
         "no-claim-gap-collision",
         "no-orphan-entities",
+        "no-story-detail-in-experience",
         "skill-has-evidence",
         "story-experience-resolves",
         "story-preservation-map-complete",

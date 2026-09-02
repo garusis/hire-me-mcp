@@ -420,6 +420,122 @@ export const storyPreservationMapCompleteRule: LintRule = {
   },
 };
 
+/**
+ * A story sentence must be at least this many words before a verbatim copy
+ * in the parent experience counts as duplicated narrative. Shorter
+ * sentences ("I stayed.") are a name for the event, which a highlight may
+ * legitimately carry (#297 content-ownership contract).
+ */
+const MIN_DUPLICATED_SENTENCE_WORDS = 8;
+
+/** Lowercase, punctuation-free, single-spaced form of `text` — so a copy that differs only in case, punctuation, or whitespace still matches. */
+function normalizeProse(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+/** Splits prose into sentences on terminal punctuation; each sentence is compared on its own. */
+function sentencesOf(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/u)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+/** Every narrative unit of a story, addressed by the story field it came from. */
+function storyNarrativeUnits(
+  story: CareerDataset["stories"][number],
+): Array<{ field: string; text: string }> {
+  return [
+    { field: "situation", text: story.situation },
+    { field: "task", text: story.task },
+    ...story.actions.map((text, index) => ({ field: `actions.${index}`, text })),
+    ...story.results.map((text, index) => ({ field: `results.${index}`, text })),
+    ...(story.reflection === undefined ? [] : [{ field: "reflection", text: story.reflection }]),
+  ];
+}
+
+/** Every prose field of an experience entry, addressed by the citation-style locator the map and skills use. */
+function experienceProseFields(
+  entry: CareerDataset["experience"][number],
+): Array<{ field: string; text: string }> {
+  return [
+    { field: "summary", text: entry.summary },
+    ...entry.highlights.map((text, index) => ({ field: `highlights.${index}`, text })),
+  ];
+}
+
+function findDuplicatedStoryDetail(
+  story: CareerDataset["stories"][number],
+  entry: CareerDataset["experience"][number],
+  file: string,
+): LintViolation[] {
+  const violations: LintViolation[] = [];
+  const prose = experienceProseFields(entry).map(({ field, text }) => ({
+    field,
+    normalized: ` ${normalizeProse(text)} `,
+  }));
+  for (const unit of storyNarrativeUnits(story)) {
+    for (const sentence of sentencesOf(unit.text)) {
+      const normalized = normalizeProse(sentence);
+      if (normalized.split(" ").length < MIN_DUPLICATED_SENTENCE_WORDS) {
+        continue;
+      }
+      for (const { field, normalized: haystack } of prose) {
+        if (haystack.includes(` ${normalized} `)) {
+          violations.push({
+            rule: "no-story-detail-in-experience",
+            severity: "error",
+            file,
+            entityId: entry.id,
+            message: `experience "${entry.id}" ${field} repeats story "${story.id}" ${unit.field} verbatim: "${sentence}" — the story is the canonical detailed record; keep the experience text concise (#297)`,
+          });
+        }
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * `no-story-detail-in-experience` — the #297 deduplication gate. Once a
+ * `CareerStory` is the canonical record of an event, its narrative must not
+ * also live, verbatim, in the experience it belongs to: no sentence of a
+ * story's situation, task, action, result, or reflection (of at least
+ * {@link MIN_DUPLICATED_SENTENCE_WORDS} words, compared case-,
+ * punctuation- and whitespace-insensitively) may appear inside the primary
+ * or a related experience's `summary` or `highlights`. A highlight may
+ * still name the event in its own concise words. Unrelated experiences are
+ * not checked (attribution is `story-experience-resolves`' and the map's
+ * concern), and a story whose experience ids do not resolve is skipped
+ * here because that rule already reports it. This is a mechanical
+ * exact-string guard; semantic near-duplication still needs human review.
+ */
+export const noStoryDetailInExperienceRule: LintRule = {
+  name: "no-story-detail-in-experience",
+  severity: "error",
+  check({ dataset, sources }) {
+    const index = fileIndex(sources);
+    const experiences = new Map(dataset.experience.map((entry) => [entry.id, entry]));
+    const violations: LintViolation[] = [];
+    for (const story of dataset.stories) {
+      const parents = [story.experienceId, ...(story.relatedExperienceIds ?? [])];
+      for (const experienceId of parents) {
+        const entry = experiences.get(experienceId);
+        if (entry === undefined) {
+          continue;
+        }
+        violations.push(
+          ...findDuplicatedStoryDetail(story, entry, fileFor(index, "experience", entry.id)),
+        );
+      }
+    }
+    return violations;
+  },
+};
+
 /** Flags every `tech` tag outside the controlled vocabulary on one collection of `{ id, tech }` entities (experience entries or projects). */
 function findUnknownTechTags(
   entries: Array<{ id: string; tech: string[] }>,
@@ -613,6 +729,7 @@ export const ALL_RULES: LintRule[] = [
   storyExperienceResolvesRule,
   storyPreservationMapResolvesRule,
   storyPreservationMapCompleteRule,
+  noStoryDetailInExperienceRule,
   tagInVocabularyRule,
   uniqueIdsRule,
   uniqueAliasesRule,

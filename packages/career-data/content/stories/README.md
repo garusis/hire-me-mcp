@@ -51,6 +51,9 @@ career evidence the claim is also visible in.
   on 2026-08-30 pending #300 and none was approved afterwards. The project
   record `document-extraction-pipeline` remains its detailed source of truth.
 
-The field-to-story mapping #297 consumes lives in
+The field-to-story mapping #297 consumed lives in
 `../story-preservation-map.json` and is validated by the
-`story-preservation-map-resolves` content-lint rule.
+`story-preservation-map-resolves` content-lint rule. After the #297 cleanup,
+each story is the only place its full narrative lives: the
+`no-story-detail-in-experience` rule fails the lint if any story sentence is
+copied verbatim into the parent experience's summary or highlights.

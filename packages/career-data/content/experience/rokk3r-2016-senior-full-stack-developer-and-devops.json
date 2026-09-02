@@ -4,7 +4,7 @@
   "role": "Senior Full Stack Developer and DevOps",
   "startDate": "2016-02",
   "endDate": "2018-06",
-  "summary": "Senior full-stack and DevOps engineer across a portfolio of client projects, including a real-time procurement and productivity platform for telecom clients.",
+  "summary": "Senior full-stack and DevOps engineer across a portfolio of Rokk3r client projects, including a real-time procurement and productivity platform for telecom clients — an engagement his employer Kubesoft assigned him to, covering this whole period rather than a second parallel job.",
   "highlights": [
     "Migrated a real-time telecom procurement monolith from self-hosted servers to an AWS Kubernetes microservices cluster, researching the approach and moving large parts of the monolith personally, as part of a company-wide push to adopt microservices across several client monoliths.",
     "Migrated a mobile app's backend off Parse, a backend-as-a-service being shut down, onto AWS EC2 against the platform's fixed shutdown deadline — reading the platform's own source to work out its poorly documented internals and why the self-hosted version behaved differently from the hosted one.",

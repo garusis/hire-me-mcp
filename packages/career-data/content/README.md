@@ -59,3 +59,14 @@ never-written mapping is a `pnpm lint:content` error, and detailed prose
 can never be shortened before its evidence is preserved. Neither rule
 requires an experience to have a story; only the classification must be
 complete.
+
+#297 performed the deduplication the map authorizes: the three `detailed-story`
+fields were shortened to concise, résumé-level highlights (and the Xogito one
+corrected against its approved story), the Kubesoft and Rokk3r entries were
+rewritten so the assignment relationship is explicit, and every row records
+the action taken in its `note`. The `no-story-detail-in-experience` lint rule
+now blocks any story sentence (situation, task, action, result, reflection;
+eight words or more; compared case-, punctuation- and whitespace-insensitively)
+from reappearing verbatim in its primary or related experience's `summary` or
+`highlights` — a highlight may name an event, never retell it. Semantic
+near-duplication still needs human review; the rule is an exact-string guard.

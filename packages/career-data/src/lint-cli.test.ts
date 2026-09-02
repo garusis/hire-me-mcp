@@ -72,6 +72,11 @@ describe("lint-cli", () => {
     expect(broken.output).toContain("fixture-role-fixtureco-2020#highlights.1");
   });
 
+  it("prints the verbatim story-detail duplication as a blocking error for the broken fixture (#297)", () => {
+    expect(broken.output).toContain("no-story-detail-in-experience");
+    expect(broken.output).toContain("fixture-copied-story");
+  });
+
   it("exits 0 against the real, authored content set", () => {
     expect(real.status).toBe(0);
     expect(real.output).toContain("lint passed");

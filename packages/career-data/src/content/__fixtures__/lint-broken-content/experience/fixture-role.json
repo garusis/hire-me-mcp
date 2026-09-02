@@ -7,7 +7,7 @@
   "summary": "A fake role used only to exercise the content lint in tests.",
   "highlights": [
     "Did a fixture thing",
-    "Broken on purpose: a highlight the preservation map never classifies"
+    "Broken on purpose: a highlight the preservation map never classifies. This sentence is copied verbatim from the fixture story into the parent highlight on purpose."
   ],
   "tech": ["not-a-real-tag"]
 }

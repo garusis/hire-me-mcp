@@ -11,7 +11,7 @@
     "field": "highlights.0",
     "classification": "concise-outcome",
     "action": "shorten",
-    "note": "Document-extraction PoC. No owner-approved story exists: the story candidate was explicitly paused by the owner on 2026-08-30 pending #300 and none was approved afterwards. The detailed, corrected record is the project `document-extraction-pipeline` (stage proof-of-concept, #300), which #300 designates as the detailed source of truth. #297 may leave one short highlight but must not lose the PoC-stayed-experimental / production-kept-the-vendor boundary, which the real-content tests in #300 assert."
+    "note": "Document-extraction PoC. No owner-approved story exists: the story candidate was explicitly paused by the owner on 2026-08-30 pending #300 and none was approved afterwards. The detailed, corrected record is the project `document-extraction-pipeline` (stage proof-of-concept, #300), which #300 designates as the detailed source of truth. #297 may leave one short highlight but must not lose the PoC-stayed-experimental / production-kept-the-vendor boundary, which the real-content tests in #300 assert. Shortened in #297 to one highlight; the experimental / production-kept-the-vendor boundary is retained verbatim."
   },
   {
     "experienceId": "house-numbers-2022-senior-full-stack-engineer",
@@ -19,7 +19,7 @@
     "classification": "detailed-story",
     "storyIds": ["house-numbers-communication-service-ownership"],
     "action": "shorten",
-    "note": "Communication infrastructure end to end: email sync, SMS channel, LLM classification split from deterministic routing, encrypted loan matching. The story holds the full narrative, the observability work, and the bounded 57,000 / ~70% snapshot figure."
+    "note": "Communication infrastructure end to end: email sync, SMS channel, LLM classification split from deterministic routing, encrypted loan matching. The story holds the full narrative, the observability work, and the bounded 57,000 / ~70% snapshot figure. Shortened in #297 to a one-sentence capability bullet (webhook-driven intake, LLM classification split from deterministic routing, encrypted loan matching); the retries/reconciliation build-out and the 57,000 / ~70% figure now live only in the story."
   },
   {
     "experienceId": "house-numbers-2022-senior-full-stack-engineer",
@@ -69,7 +69,7 @@
     "classification": "detailed-story",
     "storyIds": ["xogito-client-account-recovery"],
     "action": "correct-inconsistency",
-    "note": "Client-account recovery after the PM left. Must be shortened AND corrected: the highlight's closing clause 'the recovered account won the company further work' asserts causation and personal credit that the approved story does not support; audit #305 point 9 allows the later commissioned work only as a later observed outcome. The highlight also says 'reorganized roadmap' and 'renegotiated scope and deadlines' where the approved narrative says quick wins, a capacity split, client-approved sprint plans, and eased deadline pressure. Resolve against the story, never strengthen the claim."
+    "note": "Client-account recovery after the PM left. Must be shortened AND corrected: the highlight's closing clause 'the recovered account won the company further work' asserts causation and personal credit that the approved story does not support; audit #305 point 9 allows the later commissioned work only as a later observed outcome. The highlight also says 'reorganized roadmap' and 'renegotiated scope and deadlines' where the approved narrative says quick wins, a capacity split, client-approved sprint plans, and eased deadline pressure. Resolve against the story, never strengthen the claim. Done in #297: shortened and corrected — the causal closing clause and the 'reorganized roadmap' / 'renegotiated scope and deadlines' wording are gone; the highlight now names the quick wins, the client-approved sprint plans, and trust rebuilt over a few sprints. The original 'brought the lead frontend engineer and lead QA into the client meetings' also contradicted the approved story ('I joined a senior frontend developer and QA in product meetings') and was resolved against the story."
   },
   {
     "experienceId": "xogito-group-2020-senior-software-development-engineer",
@@ -97,7 +97,7 @@
     "classification": "detailed-story",
     "storyIds": ["fullstack-labs-sap-migration"],
     "action": "shorten",
-    "note": "Legacy quote-data migration and the rounding discrepancy. The story preserves the ETL, human-expert verification, rounding root cause, frozen cutover window, reconciliation, and snapshot rollback detail."
+    "note": "Legacy quote-data migration and the rounding discrepancy. The story preserves the ETL, human-expert verification, rounding root cause, frozen cutover window, reconciliation, and snapshot rollback detail. Shortened in #297; the rounding root cause, the frozen cutover window, reconciliation, and snapshot rollback live only in the story. The highlight says 'legacy system', not SAP: experience chunks are indexed today and the retrieval evals carry an absent-topic SAP ERP case."
   },
   {
     "experienceId": "belatrix-software-2018-senior-nodejs-software-developer",
@@ -124,7 +124,8 @@
     "experienceId": "rokk3r-2016-senior-full-stack-developer-and-devops",
     "field": "summary",
     "classification": "role-context",
-    "action": "keep"
+    "action": "correct-inconsistency",
+    "note": "Corrected in #297 per the owner comment of 2026-08-29: the summary now states that the engagement was an assignment from his employer Kubesoft covering the whole period, not a second parallel job. Dates and title unchanged; consistent with story rokk3r-sustainable-performance-feedback ('while employed by Kubesoft, I was embedded in a Rokk3r project')."
   },
   {
     "experienceId": "rokk3r-2016-senior-full-stack-developer-and-devops",
@@ -150,14 +151,23 @@
     "experienceId": "kubesoft-2015-senior-full-stack-and-mobile-developer",
     "field": "summary",
     "classification": "role-context",
-    "action": "keep"
+    "action": "correct-inconsistency",
+    "note": "Corrected in #297 per the owner comment of 2026-08-29: Kubesoft assigned him to work directly with Rokk3r; the summary no longer describes the two roles as concurrent and points at the Rokk3r entry. Dates and title unchanged; the ExperienceEntry schema has no employer/assignment field, so the relationship is stated in prose here and on the Rokk3r summary."
   },
   {
     "experienceId": "kubesoft-2015-senior-full-stack-and-mobile-developer",
     "field": "highlights.0",
     "classification": "concise-outcome",
+    "action": "correct-inconsistency",
+    "note": "Corrected in #297 per the owner comment of 2026-08-29: 'working concurrently with the Rokk3r engagement' replaced by the assignment framing (no separate Kubesoft client work carried in parallel). The Mutual hackathon stories (mutual-informal-leadership, mutual-sustainable-ownership-failure) are summarized by the concise highlights.1 bullet #297 added; the Rokk3r feedback story relates to this role only as employment context and needs no highlight."
+  },
+  {
+    "experienceId": "kubesoft-2015-senior-full-stack-and-mobile-developer",
+    "field": "highlights.1",
+    "classification": "concise-outcome",
+    "storyIds": ["mutual-informal-leadership", "mutual-sustainable-ownership-failure"],
     "action": "keep",
-    "note": "The Mutual hackathon stories (mutual-informal-leadership, mutual-sustainable-ownership-failure) and the Rokk3r feedback story relate to this role but have no highlight today; #297 may add a concise bullet without copying story detail."
+    "note": "Added in #297 (allowed by the highlights.0 note): a concise Mutual bullet so a recruiter reading only experience sees the outcome. The prize dispute, the renounced share, the informal-leadership framing, and the sustainable-ownership lesson stay only in the two Mutual stories."
   },
   {
     "experienceId": "jarvi-games-2013-full-stack-developer-and-devops",
