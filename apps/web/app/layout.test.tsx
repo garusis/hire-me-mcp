@@ -3,15 +3,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProfileView } from "../src/lib/content";
 import RootLayout from "./layout.js";
 
-const { getProfileView, getWritingListView, getCvView } = vi.hoisted(() => ({
+const { getProfileView, getWritingListView, getCvView, listStoryParents } = vi.hoisted(() => ({
   getProfileView: vi.fn(),
   getWritingListView: vi.fn(() => ({ items: [], citations: [] })),
   // Stubbed with a fixed default so every existing test (which only sets
   // up `getProfileView`) doesn't need touching — `SiteHeader`'s "Download
   // CV" link (#35) reads this the same way it reads the profile.
   getCvView: vi.fn(() => ({ filename: "fixture-cv.pdf" })),
+  // #295, epic #288: the story -> primary-experience lookup ChatWidget needs
+  // to resolve a story citation's href to something other than the generic
+  // `/experience` fallback.
+  listStoryParents: vi.fn(() => [{ storyId: "fixture-story", experienceId: "fixture-role" }]),
 }));
-vi.mock("../src/lib/content", () => ({ getProfileView, getWritingListView, getCvView }));
+vi.mock("../src/lib/content", () => ({
+  getProfileView,
+  getWritingListView,
+  getCvView,
+  listStoryParents,
+}));
 
 const { getSiteUrl, getRobotsIndexable } = vi.hoisted(() => ({
   getSiteUrl: vi.fn(),
@@ -173,6 +182,30 @@ describe("RootLayout", () => {
   it("renders the chat widget launcher, reachable from every page", async () => {
     render(await RootLayout({ children: <p>page content</p> }));
     expect(screen.getByRole("button", { name: /ask about marcos/i })).toBeDefined();
+  });
+
+  // #295, epic #288: the site has no story page, so a story citation's
+  // clickable URL depends on this parent lookup reaching ChatWidget — a
+  // regression here would silently degrade every story citation back to the
+  // generic `/experience` fallback.
+  it("reads listStoryParents and passes it through to the chat widget (#295)", async () => {
+    vi.resetModules();
+    const chatWidgetSpy = vi.fn(() => null);
+    vi.doMock("./chat/chat-widget", () => ({ ChatWidget: chatWidgetSpy }));
+    const { default: FreshRootLayout } = await import("./layout.js");
+
+    render(await FreshRootLayout({ children: <p>page content</p> }));
+
+    expect(listStoryParents).toHaveBeenCalled();
+    expect(chatWidgetSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        storyParents: [{ storyId: "fixture-story", experienceId: "fixture-role" }],
+      }),
+      undefined,
+    );
+
+    vi.doUnmock("./chat/chat-widget");
+    vi.resetModules();
   });
 
   it("links to /llms.txt as an alternate text/markdown representation, on every page (#37)", async () => {

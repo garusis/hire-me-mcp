@@ -23,6 +23,7 @@ const IDS: ChatTestCitationIds = {
   profile: "marcos",
   education: "a-degree",
   recommendation: "a-recommendation",
+  story: "a-story",
 };
 
 function headers(entries: Record<string, string>): Headers {
@@ -135,6 +136,10 @@ describe("scriptedAnswerText", () => {
     // it, before both a full stop and a comma.
     expect(text).toMatch(/\[cite:[^\]]+] \./);
     expect(text).toMatch(/\[cite:[^\]]+] ,/);
+  });
+
+  it("cites a behavioral story (#295), so the chat surface exercises the story citation path deterministically", () => {
+    expect(text).toContain(`[cite:story:${IDS.story}]`);
   });
 
   it("carries Markdown a plain-text bubble would print literally (issue 272)", () => {

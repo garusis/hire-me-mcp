@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import type { ReactNode } from "react";
 import { getRobotsIndexable, getSiteUrl } from "../src/lib/config/site-url";
-import { getProfileView, getWritingListView } from "../src/lib/content";
+import { getProfileView, getWritingListView, listStoryParents } from "../src/lib/content";
 import { getRequestNonce } from "../src/lib/security/get-request-nonce";
 import { COLOR_BG_DARK, COLOR_BG_LIGHT } from "../src/lib/seo/site-colors";
 import { ChatWidget } from "./chat/chat-widget";
@@ -83,6 +83,11 @@ export const viewport: Viewport = {
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const { items: writingItems } = getWritingListView();
   const writingEntries = writingItems.map((item) => item.entry);
+  // Issue 295, epic 288: the story -> primary-experience lookup ChatWidget needs
+  // to resolve a `story` citation's clickable URL to something more precise
+  // than the generic `/experience` fallback (the site itself has no story
+  // page — see `app/skills/citation-href.ts`).
+  const storyParents = listStoryParents();
   // The per-request CSP nonce (#42) — required on this inline script since
   // the policy allows no `unsafe-inline` fallback. See
   // `src/lib/security/get-request-nonce.ts`.
@@ -113,7 +118,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <SiteHeader />
         <main id={MAIN_CONTENT_ID}>{children}</main>
         <SiteFooter />
-        <ChatWidget writingEntries={writingEntries} />
+        <ChatWidget writingEntries={writingEntries} storyParents={storyParents} />
         <SiteAnalytics />
       </body>
     </html>

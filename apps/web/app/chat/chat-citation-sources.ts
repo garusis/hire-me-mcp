@@ -60,7 +60,7 @@
 
 import type { CitableEntityType, CitationMarker } from "@hire-me-mcp/agent/citations";
 import { parseCitationSpans } from "@hire-me-mcp/agent/citations";
-import type { WritingEntry } from "../../src/lib/content";
+import type { StoryParentRef, WritingEntry } from "../../src/lib/content";
 import { resolveChatCitationHref } from "./resolve-chat-citation-href";
 
 /** One entry in a message's "Sources" list — a record the answer leaned on. */
@@ -175,12 +175,19 @@ function pushText(segments: CitedSegment[], text: string): void {
 export type CitationHrefResolver = (
   marker: CitationMarker,
   writingEntries: readonly WritingEntry[],
+  storyParents: readonly StoryParentRef[],
 ) => string | undefined;
 
 /**
  * Splits `text` into renderable segments and collects its distinct sources.
  * Never throws: text with no markers comes back as a single text segment
  * and an empty source list.
+ *
+ * `storyParents` (issue 295, epic 288) is the story -> primary-experience lookup
+ * a `story` marker's href needs — without it, a story citation degrades to
+ * the generic `/experience` fallback instead of its own parent role's
+ * anchor. Defaults to empty, which is exactly that honest fallback rather
+ * than a crash, for any caller that genuinely has no lookup available.
  *
  * `resolveHref` defaults to the real resolver and exists as a seam for the
  * one branch below that production code cannot reach: every member of
@@ -192,6 +199,7 @@ export type CitationHrefResolver = (
 export function buildCitedAnswer(
   text: string,
   writingEntries: readonly WritingEntry[],
+  storyParents: readonly StoryParentRef[] = [],
   resolveHref: CitationHrefResolver = resolveChatCitationHref,
 ): CitedAnswer {
   const segments: CitedSegment[] = [];
@@ -220,7 +228,8 @@ export function buildCitedAnswer(
     pushText(segments, takeProse(span.offset));
     cursor = span.offset + span.text.length;
 
-    const href = span.marker === null ? undefined : resolveHref(span.marker, writingEntries);
+    const href =
+      span.marker === null ? undefined : resolveHref(span.marker, writingEntries, storyParents);
     if (span.marker === null || href === undefined) {
       // Either not a citable entity type at all (issue 270's tool-name
       // marker) or a type this app has no site surface for. Neither is

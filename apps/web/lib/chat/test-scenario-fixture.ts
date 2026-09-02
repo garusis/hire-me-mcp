@@ -36,6 +36,7 @@ const FALLBACK_IDS: ChatTestCitationIds = {
   profile: "unauthored-profile",
   education: "unauthored-education",
   recommendation: "unauthored-recommendation",
+  story: "unauthored-story",
 };
 
 function firstId(entries: ReadonlyArray<{ id: string }>, fallback: string): string {
@@ -59,6 +60,7 @@ export function readChatTestCitationIds(): ChatTestCitationIds {
     profile: dataset.profile?.id ?? FALLBACK_IDS.profile,
     education: firstId(dataset.education, FALLBACK_IDS.education),
     recommendation: firstId(dataset.recommendations, FALLBACK_IDS.recommendation),
+    story: firstId(dataset.stories, FALLBACK_IDS.story),
   };
   return cached;
 }
