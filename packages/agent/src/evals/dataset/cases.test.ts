@@ -41,6 +41,23 @@ describe("EVAL_CASES", () => {
     expect(exactCases.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("includes at least one known-competency behavioral case expecting list-career-stories to be called (#294)", () => {
+    const storyCases = EVAL_CASES.filter((c) => c.expectedToolCall === "list-career-stories");
+    expect(storyCases.length).toBeGreaterThanOrEqual(1);
+    for (const evalCase of storyCases) {
+      expect(evalCase.question).toMatch(/tell me about a time|leadership|led|ownership/i);
+    }
+  });
+
+  it("includes at least one fuzzy behavioral case expecting search-career (story-scoped) routing (#294)", () => {
+    const fuzzyStoryCase = EVAL_CASES.find(
+      (c) => c.id === "rag-stalled-project-no-formal-authority",
+    );
+    expect(fuzzyStoryCase).toBeDefined();
+    expect(fuzzyStoryCase?.expectedToolCall).toBe("search-career");
+    expect(fuzzyStoryCase?.notes).toMatch(/sourceTypes.*story|story.*sourceTypes/is);
+  });
+
   it("probes the document-extraction PoC status with answer assertions that reject the withdrawn production framing (#300)", () => {
     const pocCases = EVAL_CASES.filter((c) => c.id.startsWith("poc-doc-extraction-"));
     expect(pocCases.length).toBeGreaterThanOrEqual(3);

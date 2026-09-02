@@ -342,6 +342,34 @@ export const EVAL_CASES: readonly EvalCase[] = [
       "SAP or ERP systems anywhere in the corpus.",
   },
 
+  // ---- behavioral: known-competency questions answered via list-career-stories, not search-career (#294) ----
+  {
+    id: "story-informal-leadership",
+    category: "grounded",
+    question: "Tell me about a time he showed leadership without having formal authority.",
+    gapHonestyDirection: "claimed",
+    expectedToolCall: "list-career-stories",
+    notes:
+      "stories/mutual-informal-leadership.json: primaryCompetency 'leadership', at Kubesoft. " +
+      "A known-competency behavioral question should call list-career-stories first, ahead of " +
+      "search-career, and return the complete situation/actions/results narrative, not an excerpt.",
+  },
+
+  // ---- behavioral: fuzzy wording that doesn't confidently map to a listed competency (#294) ----
+  {
+    id: "rag-stalled-project-no-formal-authority",
+    category: "grounded",
+    question:
+      "How does he behave when a project stalls and nobody is formally in charge of fixing it?",
+    gapHonestyDirection: "claimed",
+    expectedToolCall: "search-career",
+    notes:
+      "Deliberately fuzzy phrasing of stories/mutual-informal-leadership.json's situation that " +
+      "does not name a listed competency (e.g. 'leadership') — should route through " +
+      "search-career with sourceTypes: ['story'] first, then fetch the complete matching " +
+      "story from list-career-stories by id, per the retrieval policy's fuzzy-behavioral path.",
+  },
+
   // ---- exact-fact: a structured question the deterministic tools already answer precisely (#75) ----
   {
     id: "exact-house-numbers-dates",

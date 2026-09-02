@@ -22,23 +22,37 @@ import { clampScore } from "./types.js";
  *
  * - `"search-career"` — scores 1 if `search-career` appears anywhere in the
  *   trace, else 0.
+ * - `"list-career-stories"` (#294) — scores 1 if `list-career-stories`
+ *   appears anywhere in the trace, else 0.
  * - `"deterministic-only"` — scores 1 if `search-career` does NOT appear
  *   anywhere in the trace (including an empty trace — trivially satisfied,
- *   nothing to violate), else 0.
+ *   nothing to violate), else 0. `list-career-stories` appearing does not
+ *   violate this: it is a deterministic, repository-backed tool, not
+ *   semantic search.
  */
 export function scoreToolRouting(
   toolCallNames: readonly string[],
   expected: EvalCaseExpectedToolCall,
 ): ScoreResult {
   const calledSearchCareer = toolCallNames.includes("search-career");
-  const passed = expected === "search-career" ? calledSearchCareer : !calledSearchCareer;
+  const calledListCareerStories = toolCallNames.includes("list-career-stories");
+  const passed =
+    expected === "search-career"
+      ? calledSearchCareer
+      : expected === "list-career-stories"
+        ? calledListCareerStories
+        : !calledSearchCareer;
   const trace = toolCallNames.length > 0 ? toolCallNames.join(", ") : "(no tool calls)";
+
+  const reason =
+    expected === "search-career"
+      ? `Expected search-career to be called; tool-call trace was: ${trace}.`
+      : expected === "list-career-stories"
+        ? `Expected list-career-stories to be called; tool-call trace was: ${trace}.`
+        : `Expected search-career NOT to be called (deterministic tools only); tool-call trace was: ${trace}.`;
 
   return {
     score: clampScore(passed ? 1 : 0),
-    reason:
-      expected === "search-career"
-        ? `Expected search-career to be called; tool-call trace was: ${trace}.`
-        : `Expected search-career NOT to be called (deterministic tools only); tool-call trace was: ${trace}.`,
+    reason,
   };
 }

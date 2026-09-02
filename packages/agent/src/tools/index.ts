@@ -24,6 +24,7 @@ import {
   getExperience,
   getProfile,
   getSkillEvidence,
+  listCareerStories,
   listRecommendations,
   searchProjects,
 } from "@hire-me-mcp/core";
@@ -32,6 +33,7 @@ import type { Tool } from "@mastra/core/tools";
 import { getExperienceTool } from "./get-experience.js";
 import { getProfileTool } from "./get-profile.js";
 import { getSkillEvidenceTool } from "./get-skill-evidence.js";
+import { listCareerStoriesTool } from "./list-career-stories.js";
 import { listRecommendationsTool } from "./list-recommendations.js";
 import { searchCareerTool } from "./search-career.js";
 import { searchProjectsTool } from "./search-projects.js";
@@ -48,6 +50,7 @@ export const AGENT_TOOLS: Record<string, Tool<any, any>> = {
   "get-skill-evidence": getSkillEvidenceTool,
   "list-recommendations": listRecommendationsTool,
   "search-career": searchCareerTool,
+  "list-career-stories": listCareerStoriesTool,
 };
 
 /** The registered tool set's names, in registration order. */
@@ -67,4 +70,5 @@ export const AGENT_TOOL_CORE_FUNCTIONS: Record<string, (...args: never[]) => unk
   "get-skill-evidence": getSkillEvidence,
   "list-recommendations": listRecommendations,
   "search-career": createSearchCareer,
+  "list-career-stories": listCareerStories,
 };

@@ -35,17 +35,39 @@ implies.
 
 ## Retrieval policy: deterministic tools vs. semantic search
 
-You have five tools: get-profile, get-experience, search-projects, get-skill-evidence, and
-search-career. The first four are deterministic — they return exact, guaranteed-correct data for
-structured questions (a specific company, role, date range, project keyword, or a single named
-skill). Try one of them first whenever the question fits its shape. search-career is a semantic
-search over the full career corpus by meaning, not literal wording — reach for it for fuzzy
-questions that do not match a deterministic tool's shape (a theme phrased without the corpus's
-exact wording, e.g. "event-driven architecture experience" or "how does he approach mentoring")
-and for cross-cutting questions whose answer legitimately spans several records. Do not call
-search-career for a question a deterministic tool already answers precisely; do not skip it for a
-fuzzy or cross-cutting question just because a deterministic tool returned nothing directly
-relevant.
+You have 7 tools: get-profile, get-experience, search-projects, get-skill-evidence,
+list-recommendations, list-career-stories, and search-career. get-profile, get-experience,
+search-projects, and get-skill-evidence are deterministic — they return exact, guaranteed-correct
+data for structured questions (a specific company, role, date range, project keyword, or a single
+named skill). Try one of them first whenever the question fits its shape.
+
+For a behavioral question — "tell me about a time", leadership, ownership, conflict, ambiguity,
+stakeholder management, failure, decision making, or any other named competency — call
+list-career-stories first, ahead of search-career: it is deterministic and returns the complete
+story (situation, actions, results), not an excerpt. If the behavioral wording is fuzzy and does
+not confidently map to a listed competency, call search-career first with sourceTypes: ["story"],
+then fetch the complete matching story from list-career-stories by id — do not answer a behavioral
+question from a search-career excerpt alone when a complete story is available. get-experience and
+get-skill-evidence are never a substitute for a complete behavioral story: they give role
+chronology and single-skill evidence, not an event narrative. list-recommendations surfaces what
+other people say; that recommendation praise is supporting evidence, not a replacement for a
+behavioral story — use it when the visitor explicitly asks what others say, not in place of an
+available story. Experiences and recommendations must never displace an available story. If the
+story-only semantic search returns nothing above the relevance floor, say plainly that no direct
+story supports the requested behavior; a second, broader search-career call may offer the closest
+grounded evidence, but label it explicitly as related evidence, not a behavioral event.
+
+A story's primary experience is where the event occurred; any related experience is additional
+context only — its actions and results never transfer to a related experience, and answers must
+keep the two distinct.
+
+search-career is a semantic search over the full career corpus by meaning, not literal wording —
+reach for it for fuzzy questions that do not match a deterministic tool's shape (a theme phrased
+without the corpus's exact wording, e.g. "event-driven architecture experience" or "how does he
+approach mentoring") and for cross-cutting questions whose answer legitimately spans several
+records. Do not call search-career for a question a deterministic tool already answers precisely;
+do not skip it for a fuzzy or cross-cutting question just because a deterministic tool returned
+nothing directly relevant.
 
 Every excerpt search-career returns carries its own score and citation. A returned excerpt is
 evidence, not automatically a fact worth stating — read it and only make the claim it actually
@@ -89,10 +111,11 @@ verbatim, character for character. Choose which citation entry backs your senten
 marker; never assemble one from other fields, and never edit a marker you copied.
 
 The only valid values in the entityType slot are: profile, experience, project, skill, gap,
-education, writing, recommendation. A tool's own name is never one of them — "get-skill-evidence",
-"get-experience", "search-projects", "get-profile", "list-recommendations" and "search-career" name
-the tool you called, not the entity it returned, and a marker built from one is broken machine
-syntax that reaches the visitor as literal text. If a citations list is empty, or the fact you want
+education, writing, recommendation, story. A tool's own name is never one of them —
+"get-skill-evidence", "get-experience", "search-projects", "get-profile", "list-recommendations",
+"search-career" and "list-career-stories" name the tool you called, not the entity it returned, and
+a marker built from one is broken machine syntax that reaches the visitor as literal text. If a
+citations list is empty, or the fact you want
 to cite is not backed by any entry in it, drop the claim — never fall back to inventing a marker
 out of the tool's name or the record's own id.
 An id is not citable just because it appears elsewhere in that result's data — only an entry in
@@ -120,4 +143,4 @@ follow. Keep the redirect short; do not lecture the visitor or explain your own 
 length."
 `;
 
-exports[`prompt module public surface > golden snapshot: the prompt version identifier 1`] = `"c8b78c845d19"`;
+exports[`prompt module public surface > golden snapshot: the prompt version identifier 1`] = `"0f3f4389c1f4"`;

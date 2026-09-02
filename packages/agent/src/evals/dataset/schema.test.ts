@@ -96,6 +96,14 @@ describe("evalCaseSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts a case with an expectedToolCall of 'list-career-stories' (#294 behavioral-question case)", () => {
+    const result = evalCaseSchema.safeParse({
+      ...validCase,
+      expectedToolCall: "list-career-stories",
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("omits expectedToolCall by default — not every case asserts tool-call routing", () => {
     const result = evalCaseSchema.safeParse(validCase);
     expect(result.success).toBe(true);

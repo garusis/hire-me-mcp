@@ -35,10 +35,17 @@ export type EvalCaseGapHonestyDirection = z.infer<typeof gapHonestyDirectionSche
  * absent topic worth checking against the full corpus, not just the
  * curated `gaps.json` list). `"deterministic-only"` asserts it does NOT —
  * an exact, structured question one of `get-experience`/`search-projects`/
- * `get-skill-evidence` already answers precisely. Optional: most existing
- * cases don't assert routing at all. See `../scorers/tool-routing.ts`.
+ * `get-skill-evidence` already answers precisely. `"list-career-stories"`
+ * (#294) asserts the trace includes the complete-story tool — a behavioral,
+ * "tell me about a time" question naming or clearly implying a known
+ * competency. Optional: most existing cases don't assert routing at all.
+ * See `../scorers/tool-routing.ts`.
  */
-export const expectedToolCallSchema = z.enum(["search-career", "deterministic-only"]);
+export const expectedToolCallSchema = z.enum([
+  "search-career",
+  "deterministic-only",
+  "list-career-stories",
+]);
 export type EvalCaseExpectedToolCall = z.infer<typeof expectedToolCallSchema>;
 
 const KEBAB_CASE_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

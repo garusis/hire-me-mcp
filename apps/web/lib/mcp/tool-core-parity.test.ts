@@ -38,6 +38,7 @@ vi.mock("@hire-me-mcp/core", async (importOriginal) => {
     searchProjects: vi.fn(),
     getSkillEvidence: vi.fn(),
     listRecommendations: vi.fn(),
+    listCareerStories: vi.fn(),
   };
 });
 vi.mock("../../src/lib/content/repository", () => ({
@@ -109,6 +110,22 @@ const cases: Case[] = [
       ],
     },
   },
+  {
+    name: "list-career-stories",
+    input: {},
+    coreFnName: "listCareerStories",
+    getCoreFn: () => core.listCareerStories as unknown as (...args: unknown[]) => unknown,
+    sentinel: {
+      data: [{ sentinel: "list-career-stories-fixture" }],
+      citations: [
+        {
+          entityType: "story",
+          entityId: "sentinel-story",
+          label: "Sentinel",
+        },
+      ],
+    },
+  },
 ];
 
 describe("MCP tool set and agent tool set share one core-function source of truth (#64)", () => {
@@ -163,7 +180,7 @@ describe("MCP tool set and agent tool set share one core-function source of trut
   });
 
   it("the agent tool set is a superset of the MCP tool set — every MCP tool has an agent counterpart", () => {
-    // Not exact equality (#75, epic #6): the agent gained a fifth tool,
+    // Not exact equality (#75, epic #6): the agent additionally registers
     // `search-career` (a live semantic-retrieval query, not a
     // CareerDataRepository read), that the MCP server does not register
     // yet — that's #61's job, tracked separately and explicitly out of

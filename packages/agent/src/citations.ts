@@ -47,7 +47,8 @@ export type CitableEntityType =
   | "gap"
   | "education"
   | "writing"
-  | "recommendation";
+  | "recommendation"
+  | "story";
 
 /**
  * Every {@link CitableEntityType}, as a runtime value.
@@ -70,6 +71,7 @@ export const CITABLE_ENTITY_TYPES: readonly CitableEntityType[] = [
   "education",
   "writing",
   "recommendation",
+  "story",
 ];
 
 /** A single parsed (or to-be-serialized) citation marker. */

@@ -204,6 +204,16 @@ describe("buildCitedAnswer", () => {
     expect(sources[0]?.label).toContain("·");
   });
 
+  it("renders a story citation with a real, non-generic label (#294)", () => {
+    const { sources } = buildCitedAnswer(
+      "A claim. [cite:story:mutual-informal-leadership]",
+      NO_WRITING,
+    );
+    expect(sources).toHaveLength(1);
+    expect(sources[0]?.label).toContain("·");
+    expect(sources[0]?.label).not.toContain("Source ·");
+  });
+
   it("covers every citable entity type the agent can emit, so a new type can't silently vanish from answers", () => {
     for (const entityType of citationsModule.CITABLE_ENTITY_TYPES) {
       const { sources } = buildCitedAnswer(`Claim. [cite:${entityType}:some-entity]`, NO_WRITING);

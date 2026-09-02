@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AGENT_TOOL_CORE_FUNCTIONS, AGENT_TOOL_NAMES, AGENT_TOOLS } from "./index.js";
 
 describe("AGENT_TOOLS", () => {
-  it("registers exactly the six domain-grounded tools, keyed by their tool name", () => {
+  it("registers exactly the seven domain-grounded tools, keyed by their tool name", () => {
     expect(Object.keys(AGENT_TOOLS)).toEqual([
       "get-profile",
       "get-experience",
@@ -10,6 +10,7 @@ describe("AGENT_TOOLS", () => {
       "get-skill-evidence",
       "list-recommendations",
       "search-career",
+      "list-career-stories",
     ]);
   });
 

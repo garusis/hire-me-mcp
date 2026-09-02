@@ -124,6 +124,7 @@ const ENTITY_TYPE_LABELS: Record<CitableEntityType, string> = {
   education: "Education",
   writing: "Writing",
   recommendation: "Recommendation",
+  story: "Story",
 };
 
 /** `house-numbers-2022-role` -> `House Numbers 2022 Role`. Pure reformatting of the id — never invents a name the dataset doesn't have. */
