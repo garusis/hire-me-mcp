@@ -149,7 +149,7 @@ export const listCareerStoriesTool: ToolDefinition<typeof inputSchema, CareerSto
     "labeled related roles, and a citation whose URL points at that primary role's entry on " +
     "the experience page. Use this for behavioral, 'tell me about a time' questions — " +
     "leadership, ownership, conflict, ambiguity, stakeholder management, failure, decision " +
-    "making — whenever the competency, company, or role is known: it is deterministic and " +
+    "making — whenever the competency, company, or experience id is known: it is deterministic and " +
     "returns the whole story, so prefer it over semantic search for those. Do not use it for " +
     "chronological company, role, date, or technology history (use get-experience), and do " +
     "not look for a search-stories tool — none exists. For fuzzy behavioral phrasing or " +

@@ -57,6 +57,19 @@ describe("docs/mcp.md consistency (#71)", () => {
     expect(doc).toContain("apps/web/README.md#rate-limiting");
     expect(doc).not.toMatch(/\b60\s+requests?\b/i);
   });
+
+  it("never claims ping's numeric position among the registered tools (independent review, #293)", () => {
+    // Mirrors the equivalent README.md check in
+    // packages/connect-metadata/src/readme-contract.test.ts: the generated
+    // tool table grows with EXPECTED_TOOL_NAMES, but a hand-authored
+    // ordinal claim about `ping` ("a seventh tool") does not, and silently
+    // goes stale.
+    const doc = readDocsMcp();
+    const ordinalToolCountWording =
+      /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth)\s+tool\b/i;
+    expect(doc).not.toMatch(ordinalToolCountWording);
+    expect(doc).toMatch(/`ping`.*connectivity diagnostic/i);
+  });
 });
 
 describe("docs/mcp.md generated regions (#17)", () => {

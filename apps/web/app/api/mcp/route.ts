@@ -76,8 +76,8 @@ const handler = createMcpHandler(
       "`list-writing`. For behavioral, 'tell me about a time' questions (leadership, " +
       "ownership, conflict, ambiguity, stakeholder management, failure, decision making), use " +
       "`list-career-stories`: it deterministically returns complete situation/task/actions/" +
-      "results stories filtered by competency, company, or role, each cited to the role where " +
-      "the event occurred. Every tool call is recorded as an anonymized, aggregate-only usage " +
+      "results stories filtered by competency, company, or experience id, each cited to the " +
+      "role where the event occurred. Every tool call is recorded as an anonymized, aggregate-only usage " +
       "event (which tool, which surface, the outcome) — never the raw arguments, your IP, " +
       "or any identifying information. See the privacy note at /privacy for the full, " +
       "auditable list of what is and isn't collected.",

@@ -376,5 +376,22 @@ describe("listCareerStoriesTool (#293)", () => {
       expect(description.toLowerCase()).toMatch(/empty list/);
       expect(description.toLowerCase()).toMatch(/not an error/);
     });
+
+    it("advertises only filter fields that exist on the live input schema — no nonexistent 'role' field (independent review, #293)", () => {
+      const jsonSchema = z.toJSONSchema(listCareerStoriesTool.inputSchema) as unknown as {
+        properties: Record<string, unknown>;
+      };
+      const liveFilterFields = Object.keys(jsonSchema.properties);
+      expect(liveFilterFields).toEqual(["id", "experienceId", "company", "competencies"]);
+      expect(liveFilterFields).not.toContain("role");
+
+      // The "use this whenever ..." guidance names concrete fields a caller can
+      // supply; it must never claim a bare "role" filter exists (there is no
+      // such input field — only exact `experienceId` or `company`).
+      expect(description).not.toMatch(/whenever the competency, company, or role is known/i);
+      expect(description.toLowerCase()).toMatch(
+        /whenever the competency, company, or experience id is known/,
+      );
+    });
   });
 });

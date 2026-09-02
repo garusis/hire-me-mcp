@@ -146,6 +146,18 @@ describe("MCP endpoint (app/api/mcp/route.ts)", () => {
     await client.close();
   });
 
+  it("instructions do not advertise a nonexistent 'role' filter for list-career-stories (independent review, #293)", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const instructions = client.getInstructions() ?? "";
+    expect(instructions).not.toMatch(/filtered by competency, company, or role\b/i);
+    expect(instructions.toLowerCase()).toMatch(/filtered by competency, company, or experience id/);
+
+    await client.close();
+  });
+
   it("lists exactly the expected tool set, each with a description and a valid JSON Schema input", async () => {
     const client = new Client({ name: "test-client", version: "0.0.0" });
     const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
