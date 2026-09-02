@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildAliasIndex,
   buildCitation,
+  COMPETENCIES,
   chunkCareerData,
+  citableEntityTypeSchema,
+  competencySchema,
   createDomainResult,
   createInMemoryCareerDataRepository,
   emptyCareerDataset,
@@ -238,5 +241,21 @@ describe("public entry point", () => {
     });
 
     expect(result.status).toBe("accepted");
+  });
+
+  it("re-exports COMPETENCIES and competencySchema from @hire-me-mcp/career-data — the canonical enum packages/agent's list-career-stories tool validates against without depending on career-data directly (#294)", async () => {
+    const careerData = await import("@hire-me-mcp/career-data");
+    expect(COMPETENCIES).toBe(careerData.COMPETENCIES);
+    expect(competencySchema).toBe(careerData.competencySchema);
+    expect(COMPETENCIES).toContain("leadership");
+    expect(competencySchema.safeParse("leadership").success).toBe(true);
+    expect(competencySchema.safeParse("not-a-real-competency").success).toBe(false);
+  });
+
+  it("re-exports citableEntityTypeSchema from @hire-me-mcp/career-data — the canonical source-type enum packages/agent's search-career tool validates sourceTypes against (#294)", async () => {
+    const careerData = await import("@hire-me-mcp/career-data");
+    expect(citableEntityTypeSchema).toBe(careerData.citableEntityTypeSchema);
+    expect(citableEntityTypeSchema.safeParse("story").success).toBe(true);
+    expect(citableEntityTypeSchema.safeParse("not-a-real-source-type").success).toBe(false);
   });
 });

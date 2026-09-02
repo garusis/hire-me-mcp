@@ -63,6 +63,7 @@ import {
   scoreRelevance,
   scoreToolRouting,
 } from "./scorers/index.js";
+import type { ToolCall } from "./scorers/tool-routing.js";
 import type { ReturnedCitation } from "./scorers/types.js";
 import type { ScorerThresholds } from "./thresholds.js";
 
@@ -72,14 +73,18 @@ export interface CaseRunResult {
   toolCitations: ReturnedCitation[];
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
   /**
-   * Every tool name called during this run's `agent.generate()`, in call
-   * order (duplicates allowed) — the trace `scoreToolRouting` (#75) checks
-   * a case's `expectedToolCall` against. Optional and defaults to an empty
-   * trace when omitted, so a `RunnerDeps.runCase` stub written before #75
-   * (this field's introduction) keeps compiling and running unchanged;
+   * Every tool call made during this run's `agent.generate()` — name plus
+   * the arguments the model actually supplied — in call order (duplicates
+   * allowed). The trace `scoreToolRouting` (#75, argument/sequence-aware
+   * since #294) checks a case's `expectedToolCall` against: presence alone
+   * for `"search-career"`/`"list-career-stories"`/`"deterministic-only"`,
+   * and both the `sourceTypes` argument and call order for
+   * `"search-career-story-scoped"`. Optional and defaults to an empty trace
+   * when omitted, so a `RunnerDeps.runCase` stub written before #75/#294
+   * (these fields' introduction) keeps compiling and running unchanged;
    * `./cli.ts`'s real implementation always supplies it.
    */
-  toolCallNames?: string[];
+  toolCalls?: ToolCall[];
 }
 
 /** Injected dependencies — the real-model-call seam. See module docs. */
@@ -109,7 +114,7 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
   const toolRouting =
     evalCase.expectedToolCall === undefined
       ? null
-      : scoreToolRouting(run.toolCallNames ?? [], evalCase.expectedToolCall);
+      : scoreToolRouting(run.toolCalls ?? [], evalCase.expectedToolCall);
   const answerAssertions =
     evalCase.answerAssertions === undefined
       ? null

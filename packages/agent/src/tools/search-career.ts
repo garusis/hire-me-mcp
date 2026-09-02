@@ -52,6 +52,7 @@
  * by `searchCareer`, so truncation always drops the WEAKEST matches first.
  */
 
+import { citableEntityTypeSchema } from "@hire-me-mcp/core";
 import type { SearchCareerResultItem } from "@hire-me-mcp/core/search-career";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
@@ -84,6 +85,14 @@ export const searchCareerInputSchema = z
       .describe(
         "Max number of ranked chunks to request (at most 10; the tool's own retrieval budget " +
           "may return fewer). Omit to use the default.",
+      ),
+    sourceTypes: z
+      .array(citableEntityTypeSchema)
+      .min(1)
+      .optional()
+      .describe(
+        "Restrict results to these source types (e.g. ['story'] for the fuzzy-behavioral " +
+          "route — see list-career-stories' description). Omit for no constraint.",
       ),
   })
   .strict();
@@ -186,7 +195,10 @@ export const searchCareerTool = createTool({
     }
 
     try {
-      const result = await availability.searchCareer(input.query, { topK: input.topK });
+      const result = await availability.searchCareer(input.query, {
+        topK: input.topK,
+        sourceTypes: input.sourceTypes,
+      });
       const { results, truncated } = applyRetrievalBudget(result.results);
       return {
         query: result.query,

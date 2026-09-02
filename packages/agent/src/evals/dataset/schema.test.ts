@@ -104,6 +104,14 @@ describe("evalCaseSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts a case with an expectedToolCall of 'search-career-story-scoped' (#294 independent-review correction: fuzzy behavioral routing must assert sourceTypes, not just tool presence)", () => {
+    const result = evalCaseSchema.safeParse({
+      ...validCase,
+      expectedToolCall: "search-career-story-scoped",
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("omits expectedToolCall by default — not every case asserts tool-call routing", () => {
     const result = evalCaseSchema.safeParse(validCase);
     expect(result.success).toBe(true);

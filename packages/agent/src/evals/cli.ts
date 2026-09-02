@@ -212,6 +212,40 @@ export function extractToolNamesFromToolResults(toolResults: readonly unknown[])
   return names;
 }
 
+/** One real tool call's name and the arguments the model actually supplied — the unit {@link extractToolCallsFromToolResults} extracts and {@link scoreToolRouting} inspects (#294). */
+export interface ToolCall {
+  toolName: string;
+  args: unknown;
+}
+
+/**
+ * Extract every tool call as `{ toolName, args }` (in call order, duplicates
+ * kept) off a real `agent.generate()` result's `toolResults` array (#294) —
+ * a strict superset of {@link extractToolNamesFromToolResults} that also
+ * carries the model-supplied arguments, so `scoreToolRouting`
+ * (`./scorers/tool-routing.ts`) can assert on actual tool INPUT (e.g.
+ * `search-career` was called with `sourceTypes: ["story"]`) and call
+ * SEQUENCE, not just which tool names appeared somewhere in the trace.
+ * Tolerant by design, same as `extractToolNamesFromToolResults` above: a
+ * malformed entry (missing or non-string `toolName`) is skipped, never
+ * thrown on; a call with no `args` field yields `args: undefined`.
+ */
+export function extractToolCallsFromToolResults(toolResults: readonly unknown[]): ToolCall[] {
+  const calls: ToolCall[] = [];
+  for (const toolResult of toolResults) {
+    if (typeof toolResult !== "object" || toolResult === null) continue;
+    const entry = toolResult as Record<string, unknown>;
+    const payload =
+      typeof entry.payload === "object" && entry.payload !== null
+        ? (entry.payload as Record<string, unknown>)
+        : undefined;
+    const toolName = typeof payload?.toolName === "string" ? payload.toolName : entry.toolName;
+    if (typeof toolName !== "string") continue;
+    calls.push({ toolName, args: payload?.args ?? (entry as Record<string, unknown>).args });
+  }
+  return calls;
+}
+
 async function main(): Promise<void> {
   const envConfig = resolveRunnerEnvConfig();
   const modelId = resolveChatModelConfig().modelId;
@@ -258,7 +292,7 @@ async function main(): Promise<void> {
         return {
           answer: result.text,
           toolCitations: extractCitationsFromToolResults(result.toolResults ?? []),
-          toolCallNames: extractToolNamesFromToolResults(result.toolResults ?? []),
+          toolCalls: extractToolCallsFromToolResults(result.toolResults ?? []),
           usage: {
             inputTokens: result.totalUsage?.inputTokens ?? 0,
             outputTokens: result.totalUsage?.outputTokens ?? 0,

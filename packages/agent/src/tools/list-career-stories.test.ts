@@ -1,6 +1,7 @@
 import type { CareerStoryFilter, CareerStoryListEntry, DomainResult } from "@hire-me-mcp/core";
 import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { z } from "zod";
 import { withCitationMarkers } from "./citation-markers.js";
 import { listCareerStoriesInputSchema, listCareerStoriesTool } from "./list-career-stories.js";
 
@@ -66,7 +67,7 @@ describe("listCareerStoriesTool", () => {
     const domainResult: DomainResult<CareerStoryListEntry[]> = { data: [], citations: [] };
     vi.mocked(core.listCareerStories).mockReturnValue(domainResult);
 
-    const input = {
+    const input: z.infer<typeof listCareerStoriesInputSchema> = {
       id: "fixture-leadership-story",
       experienceId: "fixture-role-2022",
       company: "Fixture Corp",
@@ -129,5 +130,21 @@ describe("listCareerStoriesTool", () => {
     expect(listCareerStoriesInputSchema.safeParse({ competencies: ["leadership"] }).success).toBe(
       true,
     );
+  });
+
+  it("accepts every controlled COMPETENCIES value", async () => {
+    const { COMPETENCIES } = await import("@hire-me-mcp/core");
+    for (const competency of COMPETENCIES) {
+      expect(listCareerStoriesInputSchema.safeParse({ competencies: [competency] }).success).toBe(
+        true,
+      );
+    }
+  });
+
+  it("rejects an unknown competency value — strict parity with the public MCP adapter's controlled enum (#294)", () => {
+    const parsed = listCareerStoriesInputSchema.safeParse({
+      competencies: ["not-a-real-competency"],
+    });
+    expect(parsed.success).toBe(false);
   });
 });

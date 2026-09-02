@@ -6,6 +6,16 @@
  * README.md for the enforced dependency/import boundary.
  */
 
+/**
+ * Re-exported from `@hire-me-mcp/career-data`, whose package `packages/agent`
+ * does not depend on directly (architecture boundary) — this is the single
+ * canonical source `packages/agent`'s `list-career-stories` and
+ * `search-career` tool adapters validate model-supplied `competencies` and
+ * `sourceTypes` input against, matching the public MCP surface's strict
+ * input semantics (#294).
+ */
+export type { CitableEntityType, Competency } from "@hire-me-mcp/career-data";
+export { COMPETENCIES, citableEntityTypeSchema, competencySchema } from "@hire-me-mcp/career-data";
 export type {
   Chunk,
   ChunkCitation,

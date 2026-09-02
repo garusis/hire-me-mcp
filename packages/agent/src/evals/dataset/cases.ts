@@ -349,10 +349,21 @@ export const EVAL_CASES: readonly EvalCase[] = [
     question: "Tell me about a time he showed leadership without having formal authority.",
     gapHonestyDirection: "claimed",
     expectedToolCall: "list-career-stories",
+    answerAssertions: {
+      mustMatch: ["Xogito"],
+      mustNotMatch: ["hackathon", "prize money", "\\bMutual\\b"],
+    },
     notes:
-      "stories/mutual-informal-leadership.json: primaryCompetency 'leadership', at Kubesoft. " +
-      "A known-competency behavioral question should call list-career-stories first, ahead of " +
-      "search-career, and return the complete situation/actions/results narrative, not an excerpt.",
+      "stories/xogito-client-account-recovery.json (story 001): primaryCompetency 'leadership', " +
+      "at Xogito. Both story 001 and stories/mutual-informal-leadership.json (story 002) share " +
+      "primaryCompetency 'leadership', but this question's generic 'without formal authority' " +
+      "wording carries none of 002's Mutual-specific signals (hackathon, prize money, the " +
+      "Mutual app) — the locked #305 decision 8 'story 001 > 002' invariant makes 001 the " +
+      "preferred grounding whenever both are honest candidates; 002 remains appropriate only " +
+      "for Mutual-specific wording (see rag-stalled-project-no-formal-authority below, which " +
+      "IS phrased around 002's situation). A known-competency behavioral question should call " +
+      "list-career-stories first, ahead of search-career, and return the complete " +
+      "situation/actions/results narrative, not an excerpt.",
   },
 
   // ---- behavioral: fuzzy wording that doesn't confidently map to a listed competency (#294) ----
@@ -362,7 +373,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
     question:
       "How does he behave when a project stalls and nobody is formally in charge of fixing it?",
     gapHonestyDirection: "claimed",
-    expectedToolCall: "search-career",
+    expectedToolCall: "search-career-story-scoped",
     notes:
       "Deliberately fuzzy phrasing of stories/mutual-informal-leadership.json's situation that " +
       "does not name a listed competency (e.g. 'leadership') — should route through " +

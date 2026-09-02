@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractCitationsFromToolResults,
+  extractToolCallsFromToolResults,
   extractToolNamesFromToolResults,
   filterCasesByIds,
   resolveRunnerEnvConfig,
@@ -175,5 +176,53 @@ describe("extractToolNamesFromToolResults (#75)", () => {
     ];
     expect(() => extractToolNamesFromToolResults(toolResults)).not.toThrow();
     expect(extractToolNamesFromToolResults(toolResults)).toEqual(["real"]);
+  });
+});
+
+describe("extractToolCallsFromToolResults (#294)", () => {
+  it("collects every tool result's { toolName, args } pair, in call order, including duplicates — scoreToolRouting (#294) needs actual arguments, not just names, to verify the sourceTypes: ['story'] contract", () => {
+    const toolResults = [
+      {
+        type: "tool-result",
+        payload: {
+          toolName: "search-career",
+          args: { query: "how does he lead", sourceTypes: ["story"] },
+          result: { data: {}, citations: [] },
+        },
+      },
+      {
+        type: "tool-result",
+        payload: {
+          toolName: "list-career-stories",
+          args: { id: "xogito-client-account-recovery" },
+          result: { data: [], citations: [] },
+        },
+      },
+    ];
+
+    expect(extractToolCallsFromToolResults(toolResults)).toEqual([
+      { toolName: "search-career", args: { query: "how does he lead", sourceTypes: ["story"] } },
+      { toolName: "list-career-stories", args: { id: "xogito-client-account-recovery" } },
+    ]);
+  });
+
+  it("falls back to a top-level toolName/args when there is no payload one", () => {
+    const toolResults = [{ toolName: "flat-shape", args: { q: 1 } }];
+    expect(extractToolCallsFromToolResults(toolResults)).toEqual([
+      { toolName: "flat-shape", args: { q: 1 } },
+    ]);
+  });
+
+  it("defaults args to undefined when absent, and returns an empty array for no tool calls", () => {
+    expect(extractToolCallsFromToolResults([])).toEqual([]);
+    expect(extractToolCallsFromToolResults([{ payload: { toolName: "no-args-tool" } }])).toEqual([
+      { toolName: "no-args-tool", args: undefined },
+    ]);
+  });
+
+  it("skips a tool result with no string toolName anywhere, without throwing", () => {
+    const toolResults = [{ payload: { toolName: 42 } }, { garbage: true }, undefined];
+    expect(() => extractToolCallsFromToolResults(toolResults)).not.toThrow();
+    expect(extractToolCallsFromToolResults(toolResults)).toEqual([]);
   });
 });

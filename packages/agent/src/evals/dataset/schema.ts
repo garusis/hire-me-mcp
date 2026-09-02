@@ -38,13 +38,19 @@ export type EvalCaseGapHonestyDirection = z.infer<typeof gapHonestyDirectionSche
  * `get-skill-evidence` already answers precisely. `"list-career-stories"`
  * (#294) asserts the trace includes the complete-story tool — a behavioral,
  * "tell me about a time" question naming or clearly implying a known
- * competency. Optional: most existing cases don't assert routing at all.
- * See `../scorers/tool-routing.ts`.
+ * competency. `"search-career-story-scoped"` (#294, tightened after
+ * independent review) asserts `search-career` was called WITH `sourceTypes`
+ * including `"story"`, and — when a subsequent `list-career-stories` fetch
+ * exists — that the story-scoped search precedes it, per #305 decision 5's
+ * locked fuzzy-behavioral route; plain `"search-career"` only checks tool
+ * presence and cannot detect a call missing that argument. Optional: most
+ * existing cases don't assert routing at all. See `../scorers/tool-routing.ts`.
  */
 export const expectedToolCallSchema = z.enum([
   "search-career",
   "deterministic-only",
   "list-career-stories",
+  "search-career-story-scoped",
 ]);
 export type EvalCaseExpectedToolCall = z.infer<typeof expectedToolCallSchema>;
 

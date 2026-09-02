@@ -49,12 +49,64 @@ describe("EVAL_CASES", () => {
     }
   });
 
+  /**
+   * #305 decision 8's locked "story 001 > 002" invariant: story
+   * `xogito-client-account-recovery` (001) must outrank
+   * `mutual-informal-leadership` (002) whenever both are honest candidates —
+   * both share `primaryCompetency: "leadership"`, and this case's generic
+   * "leadership without formal authority" wording carries none of Mutual's
+   * distinguishing signals (hackathon, prize money, the Mutual app), so
+   * 001 is the preferred grounding, not 002 (independent review of #294's
+   * 099e9d1, corrected here).
+   */
+  it("grounds the generic known-competency leadership case in story 001 (xogito-client-account-recovery), not story 002 (mutual-informal-leadership), per the #305 story-001-over-002 invariant", () => {
+    const storyCase = EVAL_CASES.find((c) => c.id === "story-informal-leadership");
+    expect(storyCase).toBeDefined();
+    expect(storyCase?.notes).toMatch(/xogito-client-account-recovery/);
+    expect(storyCase?.notes).toMatch(/305|story 001|001 (?:over|>|outrank)/i);
+    expect(storyCase?.answerAssertions?.mustMatch).toBeDefined();
+    expect(storyCase?.answerAssertions?.mustNotMatch).toBeDefined();
+  });
+
+  describe("story-informal-leadership answer assertions (#305 story-001-over-002 invariant)", () => {
+    function assertionsFor(id: string) {
+      const evalCase = EVAL_CASES.find((c) => c.id === id);
+      const assertions = evalCase?.answerAssertions;
+      if (!assertions) {
+        throw new Error(`eval case ${id} must declare answerAssertions`);
+      }
+      return assertions;
+    }
+
+    it("scores a Xogito-grounded (story 001) answer as fully passing", () => {
+      const answer =
+        "At Xogito, after the project manager resigned, Marcos became the team's main " +
+        "spokesperson with no formal product-management authority, rebuilding the client's " +
+        "trust over several sprints by proposing quick wins alongside the core delivery repairs.";
+      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"));
+      expect(result.reason).not.toMatch(/forbidden pattern matched|missing required pattern/);
+      expect(result.score).toBe(1);
+    });
+
+    it("scores an answer grounded only in the Mutual hackathon story (002) as failing", () => {
+      const answer =
+        "After the hackathon, disagreement over the Mutual prize money stalled the project, so " +
+        "Marcos renounced his own share and kept building the backend through informal leadership.";
+      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"));
+      expect(result.score).toBeLessThan(1);
+    });
+  });
+
   it("includes at least one fuzzy behavioral case expecting search-career (story-scoped) routing (#294)", () => {
     const fuzzyStoryCase = EVAL_CASES.find(
       (c) => c.id === "rag-stalled-project-no-formal-authority",
     );
     expect(fuzzyStoryCase).toBeDefined();
-    expect(fuzzyStoryCase?.expectedToolCall).toBe("search-career");
+    // #294 independent-review correction: "search-career" alone only checks
+    // tool-name presence, not that it was actually called with
+    // sourceTypes: ["story"] — the argument- and sequence-aware variant is
+    // required so a run that calls search-career unscoped still fails.
+    expect(fuzzyStoryCase?.expectedToolCall).toBe("search-career-story-scoped");
     expect(fuzzyStoryCase?.notes).toMatch(/sourceTypes.*story|story.*sourceTypes/is);
   });
 

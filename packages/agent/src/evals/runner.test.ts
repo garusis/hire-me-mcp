@@ -40,6 +40,12 @@ const exactFactCase = makeCase({
   gapHonestyDirection: "claimed",
   expectedToolCall: "deterministic-only",
 });
+const storyScopedCase = makeCase({
+  id: "story-scoped-1",
+  category: "grounded",
+  gapHonestyDirection: "claimed",
+  expectedToolCall: "search-career-story-scoped",
+});
 
 describe("runEvalSuite", () => {
   it("runs every case up to the budget's case cap, scoring each with all applicable scorers", async () => {
@@ -160,12 +166,12 @@ describe("runEvalSuite", () => {
     expect(plain?.scores.answerAssertions).toBeNull();
   });
 
-  it("scores toolRouting when a case declares expectedToolCall, using the run's toolCallNames (#75)", async () => {
+  it("scores toolRouting when a case declares expectedToolCall, using the run's toolCalls (#75, #294)", async () => {
     const runCase = vi.fn().mockResolvedValue({
       answer: "He built things [cite:skill:aws].",
       toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
-      toolCallNames: ["search-career"],
+      toolCalls: [{ toolName: "search-career", args: undefined }],
     });
     const report = await runEvalSuite(
       {
@@ -189,7 +195,7 @@ describe("runEvalSuite", () => {
       answer: "He built things [cite:skill:aws].",
       toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
-      toolCallNames: ["search-career"],
+      toolCalls: [{ toolName: "search-career", args: undefined }],
     });
     const report = await runEvalSuite(
       {
@@ -202,6 +208,49 @@ describe("runEvalSuite", () => {
     );
 
     expect(report.cases.find((c) => c.id === "exact-1")?.scores.toolRouting?.score).toBe(0);
+  });
+
+  it("scores toolRouting 0 for a search-career-story-scoped case when the run's search-career call carries no sourceTypes (#294 independent-review correction)", async () => {
+    const runCase = vi.fn().mockResolvedValue({
+      answer: "He does this by [cite:story:xogito-client-account-recovery].",
+      toolCitations: [{ entityType: "story" as const, entityId: "xogito-client-account-recovery" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      toolCalls: [{ toolName: "search-career", args: { query: "leadership" } }],
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [storyScopedCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    expect(report.cases[0]?.scores.toolRouting?.score).toBe(0);
+  });
+
+  it("scores toolRouting 1 for a search-career-story-scoped case when the run's search-career call carries sourceTypes: ['story'] (#294)", async () => {
+    const runCase = vi.fn().mockResolvedValue({
+      answer: "He does this by [cite:story:xogito-client-account-recovery].",
+      toolCitations: [{ entityType: "story" as const, entityId: "xogito-client-account-recovery" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      toolCalls: [
+        { toolName: "search-career", args: { query: "leadership", sourceTypes: ["story"] } },
+        { toolName: "list-career-stories", args: { id: "xogito-client-account-recovery" } },
+      ],
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [storyScopedCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    expect(report.cases[0]?.scores.toolRouting?.score).toBe(1);
   });
 
   it("leaves toolRouting null when a case does not declare expectedToolCall — backward compatible", async () => {
@@ -219,8 +268,8 @@ describe("runEvalSuite", () => {
     expect(report.cases[0]?.scores.toolRouting).toBeNull();
   });
 
-  it("treats a missing toolCallNames field on the run result as an empty trace, not a crash (backward compatible with pre-#75 runCase stubs)", async () => {
-    const runCase = stubRunCase(); // no toolCallNames field at all
+  it("treats a missing toolCalls field on the run result as an empty trace, not a crash (backward compatible with pre-#75 runCase stubs)", async () => {
+    const runCase = stubRunCase(); // no toolCalls field at all
     const report = await runEvalSuite(
       {
         cases: [exactFactCase],

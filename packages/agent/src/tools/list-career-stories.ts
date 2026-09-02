@@ -10,14 +10,15 @@
  * `./search-career.ts` and `../prompt/sections.ts`'s retrieval policy);
  * there is deliberately no story-specific search tool (#294).
  *
- * Unlike the MCP surface's version, `competencies` is not validated against
- * the controlled `COMPETENCIES` enum here — `packages/agent` depends only on
- * `@hire-me-mcp/core`, not `@hire-me-mcp/career-data` directly (architecture
- * boundary), and `listCareerStories` itself already treats an unknown
- * competency value as simply matching nothing rather than erroring.
+ * `competencies` is validated against the controlled `COMPETENCIES` enum,
+ * matching the MCP surface's version's strict input semantics (#294) —
+ * `packages/agent` depends only on `@hire-me-mcp/core`, not
+ * `@hire-me-mcp/career-data` directly (architecture boundary), so the enum
+ * is imported from `@hire-me-mcp/core`'s own re-export of it rather than
+ * from `@hire-me-mcp/career-data` directly.
  */
 
-import { type CareerStoryFilter, listCareerStories } from "@hire-me-mcp/core";
+import { type CareerStoryFilter, COMPETENCIES, listCareerStories } from "@hire-me-mcp/core";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { withCitationMarkers } from "./citation-markers.js";
@@ -48,14 +49,14 @@ export const listCareerStoriesInputSchema = z
           "or a related experience. Omit for no constraint.",
       ),
     competencies: z
-      .array(z.string().min(1))
+      .array(z.enum(COMPETENCIES))
       .optional()
       .describe(
-        "Controlled behavioral competencies to filter by, e.g. 'leadership', 'ownership', " +
-          "'conflict-resolution'. A story matches if ANY given value is its primary competency " +
-          "or one of its supporting competencies (OR within this field); stories matched on " +
-          "their primary competency are listed first. Omit, or pass an empty array, for no " +
-          "constraint. An unknown value simply matches nothing rather than erroring.",
+        "Controlled behavioral competencies to filter by — every allowed value is listed in " +
+          "this field's enum, e.g. 'leadership', 'ownership'. A story matches if ANY given " +
+          "value is its primary competency or one of its supporting competencies (OR within " +
+          "this field); stories matched on their primary competency are listed first. Omit, " +
+          "or pass an empty array, for no constraint.",
       ),
   })
   .strict();
