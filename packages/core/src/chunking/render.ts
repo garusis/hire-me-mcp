@@ -20,6 +20,7 @@
  */
 
 import type {
+  CareerStory,
   EducationEntry,
   ExperienceEntry,
   Gap,
@@ -188,6 +189,84 @@ export function renderRecommendation(entry: Recommendation): RenderedEntity {
     metadata: {
       dateFrom: entry.date,
       dateTo: entry.date,
+    },
+  };
+}
+
+/** Turns a lower-kebab controlled competency or retrieval tag into human-readable prose (#292). */
+function humanizeKebab(value: string): string {
+  return value.replace(/-/g, " ");
+}
+
+function renderExperienceLine(entry: ExperienceEntry): string {
+  return `${entry.role}, ${entry.company} (${renderDateRange(entry.startDate, entry.endDate)})`;
+}
+
+/**
+ * Renders a `CareerStory`'s related-experience context (#292/#305 decision
+ * 2): explicitly labeled as "Related context" and explicitly stated to not
+ * be where the event occurred, so a chunk that mentions a related role for
+ * discovery can never be read as relocating the story's event, actions, or
+ * results to it.
+ */
+function renderRelatedContext(relatedExperiences: readonly ExperienceEntry[]): string {
+  if (relatedExperiences.length === 0) {
+    return "";
+  }
+  const lines = relatedExperiences.map((entry) => `- ${renderExperienceLine(entry)}`);
+  return ["Related context (for discovery only — not where this event occurred):", ...lines].join(
+    "\n",
+  );
+}
+
+/**
+ * Renders one `CareerStory` (#289) into retrieval-ready chunk text (#292):
+ * title, primary company/role/dates, optional related context distinctly
+ * labeled, primary/supporting competencies and retrieval tags in
+ * human-readable form, and the labeled situation/task/actions/results/
+ * reflection narrative. Reads only `CareerStory`'s own typed fields — the
+ * eval-only `retrievalQuestions` list (#295) has no field on this type and
+ * is never rendered.
+ */
+export function renderStory(
+  story: CareerStory,
+  primaryExperience: ExperienceEntry,
+  relatedExperiences: readonly ExperienceEntry[],
+): RenderedEntity {
+  const header = [
+    story.title,
+    `Role: ${renderExperienceLine(primaryExperience)}`,
+    renderRelatedContext(relatedExperiences),
+    `Primary competency: ${humanizeKebab(story.primaryCompetency)}`,
+    story.supportingCompetencies.length > 0
+      ? `Supporting competencies: ${story.supportingCompetencies.map(humanizeKebab).join(", ")}`
+      : "",
+    `Retrieval tags: ${story.retrievalTags.map(humanizeKebab).join(", ")}`,
+  ]
+    .filter((line) => line.length > 0)
+    .join("\n");
+
+  const actionsBlock = ["Actions:", ...story.actions.map((action) => `- ${action}`)].join("\n");
+  const resultsBlock = ["Results:", ...story.results.map((result) => `- ${result}`)].join("\n");
+  const body = [
+    `Situation: ${story.situation}`,
+    `Task: ${story.task}`,
+    actionsBlock,
+    resultsBlock,
+    story.reflection === undefined ? "" : `Reflection: ${story.reflection}`,
+  ]
+    .filter((line) => line.length > 0)
+    .join("\n\n");
+
+  return {
+    header,
+    body,
+    label: story.title,
+    metadata: {
+      company: primaryExperience.company,
+      tags: story.retrievalTags,
+      dateFrom: primaryExperience.startDate,
+      dateTo: primaryExperience.endDate,
     },
   };
 }

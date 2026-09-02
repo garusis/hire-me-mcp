@@ -365,5 +365,281 @@ Jane is a fantastic engineer who ships reliable systems and mentors everyone aro
 Verify on LinkedIn: https://www.linkedin.com/in/jane-doe/details/recommendations/",
     "tokenCount": 76,
   },
+  {
+    "chunkIndex": 0,
+    "citation": {
+      "entityId": "acme-quick-fix-story",
+      "entityType": "story",
+      "label": "Fixing a flaky deploy check",
+    },
+    "contentHash": "356dd6e2caa3fd81f74e1444a736c844b3df72149437a51823686890149578c0",
+    "id": "aacf7dc340398bb09e6fc2857b8b7571a5be9e160f6a3953846f91d4d515e960",
+    "metadata": {
+      "company": "Acme",
+      "dateFrom": "2020-01",
+      "dateTo": "2021-01",
+      "tags": [
+        "ci-flakiness",
+      ],
+    },
+    "sourceId": "acme-quick-fix-story",
+    "sourceType": "story",
+    "text": "Fixing a flaky deploy check
+Role: Engineer, Acme (2020-01 – 2021-01)
+Primary competency: problem solving
+Retrieval tags: ci flakiness
+
+Situation: A flaky deploy check was blocking releases.
+
+Task: I owned tracking down the flakiness.
+
+Actions:
+- I added retry logging and found a race condition.
+
+Results:
+- The check became reliable.",
+    "tokenCount": 84,
+  },
+  {
+    "chunkIndex": 0,
+    "citation": {
+      "entityId": "globex-migration-story",
+      "entityType": "story",
+      "fragment": "chunk-0",
+      "label": "Leading a zero-downtime platform migration",
+    },
+    "contentHash": "6bb0502bbb53e85522d4ab28a072b411a0d5b94629f2370018e851f2298892db",
+    "id": "bfbf9f3886d4b8b59e8de800ff701d4bdbe3158bffefbd5d1a577ea18d498ab2",
+    "metadata": {
+      "company": "Globex",
+      "dateFrom": "2021-02",
+      "dateTo": undefined,
+      "tags": [
+        "zero-downtime",
+        "platform-migration",
+      ],
+    },
+    "sourceId": "globex-migration-story",
+    "sourceType": "story",
+    "text": "Leading a zero-downtime platform migration
+Role: Senior Engineer, Globex (2021-02 – Present)
+Related context (for discovery only — not where this event occurred):
+- Engineer, Acme (2020-01 – 2021-01)
+Primary competency: technical leadership
+Supporting competencies: risk management, stakeholder management
+Retrieval tags: zero downtime, platform migration
+
+Situation: The platform needed a zero-downtime migration to a new deploy pipeline.
+
+Task: I led the migration end to end.
+
+Actions:
+- Migration action number 0 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 1 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 2 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 3 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 4 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 5 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 6 describes a concrete, detailed step taken during the platform migration.",
+    "tokenCount": 299,
+  },
+  {
+    "chunkIndex": 1,
+    "citation": {
+      "entityId": "globex-migration-story",
+      "entityType": "story",
+      "fragment": "chunk-1",
+      "label": "Leading a zero-downtime platform migration",
+    },
+    "contentHash": "1a720b15fb9ce18da92b34ce7154c18481bc96e926b41255ce4024684a10d3aa",
+    "id": "d884e6bcf92f3741985bc3b80487ef0fc9108f141dcdbb600c07cdde3264087f",
+    "metadata": {
+      "company": "Globex",
+      "dateFrom": "2021-02",
+      "dateTo": undefined,
+      "tags": [
+        "zero-downtime",
+        "platform-migration",
+      ],
+    },
+    "sourceId": "globex-migration-story",
+    "sourceType": "story",
+    "text": "Leading a zero-downtime platform migration
+Role: Senior Engineer, Globex (2021-02 – Present)
+Related context (for discovery only — not where this event occurred):
+- Engineer, Acme (2020-01 – 2021-01)
+Primary competency: technical leadership
+Supporting competencies: risk management, stakeholder management
+Retrieval tags: zero downtime, platform migration
+
+action number 5 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 6 describes a concrete, detailed step taken during the platform migration. - Migration action number 7 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 8 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 9 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 10 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 11 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 12 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 13 describes a concrete, detailed step taken during the platform migration.",
+    "tokenCount": 315,
+  },
+  {
+    "chunkIndex": 2,
+    "citation": {
+      "entityId": "globex-migration-story",
+      "entityType": "story",
+      "fragment": "chunk-2",
+      "label": "Leading a zero-downtime platform migration",
+    },
+    "contentHash": "1f49cf024b3efe3d74fc4869e24658cb3f8d4ce65220ce3ff89ca2477e90cc5a",
+    "id": "3bb01ab28d2d39331211102f247e72fdea4d688a13569c943275056b02fc9b77",
+    "metadata": {
+      "company": "Globex",
+      "dateFrom": "2021-02",
+      "dateTo": undefined,
+      "tags": [
+        "zero-downtime",
+        "platform-migration",
+      ],
+    },
+    "sourceId": "globex-migration-story",
+    "sourceType": "story",
+    "text": "Leading a zero-downtime platform migration
+Role: Senior Engineer, Globex (2021-02 – Present)
+Related context (for discovery only — not where this event occurred):
+- Engineer, Acme (2020-01 – 2021-01)
+Primary competency: technical leadership
+Supporting competencies: risk management, stakeholder management
+Retrieval tags: zero downtime, platform migration
+
+action number 12 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 13 describes a concrete, detailed step taken during the platform migration. - Migration action number 14 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 15 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 16 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 17 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 18 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 19 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 20 describes a concrete, detailed step taken during the platform migration.",
+    "tokenCount": 316,
+  },
+  {
+    "chunkIndex": 3,
+    "citation": {
+      "entityId": "globex-migration-story",
+      "entityType": "story",
+      "fragment": "chunk-3",
+      "label": "Leading a zero-downtime platform migration",
+    },
+    "contentHash": "e7409fd3509eb500ccf36769c27073557c18785d903490e9114ed420c609c8c9",
+    "id": "c2b2f3d445dd12e562038a79e8e0ed6a1dee84dff2664d1015b232ce775bfcb3",
+    "metadata": {
+      "company": "Globex",
+      "dateFrom": "2021-02",
+      "dateTo": undefined,
+      "tags": [
+        "zero-downtime",
+        "platform-migration",
+      ],
+    },
+    "sourceId": "globex-migration-story",
+    "sourceType": "story",
+    "text": "Leading a zero-downtime platform migration
+Role: Senior Engineer, Globex (2021-02 – Present)
+Related context (for discovery only — not where this event occurred):
+- Engineer, Acme (2020-01 – 2021-01)
+Primary competency: technical leadership
+Supporting competencies: risk management, stakeholder management
+Retrieval tags: zero downtime, platform migration
+
+action number 19 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 20 describes a concrete, detailed step taken during the platform migration. - Migration action number 21 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 22 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 23 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 24 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 25 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 26 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 27 describes a concrete, detailed step taken during the platform migration.",
+    "tokenCount": 316,
+  },
+  {
+    "chunkIndex": 4,
+    "citation": {
+      "entityId": "globex-migration-story",
+      "entityType": "story",
+      "fragment": "chunk-4",
+      "label": "Leading a zero-downtime platform migration",
+    },
+    "contentHash": "f97e50d68f58e2327e11a71a3a8cac4741fd35e437f839d3b6e98b68ed71da3f",
+    "id": "9335f8d9f28b5cc1e54467c619f81f58e83389928a529534098490010f533342",
+    "metadata": {
+      "company": "Globex",
+      "dateFrom": "2021-02",
+      "dateTo": undefined,
+      "tags": [
+        "zero-downtime",
+        "platform-migration",
+      ],
+    },
+    "sourceId": "globex-migration-story",
+    "sourceType": "story",
+    "text": "Leading a zero-downtime platform migration
+Role: Senior Engineer, Globex (2021-02 – Present)
+Related context (for discovery only — not where this event occurred):
+- Engineer, Acme (2020-01 – 2021-01)
+Primary competency: technical leadership
+Supporting competencies: risk management, stakeholder management
+Retrieval tags: zero downtime, platform migration
+
+action number 26 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 27 describes a concrete, detailed step taken during the platform migration. - Migration action number 28 describes a concrete, detailed step taken during the platform migration.
+- Migration action number 29 describes a concrete, detailed step taken during the platform migration.
+
+Results:
+- Migration result number 0 describes a concrete outcome of the migration.
+- Migration result number 1 describes a concrete outcome of the migration.
+- Migration result number 2 describes a concrete outcome of the migration.
+- Migration result number 3 describes a concrete outcome of the migration.
+- Migration result number 4 describes a concrete outcome of the migration.
+- Migration result number 5 describes a concrete outcome of the migration.",
+    "tokenCount": 303,
+  },
+  {
+    "chunkIndex": 5,
+    "citation": {
+      "entityId": "globex-migration-story",
+      "entityType": "story",
+      "fragment": "chunk-5",
+      "label": "Leading a zero-downtime platform migration",
+    },
+    "contentHash": "f89f0740eecdfdb57e0c52e650445f928eba6b6ee6aa3d750fc27c1fb0802281",
+    "id": "87171a7911b8dedc37682b5e3c66f9b90ea24f0bdb4ea7da9472b6d4d15b8d9a",
+    "metadata": {
+      "company": "Globex",
+      "dateFrom": "2021-02",
+      "dateTo": undefined,
+      "tags": [
+        "zero-downtime",
+        "platform-migration",
+      ],
+    },
+    "sourceId": "globex-migration-story",
+    "sourceType": "story",
+    "text": "Leading a zero-downtime platform migration
+Role: Senior Engineer, Globex (2021-02 – Present)
+Related context (for discovery only — not where this event occurred):
+- Engineer, Acme (2020-01 – 2021-01)
+Primary competency: technical leadership
+Supporting competencies: risk management, stakeholder management
+Retrieval tags: zero downtime, platform migration
+
+a concrete outcome of the migration.
+- Migration result number 4 describes a concrete outcome of the migration.
+- Migration result number 5 describes a concrete outcome of the migration. - Migration result number 6 describes a concrete outcome of the migration.
+- Migration result number 7 describes a concrete outcome of the migration.
+- Migration result number 8 describes a concrete outcome of the migration.
+- Migration result number 9 describes a concrete outcome of the migration.
+
+Reflection: I would stage the cutover in smaller batches next time.",
+    "tokenCount": 228,
+  },
 ]
 `;

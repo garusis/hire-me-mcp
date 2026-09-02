@@ -131,11 +131,26 @@ describe("searchCareerTool", () => {
 
     const result = await executor({
       query: "kubernetes",
-      sourceTypes: ["profile", "experience", "project", "skill", "gap", "education", "writing"],
+      sourceTypes: [
+        "profile",
+        "experience",
+        "project",
+        "skill",
+        "gap",
+        "education",
+        "writing",
+        "recommendation",
+        "story",
+      ],
     });
 
     expect(result.isError).toBeUndefined();
     expect(fakeSearchCareer).toHaveBeenCalled();
+  });
+
+  it("mentions recommendations and stories as covered content, matching the corpus actually indexed (#292)", () => {
+    expect(searchCareerTool.description).toContain("recommendations");
+    expect(searchCareerTool.description).toContain("stories");
   });
 
   it("has no duplicated copy/paste clause in its description (#240)", () => {

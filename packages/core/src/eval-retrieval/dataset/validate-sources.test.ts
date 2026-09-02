@@ -24,7 +24,7 @@ describe("resolveCareerSourceKeys", () => {
       education: [{ id: "ed1" } as never],
       writing: [{ id: "w1" } as never],
       recommendations: [{ id: "r1" } as never],
-      stories: [],
+      stories: [{ id: "st1" } as never],
     };
     const keys = resolveCareerSourceKeys(dataset);
     expect(keys).toEqual(
@@ -37,6 +37,7 @@ describe("resolveCareerSourceKeys", () => {
         "education:ed1",
         "writing:w1",
         "recommendation:r1",
+        "story:st1",
       ]),
     );
   });
@@ -77,6 +78,29 @@ describe("validateGoldenDatasetSources", () => {
       dataset,
     );
     expect(result).toEqual({ valid: true, danglingReferences: [] });
+  });
+
+  it("passes for a story expectedSources entry, and fails for a nonexistent story id", () => {
+    const dataset = { ...emptyCareerDataset(), stories: [{ id: "acme-outage-story" } as never] };
+    const storyQuery = query({
+      id: "story-query",
+      expectedSources: [{ sourceType: "story", sourceId: "acme-outage-story" }],
+    });
+    expect(validateGoldenDatasetSources([storyQuery], dataset)).toEqual({
+      valid: true,
+      danglingReferences: [],
+    });
+
+    const danglingQuery = query({
+      id: "dangling-story-query",
+      expectedSources: [{ sourceType: "story", sourceId: "nonexistent-story" }],
+    });
+    expect(validateGoldenDatasetSources([danglingQuery], dataset)).toEqual({
+      valid: false,
+      danglingReferences: [
+        { queryId: "dangling-story-query", sourceType: "story", sourceId: "nonexistent-story" },
+      ],
+    });
   });
 
   it("the real committed career-data content has zero dangling references from ./cases.ts", async () => {

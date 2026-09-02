@@ -48,6 +48,9 @@ export function resolveCareerSourceKeys(dataset: CareerDataset): Set<string> {
   for (const entry of dataset.recommendations) {
     keys.add(sourceKey("recommendation", entry.id));
   }
+  for (const entry of dataset.stories) {
+    keys.add(sourceKey("story", entry.id));
+  }
   return keys;
 }
 

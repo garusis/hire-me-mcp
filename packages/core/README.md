@@ -350,7 +350,16 @@ interface DomainResult<T> {
 }
 
 interface Citation {
-  entityType: "profile" | "experience" | "project" | "skill" | "gap" | "education" | "writing";
+  entityType:
+    | "profile"
+    | "experience"
+    | "project"
+    | "skill"
+    | "gap"
+    | "education"
+    | "writing"
+    | "recommendation"
+    | "story";
   entityId: string;
   label: string;
   fragment?: string;
@@ -642,14 +651,20 @@ in a narrower positive band. Higher is always more similar, and `results` is alw
 
 `SearchCareerOptions`:
 
-- **`topK?: number`** — max results to return. Defaults to **10**. Must be an integer in `[1, 50]`
-  (`MIN_TOP_K`/`MAX_TOP_K`) — anything else throws `InvalidTopKError` before any embedding call.
+- **`topK?: number`** — max **unique sources** to return (#292), not raw chunks: results are
+  grouped by `(sourceType, sourceId)`, keeping only each source's highest-scoring chunk as its
+  discovery excerpt and citation, before `topK` is applied — a source that happens to produce
+  several chunks can never consume more than one slot, and can never hide another qualifying
+  source. Defaults to **10**. Must be an integer in `[1, 50]` (`MIN_TOP_K`/`MAX_TOP_K`) — anything
+  else throws `InvalidTopKError` before any embedding call.
 - **`minScore?: number`** — minimum cosine-similarity score a result must meet. Defaults to **0**
   (no filtering) — cosine similarity of `0` means "no discernible relationship", so the default
   leaves everything the ANN index returns in place and lets a caller raise the bar explicitly.
+  Applied to each source's best chunk after grouping, so the final result set may contain fewer
+  than `topK` sources.
 - **`sourceTypes?: readonly string[]`** — restricts results to the given `sourceType`s (e.g.
-  `["project", "experience"]`), pushed into the SQL `WHERE` clause (not filtered after the fact) so
-  `topK` is still applied to the filtered set. Omitted/empty imposes no constraint.
+  `["project", "experience"]`), pushed into the SQL `WHERE` clause and applied **before** source
+  grouping. Omitted/empty imposes no constraint.
 
 ### Validation, empty store, and the embedding-model guard
 

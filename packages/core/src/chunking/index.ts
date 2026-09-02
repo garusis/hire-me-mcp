@@ -38,6 +38,7 @@
 
 import type {
   CareerDataset,
+  CareerStory,
   CitableEntityType,
   EducationEntry,
   ExperienceEntry,
@@ -58,6 +59,7 @@ import {
   renderProject,
   renderRecommendation,
   renderSkill,
+  renderStory,
   renderWriting,
 } from "./render.js";
 import {
@@ -137,6 +139,62 @@ function buildEntityChunks(
     citation: buildCitation(sourceType, sourceId, rendered, chunkIndex, pieces.length),
     metadata: rendered.metadata,
   }));
+}
+
+/**
+ * Renders and chunks one `CareerStory` (#289/#292), guaranteeing every
+ * resulting chunk stays self-contained: `rendered.header` (title, primary
+ * role/company/dates, related context, competencies, retrieval tags) is
+ * repeated on every chunk, not just the first, so a continuation chunk of a
+ * long story never reads as anonymous prose. The body's own splitting
+ * budget is reduced by the header's size so the combined header+body text
+ * still respects `options.maxTokens`.
+ */
+function buildStoryChunks(
+  sourceId: string,
+  rendered: RenderedEntity,
+  options: ResolvedOptions,
+): Chunk[] {
+  const header = normalizeText(rendered.header);
+  const body = normalizeText(rendered.body);
+  if (body.length === 0) {
+    return buildEntityChunks("story", sourceId, rendered, options);
+  }
+
+  const headerTokens = estimateTokens(header) + 1;
+  const bodyMaxTokens = Math.max(options.maxTokens - headerTokens, options.overlapTokens + 1);
+  const bodyPieces = splitLongText(body, bodyMaxTokens, options.overlapTokens);
+  const texts = bodyPieces.map((piece) => normalizeText(`${header}\n\n${piece}`));
+
+  return texts.map((text, chunkIndex) => ({
+    id: computeChunkId("story", sourceId, chunkIndex),
+    sourceType: "story",
+    sourceId,
+    chunkIndex,
+    text,
+    contentHash: computeContentHash(text),
+    tokenCount: estimateTokens(text),
+    citation: buildCitation("story", sourceId, rendered, chunkIndex, texts.length),
+    metadata: rendered.metadata,
+  }));
+}
+
+/**
+ * Chunks a single `CareerStory`, resolving its primary and related
+ * `ExperienceEntry` context and splitting into self-contained chunks (see
+ * {@link buildStoryChunks}) if it exceeds the chunk budget.
+ */
+export function chunkStory(
+  story: CareerStory,
+  primaryExperience: ExperienceEntry,
+  relatedExperiences: readonly ExperienceEntry[],
+  options?: ChunkingOptions,
+): Chunk[] {
+  return buildStoryChunks(
+    story.id,
+    renderStory(story, primaryExperience, relatedExperiences),
+    resolveOptions(options),
+  );
 }
 
 /** Chunks a single `Profile` (the dataset's singleton). */
@@ -229,6 +287,23 @@ export function chunkCareerData(dataset: CareerDataset, options?: ChunkingOption
   for (const entry of dataset.recommendations) {
     chunks.push(
       ...buildEntityChunks("recommendation", entry.id, renderRecommendation(entry), resolved),
+    );
+  }
+  const experienceById = new Map(dataset.experience.map((entry) => [entry.id, entry]));
+  for (const story of dataset.stories) {
+    const primaryExperience = experienceById.get(story.experienceId);
+    if (primaryExperience === undefined) {
+      continue;
+    }
+    const relatedExperiences = (story.relatedExperienceIds ?? [])
+      .map((id) => experienceById.get(id))
+      .filter((entry): entry is ExperienceEntry => entry !== undefined);
+    chunks.push(
+      ...buildStoryChunks(
+        story.id,
+        renderStory(story, primaryExperience, relatedExperiences),
+        resolved,
+      ),
     );
   }
 

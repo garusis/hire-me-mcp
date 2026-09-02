@@ -1,4 +1,5 @@
 import type {
+  CareerStory,
   EducationEntry,
   ExperienceEntry,
   Gap,
@@ -17,6 +18,7 @@ import {
   renderProject,
   renderRecommendation,
   renderSkill,
+  renderStory,
   renderWriting,
 } from "./render.js";
 
@@ -233,5 +235,109 @@ describe("renderRecommendation", () => {
     expect(rendered.label).toBe("Recommendation from John Smith");
     expect(rendered.url).toBe("https://www.linkedin.com/in/jane-doe/details/recommendations/");
     expect(rendered.metadata).toEqual({ dateFrom: "2024-06-15", dateTo: "2024-06-15" });
+  });
+});
+
+describe("renderStory", () => {
+  const primaryExperience: ExperienceEntry = {
+    id: "acme-role",
+    company: "Acme",
+    role: "Engineer",
+    startDate: "2020-01",
+    endDate: "2021-01",
+    summary: "Did engineering work.",
+    highlights: ["Shipped feature X"],
+    tech: ["typescript"],
+  };
+  const relatedExperience: ExperienceEntry = {
+    id: "globex-role",
+    company: "Globex",
+    role: "Senior Engineer",
+    startDate: "2021-02",
+    endDate: undefined,
+    summary: "Leads the platform team.",
+    highlights: ["Rebuilt the deploy pipeline"],
+    tech: ["nodejs"],
+  };
+  const story: CareerStory = {
+    id: "acme-outage-story",
+    experienceId: "acme-role",
+    title: "Tracing an outage back to a schema migration",
+    primaryCompetency: "problem-solving",
+    supportingCompetencies: ["ownership", "technical-judgment"],
+    situation: "A production service crash-looped after a dependency upgrade.",
+    task: "I owned the incident and traced it from the symptoms backward.",
+    actions: ["I contained the cascade first.", "I then reproduced and fixed the root cause."],
+    results: ["The service stabilized with no permanent data loss."],
+    reflection: "I now pin dependency versions in every deploy pipeline.",
+    retrievalTags: ["production-incident", "schema-validation"],
+  };
+
+  it("renders title, primary company/role/dates, competencies, retrieval tags, and labeled STAR sections", () => {
+    const rendered = renderStory(story, primaryExperience, []);
+    expect(rendered.header).toContain("Tracing an outage back to a schema migration");
+    expect(rendered.header).toContain("Engineer, Acme");
+    expect(rendered.header).toContain("2020-01 – 2021-01");
+    expect(rendered.header).toContain("problem solving");
+    expect(rendered.header).toContain("ownership, technical judgment");
+    expect(rendered.header).toContain("production incident, schema validation");
+    expect(rendered.body).toContain(
+      "Situation: A production service crash-looped after a dependency upgrade.",
+    );
+    expect(rendered.body).toContain(
+      "Task: I owned the incident and traced it from the symptoms backward.",
+    );
+    expect(rendered.body).toContain("Actions:");
+    expect(rendered.body).toContain("- I contained the cascade first.");
+    expect(rendered.body).toContain("- I then reproduced and fixed the root cause.");
+    expect(rendered.body).toContain("Results:");
+    expect(rendered.body).toContain("- The service stabilized with no permanent data loss.");
+    expect(rendered.body).toContain(
+      "Reflection: I now pin dependency versions in every deploy pipeline.",
+    );
+    expect(rendered.label).toBe("Tracing an outage back to a schema migration");
+    expect(rendered.metadata).toEqual({
+      company: "Acme",
+      tags: ["production-incident", "schema-validation"],
+      dateFrom: "2020-01",
+      dateTo: "2021-01",
+    });
+  });
+
+  it("omits the reflection line entirely when the story has none", () => {
+    const rendered = renderStory({ ...story, reflection: undefined }, primaryExperience, []);
+    expect(rendered.body).not.toContain("Reflection:");
+  });
+
+  it("renders each retrieval tag human-readably exactly once, distinct from competencies", () => {
+    const rendered = renderStory(story, primaryExperience, []);
+    const tagOccurrences =
+      rendered.header.split("production incident, schema validation").length - 1;
+    expect(tagOccurrences).toBe(1);
+    expect(rendered.header).not.toContain("production-incident");
+  });
+
+  it("labels related experience context distinctly, without relocating the event to that role", () => {
+    const withRelated: CareerStory = { ...story, relatedExperienceIds: ["globex-role"] };
+    const rendered = renderStory(withRelated, primaryExperience, [relatedExperience]);
+    expect(rendered.header).toContain("Engineer, Acme");
+    expect(rendered.header).toContain("Related context");
+    expect(rendered.header).toContain("Senior Engineer, Globex");
+    expect(rendered.header).toMatch(/related context.*not where this event occurred/i);
+    // The primary role/company still appears exactly where a reader expects "the role this happened in".
+    const primaryIndex = rendered.header.indexOf("Engineer, Acme");
+    const relatedLabelIndex = rendered.header.indexOf("Related context");
+    expect(primaryIndex).toBeGreaterThanOrEqual(0);
+    expect(relatedLabelIndex).toBeGreaterThan(primaryIndex);
+  });
+
+  it("never renders eval-only retrieval questions, even if present on the entity at runtime", () => {
+    const withQuestions = {
+      ...story,
+      retrievalQuestions: ["Has he ever traced a production incident to a schema migration?"],
+    } as CareerStory;
+    const rendered = renderStory(withQuestions, primaryExperience, []);
+    expect(rendered.header).not.toContain("Has he ever traced");
+    expect(rendered.body).not.toContain("Has he ever traced");
   });
 });
