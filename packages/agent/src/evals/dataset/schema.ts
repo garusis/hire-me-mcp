@@ -76,14 +76,15 @@ const citableEntityTypeSchema = z.enum(
 );
 
 /**
- * A pointer at one returned citation — `{ entityType, entityId }`, the same
+ * A pointer at one citation marker — `{ entityType, entityId }`, the same
  * pair `ReturnedCitation` (`../scorers/types.ts`) carries. Used by
  * `mustCiteEntity`/`mustNotCiteEntity` below (#294 independent-review
  * correction, findings 2-4): unlike a `mustMatch` text pattern, this asserts
- * against the run's actual returned citations, so an answer that merely
- * mentions the right words without the tool call actually having produced
- * that citation (or that cites a DIFFERENT entity alongside the right
- * wording) is caught.
+ * against the `[cite:...]` markers actually present in the answer text
+ * (`../scorers/answer-assertions.ts`, checked via the shared
+ * `parseCitations`), so an answer that merely mentions the right words
+ * without actually citing that entity (or that cites a DIFFERENT entity
+ * alongside the right wording) is caught.
  */
 const citationRefSchema = z
   .object({
@@ -99,10 +100,11 @@ export type EvalCaseCitationRef = z.infer<typeof citationRefSchema>;
  * `mustNotMatch` are case-insensitive regular-expression sources checked
  * against the answer TEXT (e.g. that the document-extraction work is called
  * a "proof of concept"). `mustCiteEntity` / `mustNotCiteEntity` are checked
- * against the run's actual returned citations instead — the required (or
- * forbidden) evidence a behavioral answer must (or must not) actually be
- * grounded in, not just wording. Scored by `../scorers/answer-assertions.ts`;
- * a block must assert at least one thing across all four lists.
+ * against the `[cite:...]` markers actually present in that same answer text
+ * instead — the required (or forbidden) evidence a behavioral answer must
+ * (or must not) actually be grounded in, not just wording. Scored by
+ * `../scorers/answer-assertions.ts`; a block must assert at least one thing
+ * across all four lists.
  */
 export const answerAssertionsSchema = z
   .object({

@@ -362,7 +362,8 @@ export const EVAL_CASES: readonly EvalCase[] = [
       // patterns can't tell "the answer is actually cited to story 001"
       // from "the answer mentions Xogito by name while citing something
       // else (story 002, a recommendation, an experience)" — mustCiteEntity
-      // checks the run's actual returned citations instead.
+      // checks the [cite:...] markers actually present in the answer text
+      // instead.
       mustCiteEntity: [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
       mustNotCiteEntity: [{ entityType: "story", entityId: "mutual-informal-leadership" }],
     },

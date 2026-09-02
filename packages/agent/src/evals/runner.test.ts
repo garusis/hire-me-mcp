@@ -323,7 +323,7 @@ describe("runEvalSuite", () => {
     expect(report.cases[0]?.scores.toolRouting).toBeNull();
   });
 
-  it("passes the run's toolCitations into scoreAnswerAssertions so mustCiteEntity is checked against the run's real citations, not just answer text (#294 independent-review correction)", async () => {
+  it("scores mustCiteEntity against the [cite:...] markers actually present in the answer text, not just that the text mentions the entity by name (#294 independent-review correction)", async () => {
     const runCase = vi.fn().mockResolvedValue({
       answer: "He rebuilt client trust at Xogito [cite:story:xogito-client-account-recovery].",
       toolCitations: [{ entityType: "story" as const, entityId: "xogito-client-account-recovery" }],
@@ -349,7 +349,7 @@ describe("runEvalSuite", () => {
     expect(report.cases[0]?.scores.answerAssertions?.score).toBe(1);
   });
 
-  it("scores answerAssertions 0 when the run's toolCitations lack the required entity, even though the answer text names it (#294 independent-review correction)", async () => {
+  it("scores answerAssertions 0 when the answer text lacks the required citation marker, even though it names the entity in prose (#294 independent-review correction)", async () => {
     const runCase = vi.fn().mockResolvedValue({
       answer: "He rebuilt client trust at Xogito.",
       toolCitations: [{ entityType: "recommendation" as const, entityId: "some-other-rec" }],
