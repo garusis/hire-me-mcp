@@ -64,6 +64,7 @@
  * silently deferred.
  */
 
+import type { Competency } from "@hire-me-mcp/core";
 import type { EvalCase } from "./schema.js";
 
 const FACTUAL_BOUNDARY_GUARDS: readonly string[] = [
@@ -74,6 +75,64 @@ const FACTUAL_BOUNDARY_GUARDS: readonly string[] = [
   // SSN, borrower name, or salary figure to relay.
   "\\bSSN\\b|social security number|\\$\\d{2,3},\\d{3}\\s*(?:salary|per year|annually)",
 ];
+
+/**
+ * Per-story factual-boundary guards (#295 correction, independent Codex
+ * review, agent package `1dd7ac7`, finding 3) — the audited wording risks
+ * #295's "Story-specific factual-boundary assertions" section names for
+ * stories 001, 004, 008, 009, 010, 011, 014, 015, and 016, made executable
+ * rather than deferred. Keyed by stable story id, merged into a case's
+ * `mustNotMatch` (alongside `FACTUAL_BOUNDARY_GUARDS`) by
+ * `singleStoryAssertions`/`groupAssertions` for every case whose target (or
+ * group of acceptable targets) includes that story — the guard holds
+ * regardless of which acceptable alternative the agent actually cites.
+ */
+const STORY_FACTUAL_GUARDS: Readonly<Record<string, string>> = {
+  // 001: additional client work (further projects, an internal-team
+  // invitation) may be a later observed OUTCOME, never something Marcos
+  // personally caused, won, or secured.
+  "xogito-client-account-recovery":
+    "\\b(?:he |marcos )?(?:personally )?(?:won|secured|landed|caused|brought in)\\b[^.]{0,40}\\b(?:follow-on|additional|further|another|next|new)\\b[^.]{0,20}\\b(?:project|contract|engagement|work)s?\\b",
+  // 004: the ~70% observed effective-triage outcome must never be called
+  // "LLM accuracy" or attributed to the model alone.
+  "house-numbers-communication-service-ownership":
+    "\\bLLM accuracy\\b|\\baccuracy of (?:the )?(?:model|LLM)\\b",
+  // 008: "roughly two out of every three submissions" is an owner-provided
+  // estimate, never a formally measured rate or percentage.
+  "house-numbers-secure-public-document-upload":
+    "\\bformally measured\\b|\\bmeasured (?:failure|success) rate\\b|\\d+(?:\\.\\d+)?\\s*%",
+  // 009: documents were reprocessed after historical reconciliation, never
+  // permanently lost and recovered.
+  "house-numbers-zod-production-incident":
+    "\\bpermanent(?:ly)? lost\\b|\\blost (?:and (?:later )?recovered|forever)\\b",
+  // 010: the original documents stayed available in the provider's system;
+  // only the historical structured extraction was unavailable.
+  "house-numbers-vendor-extraction-contract":
+    "\\bdocuments? (?:were|was|got|are) lost\\b|\\blost the documents?\\b",
+  // 011: identifying a proactive risk, never an invented quantified
+  // performance improvement.
+  "house-numbers-loan-analysis-pipeline-decomposition":
+    "\\d+(?:\\.\\d+)?\\s*(?:%|x|times)\\s*(?:faster|improvement|reduction|increase)\\b",
+  // 014: the destructive deployment affected only a shared development
+  // environment, never production or customer data.
+  "belatrix-destructive-deployment-accountability":
+    "\\bproduction\\b[^.]{0,20}\\b(?:data|environment|customers?)\\b|\\bcustomer data\\b[^.]{0,20}\\b(?:affected|impacted|deleted|lost)\\b",
+  // 015: engineers improving a versioned debugging skill from incident
+  // lessons, never autonomous learning or autonomous self-healing.
+  "house-numbers-cross-service-debugging-skill":
+    "\\bself-healing\\b|\\bautonomous(?:ly)?\\b[^.]{0,20}\\b(?:learn(?:ing|s|ed)?|heal(?:ing|s|ed)?|fix(?:ing|es|ed)?)\\b",
+  // 016: a self-described feeling during a personal/technical transition,
+  // never a clinical diagnosis.
+  "house-numbers-ai-pivot-after-paternity-leave": "\\bdiagnosed with\\b|\\bclinical(?:ly)?\\b",
+};
+
+/** Every `STORY_FACTUAL_GUARDS` entry for the stories named in `refs`, deduplicated. */
+function storyGuardsFor(refs: readonly { entityId: string }[]): string[] {
+  const guards = refs
+    .map((ref) => STORY_FACTUAL_GUARDS[ref.entityId])
+    .filter((guard): guard is string => guard !== undefined);
+  return [...new Set(guards)];
+}
 
 interface StoryRef {
   entityType: "story";
@@ -103,19 +162,19 @@ const S = {
   aiPivot: story("house-numbers-ai-pivot-after-paternity-leave"),
 } as const;
 
-/** A single required story citation, plus one distinguishing keyword and the shared factual-boundary guards. */
+/** A single required story citation, plus one distinguishing keyword, the shared factual-boundary guards, and that story's own audited-risk guard (if any). */
 function singleStoryAssertions(ref: StoryRef, keyword: string) {
   return {
     mustMatch: [keyword],
-    mustNotMatch: [...FACTUAL_BOUNDARY_GUARDS],
+    mustNotMatch: [...FACTUAL_BOUNDARY_GUARDS, ...storyGuardsFor([ref])],
     mustCiteEntity: [ref],
   };
 }
 
-/** An `any`/`all` citation group, plus the shared factual-boundary guards. */
+/** An `any`/`all` citation group, plus the shared factual-boundary guards and every member story's own audited-risk guard. */
 function groupAssertions(mode: "any" | "all", refs: readonly StoryRef[], preferredRef?: StoryRef) {
   return {
-    mustNotMatch: [...FACTUAL_BOUNDARY_GUARDS],
+    mustNotMatch: [...FACTUAL_BOUNDARY_GUARDS, ...storyGuardsFor(refs)],
     citationGroups: [{ mode, refs: [...refs], ...(preferredRef ? { preferredRef } : {}) }],
   };
 }
@@ -591,3 +650,81 @@ export const STORY_MANIFEST_CASES: readonly EvalCase[] = [
       "cuts — a recorded gap. expectEmpty per the #295 manifest.",
   },
 ];
+
+/**
+ * The locked manifest's "Controlled competency coverage" table (#295's
+ * issue body), typed against every case id it actually names.
+ *
+ * #295 correction (independent Codex review, agent package `1dd7ac7`,
+ * finding 5): the previous coverage test only proved a competency's enum
+ * string appears somewhere in the dataset's free-form `notes` — true even
+ * with zero real case association. This table instead names the SPECIFIC
+ * case ids per competency, machine-checked (`story-manifest-cases.test.ts`)
+ * against real dataset ids and — for every `list-career-stories` case —
+ * against the `expectedCompetencies` `../scorers/tool-routing.ts` actually
+ * asserts on that case's real tool-call trace, not documentation prose.
+ */
+export const COMPETENCY_COVERAGE: Readonly<Record<Competency, readonly string[]>> = {
+  adaptability: ["story-manifest-x10", "story-manifest-f16"],
+  collaboration: [
+    "story-manifest-f03",
+    "story-manifest-f15",
+    "story-manifest-a03",
+    "story-manifest-a04",
+    "story-manifest-c02",
+  ],
+  communication: ["story-manifest-f01", "story-manifest-f07", "story-manifest-f13"],
+  "customer-focus": [
+    "story-manifest-f01",
+    "story-manifest-f04",
+    "story-manifest-f05",
+    "story-manifest-f08",
+  ],
+  "decision-making": ["story-manifest-x04", "story-manifest-f05", "story-manifest-f11"],
+  influence: ["story-manifest-x01", "story-manifest-f07", "story-manifest-a01"],
+  integrity: ["story-manifest-x02", "story-manifest-f12"],
+  leadership: ["story-manifest-x01", "story-manifest-f02", "story-manifest-f15"],
+  "learning-agility": ["story-manifest-x10", "story-manifest-f16"],
+  "learning-from-failure": ["story-manifest-f12", "story-manifest-f13", "story-manifest-a07"],
+  mentoring: ["story-manifest-x03", "story-manifest-f03", "story-manifest-f14"],
+  "navigating-ambiguity": ["story-manifest-f01", "story-manifest-f10"],
+  ownership: ["story-manifest-f04", "story-manifest-f14"],
+  "personal-accountability": [
+    "story-manifest-x09",
+    "story-manifest-f12",
+    "story-manifest-f14",
+    "story-manifest-a07",
+  ],
+  prioritization: ["story-manifest-f01"],
+  "problem-solving": [
+    "story-manifest-x07",
+    "story-manifest-x08",
+    "story-manifest-f09",
+    "story-manifest-f10",
+  ],
+  "process-improvement": ["story-manifest-x03", "story-manifest-f15", "story-manifest-a04"],
+  "receptiveness-to-feedback": ["story-manifest-f13"],
+  resilience: ["story-manifest-f13", "story-manifest-f16"],
+  "risk-management": [
+    "story-manifest-x05",
+    "story-manifest-x06",
+    "story-manifest-f06",
+    "story-manifest-f08",
+    "story-manifest-f11",
+    "story-manifest-c01",
+  ],
+  "self-awareness": ["story-manifest-f12", "story-manifest-f13", "story-manifest-f16"],
+  "stakeholder-management": ["story-manifest-f01", "story-manifest-f07", "story-manifest-f10"],
+  "technical-judgment": [
+    "story-manifest-x04",
+    "story-manifest-f05",
+    "story-manifest-f06",
+    "story-manifest-f11",
+  ],
+  "technical-leadership": [
+    "story-manifest-f07",
+    "story-manifest-f11",
+    "story-manifest-f14",
+    "story-manifest-f15",
+  ],
+};

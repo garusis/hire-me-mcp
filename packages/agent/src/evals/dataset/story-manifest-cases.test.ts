@@ -1,7 +1,31 @@
-import { COMPETENCIES } from "@hire-me-mcp/core";
+import { COMPETENCIES, type Competency } from "@hire-me-mcp/core";
 import { describe, expect, it } from "vitest";
+import { selectCasesForBudget } from "../runner.js";
+import { scoreAnswerAssertions } from "../scorers/answer-assertions.js";
+import { EVAL_CASES } from "./cases.js";
 import { evalDatasetSchema } from "./schema.js";
-import { STORY_MANIFEST_CASES } from "./story-manifest-cases.js";
+import { COMPETENCY_COVERAGE, STORY_MANIFEST_CASES } from "./story-manifest-cases.js";
+
+/** Find a locked manifest case by id, or fail loudly — every id below must exist. */
+function requireCase(id: string): (typeof STORY_MANIFEST_CASES)[number] {
+  const found = STORY_MANIFEST_CASES.find((c) => c.id === id);
+  if (!found) throw new Error(`expected STORY_MANIFEST_CASES to contain "${id}"`);
+  return found;
+}
+
+/** Assert `violatingAnswer` (which otherwise satisfies `caseId`'s citation requirement) fails that case's answerAssertions specifically on a forbidden-pattern boundary. */
+function expectBoundaryViolationCaught(caseId: string, violatingAnswer: string): void {
+  const evalCase = requireCase(caseId);
+  const assertions = evalCase.answerAssertions;
+  if (!assertions) throw new Error(`case "${caseId}" declares no answerAssertions`);
+  const allRefs = [
+    ...(assertions.mustCiteEntity ?? []),
+    ...(assertions.citationGroups ?? []).flatMap((g) => g.refs),
+  ];
+  const result = scoreAnswerAssertions(violatingAnswer, assertions, allRefs);
+  expect(result.score).toBeLessThan(1);
+  expect(result.reason).toMatch(/forbidden pattern matched/i);
+}
 
 /** Every story ref (mustCiteEntity + citationGroups.refs) a case's answerAssertions names. */
 function referencedStoryIds(evalCase: (typeof STORY_MANIFEST_CASES)[number]): string[] {
@@ -121,6 +145,152 @@ describe("STORY_MANIFEST_CASES (#295 locked behavioral manifest)", () => {
       expect(evalCase.gapHonestyDirection).toBe("gap");
       expect(referencedStoryIds(evalCase).length).toBe(0);
     }
+  });
+
+  /**
+   * #295 correction (independent Codex review, agent package `1dd7ac7`,
+   * finding 5): the prior "every enum string appears somewhere in free-form
+   * notes" check can pass with zero real case-to-competency association —
+   * the word just has to appear anywhere in the concatenated notes blob.
+   * `COMPETENCY_COVERAGE` is a typed table naming the SPECIFIC case ids per
+   * competency (the issue's own locked "Controlled competency coverage"
+   * table), machine-checked against the real dataset ids and, for every
+   * `list-career-stories` case, against the `expectedCompetencies` the
+   * runner actually asserts on a real tool-call trace — not prose.
+   */
+  describe("COMPETENCY_COVERAGE (#295 correction, finding 5)", () => {
+    it("has exactly one entry per controlled competency, each naming at least one case", () => {
+      const keys = Object.keys(COMPETENCY_COVERAGE).sort();
+      expect(keys).toEqual([...COMPETENCIES].sort());
+      for (const competency of COMPETENCIES) {
+        expect(COMPETENCY_COVERAGE[competency].length).toBeGreaterThan(0);
+      }
+    });
+
+    it("names only case ids that actually exist in STORY_MANIFEST_CASES", () => {
+      const knownIds = new Set(STORY_MANIFEST_CASES.map((c) => c.id));
+      for (const competency of COMPETENCIES) {
+        for (const caseId of COMPETENCY_COVERAGE[competency]) {
+          expect(knownIds.has(caseId)).toBe(true);
+        }
+      }
+    });
+
+    it("ties every list-career-stories case's asserted expectedCompetencies to the coverage table — a competency the runner actually scores that case's tool-call trace against, not documentation prose", () => {
+      for (const evalCase of STORY_MANIFEST_CASES) {
+        if (evalCase.expectedToolCall !== "list-career-stories") continue;
+        for (const competency of evalCase.expectedCompetencies ?? []) {
+          expect((COMPETENCIES as readonly string[]).includes(competency)).toBe(true);
+          const coverage = COMPETENCY_COVERAGE[competency as Competency];
+          expect(coverage).toContain(evalCase.id);
+        }
+      }
+    });
+  });
+
+  /**
+   * #295 correction (independent Codex review, agent package `1dd7ac7`,
+   * finding 1): a real repro against the actual dataset — not a synthetic
+   * fixture — proving `story-manifest-*` coverage under CI's documented
+   * default cap. `CI_DEFAULT_MAX_CASES` mirrors
+   * `.github/workflows/agent-evals.yml`'s current `max_cases` input default
+   * (`.github/**` is out of `packages/agent/**` scope, so this is a mirror
+   * for regression purposes, not a link) — it must be kept in sync by hand
+   * if that CI-owned default ever changes. Covering every one of the 38
+   * manifest cases in a single default run still requires raising that
+   * CI-owned cap toward `EVAL_CASES.length`, reported as the still-open
+   * cross-package need on issue 295 rather than edited here.
+   */
+  it("exercises real story-manifest-* coverage under CI's current default 25-case budget cap, not zero (#295 correction, finding 1)", () => {
+    const CI_DEFAULT_MAX_CASES = 25;
+    const selected = selectCasesForBudget(EVAL_CASES, CI_DEFAULT_MAX_CASES);
+    const coveredManifestIds = selected
+      .filter((c) => c.id.startsWith("story-manifest-"))
+      .map((c) => c.id);
+    expect(coveredManifestIds.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * #295 correction (independent Codex review, agent package `1dd7ac7`,
+   * finding 3): #295's "Story-specific factual-boundary assertions" section
+   * requires "executable assertions for... the audited risks for stories
+   * 001, 004, 008, 009, 010, 011, 014, 015, and 016" — not deferred as
+   * follow-up. Each test below crafts an answer that otherwise satisfies
+   * the case's citation requirement but crosses that one specific audited
+   * boundary, and proves the case's own `answerAssertions` catches it.
+   */
+  describe("story-specific factual-boundary guards (#295 correction, finding 3)", () => {
+    it("001 (xogito): the answer must not claim Marcos personally caused, won, or secured the client's later follow-on projects", () => {
+      expectBoundaryViolationCaught(
+        "story-manifest-f01",
+        "He rebuilt the Xogito client relationship and personally won the client's next three " +
+          "follow-on projects. [cite:story:xogito-client-account-recovery]",
+      );
+    });
+
+    it("004 (communication-service-ownership): the answer must not call the ~70% observed outcome 'LLM accuracy'", () => {
+      expectBoundaryViolationCaught(
+        "story-manifest-f04",
+        "He owns the communications service end to end, achieving 70% LLM accuracy on triage. " +
+          "[cite:story:house-numbers-communication-service-ownership]",
+      );
+    });
+
+    it("008 (secure-public-document-upload): the owner-estimated 'roughly two out of three' figure must never be presented as a formally measured percentage", () => {
+      expectBoundaryViolationCaught(
+        "story-manifest-x06",
+        "He handled public sensitive-data uploads with a formally measured 67% failure rate. " +
+          "[cite:story:house-numbers-secure-public-document-upload]",
+      );
+    });
+
+    it("009 (zod-production-incident): the answer must never claim source documents were permanently lost and later recovered", () => {
+      expectBoundaryViolationCaught(
+        "story-manifest-x07",
+        "The Zod upgrade caused a crash loop, and the documents were permanently lost and " +
+          "recovered afterward. [cite:story:house-numbers-zod-production-incident]",
+      );
+    });
+
+    it("010 (vendor-extraction-contract): the answer must never claim the original documents were lost, only that the provider's historical extraction was unavailable", () => {
+      expectBoundaryViolationCaught(
+        "story-manifest-x08",
+        "He discovered the documents were lost when validating the vendor's data contract. " +
+          "[cite:story:house-numbers-vendor-extraction-contract]",
+      );
+    });
+
+    it("011 (loan-analysis-pipeline-decomposition): the answer must not invent a quantified performance improvement", () => {
+      expectBoundaryViolationCaught(
+        "story-manifest-f11",
+        "He decomposed the pipeline proactively, delivering a measured 40% faster runtime. " +
+          "[cite:story:house-numbers-loan-analysis-pipeline-decomposition]",
+      );
+    });
+
+    it("014 (belatrix-destructive-deployment-accountability): the answer must never claim production or customer data was affected — only a shared development environment", () => {
+      expectBoundaryViolationCaught(
+        "story-manifest-x09",
+        "The destructive deployment affected production data and customers directly. " +
+          "[cite:story:belatrix-destructive-deployment-accountability]",
+      );
+    });
+
+    it("015 (cross-service-debugging-skill): the answer must not describe autonomous learning or autonomous self-healing", () => {
+      expectBoundaryViolationCaught(
+        "story-manifest-f15",
+        "The debugging skill improved through autonomous learning across services. " +
+          "[cite:story:house-numbers-cross-service-debugging-skill]",
+      );
+    });
+
+    it("016 (ai-pivot-after-paternity-leave): the answer must not claim impostor syndrome was clinically diagnosed", () => {
+      expectBoundaryViolationCaught(
+        "story-manifest-x10",
+        "He adapted after paternity leave despite being clinically diagnosed with impostor " +
+          "syndrome. [cite:story:house-numbers-ai-pivot-after-paternity-leave]",
+      );
+    });
   });
 
   it("carries no private personal data (no email addresses or phone-like digit runs)", () => {

@@ -13,6 +13,7 @@ const baseCases = [
       relevance: { score: 0.9, reason: "addresses AWS" },
       toolRouting: null,
       answerAssertions: null,
+      storyCompleteness: null,
     },
   },
   {
@@ -27,6 +28,7 @@ const baseCases = [
       relevance: { score: 0.8, reason: "addresses Rust" },
       toolRouting: null,
       answerAssertions: null,
+      storyCompleteness: null,
     },
   },
   {
@@ -40,6 +42,7 @@ const baseCases = [
       relevance: { score: 0.1, reason: "does not address pizza" },
       toolRouting: null,
       answerAssertions: null,
+      storyCompleteness: null,
     },
   },
 ];
@@ -164,5 +167,46 @@ describe("buildReport", () => {
     expect(report.aggregates.toolRouting).toEqual({ mean: 0.5, count: 1 });
     expect(report.verdict.passed).toBe(false);
     expect(report.verdict.failures.some((line) => /tool routing/i.test(line))).toBe(true);
+  });
+
+  /**
+   * #295 correction (independent Codex review, agent package `1dd7ac7`,
+   * finding 2): `storyCompleteness` (`./scorers/story-completeness.ts`)
+   * gets the same optional, zero-count-skips-verdict treatment as
+   * `answerAssertions`/`toolRouting` above — most of the base dataset
+   * doesn't declare a behavioral-story completeness expectation.
+   */
+  it("aggregates storyCompleteness as 0-count/0-mean and never fails the verdict on it when no case scored it (#295)", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: baseCases,
+      totals,
+    });
+
+    expect(report.aggregates.storyCompleteness).toEqual({ mean: 0, count: 0 });
+    expect(report.verdict.failures.some((line) => /story completeness/i.test(line))).toBe(false);
+  });
+
+  it("includes storyCompleteness in the aggregate and the verdict once at least one case scored it (#295)", () => {
+    const casesWithCompleteness = [
+      ...baseCases.slice(0, 2),
+      {
+        ...baseCases[2],
+        scores: { ...baseCases[2]?.scores, storyCompleteness: { score: 0.5, reason: "half" } },
+      },
+    ];
+
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: casesWithCompleteness as typeof baseCases,
+      totals,
+      thresholds: { groundedness: 0, gapHonesty: 0, relevance: 0, storyCompleteness: 0.9 },
+    });
+
+    expect(report.aggregates.storyCompleteness).toEqual({ mean: 0.5, count: 1 });
+    expect(report.verdict.passed).toBe(false);
+    expect(report.verdict.failures.some((line) => /story completeness/i.test(line))).toBe(true);
   });
 });

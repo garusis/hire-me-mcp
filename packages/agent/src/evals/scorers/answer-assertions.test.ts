@@ -165,12 +165,32 @@ describe("scoreAnswerAssertions", () => {
       expect(result.score).toBe(1);
     });
 
-    it("scores 0 when the cited ref is honest but is not the 'any' group's preferredRef", () => {
-      const result = scoreAnswerAssertions("[cite:story:mutual-informal-leadership]", {
-        citationGroups: [{ mode: "any", refs: [storyA, storyB], preferredRef: storyA }],
-      });
+    /**
+     * #295 correction (independent Codex review, agent package `1dd7ac7`,
+     * finding 4): #295 says an acceptable alternative fails the preference
+     * check ONLY when the preferred source was returned by a tool that
+     * turn — a preference cannot be "not honored" when the preferred story
+     * was never available to cite. Both branches below prove that: the same
+     * answer (citing the honest, non-preferred alternative) fails when the
+     * preferred source WAS returned that turn, and passes when it was NOT.
+     */
+    it("scores 0 when the preferred source was returned by a tool this turn but the answer cites an acceptable alternative instead", () => {
+      const result = scoreAnswerAssertions(
+        "[cite:story:mutual-informal-leadership]",
+        { citationGroups: [{ mode: "any", refs: [storyA, storyB], preferredRef: storyA }] },
+        [storyA, storyB],
+      );
       expect(result.score).toBe(0);
       expect(result.reason).toMatch(/preferred/i);
+    });
+
+    it("scores 1 when the preferred source was NOT returned by any tool this turn and the answer cites the honest acceptable alternative it was actually given", () => {
+      const result = scoreAnswerAssertions(
+        "[cite:story:mutual-informal-leadership]",
+        { citationGroups: [{ mode: "any", refs: [storyA, storyB], preferredRef: storyA }] },
+        [storyB],
+      );
+      expect(result.score).toBe(1);
     });
 
     it("combines multiple groups and other assertion kinds proportionally", () => {

@@ -32,6 +32,12 @@ export interface CaseReport {
     toolRouting: ScoreResult | null;
     /** `null` for any case that declares no `EvalCase.answerAssertions` (#300). */
     answerAssertions: ScoreResult | null;
+    /**
+     * `null` for any case the runner doesn't score for behavioral-story
+     * completeness (#295 correction, finding 2 —
+     * `./scorers/story-completeness.ts`).
+     */
+    storyCompleteness: ScoreResult | null;
   };
 }
 
@@ -61,6 +67,7 @@ export interface EvalReport {
     relevance: ScorerAggregate;
     toolRouting: ScorerAggregate;
     answerAssertions: ScorerAggregate;
+    storyCompleteness: ScorerAggregate;
   };
   totals: EvalTotals & { cases: number };
   thresholds: ScorerThresholds;
@@ -93,6 +100,7 @@ export function buildReport(params: {
     relevance: aggregate(params.cases.map((c) => c.scores.relevance)),
     toolRouting: aggregate(params.cases.map((c) => c.scores.toolRouting)),
     answerAssertions: aggregate(params.cases.map((c) => c.scores.answerAssertions)),
+    storyCompleteness: aggregate(params.cases.map((c) => c.scores.storyCompleteness)),
   };
 
   return {
@@ -117,6 +125,11 @@ export function buildReport(params: {
         // that declare them contribute, so a run without any never fails on it.
         ...(aggregates.answerAssertions.count > 0
           ? { answerAssertions: aggregates.answerAssertions.mean }
+          : {}),
+        // Same optional treatment for story completeness (#295 correction,
+        // finding 2): only cases the runner scores for it contribute.
+        ...(aggregates.storyCompleteness.count > 0
+          ? { storyCompleteness: aggregates.storyCompleteness.mean }
           : {}),
       },
       thresholds,

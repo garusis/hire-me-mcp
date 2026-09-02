@@ -36,6 +36,12 @@ export interface ScorerThresholds {
    * `toolRouting` above.
    */
   answerAssertions?: number;
+  /**
+   * Optional (#295 correction, finding 2): only cases that get scored by
+   * `./scorers/story-completeness.ts` contribute — same zero-count-skips
+   * treatment as `toolRouting`/`answerAssertions` above.
+   */
+  storyCompleteness?: number;
 }
 
 /**
@@ -114,6 +120,16 @@ export const EVAL_THRESHOLDS: ScorerThresholds = {
   // regression (most asserted cases crossing a boundary) still fails.
   // Recalibrate from the first real `agent-evals` run of the story dataset.
   answerAssertions: 0.8,
+  // storyCompleteness (#295 correction, finding 2): the 3-signal (situation/
+  // action/result) heuristic in ./scorers/story-completeness.ts. Not
+  // calibrated against a real run yet (same local-key limitation as
+  // toolRouting/answerAssertions above); 0.7 is a deliberately conservative
+  // placeholder — two of three signal classes must typically hold — so an
+  // answer missing one signal class doesn't gate merge on an unverified
+  // guess, while an adjective/testimonial-only answer (0/3 or 1/3) still
+  // fails. Recalibrate from the first real agent-evals run of the story
+  // dataset, same procedure as the other provisional thresholds above.
+  storyCompleteness: 0.7,
 };
 
 const SCORER_LABELS: Readonly<Record<keyof ScorerThresholds, string>> = {
@@ -122,6 +138,7 @@ const SCORER_LABELS: Readonly<Record<keyof ScorerThresholds, string>> = {
   relevance: "relevance",
   toolRouting: "tool routing",
   answerAssertions: "answer assertions",
+  storyCompleteness: "story completeness",
 };
 
 /** Verdict for one eval run: whether every scorer aggregate met its threshold, and a human-readable failure line per scorer that didn't. */

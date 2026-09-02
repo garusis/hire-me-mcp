@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { BudgetExceededError } from "./budget.js";
 import type { EvalCase } from "./dataset/schema.js";
-import { runEvalSuite } from "./runner.js";
+import { runEvalSuite, selectCasesForBudget } from "./runner.js";
 
 function makeCase(overrides: Partial<EvalCase> & Pick<EvalCase, "id">): EvalCase {
   return {
@@ -85,6 +85,48 @@ describe("runEvalSuite", () => {
     );
 
     expect(runCase).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * #295 correction (independent Codex review, agent package `1dd7ac7`,
+   * finding 1): a naive `cases.slice(0, maxCases)` silently drops every
+   * `story-manifest-*` case whenever the dataset appends them after the
+   * base cases and the budget cap falls short of the combined total — the
+   * exact real-world shape of `./dataset/cases.ts` (28 base cases then 38
+   * `story-manifest-*` cases) under CI's current 25-case default cap. A
+   * budget-capped run must proportionally cover every id-prefix group
+   * present in the dataset, not just whichever group happens to sort first.
+   */
+  it("proportionally covers every case-id-prefix group under a budget cap, instead of a naive prefix slice that can silently drop an entire group", async () => {
+    const runCase = stubRunCase();
+    const baseCases = Array.from({ length: 6 }, (_, i) => makeCase({ id: `base-${i}` }));
+    const manifestCases = Array.from({ length: 6 }, (_, i) =>
+      makeCase({ id: `story-manifest-${i}` }),
+    );
+
+    await runEvalSuite(
+      {
+        cases: [...baseCases, ...manifestCases],
+        budget: { maxCases: 4, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    const askedQuestions = runCase.mock.calls.map(([question]) => question as string);
+    expect(askedQuestions.some((q) => q.includes("story-manifest-"))).toBe(true);
+    expect(askedQuestions.some((q) => q.includes("base-"))).toBe(true);
+  });
+
+  it("exports selectCasesForBudget so the real dataset's default-run coverage can be regression-tested directly (#295 correction, finding 1/5)", () => {
+    const cases = [
+      ...Array.from({ length: 3 }, (_, i) => makeCase({ id: `base-${i}` })),
+      ...Array.from({ length: 3 }, (_, i) => makeCase({ id: `story-manifest-${i}` })),
+    ];
+    const selected = selectCasesForBudget(cases, 2);
+    expect(selected).toHaveLength(2);
+    expect(selected.some((c) => c.id.startsWith("story-manifest-"))).toBe(true);
   });
 
   it("aborts loudly with BudgetExceededError when the token budget is exceeded mid-run, without silently truncating", async () => {
@@ -474,5 +516,102 @@ describe("runEvalSuite", () => {
 
     // deterministic-only + empty trace = trivially satisfied
     expect(report.cases[0]?.scores.toolRouting?.score).toBe(1);
+  });
+
+  /**
+   * #295 correction (independent Codex review, agent package `1dd7ac7`,
+   * finding 4): `runEvalSuite` must thread the run's actual `toolCitations`
+   * into `scoreAnswerAssertions` so a `citationGroups` `preferredRef` check
+   * only fails when the preferred source was really returned by a tool that
+   * turn — not unconditionally whenever an honest alternative is cited.
+   */
+  it("passes the run's toolCitations through to the preferred-source check, so citing an honest alternative only fails when the preferred source was actually returned this turn", async () => {
+    const preferredNotReturned = vi.fn().mockResolvedValue({
+      answer: "[cite:story:mutual-informal-leadership]",
+      toolCitations: [{ entityType: "story" as const, entityId: "mutual-informal-leadership" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+    });
+    const preferredCase = makeCase({
+      id: "preferred-1",
+      answerAssertions: {
+        citationGroups: [
+          {
+            mode: "any",
+            refs: [
+              { entityType: "story", entityId: "xogito-client-account-recovery" },
+              { entityType: "story", entityId: "mutual-informal-leadership" },
+            ],
+            preferredRef: { entityType: "story", entityId: "xogito-client-account-recovery" },
+          },
+        ],
+      },
+    });
+    const reportWithoutPreferred = await runEvalSuite(
+      {
+        cases: [preferredCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase: preferredNotReturned },
+    );
+    expect(reportWithoutPreferred.cases[0]?.scores.answerAssertions?.score).toBe(1);
+
+    const preferredReturned = vi.fn().mockResolvedValue({
+      answer: "[cite:story:mutual-informal-leadership]",
+      toolCitations: [
+        { entityType: "story" as const, entityId: "xogito-client-account-recovery" },
+        { entityType: "story" as const, entityId: "mutual-informal-leadership" },
+      ],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+    });
+    const reportWithPreferred = await runEvalSuite(
+      {
+        cases: [preferredCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase: preferredReturned },
+    );
+    expect(reportWithPreferred.cases[0]?.scores.answerAssertions?.score).toBe(0);
+  });
+
+  /**
+   * #295 correction (independent Codex review, agent package `1dd7ac7`,
+   * finding 2): `runEvalSuite` must score behavioral-story completeness
+   * (`./scorers/story-completeness.ts`) for any case that declares a
+   * citation-based `answerAssertions` (`mustCiteEntity`/`citationGroups` —
+   * a case expecting a complete story, not a generic base-dataset check),
+   * and leave it `null` for a case that doesn't.
+   */
+  it("scores storyCompleteness when a case declares citation-based answerAssertions, and leaves it null otherwise", async () => {
+    const runCase = vi.fn().mockResolvedValue({
+      answer:
+        "When the client relationship soured, Marcos rebuilt trust by taking over delivery. " +
+        "As a result, the account was retained. [cite:story:xogito-client-account-recovery]",
+      toolCitations: [{ entityType: "story" as const, entityId: "xogito-client-account-recovery" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+    });
+    const storyCase = makeCase({
+      id: "story-1",
+      answerAssertions: {
+        mustCiteEntity: [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
+      },
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [storyCase, groundedCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    const storyReport = report.cases.find((c) => c.id === "story-1");
+    const plainReport = report.cases.find((c) => c.id === groundedCase.id);
+    expect(storyReport?.scores.storyCompleteness?.score).toBe(1);
+    expect(plainReport?.scores.storyCompleteness).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import {
   scoreGapHonesty,
   scoreGroundedness,
   scoreRelevance,
+  scoreStoryCompleteness,
   scoreToolRouting,
 } from "./index.js";
 
@@ -20,5 +21,9 @@ describe("scorers barrel", () => {
 
   it("re-exports the answer-assertions scorer (#300 / #295)", () => {
     expect(typeof scoreAnswerAssertions).toBe("function");
+  });
+
+  it("re-exports the story-completeness scorer (#295 correction, finding 2)", () => {
+    expect(typeof scoreStoryCompleteness).toBe("function");
   });
 });

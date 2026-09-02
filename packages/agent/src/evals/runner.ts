@@ -61,6 +61,7 @@ import {
   scoreGapHonesty,
   scoreGroundedness,
   scoreRelevance,
+  scoreStoryCompleteness,
   scoreToolRouting,
 } from "./scorers/index.js";
 import type { ToolCall } from "./scorers/tool-routing.js";
@@ -101,6 +102,75 @@ export interface RunnerConfig {
   thresholds?: ScorerThresholds;
 }
 
+/**
+ * The dataset-composition group a case id belongs to, purely from its id
+ * prefix — currently just `story-manifest-*` (#295's locked behavioral
+ * manifest, appended after the base dataset in `./dataset/cases.ts`) versus
+ * everything else. Exported for `runner.test.ts` and any future group.
+ */
+function groupKeyOf(evalCase: EvalCase): string {
+  return evalCase.id.startsWith("story-manifest-") ? "story-manifest" : "base";
+}
+
+/**
+ * Select up to `maxCases` cases from `cases`, proportionally covering every
+ * id-prefix group present instead of a naive `cases.slice(0, maxCases)`.
+ *
+ * #295 correction (independent Codex review, agent package `1dd7ac7`,
+ * finding 1): the real dataset appends `story-manifest-*` (38 cases) after
+ * 28 base cases, so a prefix slice under CI's current 25-case default cap
+ * ran zero of the new cases — CI stayed green while covering none of this
+ * package's own new coverage. Round-robining across groups (in each
+ * group's own original relative order) guarantees every group present gets
+ * a fair share of any budget cap, however small, without this package
+ * editing the CI-owned cap itself (`.github/workflows/agent-evals.yml`,
+ * out of `packages/agent/**` scope — see the correction's issue-295 note
+ * for the still-unavoidable cross-package ask: raising that cap toward the
+ * dataset's full size is the only way to exercise every manifest case in
+ * one default run).
+ */
+function groupCasesById(cases: readonly EvalCase[]): EvalCase[][] {
+  const groups = new Map<string, EvalCase[]>();
+  for (const evalCase of cases) {
+    const key = groupKeyOf(evalCase);
+    const group = groups.get(key);
+    if (group) {
+      group.push(evalCase);
+    } else {
+      groups.set(key, [evalCase]);
+    }
+  }
+  return [...groups.values()];
+}
+
+/** One round-robin pass over `groups`, adding at most one case per group to `selected` (stops early once `maxCases` is reached); returns whether anything was added. */
+function roundRobinRound(
+  groups: readonly EvalCase[][],
+  cursor: number,
+  selected: Set<EvalCase>,
+  maxCases: number,
+): boolean {
+  const before = selected.size;
+  for (const group of groups) {
+    if (selected.size >= maxCases) break;
+    const candidate = group[cursor];
+    if (candidate !== undefined) selected.add(candidate);
+  }
+  return selected.size > before;
+}
+
+export function selectCasesForBudget(cases: readonly EvalCase[], maxCases: number): EvalCase[] {
+  if (maxCases >= cases.length) return [...cases];
+
+  const groups = groupCasesById(cases);
+  const selected = new Set<EvalCase>();
+  for (let cursor = 0; selected.size < maxCases; cursor += 1) {
+    if (!roundRobinRound(groups, cursor, selected, maxCases)) break; // every group exhausted
+  }
+
+  return cases.filter((evalCase) => selected.has(evalCase));
+}
+
 function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
   const transcript = {
     question: evalCase.question,
@@ -121,7 +191,17 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
   const answerAssertions =
     evalCase.answerAssertions === undefined
       ? null
-      : scoreAnswerAssertions(run.answer, evalCase.answerAssertions);
+      : scoreAnswerAssertions(run.answer, evalCase.answerAssertions, run.toolCitations);
+  // #295 correction (finding 2): score behavioral-story completeness only
+  // for a case that expects a complete story citation — mustCiteEntity or
+  // citationGroups — not every case with any answerAssertions block (a
+  // base-dataset mustMatch-only fact check has no "story" to be complete).
+  const expectsStoryCitation =
+    (evalCase.answerAssertions?.mustCiteEntity?.length ?? 0) > 0 ||
+    (evalCase.answerAssertions?.citationGroups?.length ?? 0) > 0;
+  const storyCompleteness = expectsStoryCitation
+    ? scoreStoryCompleteness({ answer: run.answer })
+    : null;
 
   return {
     id: evalCase.id,
@@ -134,6 +214,7 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
       relevance: scoreRelevance(transcript),
       toolRouting,
       answerAssertions,
+      storyCompleteness,
     },
   };
 }
@@ -142,7 +223,7 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
 export async function runEvalSuite(config: RunnerConfig, deps: RunnerDeps): Promise<EvalReport> {
   const pricing = getModelPricing(config.modelId);
 
-  const casesToRun = config.cases.slice(0, config.budget.maxCases);
+  const casesToRun = selectCasesForBudget(config.cases, config.budget.maxCases);
   const caseReports: CaseReport[] = [];
   let inputTokens = 0;
   let outputTokens = 0;

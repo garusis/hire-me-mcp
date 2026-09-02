@@ -90,10 +90,21 @@ function citedRefLabels(
  * One #295 `citationGroups` entry's pass/fail failure message, or `null` when
  * it holds — see `EvalCaseCitationGroup`'s doc comment (`../dataset/schema.ts`)
  * for the `any`/`all`/`preferredRef` semantics this enforces.
+ *
+ * #295 correction (independent Codex review, agent package `1dd7ac7`,
+ * finding 4): the preference check is a SECOND, independent pass condition
+ * that fails only when the preferred source was actually returned by a tool
+ * THAT TURN (`toolReturnedRefs`, from the run's `toolCitations` — what a
+ * tool call in this run actually surfaced, not what the answer cites). A
+ * preferred source that was never returned was never available to cite, so
+ * citing an honest acceptable alternative instead cannot be a preference
+ * failure — the group's `any`/`all` membership check above is unaffected
+ * either way; only the extra preference check is gated on availability.
  */
 function checkCitationGroup(
   answerMarkers: readonly { entityType: string; entityId: string }[],
   group: EvalCaseCitationGroup,
+  toolReturnedRefs: readonly { entityType: string; entityId: string }[],
 ): string | null {
   const cited = citedRefLabels(answerMarkers, group);
   const groupLabel = group.refs.map((ref) => `${ref.entityType}:${ref.entityId}`).join(", ");
@@ -118,10 +129,10 @@ function checkCitationGroup(
     );
   }
   const preferred = group.preferredRef;
-  if (preferred !== undefined) {
+  if (preferred !== undefined && citationPresent(toolReturnedRefs, preferred)) {
     const preferredLabel = `${preferred.entityType}:${preferred.entityId}`;
     if (cited[0] !== preferredLabel) {
-      return `cited ${cited[0]} instead of the preferred citation ${preferredLabel} from [${groupLabel}]`;
+      return `cited ${cited[0]} instead of the preferred citation ${preferredLabel} from [${groupLabel}], which a tool returned this turn`;
     }
   }
   return null;
@@ -131,11 +142,12 @@ function checkCitationGroup(
 function checkCitationGroups(
   answer: string,
   assertions: EvalCaseAnswerAssertions,
+  toolCitations: readonly { entityType: string; entityId: string }[],
 ): { failures: string[]; total: number } {
   const groups = assertions.citationGroups ?? [];
   const answerMarkers = parseCitations(answer);
   const failures = groups
-    .map((group) => checkCitationGroup(answerMarkers, group))
+    .map((group) => checkCitationGroup(answerMarkers, group, toolCitations))
     .filter((failure): failure is string => failure !== null);
   return { failures, total: groups.length };
 }
@@ -151,14 +163,22 @@ function checkCitationGroups(
  * alternative story `list-career-stories` surfaced, say). A required (or
  * forbidden) piece of evidence is verified against what the answer actually
  * cites, not what a tool call merely returned in the same run.
+ *
+ * `toolCitations` (#295 correction, finding 4) is the one exception: a
+ * `citationGroups` entry's `preferredRef` check DOES need to know what a
+ * tool returned this turn, specifically to tell "preferred was available
+ * and passed over" apart from "preferred was never available" — see
+ * `checkCitationGroup`'s doc comment. Defaults to an empty array so
+ * existing callers with no preference-declaring cases keep compiling.
  */
 export function scoreAnswerAssertions(
   answer: string,
   assertions: EvalCaseAnswerAssertions,
+  toolCitations: readonly { entityType: string; entityId: string }[] = [],
 ): ScoreResult {
   const text = checkTextPatterns(answer, assertions);
   const citations = checkCitationRefs(answer, assertions);
-  const groups = checkCitationGroups(answer, assertions);
+  const groups = checkCitationGroups(answer, assertions, toolCitations);
   const failures = [...text.failures, ...citations.failures, ...groups.failures];
   const total = text.total + citations.total + groups.total;
 

@@ -62,6 +62,22 @@ describe("evaluateVerdict", () => {
     expect(verdict.failures.some((line) => /answer assertions/i.test(line))).toBe(true);
   });
 
+  /**
+   * #295 correction (independent Codex review, agent package `1dd7ac7`,
+   * finding 2): `storyCompleteness` (`./scorers/story-completeness.ts`)
+   * gets the same optional, provisional-threshold treatment as
+   * `answerAssertions`/`toolRouting` above.
+   */
+  it("carries a provisional storyCompleteness threshold (#295), optional like answerAssertions/toolRouting", () => {
+    expect(EVAL_THRESHOLDS.storyCompleteness).toBe(0.7);
+    const verdict = evaluateVerdict(
+      { groundedness: 0.9, gapHonesty: 0.95, relevance: 0.6, storyCompleteness: 0.2 },
+      { groundedness: 0.8, gapHonesty: 0.7, relevance: 0.5, storyCompleteness: 0.7 },
+    );
+    expect(verdict.passed).toBe(false);
+    expect(verdict.failures.some((line) => /story completeness/i.test(line))).toBe(true);
+  });
+
   it("carries a provisional toolRouting threshold (#75), flagged as uncalibrated pending a real CI run", () => {
     expect(EVAL_THRESHOLDS.toolRouting).toBe(0.6);
   });
