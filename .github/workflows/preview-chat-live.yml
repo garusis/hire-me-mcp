@@ -38,10 +38,15 @@ name: Preview Chat (live model)
 # waiting for status", and forecloses ever making this required). So this
 # triggers on EVERY pull request and decides in-job, reusing
 # `scripts/ci/eval-relevance.mjs`: the suite runs when `@hire-me-mcp/agent`
-# is in the diff's affected-package closure, when the chat surface/route or
-# the preview specs changed, or when the PR carries the `run-live-chat`
-# label. Anything else reports green in seconds having spent zero quota —
-# which is the "cut per-run consumption" half of #264.
+# is in the diff's affected-package closure — which is how a behavioral-story
+# schema/content change (`career-data`), a chunking/tool change (`core`), or
+# a prompt/tool/eval-dataset change (`agent` itself) all mark this suite
+# relevant (#295) — when the chat surface/route or the preview specs
+# changed, when the explicit `career-data`/`core` source glob below matches
+# (belt-and-braces, mirroring `retrieval-eval.yml`'s own career-data entry),
+# or when the PR carries the `run-live-chat` label. Anything else reports
+# green in seconds having spent zero quota — which is the "cut per-run
+# consumption" half of #264.
 #
 # No `push:` trigger: a push to `main` produces a Production deploy, not a
 # Preview one, so there is no preview URL to target. Production's own
@@ -119,7 +124,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.event.pull_request.base.ref) || '' }}
           TARGET_PACKAGE: "@hire-me-mcp/agent"
-          EXTRA_PATH_REGEX: '^(\.github/workflows/preview-chat-live\.yml|apps/web/app/chat/|apps/web/app/api/chat/|apps/web/lib/chat/|apps/web/e2e-preview/|playwright\.preview\.config\.ts|performance-budgets\.json)'
+          EXTRA_PATH_REGEX: '^(\.github/workflows/preview-chat-live\.yml|apps/web/app/chat/|apps/web/app/api/chat/|apps/web/lib/chat/|apps/web/e2e-preview/|playwright\.preview\.config\.ts|performance-budgets\.json|packages/career-data/content/|packages/career-data/src/|packages/core/src/)'
           OVERRIDE_LABEL: run-live-chat
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |

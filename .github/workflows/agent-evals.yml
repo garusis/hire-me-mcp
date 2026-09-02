@@ -44,10 +44,16 @@ name: Agent Evals
 #      the agent package itself OR anything in its dependency closure
 #      (`@hire-me-mcp/core`, `@hire-me-mcp/career-data`, per-package
 #      lockfile changes, root config) changed. Transitive dependency
-#      changes are caught without a hand-maintained path list.
+#      changes are caught without a hand-maintained path list — this is
+#      how a behavioral-story schema/content change (`career-data`), a
+#      chunking/tool change (`core`), or a prompt/tool/eval-dataset
+#      change (this package itself) all mark the suite relevant (#295).
 #   2. An explicit path regex for assets outside that module graph: this
 #      workflow file, the relevance/summary CI scripts, and the chat
-#      route wiring.
+#      route wiring — plus a belt-and-braces `career-data`/`core` source
+#      glob (#295), mirroring `retrieval-eval.yml`'s own belt-and-braces
+#      career-data entry, since this job's target package sits two
+#      dependency hops from `career-data` content.
 #   3. A `run-evals` PR label forces a run regardless of the diff (the
 #      `labeled` trigger type below fires a fresh run when it's added).
 #
@@ -204,7 +210,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.event.pull_request.base.ref) || github.event.before }}
           TARGET_PACKAGE: "@hire-me-mcp/agent"
-          EXTRA_PATH_REGEX: '^(\.github/workflows/agent-evals\.yml|scripts/ci/eval-relevance|scripts/ci/eval-summary\.mjs|apps/web/app/api/chat/)'
+          EXTRA_PATH_REGEX: '^(\.github/workflows/agent-evals\.yml|scripts/ci/eval-relevance|scripts/ci/eval-summary\.mjs|apps/web/app/api/chat/|packages/career-data/content/|packages/career-data/src/|packages/core/src/)'
           OVERRIDE_LABEL: run-evals
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
