@@ -254,6 +254,68 @@ thrown error — when nothing matches or nothing is authored.
   `publishedDate` descending (ties by `id`). With the currently-empty writing corpus the honest
   result is `{ data: [], citations: [] }` — "nothing published yet" is data.
 
+### `listCareerStories(repository: CareerDataRepository, filter?: CareerStoryFilter): DomainResult<CareerStoryListEntry[]>`
+
+The deterministic behavioral-story service (#291, epic #288): every `CareerStory` matching a
+structured filter, returned **complete** and joined to compact parent-role context so a caller can
+answer "tell me about a time Marcos…" without a second lookup. No fuzzy matching — topic,
+technology, vendor, situation and outcome wording routes through `searchCareer` with
+`sourceTypes: ["story"]` (#305 decision 5); this service is the stable route for a known
+competency, id, experience or company.
+
+Each `CareerStoryListEntry` is:
+
+- `story` — the full authored `CareerStory` record, `retrievalTags` included. Retrieval tags are
+  semantic discovery hints for `searchCareer`, not a second deterministic taxonomy, so there is
+  deliberately **no tag filter** here (#305 decision 3). Eval-only retrieval questions never
+  appear on the record (the story schema is strict).
+- `primaryExperience` — `{ id, company, role, startDate, endDate? }` for the single role where
+  the event occurred. `endDate` is omitted for a current role exactly as on the `ExperienceEntry`.
+  The full entry and its highlights are *not* duplicated per result.
+- `relatedExperiences` — zero or more contexts with the same compact fields, resolved from the
+  story's optional `relatedExperienceIds`. Labelled separately because a related role aids
+  discovery only; it never becomes the event's parent or inherits its actions or outcomes (#305
+  decision 2).
+- `citation` — the story's own `{ entityType: "story", entityId, label: title }`. The story is the
+  only cited entity: related roles do not produce extra citations. `citations[i]` on the envelope
+  is `data[i].citation`.
+
+`CareerStoryFilter` fields — every value is trimmed and lower-cased before an **exact** comparison
+(the same convention as `getExperience`'s `company` filter), and an unknown value matches nothing:
+
+- `id?: string` — exact story id.
+- `experienceId?: string` — matches a story whose primary `experienceId` **or** one of its
+  `relatedExperienceIds` is the given id.
+- `company?: string` — matches a story whose primary **or** related experience has that company.
+- `competencies?: string[]` — controlled `COMPETENCIES` values; a story matches if **any** given
+  value is its `primaryCompetency` or in `supportingCompetencies` (OR within this field). Omitted
+  or an empty array imposes no constraint.
+
+**Filter combination semantics:** AND across fields, OR within `competencies`. When `company` and
+`experienceId` are both supplied they must be satisfied by **the same** primary-or-related
+association — a story is never matched by taking the company from one associated role and the id
+from another.
+
+**Stable sort order** (fully deterministic regardless of input array order):
+
+1. with a `competencies` filter, stories matched on their **primary** competency come before
+   stories matched only through a supporting competency (no effect without that filter);
+2. then parent experiences in reverse-chronological order — exactly `getExperience`'s exported
+   `compareExperience` rule (`startDate` desc, open-ended role first among same-start ties, `id`
+   asc);
+3. then story `id` ascending.
+
+Concretely, `{ competencies: ["leadership"] }` against the real corpus ranks the Xogito
+client-account recovery story ahead of the Mutual story — a locked invariant (#305 decision 8),
+tested against the content directory.
+
+**Empty results and defensive behaviour:** a filter matching nothing, an unknown id, company or
+competency, all return `{ data: [], citations: [] }` — never a throw; schema-invalid input is the
+adapter boundary's concern. A story whose primary experience does not resolve (content lint
+normally blocks this) is **excluded** rather than thrown on, since it can satisfy neither the
+context contract nor the parent-chronological order; a related id that does not resolve is simply
+dropped from that story's `relatedExperiences`. The repository's dataset is never mutated.
+
 ## The career-data chunker (`chunkCareerData`)
 
 `chunkCareerData(dataset: CareerDataset, options?: ChunkingOptions): Chunk[]` (#21, epic #6) turns

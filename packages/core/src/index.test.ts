@@ -10,6 +10,7 @@ import {
   getExperience,
   getProfile,
   getSkillEvidence,
+  listCareerStories,
   search,
   searchProjects,
   slugify,
@@ -163,6 +164,45 @@ describe("public entry point", () => {
 
     const result = getSkillEvidence(repository, "ts");
     expect(result.data.kind).toBe("claimed");
+  });
+
+  it("re-exports listCareerStories, returning parent context and a story citation", () => {
+    const repository = createInMemoryCareerDataRepository({
+      ...emptyCareerDataset(),
+      experience: [
+        {
+          id: "fixture-role-fixtureco-2020",
+          company: "Fixtureco",
+          role: "Fixture Engineer",
+          startDate: "2020-01",
+          endDate: "2022-01",
+          summary: "Fixture summary.",
+          highlights: ["Did a fixture thing"],
+          tech: ["typescript"],
+        },
+      ],
+      stories: [
+        {
+          id: "fixture-story",
+          experienceId: "fixture-role-fixtureco-2020",
+          title: "Fixture Story",
+          primaryCompetency: "leadership",
+          supportingCompetencies: [],
+          situation: "Situation.",
+          task: "Task.",
+          actions: ["Action."],
+          results: ["Result."],
+          retrievalTags: ["fixture-tag"],
+        },
+      ],
+    });
+
+    const result = listCareerStories(repository, { competencies: ["leadership"] });
+    expect(result.data.map((entry) => entry.story.id)).toEqual(["fixture-story"]);
+    expect(result.data[0]?.primaryExperience.company).toBe("Fixtureco");
+    expect(result.citations).toEqual([
+      { entityType: "story", entityId: "fixture-story", label: "Fixture Story" },
+    ]);
   });
 
   it("re-exports chunkCareerData from ./chunking/index.js", () => {

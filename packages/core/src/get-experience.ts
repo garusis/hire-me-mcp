@@ -100,8 +100,11 @@ function matchesFilter(entry: ExperienceEntry, filter: ExperienceFilter): boolea
  * treating an open-ended (current) role as sorting first among same-start
  * ties. Any remaining tie is broken by `id` ascending, so the order is fully
  * deterministic regardless of input array order.
+ *
+ * Exported so `listCareerStories` (#291) orders story parents by exactly
+ * this rule instead of re-deriving "reverse chronological" on its own.
  */
-function compareExperience(a: ExperienceEntry, b: ExperienceEntry): number {
+export function compareExperience(a: ExperienceEntry, b: ExperienceEntry): number {
   if (a.startDate !== b.startDate) {
     return a.startDate < b.startDate ? 1 : -1;
   }
