@@ -11,6 +11,12 @@ describe("RETRIEVAL_THRESHOLDS", () => {
   });
 });
 
+describe("RETRIEVAL_THRESHOLDS.preferredSourceCompliance (#295 correction)", () => {
+  it("is 1.0 so any failed preferred-source case blocks the verdict rather than being averaged away", () => {
+    expect(RETRIEVAL_THRESHOLDS.preferredSourceCompliance).toBe(1);
+  });
+});
+
 describe("evaluateRetrievalVerdict", () => {
   const thresholds = {
     recallAtK: 0.6,

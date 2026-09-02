@@ -93,6 +93,32 @@ describe("buildRetrievalReport: preferredSourceCompliance (#295)", () => {
     const report = buildRetrievalReport({ cases, topK: 5, absentTopicMinScore: 0.4 });
     expect(report.cases[0]).toEqual(cases[0]);
   });
+
+  it("a single failed preferred-source case blocks the overall verdict under the committed thresholds even when most preference cases pass (#295 correction: preference is blocking, not merely observational/averaged)", () => {
+    const report = buildRetrievalReport({
+      cases: [
+        preferenceCaseReport({ id: "a", preferencePassed: true }),
+        preferenceCaseReport({ id: "b", preferencePassed: true }),
+        preferenceCaseReport({ id: "c", preferencePassed: true }),
+        preferenceCaseReport({ id: "d", preferencePassed: true }),
+        preferenceCaseReport({
+          id: "e",
+          preferencePassed: false,
+          preferredSourceReciprocalRank: 0,
+          passed: false,
+        }),
+        caseReport(),
+        absentCaseReport(),
+      ],
+      topK: 5,
+      absentTopicMinScore: 0.4,
+    });
+    expect(report.aggregates.preferredSourceCompliance).toBeCloseTo(0.8, 10);
+    expect(report.verdict.passed).toBe(false);
+    expect(report.verdict.failures.some((f) => f.includes("preferred-source compliance"))).toBe(
+      true,
+    );
+  });
 });
 
 describe("buildRetrievalReport", () => {

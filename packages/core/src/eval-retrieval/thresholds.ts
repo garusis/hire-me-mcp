@@ -44,6 +44,13 @@
  *   score below `ABSENT_TOPIC_MIN_SCORE` (see `./runner.ts`), but one
  *   borderline case out of 5 failing shouldn't fail the whole build while
  *   this is still uncalibrated against a real model.
+ * - `preferredSourceCompliance` 1.0 (#295 correction) — unlike the other
+ *   aggregates above, a declared preference is a locked, per-case contract
+ *   (e.g. "story 001 must outrank 002"), not a statistical target that can
+ *   tolerate a fraction of failures. A fractional floor here let a real
+ *   failure hide behind passing cases (0.8 compliance cleared the prior 0.7
+ *   floor); 1.0 makes any single failed preference block the verdict, same
+ *   as any other locked assertion in this dataset.
  *
  * These are EXPECTED to move once a real `workflow_dispatch` run against a
  * populated Neon branch produces honest numbers (#41's "committed
@@ -71,7 +78,7 @@ export const RETRIEVAL_THRESHOLDS: RetrievalThresholds = {
   precisionAtK: 0.2,
   mrr: 0.4,
   absentTopicAccuracy: 0.8,
-  preferredSourceCompliance: 0.7,
+  preferredSourceCompliance: 1.0,
 };
 
 const THRESHOLD_LABELS: Readonly<Record<keyof RetrievalThresholds, string>> = {

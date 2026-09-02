@@ -250,6 +250,34 @@ describe("runRetrievalEval", () => {
     expect(report.cases[0]?.preferredSourceReciprocalRank).toBeNull();
   });
 
+  it("scores an absent-topic query's matchModePassed as vacuously true even when it fails (#295 correction)", async () => {
+    const { searchCareer } = fakeSearchCareer({
+      "blockchain experience": [{ sourceType: "skill", sourceId: "typescript", score: 0.9 }],
+    });
+
+    const report = await runRetrievalEval(
+      { queries: [absentQuery()], topK: 5, absentTopicMinScore: 0.4 },
+      { searchCareer },
+    );
+
+    expect(report.cases[0]?.passed).toBe(false);
+    expect(report.cases[0]?.matchModePassed).toBe(true);
+  });
+
+  it("scores an absent-topic query's matchModePassed as vacuously true when it passes (#295 correction)", async () => {
+    const { searchCareer } = fakeSearchCareer({
+      "blockchain experience": [{ sourceType: "skill", sourceId: "typescript", score: 0.1 }],
+    });
+
+    const report = await runRetrievalEval(
+      { queries: [absentQuery()], topK: 5, absentTopicMinScore: 0.4 },
+      { searchCareer },
+    );
+
+    expect(report.cases[0]?.passed).toBe(true);
+    expect(report.cases[0]?.matchModePassed).toBe(true);
+  });
+
   it("produces an empty report for an empty query list", async () => {
     const { searchCareer } = fakeSearchCareer({});
     const report = await runRetrievalEval(

@@ -116,6 +116,7 @@ function scoreAbsentTopicCase(
   return {
     ...baseCaseReport(query, retrieved),
     expectEmptyCheck: check,
+    matchModePassed: true,
     passed: check.passed,
   };
 }
