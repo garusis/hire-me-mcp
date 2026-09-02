@@ -1,0 +1,40 @@
+{
+  "id": "house-numbers-vendor-extraction-contract",
+  "experienceId": "house-numbers-2022-senior-full-stack-engineer",
+  "title": "Proved that documented extraction capabilities were disabled for the production account",
+  "primaryCompetency": "problem-solving",
+  "supportingCompetencies": [
+    "technical-judgment",
+    "collaboration",
+    "ownership",
+    "stakeholder-management",
+    "navigating-ambiguity"
+  ],
+  "situation": "While migrating House Numbers' document-analysis checks from generic LLM output to deterministic rules, I needed representative extracted payloads for every supported document type so I could build reliable unit tests. The external platform's documentation said it extracted several types that never appeared with extracted fields in our production database.",
+  "task": "I had to find where the structured extraction was being lost before encoding any contract into deterministic tests; building them against guessed data would have encoded a false contract into our code.",
+  "actions": [
+    "I assumed the problem was in our code. I traced the data from incoming webhooks through our persistence and transformation layers, looking for a point where we might be dropping attributes. I could not find one.",
+    "When the next webhook arrived for one of the affected types, I inspected the payload at the boundary and confirmed that the provider had returned a classification but no structured extraction.",
+    "I paused the migration. With the suspect payload and end-to-end trace in hand, I gave the evidence to our product manager, who took it to the vendor's account team.",
+    "To keep the migration moving, I built the missing mocks from the provider's published payload examples, preserving the exact structure their documentation said we should expect."
+  ],
+  "results": [
+    "After several exchanges, the vendor confirmed that account-side capabilities for multiple documented document types had been disabled. Once they enabled them, new documents began arriving with the expected extracted fields.",
+    "There was still a historical gap. The original documents remained in the provider's system. The structured extraction expected for those earlier submissions could not be regenerated or redelivered. At that time, House Numbers had no way to recreate the same provider-generated output. We accepted that extraction history as unavailable.",
+    "The mocks gave me a grounded contract for the deterministic checks and unit tests while we waited for new production samples. As fresh extractions arrived, our telemetry and tests confirmed that their shape matched both the documented examples and the contract encoded in the mocks."
+  ],
+  "reflection": "The case reinforced that every critical integration needs contract validation at its boundaries. Clear documentation defines the expected behavior, while boundary checks confirm that both systems are honoring that contract in practice.",
+  "retrievalTags": [
+    "misleading-documentation",
+    "vendor-integration",
+    "webhooks",
+    "contract-validation",
+    "production-tracing",
+    "account-configuration",
+    "capability-verification",
+    "deterministic-tests",
+    "mocks",
+    "technical-escalation",
+    "structured-extraction"
+  ]
+}

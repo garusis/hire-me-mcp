@@ -1,0 +1,37 @@
+{
+  "id": "xogito-client-account-recovery",
+  "experienceId": "xogito-group-2020-senior-software-development-engineer",
+  "title": "Rebuilding client trust through emerging leadership",
+  "primaryCompetency": "leadership",
+  "supportingCompetencies": [
+    "stakeholder-management",
+    "influence",
+    "prioritization",
+    "navigating-ambiguity",
+    "communication"
+  ],
+  "situation": "At Xogito, I was a senior full-stack developer and the first developer assigned to a large inspection and delivery-tracking platform. After our project manager resigned, I joined a senior frontend developer and QA in product meetings with the client. Those meetings made it clear that the client was deeply frustrated with our progress and that several core workflows required substantial correction to meet their needs.",
+  "task": "Because I had the longest history with the product, I gradually became the team's main spokesperson despite having no formal product-management authority. In practice that meant rebuilding alignment with the client while the team corrected the core workflows.",
+  "actions": [
+    "We increased the meeting cadence to rebuild alignment.",
+    "During those conversations, I noticed the client expressing frustration about smaller capabilities that had been overlooked. I identified several as potential quick wins and proposed delivering them alongside the core repairs.",
+    "I suggested a capacity split, while the frontend developer and QA helped refine the requirements and estimates.",
+    "The team agreed on the approach, and the client approved each sprint plan."
+  ],
+  "results": [
+    "Trust returned gradually over two or three sprints. As the client saw consistent progress, the deadline pressure eased and they gave us more time to complete the core repairs.",
+    "After further requirements discussions and demos, the client accepted the corrected workflows.",
+    "I continued leading the product conversations for approximately six months.",
+    "Near my departure, I learned that the same client had commissioned additional projects, and one of their principal contacts invited me to become the first member of an internal technology team they were considering building."
+  ],
+  "reflection": "The experience taught me that meaningful quick wins can reduce tension while deeper work continues. It also reinforced the value of involving engineers in product decisions early, before misunderstandings become expensive recovery work.",
+  "retrievalTags": [
+    "client-recovery",
+    "product-discovery",
+    "trust-building",
+    "quick-wins",
+    "delivery-recovery",
+    "requirements-alignment",
+    "influence-without-authority"
+  ]
+}

@@ -1,0 +1,30 @@
+[
+  {
+    "experienceId": "fixture-role-fixtureco-2020",
+    "field": "summary",
+    "classification": "role-context",
+    "action": "keep"
+  },
+  {
+    "experienceId": "fixture-role-fixtureco-2020",
+    "field": "highlights.0",
+    "classification": "detailed-story",
+    "storyIds": ["fixture-story"],
+    "action": "shorten",
+    "note": "The fixture story holds the detailed narrative."
+  },
+  {
+    "experienceId": "fixture-role-otherco-2016",
+    "field": "summary",
+    "classification": "role-context",
+    "action": "keep"
+  },
+  {
+    "experienceId": "fixture-role-otherco-2016",
+    "field": "highlights.0",
+    "classification": "concise-outcome",
+    "storyIds": ["fixture-story"],
+    "action": "keep",
+    "note": "Associated through the story's relatedExperienceIds."
+  }
+]

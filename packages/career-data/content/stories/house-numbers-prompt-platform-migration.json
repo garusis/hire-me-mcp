@@ -1,0 +1,44 @@
+{
+  "id": "house-numbers-prompt-platform-migration",
+  "experienceId": "house-numbers-2022-senior-full-stack-engineer",
+  "title": "Replacing a prompt-management vendor with repository-native LLM infrastructure",
+  "primaryCompetency": "influence",
+  "supportingCompetencies": [
+    "decision-making",
+    "technical-judgment",
+    "risk-management",
+    "communication",
+    "technical-leadership"
+  ],
+  "situation": "During our early LLM work at House Numbers, we adopted Orq.ai for prompt versioning, execution and cost tracing, and experiments. It was a reasonable decision at the time: the ecosystem was immature, our experience was limited, and we expected the platform to eventually let non-engineers work with prompts. As our systems grew, especially the Communication Service, the platform began creating friction. Deterministic logic lived in our repository while prompts lived in an external dashboard. Engineers still had to investigate and supervise prompt changes, and we built workarounds to publish prompts and run evaluations that the platform could not easily automate within our development workflow.",
+  "task": "I initiated a discussion about replacing Orq.ai and carried it forward over several months. The decision belonged to the team, but our CTO was understandably reluctant because we already had a large prompt inventory and a migration could introduce significant risk.",
+  "actions": [
+    "I documented the workarounds we were maintaining, compared capabilities and alternatives, prepared technical demonstrations and effort estimates, and proposed an incremental service-by-service migration instead of a disruptive replacement.",
+    "After the team agreed, I designed the common migration pattern and implemented it first in our Document Data Extractor and Loan Analysis services.",
+    "I moved prompts into version-controlled files, integrated model providers directly, added provider failover, and connected prompt changes to automated evaluations.",
+    "A teammate had previously created cost-tracing functionality for our Agent Service; I generalized that work into shared infrastructure so additional services could report LLM usage and cost consistently.",
+    "Once the foundation was established, other engineers applied the pattern to the Communication and Task services until the live Orq.ai integration was retired."
+  ],
+  "results": [
+    "The incremental migration produced no significant interruption or regression.",
+    "Repository-native evaluations also allowed us to adopt newer, less expensive models while verifying that output quality remained acceptable.",
+    "Prompts, implementation logic, tests, and evaluations can now evolve through the same version-control and review process. Developers across the team, including our CTO, confirmed that the resulting workflow was a significant improvement.",
+    "The new structure also enabled our nontechnical product manager to use Claude Code to investigate reported prompt failures and create more precise engineering tickets, while engineers continued to validate the diagnosis and own the technical decisions.",
+    "We also eliminated a recurring platform cost."
+  ],
+  "reflection": "The experience did not teach me that building is always better than buying. In this case, we had developed enough LLM expertise, evaluation infrastructure, and observability to build a more flexible solution quickly. I would make a different decision for something like email infrastructure, where a vendor provides security, protocols, deliverability, and operational expertise that we could not responsibly reproduce. The right choice depends on internal capability, control, cost, migration risk, and what the vendor genuinely does better than the team can.",
+  "retrievalTags": [
+    "build-vs-buy",
+    "vendor-replacement",
+    "incremental-migration",
+    "prompt-management",
+    "prompt-versioning",
+    "llm-infrastructure",
+    "model-evals",
+    "provider-failover",
+    "cost-observability",
+    "repository-native",
+    "cost-optimization",
+    "orq-ai"
+  ]
+}

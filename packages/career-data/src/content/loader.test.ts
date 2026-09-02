@@ -1,6 +1,11 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { loadContentDir, loadContentDirWithSources, validateContentDir } from "./loader.js";
+import {
+  loadContentDir,
+  loadContentDirWithSources,
+  loadStoryPreservationMap,
+  validateContentDir,
+} from "./loader.js";
 
 const fixtureDir = (name: string) =>
   fileURLToPath(new URL(`./__fixtures__/${name}/`, import.meta.url));
@@ -226,5 +231,45 @@ describe("loadContentDirWithSources", () => {
     expect(() => loadContentDirWithSources(fixtureDir("empty-content"))).toThrow(
       /no content was loaded/i,
     );
+  });
+});
+
+describe("story-preservation-map.json (#290)", () => {
+  it("validateContentDir reports an out-of-set classification on the invalid map fixture, naming the file and path", () => {
+    const errors = validateContentDir(fixtureDir("invalid-content"));
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        file: "story-preservation-map.json",
+        path: "[0].classification",
+      }),
+    );
+  });
+
+  it("loadStoryPreservationMap returns the typed entries of a valid map", () => {
+    const map = loadStoryPreservationMap(fixtureDir("lint-valid-content"));
+    expect(map).toHaveLength(4);
+    expect(map).toContainEqual({
+      experienceId: "fixture-role-fixtureco-2020",
+      field: "highlights.0",
+      classification: "detailed-story",
+      storyIds: ["fixture-story"],
+      action: "shorten",
+      note: "The fixture story holds the detailed narrative.",
+    });
+  });
+
+  it("loadStoryPreservationMap returns an empty map when the file is absent", () => {
+    expect(loadStoryPreservationMap(fixtureDir("valid-content"))).toEqual([]);
+  });
+
+  it("loadStoryPreservationMap throws with a readable report for an invalid map", () => {
+    expect(() => loadStoryPreservationMap(fixtureDir("invalid-content"))).toThrow(
+      /story-preservation-map\.json/,
+    );
+  });
+
+  it("the map is review data, not a citable entity: it never appears in the dataset's sources", () => {
+    const { sources } = loadContentDirWithSources(fixtureDir("lint-valid-content"));
+    expect(sources.some((source) => source.file === "story-preservation-map.json")).toBe(false);
   });
 });

@@ -62,6 +62,34 @@ describe("runLint", () => {
     expect(result.violations.some((v) => v.rule === "story-experience-resolves")).toBe(false);
   });
 
+  it("flags every broken preservation-map entry in the broken fixture, naming the map file (#290)", () => {
+    const result = runLint(fixtureDir("lint-broken-content"));
+    const violations = result.violations.filter(
+      (v) => v.rule === "story-preservation-map-resolves",
+    );
+    expect(violations.length).toBeGreaterThanOrEqual(4);
+    for (const violation of violations) {
+      expect(violation).toMatchObject({ severity: "error", file: "story-preservation-map.json" });
+    }
+    const messages = violations.map((v) => v.message).join("\n");
+    expect(messages).toMatch(/detailed-story.*no story/);
+    expect(messages).toMatch(/highlights\.7/);
+    expect(messages).toMatch(/no-such-story/);
+    expect(messages).toMatch(/does-not-exist-role/);
+  });
+
+  it("accepts the valid fixture map, including a story associated through relatedExperienceIds", () => {
+    const result = runLint(fixtureDir("lint-valid-content"));
+    expect(result.violations.some((v) => v.rule === "story-preservation-map-resolves")).toBe(false);
+  });
+
+  it("reports a preservation map with an out-of-set classification as a schema error", () => {
+    const result = runLint(fixtureDir("invalid-content"));
+    expect(result.schemaErrors).toContainEqual(
+      expect.objectContaining({ file: "story-preservation-map.json", path: "[0].classification" }),
+    );
+  });
+
   it("reports every violation in a run, not just the first", () => {
     const result = runLint(fixtureDir("lint-broken-content"));
     const rules = new Set(result.violations.map((v) => v.rule));

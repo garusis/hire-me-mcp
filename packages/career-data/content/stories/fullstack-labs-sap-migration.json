@@ -1,0 +1,41 @@
+{
+  "id": "fullstack-labs-sap-migration",
+  "experienceId": "fullstack-labs-2018-senior-software-engineer",
+  "title": "Preserving financial continuity during a legacy SAP migration",
+  "primaryCompetency": "risk-management",
+  "supportingCompetencies": [
+    "technical-judgment",
+    "problem-solving",
+    "customer-focus",
+    "ownership",
+    "decision-making"
+  ],
+  "situation": "I was the backend engineer on a project rebuilding a procurement platform whose historical quote and operational data lived in a legacy SAP system. The migration needed to preserve more than individual field values: users expected financial calculations in the new platform to remain consistent with the system they already trusted.",
+  "task": "I owned the backend migration strategy and implementation.",
+  "actions": [
+    "Before moving any data, I mapped the source records, relationships, calculations, and corresponding target models.",
+    "I then designed and implemented custom ETL scripts to extract, validate, transform, and load the data, with automated tests before cutover.",
+    "We added human verification by experts who understood the legacy system. They detected that, although the visible source values matched, some derived financial totals differed.",
+    "I investigated the extraction, mappings, and calculations and traced the discrepancy to different rounding behavior between the legacy system and JavaScript. I changed the new calculations to reproduce the established legacy rules. The goal was behavioral continuity for users, not proving that one rounding convention was theoretically better.",
+    "For the final migration, operations were frozen during a controlled extraction and load window so the source could not change underneath the process.",
+    "I also created an on-demand reconciliation process and took database snapshots before reconciliation runs, giving us a rollback point if an update produced corrupted or inconsistent data."
+  ],
+  "results": [
+    "The migration was reviewed and approved by the legacy-system experts.",
+    "It completed without data loss or corruption, and after the MVP launched, users stopped relying on the legacy SAP system.",
+    "The reconciliation and snapshot strategy remained available for safe post-launch corrections without putting the migrated dataset at unnecessary risk."
+  ],
+  "reflection": "The experience taught me that migration correctness is not limited to matching fields. Calculations, rounding rules, relationships, and user-visible behavior are also part of the contract. I later applied that lesson during a more complex SAP migration at Xogito: I evaluated existing ETL tools, built custom scripts when they could not represent the source and target models, checked rounding compatibility early, and used iterative testing with platform users before the bulk migration. That migration also succeeded and did not require post-migration reconciliation.",
+  "retrievalTags": [
+    "legacy-migration",
+    "sap",
+    "etl",
+    "financial-calculations",
+    "rounding",
+    "behavioral-compatibility",
+    "human-validation",
+    "migration-reconciliation",
+    "rollback-planning",
+    "database-snapshots"
+  ]
+}

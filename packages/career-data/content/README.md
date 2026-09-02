@@ -30,7 +30,8 @@ content/
   education.json        # EducationEntry[] (JSON array)
   writing/*.mdx          # one WritingEntry per file (frontmatter + long-form body)
   recommendations/*.json # one Recommendation per file (LinkedIn, verbatim)
-  stories/*.json         # one CareerStory per file (#289) — empty-but-valid until #290 authors the corpus
+  stories/*.json         # one CareerStory per file (#289); the owner-approved corpus authored in #290
+  story-preservation-map.json # #290 review fixture: every experience summary/highlight classified and mapped to its canonical story
 ```
 
 `stories/` holds behavioral stories: one concrete event each, linked to
@@ -41,4 +42,15 @@ supporting ones from the controlled vocabulary in
 `retrievalTags` that never spell a competency. `retrievalQuestions` is
 deliberately not a story field — eval questions live in the #295 manifest,
 never in indexed story text. Coverage is evidence-driven: an experience may
-have zero stories.
+have zero stories. `stories/README.md` is the per-story result-claim review
+checklist.
+
+`story-preservation-map.json` classifies every experience `summary` and
+`highlights.N` as `role-context`, `concise-outcome`, or `detailed-story`,
+records the `storyIds` that hold the canonical narrative, and the `action`
+#297 may take (`keep`, `shorten`, `move-detail-to-story`,
+`correct-inconsistency`). The `story-preservation-map-resolves` lint rule
+blocks the build when a mapped field or story does not exist, when a
+mapped story is not associated with that experience, or when a
+`detailed-story` / `move-detail-to-story` entry names no story — so
+detailed prose can never be shortened before its evidence is preserved.

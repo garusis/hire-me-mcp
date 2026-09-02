@@ -118,6 +118,7 @@ export type {
 export {
   loadContentDir,
   loadContentDirWithSources,
+  loadStoryPreservationMap,
   validateContentDir,
 } from "./content/loader.js";
 export type {

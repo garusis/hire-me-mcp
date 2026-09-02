@@ -40,6 +40,12 @@ describe("lint-cli", () => {
     expect(output).toContain("fixture-role-fixtureco-2020");
   });
 
+  it("prints the blocking story-preservation violations for the broken fixture (#290)", () => {
+    const { output } = runCli(fixtureDir("lint-broken-content"));
+    expect(output).toContain("story-preservation-map-resolves");
+    expect(output).toContain("story-preservation-map.json");
+  });
+
   it("exits 0 against the real, authored content set", () => {
     const { status, output } = runCli(fileURLToPath(new URL("../content/", import.meta.url)));
     expect(status).toBe(0);

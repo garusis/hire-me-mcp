@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CareerDataset, EntitySource } from "../content/loader.js";
+import type { LintContext } from "./rules.js";
 import {
   ALL_RULES,
   citationResolvesRule,
@@ -10,6 +11,7 @@ import {
   runRules,
   skillHasEvidenceRule,
   storyExperienceResolvesRule,
+  storyPreservationMapResolvesRule,
   tagInVocabularyRule,
   uniqueAliasesRule,
   uniqueIdsRule,
@@ -555,6 +557,172 @@ describe("no-orphan-entities", () => {
   });
 });
 
+describe("story-preservation-map-resolves", () => {
+  const RULE = "story-preservation-map-resolves";
+  const FILE = "story-preservation-map.json";
+
+  function mapped(entries: NonNullable<LintContext["storyPreservationMap"]>): LintContext {
+    return { ...context(), storyPreservationMap: entries };
+  }
+
+  it("passes with no map at all — an absent map is nothing to check", () => {
+    expect(storyPreservationMapResolvesRule.check(context())).toEqual([]);
+  });
+
+  it("passes when every entry resolves and every detailed field names an associated story", () => {
+    const ctx = mapped([
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "summary",
+        classification: "role-context",
+        action: "keep",
+      },
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "highlights.1",
+        classification: "detailed-story",
+        storyIds: ["fixture-story"],
+        action: "shorten",
+      },
+    ]);
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([]);
+  });
+
+  it("flags an entry whose experience id does not resolve", () => {
+    const ctx = mapped([
+      {
+        experienceId: "does-not-exist",
+        field: "summary",
+        classification: "role-context",
+        action: "keep",
+      },
+    ]);
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        severity: "error",
+        file: FILE,
+        entityId: "does-not-exist#summary",
+        message: expect.stringContaining("does-not-exist"),
+      }),
+    ]);
+  });
+
+  it("flags an entry whose highlight index does not exist on the experience", () => {
+    const ctx = mapped([
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "highlights.2",
+        classification: "concise-outcome",
+        action: "keep",
+      },
+    ]);
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        entityId: "fixture-role-fixtureco-2020#highlights.2",
+        message: expect.stringContaining("highlights.2"),
+      }),
+    ]);
+  });
+
+  it("flags a story id that does not resolve", () => {
+    const ctx = mapped([
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "highlights.0",
+        classification: "concise-outcome",
+        storyIds: ["no-such-story"],
+        action: "keep",
+      },
+    ]);
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        entityId: "fixture-role-fixtureco-2020#highlights.0",
+        message: expect.stringContaining("no-such-story"),
+      }),
+    ]);
+  });
+
+  it("flags a story that is neither the primary nor a related role of the field's experience — attribution never transfers (#305 point 2)", () => {
+    const ctx = mapped([
+      {
+        experienceId: "fixture-role-otherco-2016",
+        field: "summary",
+        classification: "role-context",
+        storyIds: ["fixture-story"],
+        action: "keep",
+      },
+    ]);
+    ctx.dataset.experience.push({
+      id: "fixture-role-otherco-2016",
+      company: "Otherco",
+      role: "Earlier Fixture Engineer",
+      startDate: "2016-01",
+      endDate: "2019-12",
+      summary: "Earlier fixture role.",
+      highlights: ["Did an earlier thing."],
+      tech: ["typescript"],
+    });
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        entityId: "fixture-role-otherco-2016#summary",
+        message: expect.stringMatching(/fixture-story.*not associated/),
+      }),
+    ]);
+    // A related-experience link makes the association legitimate.
+    firstStory(ctx).relatedExperienceIds = ["fixture-role-otherco-2016"];
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([]);
+  });
+
+  it("flags a detailed-story field with no story — the blocking #290 evidence-preservation check", () => {
+    const ctx = mapped([
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "highlights.0",
+        classification: "detailed-story",
+        action: "shorten",
+      },
+    ]);
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        severity: "error",
+        file: FILE,
+        entityId: "fixture-role-fixtureco-2020#highlights.0",
+        message: expect.stringMatching(/detailed-story.*no story/),
+      }),
+    ]);
+  });
+
+  it("flags a move-detail-to-story action with no story to move the detail into", () => {
+    const ctx = mapped([
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "highlights.0",
+        classification: "concise-outcome",
+        action: "move-detail-to-story",
+      },
+    ]);
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        entityId: "fixture-role-fixtureco-2020#highlights.0",
+        message: expect.stringMatching(/move-detail-to-story.*no story/),
+      }),
+    ]);
+  });
+
+  it("does not require an experience to have any story or any map entry (coverage is evidence-driven, #305 point 1)", () => {
+    const ctx = mapped([]);
+    ctx.dataset.stories = [];
+    ctx.sources = ctx.sources.filter((source) => source.entityType !== "story");
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([]);
+  });
+});
+
 describe("ALL_RULES", () => {
   it("names every rule required by #51's scope, exactly once", () => {
     const names = ALL_RULES.map((rule) => rule.name).sort();
@@ -567,6 +735,7 @@ describe("ALL_RULES", () => {
         "no-orphan-entities",
         "skill-has-evidence",
         "story-experience-resolves",
+        "story-preservation-map-resolves",
         "tag-in-vocabulary",
         "unique-aliases",
         "unique-ids",

@@ -19,6 +19,8 @@ import type { Skill } from "../schemas/skill.js";
 import { skillSchema } from "../schemas/skill.js";
 import type { CareerStory } from "../schemas/story.js";
 import { careerStorySchema } from "../schemas/story.js";
+import type { StoryPreservationEntry } from "../schemas/story-preservation.js";
+import { storyPreservationMapSchema } from "../schemas/story-preservation.js";
 import type { WritingEntry } from "../schemas/writing.js";
 import { writingEntrySchema } from "../schemas/writing.js";
 
@@ -43,9 +45,13 @@ type ContentLayoutEntry =
  * `content/experience/*.json` is one ExperienceEntry per file,
  * `content/projects/*.mdx` and `content/writing/*.mdx` are MDX
  * (frontmatter + body), `skills.json`/`gaps.json`/`education.json` are
- * JSON arrays, and `content/recommendations/*.json` and
- * `content/stories/*.json` are one entity per JSON file.
+ * JSON arrays, `content/recommendations/*.json` and `content/stories/*.json`
+ * are one entity per JSON file, and `story-preservation-map.json` is the
+ * #290 review fixture (validated here, loaded separately by
+ * {@link loadStoryPreservationMap} — it is not a citable entity).
  */
+const STORY_PRESERVATION_MAP_FILE = "story-preservation-map.json";
+
 const contentLayout: ContentLayoutEntry[] = [
   { entityType: "profile", kind: "single-json", relPath: "profile.json", schema: profileSchema },
   {
@@ -71,6 +77,12 @@ const contentLayout: ContentLayoutEntry[] = [
     schema: recommendationSchema,
   },
   { entityType: "story", kind: "per-file-json", dir: "stories", schema: careerStorySchema },
+  {
+    entityType: "story-preservation-map",
+    kind: "array-json",
+    relPath: STORY_PRESERVATION_MAP_FILE,
+    schema: storyPreservationMapSchema,
+  },
 ];
 
 /** Formats a Zod issue path as a readable field path, e.g. `[0].evidence`. */
@@ -435,6 +447,34 @@ export function loadContentDirWithSources(
   }
 
   return { dataset, sources };
+}
+
+/**
+ * Loads `story-preservation-map.json` — the #290 field-to-story
+ * preservation map that classifies every experience `summary` /
+ * `highlights.N` and names the canonical story preserving its detail.
+ * Returns `[]` when the file is absent (a content set with no review yet);
+ * throws with a readable report when the file is present but invalid, for
+ * the same reason `loadContentDir` does — a partially-valid map is worse
+ * than none. The map is review data consumed by the content lint and by
+ * #297, never a citable entity, so it lives outside {@link CareerDataset}.
+ */
+export function loadStoryPreservationMap(contentDir: string): StoryPreservationEntry[] {
+  const absPath = path.join(contentDir, STORY_PRESERVATION_MAP_FILE);
+  if (!fs.existsSync(absPath)) {
+    return [];
+  }
+  const errors: ContentValidationError[] = [];
+  const data = parseJsonFile(absPath, STORY_PRESERVATION_MAP_FILE, errors);
+  if (data !== undefined) {
+    validateParsed(data, storyPreservationMapSchema, STORY_PRESERVATION_MAP_FILE, errors);
+  }
+  if (errors.length > 0 || data === undefined) {
+    throw new Error(
+      `career-data: cannot load invalid ${STORY_PRESERVATION_MAP_FILE}:\n${formatValidationReport(errors)}`,
+    );
+  }
+  return storyPreservationMapSchema.parse(data);
 }
 
 /**

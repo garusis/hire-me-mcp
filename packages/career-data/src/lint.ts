@@ -1,5 +1,9 @@
 import type { ContentValidationError } from "./content/loader.js";
-import { loadContentDirWithSources, validateContentDir } from "./content/loader.js";
+import {
+  loadContentDirWithSources,
+  loadStoryPreservationMap,
+  validateContentDir,
+} from "./content/loader.js";
 import type { LintViolation } from "./lint/rules.js";
 import { ALL_RULES, runRules } from "./lint/rules.js";
 
@@ -34,7 +38,8 @@ export function runLint(contentDir: string): LintResult {
   // here, not the #113 misconfiguration signal loadContentDirWithSources
   // guards against by default elsewhere.
   const { dataset, sources } = loadContentDirWithSources(contentDir, { allowEmpty: true });
-  const violations = runRules({ dataset, sources });
+  const storyPreservationMap = loadStoryPreservationMap(contentDir);
+  const violations = runRules({ dataset, sources, storyPreservationMap });
   const ok = !violations.some((violation) => violation.severity === "error");
   return { ok, violations, schemaErrors: [] };
 }

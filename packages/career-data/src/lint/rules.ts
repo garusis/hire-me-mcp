@@ -1,5 +1,6 @@
 import type { CareerDataset, EntitySource } from "../content/loader.js";
 import type { CitableEntityType } from "../schemas/common.js";
+import type { StoryPreservationEntry } from "../schemas/story-preservation.js";
 import { isKnownTechTag } from "../schemas/tech-tags.js";
 
 /**
@@ -23,6 +24,8 @@ export interface LintViolation {
 export interface LintContext {
   dataset: CareerDataset;
   sources: EntitySource[];
+  /** The #290 field-to-story preservation map, when the content set carries one. Absent means nothing to check. */
+  storyPreservationMap?: StoryPreservationEntry[];
 }
 
 /** A single named, independently addressable lint rule. */
@@ -289,6 +292,93 @@ export const storyExperienceResolvesRule: LintRule = {
   },
 };
 
+const STORY_PRESERVATION_MAP_FILE = "story-preservation-map.json";
+
+/** Whether `field` (`summary` or `highlights.<n>`) exists on `entry`. */
+function experienceFieldExists(entry: CareerDataset["experience"][number], field: string): boolean {
+  if (field === "summary") {
+    return true;
+  }
+  const index = Number(field.slice("highlights.".length));
+  return Number.isInteger(index) && index >= 0 && index < entry.highlights.length;
+}
+
+/** Whether `story` occurred during, or is related to, `experienceId` — the only associations a mapping may rely on (#305 decision 2). */
+function storyAssociatedWith(
+  story: CareerDataset["stories"][number],
+  experienceId: string,
+): boolean {
+  return (
+    story.experienceId === experienceId || (story.relatedExperienceIds ?? []).includes(experienceId)
+  );
+}
+
+function checkPreservationEntry(
+  entry: StoryPreservationEntry,
+  dataset: CareerDataset,
+): LintViolation[] {
+  const violation = (message: string): LintViolation => ({
+    rule: "story-preservation-map-resolves",
+    severity: "error",
+    file: STORY_PRESERVATION_MAP_FILE,
+    entityId: `${entry.experienceId}#${entry.field}`,
+    message,
+  });
+  const violations: LintViolation[] = [];
+  const experience = dataset.experience.find((candidate) => candidate.id === entry.experienceId);
+  if (experience === undefined) {
+    violations.push(violation(`references nonexistent experience id "${entry.experienceId}"`));
+  } else if (!experienceFieldExists(experience, entry.field)) {
+    violations.push(
+      violation(`field "${entry.field}" does not exist on experience "${entry.experienceId}"`),
+    );
+  }
+  for (const storyId of entry.storyIds ?? []) {
+    const story = dataset.stories.find((candidate) => candidate.id === storyId);
+    if (story === undefined) {
+      violations.push(violation(`references nonexistent story id "${storyId}"`));
+    } else if (!storyAssociatedWith(story, entry.experienceId)) {
+      violations.push(
+        violation(
+          `story "${storyId}" is not associated with experience "${entry.experienceId}" (neither its primary nor a related experience) — attribution never transfers`,
+        ),
+      );
+    }
+  }
+  const needsStory =
+    entry.classification === "detailed-story" || entry.action === "move-detail-to-story";
+  if (needsStory && (entry.storyIds ?? []).length === 0) {
+    const reason =
+      entry.classification === "detailed-story" ? "detailed-story" : "move-detail-to-story";
+    violations.push(
+      violation(
+        `${reason} field has no story: author and approve the canonical story before this prose may be shortened or removed (#290)`,
+      ),
+    );
+  }
+  return violations;
+}
+
+/**
+ * `story-preservation-map-resolves` — the #290 evidence-preservation gate
+ * over `story-preservation-map.json`. Every entry's experience and field
+ * must exist, every named story must exist and be associated with that
+ * experience (primary or related — a mapping never transfers an event to
+ * another role, #305 decision 2), and every field classified
+ * `detailed-story` or slated to `move-detail-to-story` must name at least
+ * one story. Deliberately *not* an `experience-has-story` rule: coverage
+ * is evidence-driven and an experience may have no story and no detailed
+ * field at all (#305 decision 1). An absent map is nothing to check;
+ * completeness of the real map is a real-content invariant, not a rule.
+ */
+export const storyPreservationMapResolvesRule: LintRule = {
+  name: "story-preservation-map-resolves",
+  severity: "error",
+  check({ dataset, storyPreservationMap = [] }) {
+    return storyPreservationMap.flatMap((entry) => checkPreservationEntry(entry, dataset));
+  },
+};
+
 /** Flags every `tech` tag outside the controlled vocabulary on one collection of `{ id, tech }` entities (experience entries or projects). */
 function findUnknownTechTags(
   entries: Array<{ id: string; tech: string[] }>,
@@ -480,6 +570,7 @@ export const ALL_RULES: LintRule[] = [
   gapHasStatementRule,
   gapRelatedSkillsResolveRule,
   storyExperienceResolvesRule,
+  storyPreservationMapResolvesRule,
   tagInVocabularyRule,
   uniqueIdsRule,
   uniqueAliasesRule,

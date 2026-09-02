@@ -1,0 +1,41 @@
+{
+  "id": "house-numbers-loan-analysis-pipeline-decomposition",
+  "experienceId": "house-numbers-2022-senior-full-stack-engineer",
+  "title": "Preventing a monolithic AI pipeline from becoming a reliability problem",
+  "primaryCompetency": "risk-management",
+  "supportingCompetencies": [
+    "technical-judgment",
+    "ownership",
+    "decision-making",
+    "technical-leadership"
+  ],
+  "situation": "While preparing to migrate House Numbers' document-analysis checks from generic LLM output to deterministic rules, I reviewed the architecture that would carry the change. Party detection, document-specific checks, and checks involving multiple documents were all executed through one large orchestration. The pipeline had not caused a production outage. However, I recognized the risk before adding more complexity. The monolith was difficult to test and maintain, and a slow LLM call or transient failure late in the process could delay or repeat work performed earlier.",
+  "task": "I had seen similar long-running, LLM-intensive workflows become operationally difficult in other services, so I decided to improve the architecture before attempting the larger migration.",
+  "actions": [
+    "I mapped the workflow and divided it into three independently testable units connected through the message bus: party detection, checks for an individual document, and cross-document checks.",
+    "Each stage persisted its progress before triggering the next one. This allowed a failed stage to be retried independently instead of replaying the full analysis.",
+    "I also designed the writes to tolerate repeated delivery and added focused unit and integration tests around each boundary.",
+    "Manual reanalysis was later moved into the same pipeline instead of maintaining a separate execution path."
+  ],
+  "results": [
+    "The redesigned architecture and the subsequent deterministic-check migration both reached production.",
+    "Earlier stages could complete and preserve their results while downstream work continued.",
+    "The smaller boundaries also made it easier to locate failures, maintain the checks, measure each part of the workflow, and optimize individual stages without treating the entire analysis as one opaque process."
+  ],
+  "reflection": "The work reinforced a principle I already apply to long-running systems: when a workflow is about to become substantially more complex, reduce its operational risk before adding the new behavior. Durable boundaries, isolated retries, and stage-level observability make future changes safer to implement, test, and operate.",
+  "retrievalTags": [
+    "event-driven-architecture",
+    "message-bus",
+    "pipeline-decomposition",
+    "llm-pipeline",
+    "document-analysis",
+    "independent-retries",
+    "idempotency",
+    "stage-level-observability",
+    "integration-tests",
+    "maintainability",
+    "production-readiness",
+    "manual-reanalysis",
+    "deterministic-checks"
+  ]
+}

@@ -13,6 +13,8 @@ describe("schemas barrel", () => {
     expect(schemas.writingEntrySchema).toBeDefined();
     expect(schemas.recommendationSchema).toBeDefined();
     expect(schemas.careerStorySchema).toBeDefined();
+    expect(schemas.storyPreservationEntrySchema).toBeDefined();
+    expect(schemas.storyPreservationMapSchema).toBeDefined();
   });
 
   it("re-exports the shared id and entity-type schemas", () => {

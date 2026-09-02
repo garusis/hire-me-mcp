@@ -10,7 +10,9 @@ import {
   formatYearRange,
   isCompetency,
   loadContentDir,
+  loadStoryPreservationMap,
   resolveDefaultContentDir,
+  storyPreservationMapSchema,
 } from "./index.js";
 
 /**
@@ -61,6 +63,11 @@ describe("formatYearRange", () => {
 });
 
 describe("public entry point", () => {
+  it("re-exports the #290 story-preservation map loader and schema", () => {
+    expect(storyPreservationMapSchema).toBeDefined();
+    expect(loadStoryPreservationMap(resolveDefaultContentDir()).length).toBeGreaterThan(0);
+  });
+
   it("re-exports the citation schema for downstream consumers like packages/core", () => {
     const result = citationSchema.safeParse({
       entityType: "experience",

@@ -1,0 +1,45 @@
+{
+  "id": "house-numbers-cross-service-debugging-skill",
+  "experienceId": "house-numbers-2022-senior-full-stack-engineer",
+  "title": "Standardizing production debugging across service boundaries",
+  "primaryCompetency": "process-improvement",
+  "supportingCompetencies": [
+    "technical-leadership",
+    "collaboration",
+    "ownership",
+    "communication",
+    "leadership"
+  ],
+  "situation": "When House Numbers introduced an on-call rotation, production debugging had no shared investigation method. Each engineer had developed a different way to trace incidents through structured logs, database records, trace IDs, and external events. Their knowledge also tended to follow service ownership. Communication Service incidents usually came to me, while problems in other systems went to the engineer most familiar with that area. The team could investigate production failures, but the speed and depth of the initial response depended heavily on which specialist was available.",
+  "task": "I wanted a shared investigation method the whole rotation could use, so that the initial response no longer depended on which specialist was available.",
+  "actions": [
+    "I created an on-call reporting command to standardize those investigation paths. It began with the process I used in the services I knew best, then expanded as we applied it to different systems and incidents.",
+    "Each case exposed another gap. Whenever the command missed an identifier, relationship, or evidence source, I folded that lesson back into it so the next engineer began from a better baseline.",
+    "I later converted the command into a reusable skill and created specialist debugging skills for several production flows.",
+    "Then I shared it. On-call engineers adopted the workflow and contributed improvements from the incidents they handled.",
+    "I proposed the next step: connecting the shared workflow to incident alerts, allowing an agent to begin gathering evidence as soon as a human report or automated alert arrived. Another engineer implemented that automation."
+  ],
+  "results": [
+    "Scattered service knowledge became a versioned process the whole team could reuse. An engineer could now begin investigating an unfamiliar service without waiting for its usual expert to become available.",
+    "Today, a human report or a New Relic alert can trigger an agent that reviews the available evidence and develops likely causes. When the problem maps to a code change, the agent can prepare a pull request. An engineer validates the root cause and reviews the proposed fix before anything is merged.",
+    "The workflow removes much of the repetitive correlation work from production debugging and gives every on-call engineer an evidence-backed starting point across services. Initial diagnosis is consistent across the rotation. Each incident can give engineers another opportunity to improve the skills."
+  ],
+  "reflection": "This experience clarified where agentic tooling earns its place on an engineering team. It can turn fragmented operational knowledge into a process that travels across service boundaries and preserves each correction for the next investigation. Automation gets us to a credible diagnosis sooner. Engineers still own the decision.",
+  "retrievalTags": [
+    "debugging-standardization",
+    "agentic-coding",
+    "ai-agents",
+    "reusable-agent-skills",
+    "on-call",
+    "cross-service-debugging",
+    "root-cause-analysis",
+    "cross-service-observability",
+    "structured-logging",
+    "trace-correlation",
+    "new-relic",
+    "alert-to-pr",
+    "human-reviewed-ai",
+    "knowledge-silos",
+    "team-enablement"
+  ]
+}
