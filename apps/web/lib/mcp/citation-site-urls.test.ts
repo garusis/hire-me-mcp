@@ -1,9 +1,12 @@
 import type { Citation } from "@hire-me-mcp/core";
 import { describe, expect, it, vi } from "vitest";
-import { getWritingListView } from "../../src/lib/content/index.js";
+import { getWritingListView, listStoryParents } from "../../src/lib/content/index.js";
 import { resolveCitationSiteUrl, withCitationSiteUrls } from "./citation-site-urls.js";
 
-vi.mock("../../src/lib/content/index.js", () => ({ getWritingListView: vi.fn() }));
+vi.mock("../../src/lib/content/index.js", () => ({
+  getWritingListView: vi.fn(),
+  listStoryParents: vi.fn(),
+}));
 
 // In tests no SITE_URL/VERCEL_* env vars are set, so getSiteUrl() resolves
 // to the local dev origin — see src/lib/config/site-url.ts.
@@ -79,6 +82,36 @@ describe("resolveCitationSiteUrl", () => {
     expect(
       resolveCitationSiteUrl(citation({ entityType: "writing", entityId: "fixture-post" })),
     ).toBe(`${ORIGIN}/writing`);
+  });
+
+  it("maps a story citation to its PRIMARY parent experience anchor on /experience, keeping entityType 'story' (#293)", () => {
+    vi.mocked(listStoryParents).mockReturnValue([
+      { storyId: "other-story", experienceId: "other-role" },
+      { storyId: "fixture-story", experienceId: "acme-role" },
+    ]);
+
+    const enriched = withCitationSiteUrls([
+      citation({ entityType: "story", entityId: "fixture-story" }),
+    ]);
+
+    expect(enriched).toEqual([
+      {
+        entityType: "story",
+        entityId: "fixture-story",
+        label: "Fixture",
+        url: `${ORIGIN}/experience#acme-role`,
+      },
+    ]);
+  });
+
+  it("falls back to the /experience page for a story citation when the story lookup cannot be loaded", () => {
+    vi.mocked(listStoryParents).mockImplementation(() => {
+      throw new Error("no dataset");
+    });
+
+    expect(
+      resolveCitationSiteUrl(citation({ entityType: "story", entityId: "fixture-story" })),
+    ).toBe(`${ORIGIN}/experience`);
   });
 
   it("keeps a citation's own external url when it already has one", () => {

@@ -1,11 +1,12 @@
 /**
  * The full, exact set of tool names this server registers — the v0.3
- * toolset (#32), `search-career` (#61, the semantic-retrieval tool), and
- * the five deterministic list tools from the #188 tool-coverage audit
- * (#211–#215). Exported as a single source of truth so `tools/list`
- * contract tests (this file's own consumer and `app/api/mcp/route.test.ts`)
- * assert against one explicit list rather than each hard-coding its own
- * copy.
+ * toolset (#32), `search-career` (#61, the semantic-retrieval tool), the
+ * five deterministic list tools from the #188 tool-coverage audit
+ * (#211–#215), and `list-career-stories` (#293, the deterministic
+ * behavioral-story tool; there is deliberately no `search-stories`, #288).
+ * Exported as a single source of truth so `tools/list` contract tests
+ * (this file's own consumer and `app/api/mcp/route.test.ts`) assert against
+ * one explicit list rather than each hard-coding its own copy.
  */
 export const EXPECTED_TOOL_NAMES = [
   "ping",
@@ -20,4 +21,5 @@ export const EXPECTED_TOOL_NAMES = [
   "list-projects",
   "list-writing",
   "list-recommendations",
+  "list-career-stories",
 ] as const;

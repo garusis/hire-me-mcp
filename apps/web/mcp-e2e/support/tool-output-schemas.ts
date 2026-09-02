@@ -15,6 +15,7 @@
  * which is out of scope per #49.
  */
 import {
+  careerStorySchema,
   citationSchema,
   educationEntrySchema,
   experienceEntrySchema,
@@ -157,4 +158,38 @@ export const listWritingOutputSchema = z.object({
 export const listRecommendationsOutputSchema = z.object({
   data: z.array(recommendationSchema.strict()),
   citations: citationsSchema,
+});
+
+/** Compact parent-role context on a `list-career-stories` item — never the full entry (#291). */
+const storyExperienceContextSchema = z
+  .object({
+    id: z.string().min(1),
+    company: z.string().min(1),
+    role: z.string().min(1),
+    startDate: z.string().regex(/^\d{4}-\d{2}$/),
+    endDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}$/)
+      .optional(),
+  })
+  .strict();
+
+/**
+ * `list-career-stories` result (#293): the complete `CareerStory` record
+ * (strict, so the adapter cannot add, rename, or drop an authored field —
+ * and no eval-only retrieval questions can leak onto the wire), compact
+ * primary and related role context, and one `story` citation per item.
+ */
+export const listCareerStoriesOutputSchema = z.object({
+  data: z.array(
+    z
+      .object({
+        story: careerStorySchema,
+        primaryExperience: storyExperienceContextSchema,
+        relatedExperiences: z.array(storyExperienceContextSchema),
+        citation: citationSchema.extend({ entityType: z.literal("story") }),
+      })
+      .strict(),
+  ),
+  citations: z.array(citationSchema.extend({ entityType: z.literal("story") })),
 });

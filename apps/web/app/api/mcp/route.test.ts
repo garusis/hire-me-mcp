@@ -134,6 +134,18 @@ describe("MCP endpoint (app/api/mcp/route.ts)", () => {
     await client.close();
   });
 
+  it("instructions route behavioral 'tell me about a time' questions to list-career-stories (#293)", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const instructions = client.getInstructions() ?? "";
+    expect(instructions).toContain("`list-career-stories`");
+    expect(instructions.toLowerCase()).toMatch(/behavio/);
+
+    await client.close();
+  });
+
   it("lists exactly the expected tool set, each with a description and a valid JSON Schema input", async () => {
     const client = new Client({ name: "test-client", version: "0.0.0" });
     const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
@@ -232,6 +244,112 @@ describe("MCP endpoint (app/api/mcp/route.ts)", () => {
     };
     expect(["claimed", "not-claimed", "unknown"]).toContain(structuredContent.data.kind);
     expect(Array.isArray(structuredContent.citations)).toBe(true);
+
+    await client.close();
+  });
+
+  it("advertises list-career-stories over streamable HTTP as read-only and idempotent, with every controlled competency in its input schema (#293)", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const { tools } = await client.listTools();
+    const tool = tools.find((candidate) => candidate.name === "list-career-stories");
+
+    expect(tool).toBeDefined();
+    expect(tool?.annotations).toMatchObject({
+      readOnlyHint: true,
+      idempotentHint: true,
+      destructiveHint: false,
+    });
+    expect(tool?.outputSchema).toBeDefined();
+    const inputSchema = (tool?.inputSchema ?? {}) as {
+      properties?: { competencies?: { items?: { enum?: string[] } } };
+    };
+    const competencies = inputSchema.properties?.competencies?.items?.enum;
+    expect(competencies).toEqual(expect.arrayContaining(["leadership", "stakeholder-management"]));
+    expect((competencies ?? []).length).toBeGreaterThan(10);
+    expect(tools.map((candidate) => candidate.name)).not.toContain("search-stories");
+
+    await client.close();
+  });
+
+  it("calls list-career-stories over streamable HTTP with a competency filter and gets complete stories, parent context, and story citations anchored on the parent experience (#293)", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "list-career-stories",
+      arguments: { competencies: ["leadership"] },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const structuredContent = result.structuredContent as {
+      data: Array<{
+        story: { id: string; primaryCompetency: string; actions: string[]; results: string[] };
+        primaryExperience: { id: string; company: string };
+        relatedExperiences: unknown[];
+        citation: { entityType: string; entityId: string };
+      }>;
+      citations: Array<{ entityType: string; entityId: string; url: string }>;
+    };
+    expect(structuredContent.data.length).toBeGreaterThan(0);
+    expect(structuredContent.citations.length).toBe(structuredContent.data.length);
+
+    // The locked leadership-order invariant (#305 decision 8) survives the wire.
+    const first = structuredContent.data[0];
+    expect(first?.story.id).toBe("xogito-client-account-recovery");
+    expect(first?.story.primaryCompetency).toBe("leadership");
+    expect(first?.story.actions.length).toBeGreaterThan(0);
+    expect(first?.story.results.length).toBeGreaterThan(0);
+    expect(first?.primaryExperience.id).toBe(
+      "xogito-group-2020-senior-software-development-engineer",
+    );
+    expect(Array.isArray(first?.relatedExperiences)).toBe(true);
+
+    // Precise story citations, clickable without a public story page.
+    for (const [index, citation] of structuredContent.citations.entries()) {
+      const item = structuredContent.data[index];
+      expect(citation.entityType).toBe("story");
+      expect(citation.entityId).toBe(item?.story.id);
+      expect(citation.url).toContain(`/experience#${item?.primaryExperience.id}`);
+      expect(citation.url).not.toContain("/stories");
+    }
+
+    await client.close();
+  });
+
+  it("returns a successful empty list from list-career-stories over streamable HTTP when nothing matches (#293)", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "list-career-stories",
+      arguments: { company: "No Such Company" },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual({ data: [], citations: [] });
+
+    await client.close();
+  });
+
+  it("rejects list-career-stories called with an unknown competency over streamable HTTP as a documented validation failure naming the allowed values (#293)", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "list-career-stories",
+      arguments: { competencies: ["grit"] },
+    });
+
+    expect(result.isError).toBe(true);
+    const [firstBlock] = result.content as Array<{ type: string; text?: string }>;
+    expect(firstBlock?.text).toContain('"grit"');
+    expect(firstBlock?.text).toContain('"leadership"');
 
     await client.close();
   });
@@ -426,6 +544,43 @@ describe("MCP endpoint (app/api/mcp/route.ts)", () => {
             id: 1,
             method: "tools/call",
             params: { name: "search-career", arguments: { query: "typescript" } },
+          }),
+        });
+
+        expect(response.status).toBe(429);
+        expect(response.headers.get("Retry-After")).toBeTruthy();
+        const body = (await response.json()) as { error: { code: string; message: string } };
+        expect(body.error.code).toBe("rate_limited");
+      } finally {
+        await server.close();
+      }
+    });
+
+    it("rejects a list-career-stories tools/call once the caller is over budget, with the same documented 429 shape (#293)", async () => {
+      vi.stubEnv("MCP_TEST_RATE_LIMITER", "1");
+      vi.stubEnv("RATELIMIT_MAX_REQUESTS", "2");
+      vi.stubEnv("RATELIMIT_WINDOW_SECONDS", "60");
+      vi.resetModules();
+      const testRoute = await import("./route");
+      const server = await startTestServer(testRoute);
+
+      try {
+        const client = new Client({ name: "test-client", version: "0.0.0" });
+        const transport = new StreamableHTTPClientTransport(new URL(server.baseUrl));
+        await client.connect(transport);
+        await client.close();
+
+        const response = await fetch(server.baseUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: { name: "list-career-stories", arguments: { competencies: ["leadership"] } },
           }),
         });
 

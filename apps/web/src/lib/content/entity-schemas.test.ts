@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  COMPETENCIES,
+  careerStorySchema,
   citationSchema,
   educationEntrySchema,
   experienceEntrySchema,
@@ -25,6 +27,12 @@ describe("entity-schemas re-exports", () => {
       expect(schema).toBeDefined();
       expect(typeof schema.safeParse).toBe("function");
     }
+  });
+
+  it("re-exports the CareerStory schema and the controlled COMPETENCIES vocabulary for the list-career-stories tool (#293)", () => {
+    expect(typeof careerStorySchema.safeParse).toBe("function");
+    expect(COMPETENCIES).toContain("leadership");
+    expect(COMPETENCIES.length).toBeGreaterThan(1);
   });
 
   it("citationSchema accepts a well-formed citation and rejects a label-less one", () => {

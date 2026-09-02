@@ -33,6 +33,7 @@ import {
   getExperienceOutputSchema,
   getProfileOutputSchema,
   getSkillEvidenceOutputSchema,
+  listCareerStoriesOutputSchema,
   listEducationOutputSchema,
   listGapsOutputSchema,
   listProjectsOutputSchema,
@@ -507,6 +508,77 @@ describe("tools/call — list tools (#211-#215)", () => {
     for (const citation of structuredContent.citations) {
       expect(citation.url).toContain(`/recommendations#${citation.entityId}`);
     }
+
+    await client.close();
+  });
+
+  it("list-career-stories returns complete stories with parent context, and story citations that resolve to the parent experience anchor without a public story page (#293)", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "list-career-stories",
+      arguments: { competencies: ["leadership"] },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const parsed = listCareerStoriesOutputSchema.safeParse(result.structuredContent);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error?.issues)).toBe(
+      true,
+    );
+    const structuredContent = result.structuredContent as {
+      data: Array<{
+        story: { id: string; primaryCompetency: string; supportingCompetencies: string[] };
+        primaryExperience: { id: string };
+        citation: { entityType: string; entityId: string };
+      }>;
+      citations: Array<{ entityType: string; entityId: string; url: string }>;
+    };
+    expect(structuredContent.data.length).toBeGreaterThan(0);
+    expect(structuredContent.citations.length).toBe(structuredContent.data.length);
+    expectWellFormedCitations(structuredContent.citations);
+
+    // Every returned story really carries the requested competency.
+    for (const item of structuredContent.data) {
+      expect([item.story.primaryCompetency, ...item.story.supportingCompetencies]).toContain(
+        "leadership",
+      );
+    }
+
+    // Precise, clickable citations: entityType stays "story" (never downgraded
+    // to "experience") and the URL lands on the PRIMARY parent's entry on
+    // /experience — there is no /stories route on the site (#288).
+    for (const [index, citation] of structuredContent.citations.entries()) {
+      const item = structuredContent.data[index];
+      expect(citation.entityType).toBe("story");
+      expect(citation.entityId).toBe(item?.story.id);
+      expect(citation).toMatchObject(item?.citation ?? {});
+      expect(citation.url).toContain(`/experience#${item?.primaryExperience.id}`);
+      expect(citation.url).not.toContain("/stories");
+    }
+
+    await client.close();
+  });
+
+  it("list-career-stories rejects an unknown competency with a validation error naming the allowed values, and returns a successful empty list for an unmatched company (#293)", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const invalid = await client.callTool({
+      name: "list-career-stories",
+      arguments: { competencies: ["grit"] },
+    });
+    expect(invalid.isError).toBe(true);
+    const [firstBlock] = invalid.content as Array<{ type: string; text?: string }>;
+    expect(firstBlock?.text).toContain('"grit"');
+    expect(firstBlock?.text).toContain('"leadership"');
+
+    const empty = await client.callTool({
+      name: "list-career-stories",
+      arguments: { company: "No Such Company" },
+    });
+    expect(empty.isError).not.toBe(true);
+    expect(empty.structuredContent).toEqual({ data: [], citations: [] });
 
     await client.close();
   });

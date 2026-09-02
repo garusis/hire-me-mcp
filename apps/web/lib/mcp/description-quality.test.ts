@@ -14,6 +14,7 @@ import { EXPECTED_TOOL_NAMES } from "./tool-names.js";
 import { getExperienceTool } from "./tools/get-experience.js";
 import { getProfileTool } from "./tools/get-profile.js";
 import { getSkillEvidenceTool } from "./tools/get-skill-evidence.js";
+import { listCareerStoriesTool } from "./tools/list-career-stories.js";
 import { listEducationTool } from "./tools/list-education.js";
 import { listGapsTool } from "./tools/list-gaps.js";
 import { listProjectsTool } from "./tools/list-projects.js";
@@ -40,6 +41,7 @@ const toolsUnderTest: ToolDefinition<z.ZodTypeAny, any>[] = [
   listProjectsTool,
   listWritingTool,
   listRecommendationsTool,
+  listCareerStoriesTool,
 ];
 
 function schemaProperties(schema: z.ZodTypeAny): Record<string, z.ZodTypeAny> {
@@ -116,7 +118,15 @@ describe("career tool description quality", () => {
     expect(searchProjectsTool.description.toLowerCase()).toMatch(/keyword|tag-based/);
   });
 
-  it("EXPECTED_TOOL_NAMES matches exactly this server's registered tool set (ping + all eleven career tools)", () => {
+  it("list-career-stories's description teaches story-first routing: get-experience for history, search-career scoped to story sources for fuzzy wording, and no search-stories tool (#293)", () => {
+    const description = listCareerStoriesTool.description;
+    expect(description).toContain("get-experience");
+    expect(description).toContain("search-career");
+    expect(description).toMatch(/sourceTypes:? ?\[["']story["']\]/);
+    expect(description).toMatch(/search-stories[^.]*(no such tool|does not exist|none exists)/i);
+  });
+
+  it("EXPECTED_TOOL_NAMES matches exactly this server's registered tool set (ping + all twelve career tools)", () => {
     const registeredTools = [pingTool, ...toolsUnderTest];
     const registeredNames = registeredTools.map((tool) => tool.name).sort();
 

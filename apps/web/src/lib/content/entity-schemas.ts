@@ -9,6 +9,8 @@
  */
 
 export {
+  COMPETENCIES,
+  careerStorySchema,
   citationSchema,
   educationEntrySchema,
   experienceEntrySchema,
