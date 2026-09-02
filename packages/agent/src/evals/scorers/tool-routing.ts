@@ -61,6 +61,27 @@ function isBroaderSearch(call: ToolCall): boolean {
 }
 
 /**
+ * The system prompt's exact fallback-honesty contract
+ * (`../../prompt/sections.ts`): "say plainly that no direct story supports
+ * the requested behavior" and "label it explicitly as related evidence, not
+ * a behavioral event." Fourth #294 independent-review correction: an
+ * empty/unavailable story-scoped result followed by a broader fallback
+ * search used to score 1 regardless of what the final answer said, letting
+ * a recommendation/experience result stand in silently for the requested
+ * behavioral event. Both phrases below must appear in the answer for that
+ * fallback to be honest.
+ */
+const NO_DIRECT_STORY_REGEX =
+  /no (direct|specific) story|doesn'?t have a (direct|specific) story|hasn'?t (got|captured) a (direct|specific) story/i;
+const RELATED_EVIDENCE_LABEL_REGEX =
+  /(related|closest)( grounded| available)? evidence|not (itself )?a behavioral event/i;
+
+/** Whether `answer` both states plainly that no direct story was found AND labels a broader fallback result as related/closest evidence rather than a behavioral event — see the regexes' doc comment. */
+function labelsFallbackHonestly(answer: string): boolean {
+  return NO_DIRECT_STORY_REGEX.test(answer) && RELATED_EVIDENCE_LABEL_REGEX.test(answer);
+}
+
+/**
  * Third #294 independent-review correction (finding 2): once a story-scoped
  * search has CONFIRMED a non-empty result (`storyScopedCitations`), two more
  * things must hold, checked together here to keep `scoreStoryScoped`'s
@@ -107,7 +128,7 @@ function checkNonEmptyScopedFollowUp(
   return null;
 }
 
-function scoreStoryScoped(toolCalls: readonly ToolCall[]): ScoreResult {
+function scoreStoryScoped(toolCalls: readonly ToolCall[], answer: string): ScoreResult {
   const trace = traceOf(toolCalls);
   const storyScopedIndex = toolCalls.findIndex(
     (call) => call.toolName === "search-career" && hasStorySourceType(call.args),
@@ -185,6 +206,28 @@ function scoreStoryScoped(toolCalls: readonly ToolCall[]): ScoreResult {
     }
   }
 
+  // Fourth #294 independent-review correction: an empty/unavailable scoped
+  // result licenses a broader fallback search, but only an HONEST one — the
+  // final answer must say plainly that no direct story was found and label
+  // the fallback result as related/closest evidence, not the behavioral
+  // event itself. When no broader search actually ran, there is nothing to
+  // label, so the answer is not checked.
+  if (!confirmedNonEmpty) {
+    const broaderAfterIndex = toolCalls
+      .slice(storyScopedIndex + 1)
+      .findIndex((call) => isBroaderSearch(call));
+    if (broaderAfterIndex !== -1 && !labelsFallbackHonestly(answer)) {
+      return {
+        score: clampScore(0),
+        reason:
+          "A broader search-career call followed an empty/unavailable story-scoped result, " +
+          "but the final answer did not both state plainly that no direct story was found " +
+          "and label the broader result as related/closest evidence rather than a " +
+          `behavioral event; tool-call trace was: ${trace}.`,
+      };
+    }
+  }
+
   return {
     score: clampScore(1),
     reason:
@@ -192,7 +235,8 @@ function scoreStoryScoped(toolCalls: readonly ToolCall[]): ScoreResult {
       `list-career-stories fetch, no broader search-career call preceded it, and ${
         confirmedNonEmpty
           ? "its non-empty result was followed by a complete-story fetch"
-          : "its empty/unavailable result required no fetch"
+          : "its empty/unavailable result required no fetch, and any broader fallback was " +
+            "honestly labeled"
       }; tool-call trace was: ${trace}.`,
   };
 }
@@ -271,7 +315,11 @@ function scoreListCareerStories(
  *   no broader (non-story-scoped) `search-career` call precedes it, and —
  *   when its captured `citations` (#294 independent-review correction,
  *   finding 1) confirm a non-empty result — a `list-career-stories` fetch
- *   follows it; else 0. See module docs.
+ *   follows it. When the result is instead empty/unavailable, a broader
+ *   fallback search is allowed but only if `options.answer` (fourth #294
+ *   independent-review correction) both states plainly that no direct story
+ *   was found and labels the fallback as related/closest evidence rather
+ *   than a behavioral event; else 0. See module docs.
  *
  * `options.expectedCompetencies` (#294 independent-review correction,
  * finding 2) applies only when `expected === "list-career-stories"`: the
@@ -281,10 +329,10 @@ function scoreListCareerStories(
 export function scoreToolRouting(
   toolCalls: readonly ToolCall[],
   expected: EvalCaseExpectedToolCall,
-  options?: { expectedCompetencies?: readonly string[] },
+  options?: { expectedCompetencies?: readonly string[]; answer?: string },
 ): ScoreResult {
   if (expected === "search-career-story-scoped") {
-    return scoreStoryScoped(toolCalls);
+    return scoreStoryScoped(toolCalls, options?.answer ?? "");
   }
   if (expected === "list-career-stories") {
     return scoreListCareerStories(toolCalls, options?.expectedCompetencies);

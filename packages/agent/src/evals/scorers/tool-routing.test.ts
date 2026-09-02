@@ -301,12 +301,89 @@ describe("scoreToolRouting", () => {
       expect(result.reason).toMatch(/broad|before|precede/i);
     });
 
-    it("scores 1 when a broader (non-story-scoped) search-career call follows an empty story-scoped result — the honest fallback path", () => {
+    it("scores 1 when a broader (non-story-scoped) search-career call follows an empty story-scoped result AND the answer honestly labels the fallback", () => {
       const result = scoreToolRouting(
         [
           call("search-career", { query: "x", sourceTypes: ["story"] }, []),
           call("search-career", { query: "x" }),
         ],
+        "search-career-story-scoped",
+        {
+          answer:
+            "No direct story supports that behavior, but the closest related evidence is [cite:experience:acme].",
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+  });
+
+  /**
+   * Fourth #294 independent-review correction: an empty/unavailable
+   * story-scoped result followed by a broader fallback search used to score
+   * 1 unconditionally, regardless of what the final answer said — so a
+   * recommendation or experience result surfaced by the broader search could
+   * be presented AS the behavioral event itself, with no honest "no direct
+   * story" statement. The system prompt (`../../prompt/sections.ts`)
+   * requires both: stating plainly that no direct story supports the
+   * request, and labelling the broader result as related evidence, not a
+   * behavioral event. This block asserts the scorer now enforces that on the
+   * ANSWER text, not just the tool-call trace.
+   */
+  describe('expected: "search-career-story-scoped" — honest fallback labeling (fourth #294 independent-review correction)', () => {
+    it("scores 0 when a broader search follows an EMPTY scoped result but the answer never states that no direct story was found", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, []),
+          call("search-career", { query: "x" }),
+        ],
+        "search-career-story-scoped",
+        { answer: "He led a related effort at Acme: [cite:experience:acme]." },
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/no direct story|related evidence|behavioral event/i);
+    });
+
+    it("scores 0 when a broader search follows an UNAVAILABLE (citations undefined) scoped result and the answer states the gap but never labels the fallback as related/closest evidence", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }),
+          call("search-career", { query: "x" }),
+        ],
+        "search-career-story-scoped",
+        { answer: "No direct story supports that behavior; here is what he did at Acme instead." },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("scores 0 when no answer is supplied at all", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, []),
+          call("search-career", { query: "x" }),
+        ],
+        "search-career-story-scoped",
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("scores 1 when a broader search follows an UNAVAILABLE scoped result and the answer both states the gap and labels the fallback as related evidence", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }),
+          call("search-career", { query: "x" }),
+        ],
+        "search-career-story-scoped",
+        {
+          answer:
+            "No direct story supports that behavior. The closest related evidence, not itself a behavioral event, is [cite:experience:acme].",
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("does not require any honest labeling when no broader fallback search runs at all", () => {
+      const result = scoreToolRouting(
+        [call("search-career", { query: "x", sourceTypes: ["story"] }, [])],
         "search-career-story-scoped",
       );
       expect(result.score).toBe(1);

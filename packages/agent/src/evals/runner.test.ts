@@ -253,6 +253,61 @@ describe("runEvalSuite", () => {
     expect(report.cases[0]?.scores.toolRouting?.score).toBe(1);
   });
 
+  it("passes the run's answer into scoreToolRouting so an unlabeled fallback after an empty story-scoped search scores 0 (fourth #294 independent-review correction)", async () => {
+    const runCase = vi.fn().mockResolvedValue({
+      answer: "He led a related effort at Acme: [cite:experience:acme].",
+      toolCitations: [{ entityType: "experience" as const, entityId: "acme" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      toolCalls: [
+        {
+          toolName: "search-career",
+          args: { query: "leadership", sourceTypes: ["story"] },
+          citations: [],
+        },
+        { toolName: "search-career", args: { query: "leadership" } },
+      ],
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [storyScopedCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    expect(report.cases[0]?.scores.toolRouting?.score).toBe(0);
+  });
+
+  it("scores toolRouting 1 when the run's answer honestly labels a fallback after an empty story-scoped search (fourth #294 independent-review correction)", async () => {
+    const runCase = vi.fn().mockResolvedValue({
+      answer:
+        "No direct story supports that behavior. The closest related evidence, not itself a behavioral event, is [cite:experience:acme].",
+      toolCitations: [{ entityType: "experience" as const, entityId: "acme" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      toolCalls: [
+        {
+          toolName: "search-career",
+          args: { query: "leadership", sourceTypes: ["story"] },
+          citations: [],
+        },
+        { toolName: "search-career", args: { query: "leadership" } },
+      ],
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [storyScopedCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    expect(report.cases[0]?.scores.toolRouting?.score).toBe(1);
+  });
+
   it("leaves toolRouting null when a case does not declare expectedToolCall — backward compatible", async () => {
     const runCase = stubRunCase();
     const report = await runEvalSuite(

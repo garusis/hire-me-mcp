@@ -116,6 +116,7 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
       ? null
       : scoreToolRouting(run.toolCalls ?? [], evalCase.expectedToolCall, {
           expectedCompetencies: evalCase.expectedCompetencies,
+          answer: run.answer,
         });
   const answerAssertions =
     evalCase.answerAssertions === undefined
