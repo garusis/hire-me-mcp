@@ -105,4 +105,85 @@ describe("scoreAnswerAssertions", () => {
       expect(result.score).toBe(0.5);
     });
   });
+
+  /**
+   * #295 multiple-valid-answer/cross-cutting citation groups — a case with
+   * SEVERAL honest candidate citations, not one fixed required/forbidden
+   * pair. `mode: "any"` also enforces the manifest's one-story-answer
+   * semantics: exactly one of the group's refs must be cited, not zero and
+   * not several blended together.
+   */
+  describe("citationGroups (#295)", () => {
+    const storyA = { entityType: "story" as const, entityId: "xogito-client-account-recovery" };
+    const storyB = { entityType: "story" as const, entityId: "mutual-informal-leadership" };
+    const storyC = { entityType: "story" as const, entityId: "cross-team-onboarding-framework" };
+
+    it("scores 1 for an 'all' group when every ref is cited", () => {
+      const result = scoreAnswerAssertions(
+        "[cite:story:xogito-client-account-recovery] [cite:story:mutual-informal-leadership]",
+        { citationGroups: [{ mode: "all", refs: [storyA, storyB] }] },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("scores 0 for an 'all' group missing one ref", () => {
+      const result = scoreAnswerAssertions("[cite:story:xogito-client-account-recovery]", {
+        citationGroups: [{ mode: "all", refs: [storyA, storyB] }],
+      });
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/citation group|missing/i);
+    });
+
+    it("scores 1 for an 'any' group when exactly one ref is cited", () => {
+      const result = scoreAnswerAssertions("[cite:story:mutual-informal-leadership]", {
+        citationGroups: [{ mode: "any", refs: [storyA, storyB, storyC] }],
+      });
+      expect(result.score).toBe(1);
+    });
+
+    it("scores 0 for an 'any' group when none of the refs are cited", () => {
+      const result = scoreAnswerAssertions("[cite:story:some-other-story]", {
+        citationGroups: [{ mode: "any", refs: [storyA, storyB] }],
+      });
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/did not cite any/i);
+    });
+
+    it("scores 0 for an 'any' group when more than one ref is cited (one-story-answer semantics)", () => {
+      const result = scoreAnswerAssertions(
+        "[cite:story:xogito-client-account-recovery] [cite:story:mutual-informal-leadership]",
+        { citationGroups: [{ mode: "any", refs: [storyA, storyB] }] },
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/more than one|single/i);
+    });
+
+    it("scores 1 when the cited ref matches an 'any' group's preferredRef", () => {
+      const result = scoreAnswerAssertions("[cite:story:xogito-client-account-recovery]", {
+        citationGroups: [{ mode: "any", refs: [storyA, storyB], preferredRef: storyA }],
+      });
+      expect(result.score).toBe(1);
+    });
+
+    it("scores 0 when the cited ref is honest but is not the 'any' group's preferredRef", () => {
+      const result = scoreAnswerAssertions("[cite:story:mutual-informal-leadership]", {
+        citationGroups: [{ mode: "any", refs: [storyA, storyB], preferredRef: storyA }],
+      });
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/preferred/i);
+    });
+
+    it("combines multiple groups and other assertion kinds proportionally", () => {
+      const result = scoreAnswerAssertions("[cite:story:xogito-client-account-recovery]", {
+        mustMatch: ["Xogito"],
+        citationGroups: [
+          { mode: "any", refs: [storyA, storyB] },
+          { mode: "all", refs: [storyA, storyC] },
+        ],
+      });
+      // mustMatch passes, the 'any' group passes (storyA cited), the 'all'
+      // group fails (storyC never cited) — 2/3.
+      expect(result.score).toBeCloseTo(2 / 3, 4);
+    });
+  });
 });

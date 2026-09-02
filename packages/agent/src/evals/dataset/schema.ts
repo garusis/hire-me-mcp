@@ -95,6 +95,50 @@ const citationRefSchema = z
 export type EvalCaseCitationRef = z.infer<typeof citationRefSchema>;
 
 /**
+ * One #295 multiple-valid-answer or cross-cutting citation requirement — the
+ * locked manifest's `any`/`all` semantics (`../scorers/answer-assertions.ts`
+ * scores these via `scoreAnswerAssertions`'s `citationGroups` handling):
+ *
+ * - `"all"` (cross-cutting, e.g. C01/C02): every ref in `refs` must be cited.
+ * - `"any"` (multiple-valid-answer, e.g. A01-A08, and X01/X02/F02's
+ *   preferred-source cases): the answer must cite EXACTLY ONE of `refs` — a
+ *   complete single story, not zero (an unanswered honest candidate) and not
+ *   several blended together (the manifest's "one-story answer semantics").
+ *   `preferredRef`, when set, additionally requires that one cited ref to BE
+ *   `preferredRef` specifically — the locked preferred-source invariant
+ *   (e.g. #305 decision 8's "story 001 > 002") that a plain `any` set alone
+ *   cannot express, since it would accept any single member.
+ *
+ * `preferredRef` must itself be one of `refs` (enforced below) — expressing
+ * a preference for a citation that isn't even an acceptable answer would be
+ * a self-contradictory case.
+ */
+export const citationGroupSchema = z
+  .object({
+    mode: z.enum(["any", "all"]),
+    refs: z.array(citationRefSchema).min(2),
+    preferredRef: citationRefSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      value.preferredRef !== undefined &&
+      !value.refs.some(
+        (ref) =>
+          ref.entityType === value.preferredRef?.entityType &&
+          ref.entityId === value.preferredRef?.entityId,
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["preferredRef"],
+        message: "preferredRef must be one of refs",
+      });
+    }
+  });
+export type EvalCaseCitationGroup = z.infer<typeof citationGroupSchema>;
+
+/**
  * Content assertions on the answer (#300, #295's factual boundaries; #294
  * independent-review correction extends this beyond text). `mustMatch` /
  * `mustNotMatch` are case-insensitive regular-expression sources checked
@@ -102,9 +146,11 @@ export type EvalCaseCitationRef = z.infer<typeof citationRefSchema>;
  * a "proof of concept"). `mustCiteEntity` / `mustNotCiteEntity` are checked
  * against the `[cite:...]` markers actually present in that same answer text
  * instead — the required (or forbidden) evidence a behavioral answer must
- * (or must not) actually be grounded in, not just wording. Scored by
- * `../scorers/answer-assertions.ts`; a block must assert at least one thing
- * across all four lists.
+ * (or must not) actually be grounded in, not just wording. `citationGroups`
+ * (#295) is for a case with SEVERAL honest candidate citations rather than
+ * one fixed required/forbidden pair — see `citationGroupSchema` above. Scored
+ * by `../scorers/answer-assertions.ts`; a block must assert at least one
+ * thing across all five lists.
  */
 export const answerAssertionsSchema = z
   .object({
@@ -112,6 +158,7 @@ export const answerAssertionsSchema = z
     mustNotMatch: z.array(regexSourceSchema).optional(),
     mustCiteEntity: z.array(citationRefSchema).optional(),
     mustNotCiteEntity: z.array(citationRefSchema).optional(),
+    citationGroups: z.array(citationGroupSchema).optional(),
   })
   .strict()
   .refine(
@@ -119,11 +166,12 @@ export const answerAssertionsSchema = z
       (value.mustMatch?.length ?? 0) +
         (value.mustNotMatch?.length ?? 0) +
         (value.mustCiteEntity?.length ?? 0) +
-        (value.mustNotCiteEntity?.length ?? 0) >
+        (value.mustNotCiteEntity?.length ?? 0) +
+        (value.citationGroups?.length ?? 0) >
       0,
     {
       message:
-        "answerAssertions must declare at least one mustMatch/mustNotMatch/mustCiteEntity/mustNotCiteEntity entry",
+        "answerAssertions must declare at least one mustMatch/mustNotMatch/mustCiteEntity/mustNotCiteEntity/citationGroups entry",
     },
   );
 export type EvalCaseAnswerAssertions = z.infer<typeof answerAssertionsSchema>;

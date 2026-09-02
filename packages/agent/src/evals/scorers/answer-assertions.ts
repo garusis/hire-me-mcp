@@ -14,7 +14,7 @@
  */
 
 import { parseCitations } from "../../citations.js";
-import type { EvalCaseAnswerAssertions } from "../dataset/schema.js";
+import type { EvalCaseAnswerAssertions, EvalCaseCitationGroup } from "../dataset/schema.js";
 import type { ScoreResult } from "./types.js";
 import { clampScore } from "./types.js";
 
@@ -76,6 +76,70 @@ function checkCitationRefs(
   return { failures, total };
 }
 
+/** Which of `group.refs` are actually cited in `answerMarkers`, as `"entityType:entityId"` labels — used both to check the group and to report which ones matched. */
+function citedRefLabels(
+  answerMarkers: readonly { entityType: string; entityId: string }[],
+  group: EvalCaseCitationGroup,
+): string[] {
+  return group.refs
+    .filter((ref) => citationPresent(answerMarkers, ref))
+    .map((ref) => `${ref.entityType}:${ref.entityId}`);
+}
+
+/**
+ * One #295 `citationGroups` entry's pass/fail failure message, or `null` when
+ * it holds — see `EvalCaseCitationGroup`'s doc comment (`../dataset/schema.ts`)
+ * for the `any`/`all`/`preferredRef` semantics this enforces.
+ */
+function checkCitationGroup(
+  answerMarkers: readonly { entityType: string; entityId: string }[],
+  group: EvalCaseCitationGroup,
+): string | null {
+  const cited = citedRefLabels(answerMarkers, group);
+  const groupLabel = group.refs.map((ref) => `${ref.entityType}:${ref.entityId}`).join(", ");
+
+  if (group.mode === "all") {
+    const missing = group.refs
+      .filter((ref) => !citationPresent(answerMarkers, ref))
+      .map((ref) => `${ref.entityType}:${ref.entityId}`);
+    return missing.length === 0
+      ? null
+      : `cross-cutting citation group [${groupLabel}] is missing: ${missing.join(", ")}`;
+  }
+
+  // mode === "any"
+  if (cited.length === 0) {
+    return `did not cite any of the acceptable citations [${groupLabel}]`;
+  }
+  if (cited.length > 1) {
+    return (
+      `cited more than one of [${groupLabel}] (${cited.join(", ")}) where a single ` +
+      "complete story was expected (one-story-answer semantics)"
+    );
+  }
+  const preferred = group.preferredRef;
+  if (preferred !== undefined) {
+    const preferredLabel = `${preferred.entityType}:${preferred.entityId}`;
+    if (cited[0] !== preferredLabel) {
+      return `cited ${cited[0]} instead of the preferred citation ${preferredLabel} from [${groupLabel}]`;
+    }
+  }
+  return null;
+}
+
+/** Failure messages for every `citationGroups` entry that didn't hold, plus how many were checked (one unit per group). */
+function checkCitationGroups(
+  answer: string,
+  assertions: EvalCaseAnswerAssertions,
+): { failures: string[]; total: number } {
+  const groups = assertions.citationGroups ?? [];
+  const answerMarkers = parseCitations(answer);
+  const failures = groups
+    .map((group) => checkCitationGroup(answerMarkers, group))
+    .filter((failure): failure is string => failure !== null);
+  return { failures, total: groups.length };
+}
+
 /**
  * Score `answer` against `assertions`: 1 when every declared assertion
  * holds, proportionally lower per failed one. `mustMatch`/`mustNotMatch`
@@ -94,8 +158,9 @@ export function scoreAnswerAssertions(
 ): ScoreResult {
   const text = checkTextPatterns(answer, assertions);
   const citations = checkCitationRefs(answer, assertions);
-  const failures = [...text.failures, ...citations.failures];
-  const total = text.total + citations.total;
+  const groups = checkCitationGroups(answer, assertions);
+  const failures = [...text.failures, ...citations.failures, ...groups.failures];
+  const total = text.total + citations.total + groups.total;
 
   const passed = total - failures.length;
   const reason =

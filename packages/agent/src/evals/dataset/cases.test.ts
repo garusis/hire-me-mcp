@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { scoreAnswerAssertions } from "../scorers/answer-assertions.js";
 import { EVAL_CASES } from "./cases.js";
 import { evalDatasetSchema } from "./schema.js";
+import { STORY_MANIFEST_CASES } from "./story-manifest-cases.js";
 
 describe("EVAL_CASES", () => {
   it("validates against the dataset schema", () => {
@@ -41,11 +42,14 @@ describe("EVAL_CASES", () => {
     expect(exactCases.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("includes at least one known-competency behavioral case expecting list-career-stories to be called (#294)", () => {
+  it("includes at least one known-competency behavioral case expecting list-career-stories to be called (#294), each declaring the competency it routes on (#295 broadens the covered vocabulary beyond leadership/ownership)", () => {
     const storyCases = EVAL_CASES.filter((c) => c.expectedToolCall === "list-career-stories");
     expect(storyCases.length).toBeGreaterThanOrEqual(1);
     for (const evalCase of storyCases) {
-      expect(evalCase.question).toMatch(/tell me about a time|leadership|led|ownership/i);
+      expect(evalCase.question).toMatch(
+        /tell me about a|leadership|led|ownership|when has|give (?:an|me an) example|how (?:has|did)/i,
+      );
+      expect(evalCase.expectedCompetencies?.length ?? 0).toBeGreaterThan(0);
     }
   });
 
@@ -263,6 +267,15 @@ describe("EVAL_CASES", () => {
     it.each(WITHDRAWN_ANSWERS)("rejects the withdrawn affirmative framing for %s", (id, answer) => {
       expect(scoreAnswerAssertions(answer, assertionsFor(id)).score).toBeLessThan(1);
     });
+  });
+
+  it("includes the full #295 locked 38-case behavioral-story manifest", () => {
+    const manifestIds = new Set(STORY_MANIFEST_CASES.map((c) => c.id));
+    const includedIds = new Set(EVAL_CASES.map((c) => c.id));
+    for (const id of manifestIds) {
+      expect(includedIds.has(id)).toBe(true);
+    }
+    expect(manifestIds.size).toBe(38);
   });
 
   it("carries no private personal data (no email addresses or phone-like digit runs)", () => {

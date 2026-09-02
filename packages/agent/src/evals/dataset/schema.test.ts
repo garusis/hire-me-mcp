@@ -134,6 +134,133 @@ describe("evalCaseSchema", () => {
     });
   });
 
+  describe("citationGroups (#295 any/all/preferredSource semantics)", () => {
+    it("accepts an 'all' group (cross-cutting: every ref required)", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: {
+          citationGroups: [
+            {
+              mode: "all",
+              refs: [
+                { entityType: "story", entityId: "fullstack-labs-sap-migration" },
+                { entityType: "story", entityId: "house-numbers-secure-public-document-upload" },
+              ],
+            },
+          ],
+        },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts an 'any' group with a preferredRef that is one of refs", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: {
+          citationGroups: [
+            {
+              mode: "any",
+              refs: [
+                { entityType: "story", entityId: "xogito-client-account-recovery" },
+                { entityType: "story", entityId: "mutual-informal-leadership" },
+              ],
+              preferredRef: { entityType: "story", entityId: "xogito-client-account-recovery" },
+            },
+          ],
+        },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts an 'any' group with no preferredRef", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: {
+          citationGroups: [
+            {
+              mode: "any",
+              refs: [
+                { entityType: "story", entityId: "cross-team-onboarding-framework" },
+                { entityType: "story", entityId: "rokk3r-sustainable-performance-feedback" },
+              ],
+            },
+          ],
+        },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects a preferredRef that is not one of refs", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: {
+          citationGroups: [
+            {
+              mode: "any",
+              refs: [
+                { entityType: "story", entityId: "xogito-client-account-recovery" },
+                { entityType: "story", entityId: "mutual-informal-leadership" },
+              ],
+              preferredRef: { entityType: "story", entityId: "cross-team-onboarding-framework" },
+            },
+          ],
+        },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects a group with fewer than two refs (a single-ref requirement belongs in mustCiteEntity)", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: {
+          citationGroups: [
+            {
+              mode: "any",
+              refs: [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
+            },
+          ],
+        },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects an unknown mode", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: {
+          citationGroups: [
+            {
+              mode: "either",
+              refs: [
+                { entityType: "story", entityId: "xogito-client-account-recovery" },
+                { entityType: "story", entityId: "mutual-informal-leadership" },
+              ],
+            },
+          ],
+        },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("counts a citationGroups entry toward the 'must assert something' minimum, alone", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: {
+          citationGroups: [
+            {
+              mode: "any",
+              refs: [
+                { entityType: "story", entityId: "xogito-client-account-recovery" },
+                { entityType: "story", entityId: "mutual-informal-leadership" },
+              ],
+            },
+          ],
+        },
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe("expectedCompetencies (#294 independent-review correction)", () => {
     it("accepts a case with expectedToolCall 'list-career-stories' and expectedCompetencies", () => {
       const result = evalCaseSchema.safeParse({

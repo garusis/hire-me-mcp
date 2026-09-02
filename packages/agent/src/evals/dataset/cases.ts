@@ -61,6 +61,7 @@
  */
 
 import type { EvalCase } from "./schema.js";
+import { STORY_MANIFEST_CASES } from "./story-manifest-cases.js";
 
 /**
  * Shared answer-assertion sources for the document-extraction PoC cases (#300).
@@ -434,4 +435,7 @@ export const EVAL_CASES: readonly EvalCase[] = [
       "experience/house-numbers-2022-senior-full-stack-engineer.json: role, company, startDate, " +
       "endDate — get-experience answers this precisely; semantic search should not fire.",
   },
+
+  // ---- #295 locked 38-case behavioral-story manifest ----
+  ...STORY_MANIFEST_CASES,
 ];
