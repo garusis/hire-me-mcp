@@ -116,6 +116,7 @@ export type {
   EntitySource,
 } from "./content/loader.js";
 export {
+  hasStoryPreservationMap,
   loadContentDir,
   loadContentDirWithSources,
   loadStoryPreservationMap,

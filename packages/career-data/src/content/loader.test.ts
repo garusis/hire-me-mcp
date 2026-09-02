@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  hasStoryPreservationMap,
   loadContentDir,
   loadContentDirWithSources,
   loadStoryPreservationMap,
@@ -256,6 +257,11 @@ describe("story-preservation-map.json (#290)", () => {
       action: "shorten",
       note: "The fixture story holds the detailed narrative.",
     });
+  });
+
+  it("hasStoryPreservationMap distinguishes a present map from an absent one (an absent map is nothing to lint)", () => {
+    expect(hasStoryPreservationMap(fixtureDir("lint-valid-content"))).toBe(true);
+    expect(hasStoryPreservationMap(fixtureDir("valid-content"))).toBe(false);
   });
 
   it("loadStoryPreservationMap returns an empty map when the file is absent", () => {

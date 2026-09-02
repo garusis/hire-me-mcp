@@ -5,6 +5,9 @@
   "startDate": "2020-01",
   "endDate": "2022-01",
   "summary": "A fake role used only to exercise the content lint in tests.",
-  "highlights": ["Did a fixture thing"],
+  "highlights": [
+    "Did a fixture thing",
+    "Broken on purpose: a highlight the preservation map never classifies"
+  ],
   "tech": ["not-a-real-tag"]
 }

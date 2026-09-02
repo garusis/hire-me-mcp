@@ -459,6 +459,16 @@ export function loadContentDirWithSources(
  * than none. The map is review data consumed by the content lint and by
  * #297, never a citable entity, so it lives outside {@link CareerDataset}.
  */
+/**
+ * Whether `contentDir` carries a `story-preservation-map.json` at all. The
+ * lint needs this distinction — an absent map is nothing to check, while a
+ * present map must classify every experience field — and
+ * {@link loadStoryPreservationMap} deliberately flattens "absent" to `[]`.
+ */
+export function hasStoryPreservationMap(contentDir: string): boolean {
+  return fs.existsSync(path.join(contentDir, STORY_PRESERVATION_MAP_FILE));
+}
+
 export function loadStoryPreservationMap(contentDir: string): StoryPreservationEntry[] {
   const absPath = path.join(contentDir, STORY_PRESERVATION_MAP_FILE);
   if (!fs.existsSync(absPath)) {

@@ -369,13 +369,54 @@ function checkPreservationEntry(
  * one story. Deliberately *not* an `experience-has-story` rule: coverage
  * is evidence-driven and an experience may have no story and no detailed
  * field at all (#305 decision 1). An absent map is nothing to check;
- * completeness of the real map is a real-content invariant, not a rule.
+ * completeness of a present map is `story-preservation-map-complete`.
  */
 export const storyPreservationMapResolvesRule: LintRule = {
   name: "story-preservation-map-resolves",
   severity: "error",
   check({ dataset, storyPreservationMap = [] }) {
     return storyPreservationMap.flatMap((entry) => checkPreservationEntry(entry, dataset));
+  },
+};
+
+/**
+ * `story-preservation-map-complete` — the other half of the #290
+ * evidence-preservation gate. Once a content set carries a
+ * `story-preservation-map.json`, every experience `summary` and
+ * `highlights.<n>` must be classified in it: a row that is missing (never
+ * written, or removed) is an error-severity violation in `lint:content`
+ * itself, not only in the Vitest real-content invariant. This is still not
+ * an `experience-has-story` rule — a field may be classified `role-context`
+ * or `concise-outcome` with no story at all (#305 decision 1); only the
+ * *classification* must be complete. An absent map is nothing to check.
+ */
+export const storyPreservationMapCompleteRule: LintRule = {
+  name: "story-preservation-map-complete",
+  severity: "error",
+  check({ dataset, storyPreservationMap }) {
+    if (storyPreservationMap === undefined) {
+      return [];
+    }
+    const classified = new Set(
+      storyPreservationMap.map((entry) => `${entry.experienceId}#${entry.field}`),
+    );
+    const violations: LintViolation[] = [];
+    for (const experience of dataset.experience) {
+      const fields = ["summary", ...experience.highlights.map((_, index) => `highlights.${index}`)];
+      for (const field of fields) {
+        const locator = `${experience.id}#${field}`;
+        if (!classified.has(locator)) {
+          violations.push({
+            rule: "story-preservation-map-complete",
+            severity: "error",
+            file: STORY_PRESERVATION_MAP_FILE,
+            entityId: locator,
+            message: `experience "${experience.id}" field "${field}" is not classified in ${STORY_PRESERVATION_MAP_FILE}: every summary and highlight must be mapped before #297 may shorten or remove it (#290)`,
+          });
+        }
+      }
+    }
+    return violations;
   },
 };
 
@@ -571,6 +612,7 @@ export const ALL_RULES: LintRule[] = [
   gapRelatedSkillsResolveRule,
   storyExperienceResolvesRule,
   storyPreservationMapResolvesRule,
+  storyPreservationMapCompleteRule,
   tagInVocabularyRule,
   uniqueIdsRule,
   uniqueAliasesRule,

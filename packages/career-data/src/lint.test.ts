@@ -78,6 +78,31 @@ describe("runLint", () => {
     expect(messages).toMatch(/does-not-exist-role/);
   });
 
+  it("flags the broken fixture's unclassified highlight as a blocking completeness error (#290 Codex review)", () => {
+    const result = runLint(fixtureDir("lint-broken-content"));
+    const violations = result.violations.filter(
+      (v) => v.rule === "story-preservation-map-complete",
+    );
+    expect(violations).toEqual([
+      expect.objectContaining({
+        severity: "error",
+        file: "story-preservation-map.json",
+        entityId: "fixture-role-fixtureco-2020#highlights.1",
+        message: expect.stringMatching(/highlights\.1.*not classified/),
+      }),
+    ]);
+  });
+
+  it("treats a content set with no preservation map as nothing to check for completeness", () => {
+    const result = runLint(fixtureDir("valid-content"));
+    expect(result.violations.some((v) => v.rule === "story-preservation-map-complete")).toBe(false);
+  });
+
+  it("accepts the valid fixture map as complete — every summary and highlight is classified", () => {
+    const result = runLint(fixtureDir("lint-valid-content"));
+    expect(result.violations.some((v) => v.rule === "story-preservation-map-complete")).toBe(false);
+  });
+
   it("accepts the valid fixture map, including a story associated through relatedExperienceIds", () => {
     const result = runLint(fixtureDir("lint-valid-content"));
     expect(result.violations.some((v) => v.rule === "story-preservation-map-resolves")).toBe(false);

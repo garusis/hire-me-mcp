@@ -11,6 +11,7 @@ import {
   runRules,
   skillHasEvidenceRule,
   storyExperienceResolvesRule,
+  storyPreservationMapCompleteRule,
   storyPreservationMapResolvesRule,
   tagInVocabularyRule,
   uniqueAliasesRule,
@@ -723,6 +724,112 @@ describe("story-preservation-map-resolves", () => {
   });
 });
 
+describe("story-preservation-map-complete", () => {
+  const RULE = "story-preservation-map-complete";
+  const FILE = "story-preservation-map.json";
+
+  function mapped(entries: NonNullable<LintContext["storyPreservationMap"]>): LintContext {
+    return { ...context(), storyPreservationMap: entries };
+  }
+
+  /** Every field of the fixture experience, classified — the complete map for the base context. */
+  function completeMap(): NonNullable<LintContext["storyPreservationMap"]> {
+    return [
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "summary",
+        classification: "role-context",
+        action: "keep",
+      },
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "highlights.0",
+        classification: "concise-outcome",
+        action: "keep",
+      },
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "highlights.1",
+        classification: "detailed-story",
+        storyIds: ["fixture-story"],
+        action: "shorten",
+      },
+    ];
+  }
+
+  it("passes with no map at all — an absent map is nothing to check", () => {
+    expect(storyPreservationMapCompleteRule.check(context())).toEqual([]);
+  });
+
+  it("passes when every experience summary and highlight has exactly one classification", () => {
+    expect(storyPreservationMapCompleteRule.check(mapped(completeMap()))).toEqual([]);
+  });
+
+  it("flags a summary that the map does not classify — a removed row is a blocking lint error, not only a Vitest invariant", () => {
+    const entries = completeMap().filter((entry) => entry.field !== "summary");
+    expect(storyPreservationMapCompleteRule.check(mapped(entries))).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        severity: "error",
+        file: FILE,
+        entityId: "fixture-role-fixtureco-2020#summary",
+        message: expect.stringMatching(/summary.*not classified/),
+      }),
+    ]);
+  });
+
+  it("flags a highlight that the map does not classify, naming the field so #297 cannot shorten unmapped prose", () => {
+    const entries = completeMap().filter((entry) => entry.field !== "highlights.1");
+    expect(storyPreservationMapCompleteRule.check(mapped(entries))).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        severity: "error",
+        file: FILE,
+        entityId: "fixture-role-fixtureco-2020#highlights.1",
+        message: expect.stringMatching(/highlights\.1.*not classified/),
+      }),
+    ]);
+  });
+
+  it("reports every missing field of every experience, not just the first", () => {
+    const ctx = mapped(completeMap());
+    ctx.dataset.experience.push({
+      id: "fixture-role-otherco-2016",
+      company: "Otherco",
+      role: "Earlier Fixture Engineer",
+      startDate: "2016-01",
+      endDate: "2019-12",
+      summary: "Earlier fixture role.",
+      highlights: ["Did an earlier thing.", "Did another earlier thing."],
+      tech: ["typescript"],
+    });
+    const ids = storyPreservationMapCompleteRule.check(ctx).map((v) => v.entityId);
+    expect(ids).toEqual([
+      "fixture-role-otherco-2016#summary",
+      "fixture-role-otherco-2016#highlights.0",
+      "fixture-role-otherco-2016#highlights.1",
+    ]);
+  });
+
+  it("still does not require an experience to have a story — only a classification (#305 point 1)", () => {
+    const ctx = mapped(
+      completeMap().map((entry) =>
+        entry.field === "highlights.1"
+          ? {
+              ...entry,
+              classification: "concise-outcome" as const,
+              storyIds: undefined,
+              action: "keep" as const,
+            }
+          : entry,
+      ),
+    );
+    ctx.dataset.stories = [];
+    ctx.sources = ctx.sources.filter((source) => source.entityType !== "story");
+    expect(storyPreservationMapCompleteRule.check(ctx)).toEqual([]);
+  });
+});
+
 describe("ALL_RULES", () => {
   it("names every rule required by #51's scope, exactly once", () => {
     const names = ALL_RULES.map((rule) => rule.name).sort();
@@ -735,6 +842,7 @@ describe("ALL_RULES", () => {
         "no-orphan-entities",
         "skill-has-evidence",
         "story-experience-resolves",
+        "story-preservation-map-complete",
         "story-preservation-map-resolves",
         "tag-in-vocabulary",
         "unique-aliases",

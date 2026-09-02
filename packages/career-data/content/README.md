@@ -52,5 +52,10 @@ records the `storyIds` that hold the canonical narrative, and the `action`
 `correct-inconsistency`). The `story-preservation-map-resolves` lint rule
 blocks the build when a mapped field or story does not exist, when a
 mapped story is not associated with that experience, or when a
-`detailed-story` / `move-detail-to-story` entry names no story — so
-detailed prose can never be shortened before its evidence is preserved.
+`detailed-story` / `move-detail-to-story` entry names no story. The
+`story-preservation-map-complete` rule blocks it when any experience
+`summary` or `highlights.N` has no row in the map at all — so a removed or
+never-written mapping is a `pnpm lint:content` error, and detailed prose
+can never be shortened before its evidence is preserved. Neither rule
+requires an experience to have a story; only the classification must be
+complete.

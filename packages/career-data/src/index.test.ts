@@ -8,6 +8,7 @@ import {
   citationSchema,
   competencySchema,
   formatYearRange,
+  hasStoryPreservationMap,
   isCompetency,
   loadContentDir,
   loadStoryPreservationMap,
@@ -66,6 +67,7 @@ describe("public entry point", () => {
   it("re-exports the #290 story-preservation map loader and schema", () => {
     expect(storyPreservationMapSchema).toBeDefined();
     expect(loadStoryPreservationMap(resolveDefaultContentDir()).length).toBeGreaterThan(0);
+    expect(hasStoryPreservationMap(resolveDefaultContentDir())).toBe(true);
   });
 
   it("re-exports the citation schema for downstream consumers like packages/core", () => {
