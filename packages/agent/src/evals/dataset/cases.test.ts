@@ -102,9 +102,7 @@ describe("EVAL_CASES", () => {
         "spokesperson with no formal product-management authority, rebuilding the client's " +
         "trust over several sprints by proposing quick wins alongside the core delivery repairs " +
         "[cite:story:xogito-client-account-recovery].";
-      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"), [
-        { entityType: "story", entityId: "xogito-client-account-recovery" },
-      ]);
+      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"));
       expect(result.reason).not.toMatch(
         /forbidden pattern matched|missing required pattern|missing required citation|forbidden citation present/,
       );
@@ -116,9 +114,7 @@ describe("EVAL_CASES", () => {
         "After the hackathon, disagreement over the Mutual prize money stalled the project, so " +
         "Marcos renounced his own share and kept building the backend through informal leadership " +
         "[cite:story:mutual-informal-leadership].";
-      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"), [
-        { entityType: "story", entityId: "mutual-informal-leadership" },
-      ]);
+      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"));
       expect(result.score).toBeLessThan(1);
     });
 
@@ -132,9 +128,7 @@ describe("EVAL_CASES", () => {
       const answer =
         "Unlike his time at Xogito, this story is about renouncing prize money after a " +
         "hackathon to keep a stalled product moving [cite:story:mutual-informal-leadership].";
-      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"), [
-        { entityType: "story", entityId: "mutual-informal-leadership" },
-      ]);
+      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"));
       expect(result.score).toBeLessThan(1);
       expect(result.reason).toMatch(/forbidden citation present/i);
     });
@@ -148,9 +142,7 @@ describe("EVAL_CASES", () => {
     it("scores an answer grounded only in a recommendation/experience citation (no story at all) as failing", () => {
       const answer =
         "Colleagues have praised his leadership under pressure [cite:recommendation:some-rec].";
-      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"), [
-        { entityType: "recommendation", entityId: "some-rec" },
-      ]);
+      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"));
       expect(result.score).toBeLessThan(1);
       expect(result.reason).toMatch(/missing required citation/i);
     });

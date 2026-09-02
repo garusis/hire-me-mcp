@@ -120,7 +120,7 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
   const answerAssertions =
     evalCase.answerAssertions === undefined
       ? null
-      : scoreAnswerAssertions(run.answer, evalCase.answerAssertions, run.toolCitations);
+      : scoreAnswerAssertions(run.answer, evalCase.answerAssertions);
 
   return {
     id: evalCase.id,

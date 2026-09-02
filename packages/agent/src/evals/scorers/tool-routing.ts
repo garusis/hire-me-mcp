@@ -60,6 +60,53 @@ function isBroaderSearch(call: ToolCall): boolean {
   return call.toolName === "search-career" && !hasStorySourceType(call.args);
 }
 
+/**
+ * Third #294 independent-review correction (finding 2): once a story-scoped
+ * search has CONFIRMED a non-empty result (`storyScopedCitations`), two more
+ * things must hold, checked together here to keep `scoreStoryScoped`'s
+ * complexity bounded: (1) the `list-career-stories` fetch's `id` must match
+ * one of the citations that scoped search actually returned — not just any
+ * story — and (2) no broader (non-story-scoped) `search-career` call may
+ * run anywhere after it, since #294 permits that fallback only after an
+ * empty/unavailable scoped result. Returns `null` when both hold.
+ */
+function checkNonEmptyScopedFollowUp(
+  toolCalls: readonly ToolCall[],
+  storyScopedIndex: number,
+  listCareerStoriesIndex: number,
+  storyScopedCitations: readonly ReturnedCitation[],
+  trace: string,
+): ScoreResult | null {
+  const fetchedId =
+    listCareerStoriesIndex === -1
+      ? undefined
+      : (toolCalls[listCareerStoriesIndex]?.args as Record<string, unknown> | null)?.id;
+  const scopedIds = new Set(storyScopedCitations.map((citation) => citation.entityId));
+  if (typeof fetchedId !== "string" || !scopedIds.has(fetchedId)) {
+    return {
+      score: clampScore(0),
+      reason:
+        "The list-career-stories fetch's id did not match any story citation the " +
+        `story-scoped search-career call returned; tool-call trace was: ${trace}.`,
+    };
+  }
+
+  const broaderAfterIndex = toolCalls
+    .slice(storyScopedIndex + 1)
+    .findIndex((call) => isBroaderSearch(call));
+  if (broaderAfterIndex !== -1) {
+    return {
+      score: clampScore(0),
+      reason:
+        "A broader (non-story-scoped) search-career call ran after the story-scoped " +
+        "search returned a non-empty result; #294 permits the broader fallback only " +
+        `after an empty/unavailable story-only result. Tool-call trace was: ${trace}.`,
+    };
+  }
+
+  return null;
+}
+
 function scoreStoryScoped(toolCalls: readonly ToolCall[]): ScoreResult {
   const trace = traceOf(toolCalls);
   const storyScopedIndex = toolCalls.findIndex(
@@ -110,8 +157,8 @@ function scoreStoryScoped(toolCalls: readonly ToolCall[]): ScoreResult {
   // makes that distinction. `undefined` (unparseable/unknown result shape)
   // is treated the same as a confirmed empty one: nothing licenses skipping
   // the fetch either way, and nothing requires it.
-  const storyScopedCitations = toolCalls[storyScopedIndex]?.citations;
-  const confirmedNonEmpty = (storyScopedCitations?.length ?? 0) > 0;
+  const storyScopedCitations = toolCalls[storyScopedIndex]?.citations ?? [];
+  const confirmedNonEmpty = storyScopedCitations.length > 0;
   if (confirmedNonEmpty && listCareerStoriesIndex === -1) {
     return {
       score: clampScore(0),
@@ -120,6 +167,22 @@ function scoreStoryScoped(toolCalls: readonly ToolCall[]): ScoreResult {
         "list-career-stories fetch of the complete story followed; tool-call trace was: " +
         `${trace}.`,
     };
+  }
+
+  // Third #294 independent-review correction (finding 2): a confirmed
+  // non-empty scoped result must be followed by a fetch of one of ITS OWN
+  // citations, with no broader fallback anywhere after it.
+  if (confirmedNonEmpty) {
+    const followUpFailure = checkNonEmptyScopedFollowUp(
+      toolCalls,
+      storyScopedIndex,
+      listCareerStoriesIndex,
+      storyScopedCitations,
+      trace,
+    );
+    if (followUpFailure) {
+      return followUpFailure;
+    }
   }
 
   return {

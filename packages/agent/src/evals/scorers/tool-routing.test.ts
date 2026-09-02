@@ -312,4 +312,70 @@ describe("scoreToolRouting", () => {
       expect(result.score).toBe(1);
     });
   });
+
+  /**
+   * Third #294 independent-review correction (finding 2): a name-and-order
+   * check alone cannot tell "the fetched story is the one the scoped search
+   * actually surfaced" from "the fetch grabbed an unrelated id", and it
+   * permitted a broader fallback search to run even after the scoped search
+   * confirmed a non-empty result — #294 permits the broader fallback only
+   * after an empty/unavailable story-only result.
+   */
+  describe('expected: "search-career-story-scoped" — fetched-id and fallback-gating awareness (third #294 independent-review correction)', () => {
+    it("scores 0 when the list-career-stories fetch grabs an id that does NOT match any citation the scoped search returned — the exact counterexample the review reproduced", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, [
+            { entityType: "story", entityId: "story-002" },
+          ]),
+          call("list-career-stories", { id: "story-001" }),
+        ],
+        "search-career-story-scoped",
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/match|id/i);
+    });
+
+    it("scores 1 when the list-career-stories fetch grabs an id that DOES match a citation the scoped search returned", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, [
+            { entityType: "story", entityId: "story-002" },
+          ]),
+          call("list-career-stories", { id: "story-002" }),
+        ],
+        "search-career-story-scoped",
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("scores 0 when a broader search-career call runs AFTER a non-empty scoped result, even though the fetched id matches — the exact counterexample the review reproduced (scoped search returns story 002, list fetches unrelated story 001, then broader search runs)", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, [
+            { entityType: "story", entityId: "story-002" },
+          ]),
+          call("list-career-stories", { id: "story-002" }),
+          call("search-career", { query: "x" }),
+        ],
+        "search-career-story-scoped",
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/broad|non-empty/i);
+    });
+
+    it("scores 0 for the original literal reproduction: scoped search returns story 002, list fetches unrelated story 001, then broader search runs", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, [
+            { entityType: "story", entityId: "story-002" },
+          ]),
+          call("list-career-stories", { id: "story-001" }),
+          call("search-career", { query: "x" }),
+        ],
+        "search-career-story-scoped",
+      );
+      expect(result.score).toBe(0);
+    });
+  });
 });

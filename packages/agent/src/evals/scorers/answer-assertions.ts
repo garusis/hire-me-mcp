@@ -13,16 +13,17 @@
  * report reader sees exactly which boundary was crossed.
  */
 
+import { parseCitations } from "../../citations.js";
 import type { EvalCaseAnswerAssertions } from "../dataset/schema.js";
-import type { ReturnedCitation, ScoreResult } from "./types.js";
+import type { ScoreResult } from "./types.js";
 import { clampScore } from "./types.js";
 
 function citationPresent(
-  toolCitations: readonly ReturnedCitation[],
+  answerMarkers: readonly { entityType: string; entityId: string }[],
   ref: { entityType: string; entityId: string },
 ): boolean {
-  return toolCitations.some(
-    (citation) => citation.entityType === ref.entityType && citation.entityId === ref.entityId,
+  return answerMarkers.some(
+    (marker) => marker.entityType === ref.entityType && marker.entityId === ref.entityId,
   );
 }
 
@@ -50,23 +51,24 @@ function checkTextPatterns(
   return { failures, total };
 }
 
-/** Failure messages for every `mustCiteEntity`/`mustNotCiteEntity` ref that didn't hold, plus how many were checked. */
+/** Failure messages for every `mustCiteEntity`/`mustNotCiteEntity` ref that didn't hold against the answer's own parsed citation markers, plus how many were checked. */
 function checkCitationRefs(
-  toolCitations: readonly ReturnedCitation[],
+  answer: string,
   assertions: EvalCaseAnswerAssertions,
 ): { failures: string[]; total: number } {
   const failures: string[] = [];
   let total = 0;
+  const answerMarkers = parseCitations(answer);
 
   for (const ref of assertions.mustCiteEntity ?? []) {
     total += 1;
-    if (!citationPresent(toolCitations, ref)) {
+    if (!citationPresent(answerMarkers, ref)) {
       failures.push(`missing required citation ${ref.entityType}:${ref.entityId}`);
     }
   }
   for (const ref of assertions.mustNotCiteEntity ?? []) {
     total += 1;
-    if (citationPresent(toolCitations, ref)) {
+    if (citationPresent(answerMarkers, ref)) {
       failures.push(`forbidden citation present ${ref.entityType}:${ref.entityId}`);
     }
   }
@@ -77,21 +79,21 @@ function checkCitationRefs(
 /**
  * Score `answer` against `assertions`: 1 when every declared assertion
  * holds, proportionally lower per failed one. `mustMatch`/`mustNotMatch`
- * check the answer TEXT; `mustCiteEntity`/`mustNotCiteEntity` (#294
- * independent-review correction) check `toolCitations` — the citations the
- * run's tool calls actually returned — instead, so a required (or
- * forbidden) piece of evidence is verified against what was actually
- * fetched, not just what the answer happens to say. `toolCitations`
- * defaults to an empty array so callers that only assert on text (the
- * pre-#294 signature) keep working unchanged.
+ * check the answer TEXT; `mustCiteEntity`/`mustNotCiteEntity` (#294 third
+ * independent-review correction) check the `[cite:...]` markers actually
+ * present IN THAT TEXT (parsed with the shared `parseCitations`) — not
+ * `toolCitations`, the run's flattened tool-returned citations, which a
+ * tool can populate with an entity the answer never actually cites (an
+ * alternative story `list-career-stories` surfaced, say). A required (or
+ * forbidden) piece of evidence is verified against what the answer actually
+ * cites, not what a tool call merely returned in the same run.
  */
 export function scoreAnswerAssertions(
   answer: string,
   assertions: EvalCaseAnswerAssertions,
-  toolCitations: readonly ReturnedCitation[] = [],
 ): ScoreResult {
   const text = checkTextPatterns(answer, assertions);
-  const citations = checkCitationRefs(toolCitations, assertions);
+  const citations = checkCitationRefs(answer, assertions);
   const failures = [...text.failures, ...citations.failures];
   const total = text.total + citations.total;
 
