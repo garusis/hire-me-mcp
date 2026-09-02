@@ -62,6 +62,23 @@
 
 import type { EvalCase } from "./schema.js";
 
+/**
+ * Shared answer-assertion sources for the document-extraction PoC cases (#300).
+ * Kept negation-safe: the withdrawn numbers have no honest reason to appear at
+ * all, and the affirmative patterns need a subject directly followed by the
+ * claim ("it replaced the vendor"), which "it never replaced the vendor" or
+ * "it was not deployed to production" cannot form; a lookbehind also skips
+ * the reported-claim forms "the claim that it beat the vendor is invalid".
+ */
+const POC_FRAMING_PATTERN = "proof[ -]of[ -]concept|\\bPoC\\b|experiment";
+const WITHDRAWN_BEFORE_AFTER_PATTERN = "30%\\s*(?:→|->|to)\\s*87%";
+const WITHDRAWN_FIELD_SCORE_PATTERN = "\\b0\\.844\\b";
+const AFFIRMATIVE_DEPLOYED_PATTERN =
+  "(?<!\\bthat )(?<!\\bwhether )(?<!\\bif )(?<!\\bclaim(?:s|ed|ing)? )\\b(?:it|he|Marcos|they|the (?:pipeline|PoC|proof of concept|work|system)) (?:was|were|got|is) (?:deployed|shipped|rolled out|put|running|live) (?:to|into|in) production" +
+  "|(?<!\\bthat )(?<!\\bwhether )(?<!\\bif )(?<!\\bclaim(?:s|ed|ing)? )\\b(?:he|Marcos|they) (?:shipped|deployed|rolled out) (?:it|the (?:pipeline|PoC|proof of concept|work|system)) (?:to|into) production";
+const AFFIRMATIVE_VENDOR_REPLACEMENT_PATTERN =
+  "(?<!\\bthat )(?<!\\bwhether )(?<!\\bif )(?<!\\bclaim(?:s|ed|ing)? )\\b(?:it|he|Marcos|they|the (?:pipeline|PoC|proof of concept|work|system)) (?:replaced|beat|outperformed|displaced) the (?:incumbent |OCR |existing )?vendor";
+
 export const EVAL_CASES: readonly EvalCase[] = [
   // ---- grounded (claimed skills/experience — see profile.json, skills.json) ----
   {
@@ -222,7 +239,84 @@ export const EVAL_CASES: readonly EvalCase[] = [
     expectedToolCall: "search-career",
     notes:
       "Copied from packages/core/src/eval-retrieval/dataset/cases.ts fuzzy-ai-demo-to-production: " +
-      "projects/llm-evaluation-infrastructure.mdx, projects/document-extraction-pipeline.mdx.",
+      "projects/llm-evaluation-infrastructure.mdx. The document-extraction PoC is not evidence " +
+      "for this question (#300) — it never reached production.",
+  },
+
+  // ---- document-extraction PoC status (#300): PoC candidates vs. production systems vs. a recommendation's own words ----
+  // Assertion design (#300 review): an honest answer naturally echoes the question's phrasing
+  // under a negation ("it was not shipped to production", "the 3% of its cost claim is
+  // invalid"), so the framing is required through `mustMatch` and `mustNotMatch` is limited to
+  // the withdrawn numbers plus affirmative subject-verb constructions a negation cannot form.
+  {
+    id: "poc-doc-extraction-production-status",
+    category: "grounded",
+    question: "Was his document-extraction work deployed to production?",
+    gapHonestyDirection: "claimed",
+    answerAssertions: {
+      mustMatch: [
+        POC_FRAMING_PATTERN,
+        // An explicit "no": not deployed / never reached production / stayed experimental /
+        // production kept the vendor.
+        "(?:not|never|wasn'?t|was not|isn'?t|is not)\\s+(?:\\w+\\s+){0,2}(?:deployed|shipped|productioni[sz]ed|rolled out|(?:in|to|into|reach(?:ed)?) production)" +
+          "|(?:stayed|remained) (?:experimental|an? (?:proof[ -]of[ -]concept|PoC|experiment))" +
+          "|production (?:kept|continued|stayed|still|remained)(?: (?:on|with|using|to use))? (?:the )?(?:incumbent |OCR |existing )?vendor" +
+          "|(?:never|did not|didn'?t) (?:reach|go to|make it to|get to) production",
+      ],
+      mustNotMatch: [
+        WITHDRAWN_BEFORE_AFTER_PATTERN,
+        WITHDRAWN_FIELD_SCORE_PATTERN,
+        AFFIRMATIVE_DEPLOYED_PATTERN,
+        AFFIRMATIVE_VENDOR_REPLACEMENT_PATTERN,
+      ],
+    },
+    notes:
+      "projects/document-extraction-pipeline.mdx (stage: proof-of-concept): the honest answer is " +
+      "no — production kept the incumbent vendor plus the existing LLM fallback.",
+  },
+  {
+    id: "poc-doc-extraction-demonstrated",
+    category: "grounded",
+    question: "What did his document-extraction proof of concept actually demonstrate?",
+    gapHonestyDirection: "claimed",
+    answerAssertions: {
+      mustMatch: [
+        POC_FRAMING_PATTERN,
+        // Measured experimentation must come with its limitations, not as a headline.
+        "limitation|caveat|coverage|denominator|sample|corpus|round|(?:not|never) (?:deployed|shipped|in production)|worth pursuing|not production[- ]ready",
+      ],
+      mustNotMatch: [WITHDRAWN_BEFORE_AFTER_PATTERN, WITHDRAWN_FIELD_SCORE_PATTERN],
+    },
+    notes:
+      "projects/document-extraction-pipeline.mdx: measured experimentation with stated " +
+      "limitations; metrics from different rounds must never be combined into one before/after.",
+  },
+  {
+    id: "poc-doc-extraction-vendor-cost-claim",
+    category: "grounded",
+    question: "Did his extraction pipeline beat the OCR vendor at 3% of its cost?",
+    gapHonestyDirection: "claimed",
+    answerAssertions: {
+      mustMatch: [
+        POC_FRAMING_PATTERN,
+        // The blanket claim has to be rejected with the reason: experiment-run costs with no
+        // normalized denominator, so no valid comparison exists.
+        "invalid|(?:not|isn'?t|is not|wasn'?t|was not) (?:a )?(?:valid|fair|supported|comparable|like-for-like|apples[- ]to[- ]apples)" +
+          "|(?:no|without|lacks?) (?:a |any )?(?:normali[sz]ed|valid|comparable|shared|common|reviewed)? ?(?:denominator|baseline|comparison)" +
+          "|experiment(?:al|-run)? (?:run )?costs?|(?:not|never) (?:a )?(?:proven |production )?(?:total cost|TCO|savings)",
+      ],
+      mustNotMatch: [
+        WITHDRAWN_BEFORE_AFTER_PATTERN,
+        WITHDRAWN_FIELD_SCORE_PATTERN,
+        // An affirmative "yes" to the blanket claim.
+        "\\byes\\b[^.]{0,60}\\b(?:beat|outperform|3%|cheaper)",
+        AFFIRMATIVE_VENDOR_REPLACEMENT_PATTERN,
+      ],
+    },
+    notes:
+      "projects/document-extraction-pipeline.mdx explains why the blanket claim is invalid " +
+      "(experiment-run costs, no normalized denominator). A recommendation's own '$0.30 vs $25' " +
+      "sentence may be relayed only as that recommender's attributed wording, never as measured truth.",
   },
 
   // ---- RAG-grounded: absent-topic questions the FULL corpus (not just gaps.json) has nothing on ----

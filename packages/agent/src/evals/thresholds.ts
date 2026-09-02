@@ -30,6 +30,12 @@ export interface ScorerThresholds {
    * compared against this threshold as if it were a real failing score.
    */
   toolRouting?: number;
+  /**
+   * Optional (#300): only cases that declare `EvalCase.answerAssertions`
+   * contribute, so a run without any never fails on it — same treatment as
+   * `toolRouting` above.
+   */
+  answerAssertions?: number;
 }
 
 /**
@@ -99,6 +105,15 @@ export const EVAL_THRESHOLDS: ScorerThresholds = {
   // documents for the other three scorers — raising this threshold with the
   // real aggregate is a follow-up, not silently deferred.
   toolRouting: 0.6,
+  // answerAssertions (#300, #295): content boundaries — "this was a proof of
+  // concept", "never 30% to 87%", "never transfer actions to a related
+  // employer". Not calibrated against a real run yet (same local-key
+  // limitation as toolRouting); 0.8 is a deliberately conservative
+  // placeholder so a model occasionally paraphrasing around one boundary
+  // does not gate merge on an unverified guess, while a systematic
+  // regression (most asserted cases crossing a boundary) still fails.
+  // Recalibrate from the first real `agent-evals` run of the story dataset.
+  answerAssertions: 0.8,
 };
 
 const SCORER_LABELS: Readonly<Record<keyof ScorerThresholds, string>> = {
@@ -106,6 +121,7 @@ const SCORER_LABELS: Readonly<Record<keyof ScorerThresholds, string>> = {
   gapHonesty: "gap honesty",
   relevance: "relevance",
   toolRouting: "tool routing",
+  answerAssertions: "answer assertions",
 };
 
 /** Verdict for one eval run: whether every scorer aggregate met its threshold, and a human-readable failure line per scorer that didn't. */

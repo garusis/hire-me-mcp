@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { scoreGapHonesty, scoreGroundedness, scoreRelevance, scoreToolRouting } from "./index.js";
+import {
+  scoreAnswerAssertions,
+  scoreGapHonesty,
+  scoreGroundedness,
+  scoreRelevance,
+  scoreToolRouting,
+} from "./index.js";
 
 describe("scorers barrel", () => {
   it("re-exports all three answer-content scorers", () => {
@@ -10,5 +16,9 @@ describe("scorers barrel", () => {
 
   it("re-exports the tool-routing scorer (#75)", () => {
     expect(typeof scoreToolRouting).toBe("function");
+  });
+
+  it("re-exports the answer-assertions scorer (#300 / #295)", () => {
+    expect(typeof scoreAnswerAssertions).toBe("function");
   });
 });

@@ -103,6 +103,20 @@ describe("renderProject", () => {
     const noLinks: Project = { ...project, links: [] };
     expect(renderProject(noLinks).url).toBeUndefined();
   });
+
+  it("renders an explicit lifecycle stage line when the project declares one (#300)", () => {
+    const poc: Project = { ...project, stage: "proof-of-concept" };
+    expect(renderProject(poc).header).toContain(
+      "Stage: proof-of-concept (not deployed to production)",
+    );
+    expect(renderProject({ ...project, stage: "production" }).header).toContain(
+      "Stage: production",
+    );
+  });
+
+  it("renders no stage line when the project declares none", () => {
+    expect(renderProject(project).header).not.toContain("Stage:");
+  });
 });
 
 describe("renderSkill", () => {

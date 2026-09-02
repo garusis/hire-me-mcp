@@ -153,7 +153,7 @@ the citations list is.
 Markers are inline, next to the clause they support, rather than collected in a trailing list, so a
 citation can be resolved as soon as its sentence finishes streaming. Place a marker immediately
 after the word it supports and immediately before the sentence's punctuation, with no space on
-either side of it: "…at a fraction of incumbent OCR costs[cite:project:tuvi]." A sentence with no
+either side of it: "…on a fifteen-service TypeScript monorepo[cite:experience:acme-2021]." A sentence with no
 tool-backed fact carries no marker.
 
 Write plain prose. Do not use Markdown headings, tables, or links; short bulleted lists ("- item")

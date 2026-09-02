@@ -90,12 +90,25 @@ export function renderExperience(entry: ExperienceEntry): RenderedEntity {
   };
 }
 
+/** Explicit lifecycle-stage line (#300) so a chunk states deployment maturity instead of leaving it to inference. */
+function renderProjectStage(stage: Project["stage"]): string | undefined {
+  if (stage === undefined) {
+    return undefined;
+  }
+  return stage === "proof-of-concept"
+    ? "Stage: proof-of-concept (not deployed to production)"
+    : `Stage: ${stage}`;
+}
+
 export function renderProject(project: Project): RenderedEntity {
   const header = [
     `${project.name} — ${project.role}`,
+    renderProjectStage(project.stage),
     project.summary,
     `Tech: ${project.tech.join(", ")}`,
-  ].join("\n");
+  ]
+    .filter((line): line is string => line !== undefined)
+    .join("\n");
   return {
     header,
     body: project.body,

@@ -57,6 +57,7 @@ import {
 import type { EvalCase } from "./dataset/schema.js";
 import { buildReport, type CaseReport, type EvalReport } from "./report.js";
 import {
+  scoreAnswerAssertions,
   scoreGapHonesty,
   scoreGroundedness,
   scoreRelevance,
@@ -109,6 +110,10 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
     evalCase.expectedToolCall === undefined
       ? null
       : scoreToolRouting(run.toolCallNames ?? [], evalCase.expectedToolCall);
+  const answerAssertions =
+    evalCase.answerAssertions === undefined
+      ? null
+      : scoreAnswerAssertions(run.answer, evalCase.answerAssertions);
 
   return {
     id: evalCase.id,
@@ -120,6 +125,7 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
       gapHonesty,
       relevance: scoreRelevance(transcript),
       toolRouting,
+      answerAssertions,
     },
   };
 }

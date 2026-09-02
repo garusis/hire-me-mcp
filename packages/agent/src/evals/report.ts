@@ -30,6 +30,8 @@ export interface CaseReport {
     gapHonesty: ScoreResult | null;
     relevance: ScoreResult;
     toolRouting: ScoreResult | null;
+    /** `null` for any case that declares no `EvalCase.answerAssertions` (#300). */
+    answerAssertions: ScoreResult | null;
   };
 }
 
@@ -58,6 +60,7 @@ export interface EvalReport {
     gapHonesty: ScorerAggregate;
     relevance: ScorerAggregate;
     toolRouting: ScorerAggregate;
+    answerAssertions: ScorerAggregate;
   };
   totals: EvalTotals & { cases: number };
   thresholds: ScorerThresholds;
@@ -89,6 +92,7 @@ export function buildReport(params: {
     gapHonesty: aggregate(params.cases.map((c) => c.scores.gapHonesty)),
     relevance: aggregate(params.cases.map((c) => c.scores.relevance)),
     toolRouting: aggregate(params.cases.map((c) => c.scores.toolRouting)),
+    answerAssertions: aggregate(params.cases.map((c) => c.scores.answerAssertions)),
   };
 
   return {
@@ -109,6 +113,11 @@ export function buildReport(params: {
         // compared against the threshold as if it were a real 0 score (see
         // ./thresholds.ts's ScorerThresholds doc comment).
         ...(aggregates.toolRouting.count > 0 ? { toolRouting: aggregates.toolRouting.mean } : {}),
+        // Same optional treatment for answer assertions (#300): only cases
+        // that declare them contribute, so a run without any never fails on it.
+        ...(aggregates.answerAssertions.count > 0
+          ? { answerAssertions: aggregates.answerAssertions.mean }
+          : {}),
       },
       thresholds,
     ),

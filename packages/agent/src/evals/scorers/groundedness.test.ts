@@ -6,7 +6,7 @@ describe("scoreGroundedness", () => {
     const result = scoreGroundedness({
       question: "What has he built with AWS?",
       answer:
-        "He built production LLM pipelines at House Numbers using AWS Lambda " +
+        "He built LLM-assisted message classification at House Numbers on AWS " +
         "[cite:experience:house-numbers-2022-senior-full-stack-engineer]. He used AWS for " +
         "serverless deployments there [cite:skill:aws].",
       toolCitations: [

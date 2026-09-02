@@ -42,6 +42,47 @@ describe("evalCaseSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  describe("answerAssertions (#300 / #295 factual boundaries)", () => {
+    it("accepts mustMatch and mustNotMatch regex-source lists", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: {
+          mustMatch: ["proof.of.concept|PoC"],
+          mustNotMatch: ["30%\\s*(?:→|->|to)\\s*87%"],
+        },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("accepts a one-sided assertion (only mustNotMatch)", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: { mustNotMatch: ["3% of (?:its|the vendor's) cost"] },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects an empty answerAssertions object (an assertion block must assert something)", () => {
+      expect(evalCaseSchema.safeParse({ ...validCase, answerAssertions: {} }).success).toBe(false);
+    });
+
+    it("rejects a pattern that is not a valid regular expression", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: { mustMatch: ["(unclosed"] },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects unknown keys inside answerAssertions", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: { mustMatch: ["x"], contains: ["y"] },
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
   it("accepts a case with an expectedToolCall of 'search-career' (#75 RAG-grounded case)", () => {
     const result = evalCaseSchema.safeParse({ ...validCase, expectedToolCall: "search-career" });
     expect(result.success).toBe(true);

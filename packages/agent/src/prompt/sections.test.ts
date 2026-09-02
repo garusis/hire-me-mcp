@@ -37,6 +37,11 @@ describe("PROMPT_SECTIONS", () => {
     expect(gapDiscipline?.body).toMatch(/closest evidence is y/i);
   });
 
+  it("never primes the model with a vendor-cost or production-pipeline claim in its worked example (#300)", () => {
+    const citationFormat = PROMPT_SECTIONS.find((section) => section.id === "citationFormat");
+    expect(citationFormat?.body).not.toMatch(/incumbent OCR|vendor'?s? cost|fraction of .*cost/i);
+  });
+
   it("documents the citation marker format", () => {
     const citationFormat = PROMPT_SECTIONS.find((section) => section.id === "citationFormat");
     expect(citationFormat?.body).toContain("[cite:");

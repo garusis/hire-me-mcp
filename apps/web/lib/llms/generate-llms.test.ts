@@ -361,6 +361,27 @@ describe("renderLlmsFullTxt", () => {
     expect(text).toContain("He has not worked with Fixture Gap professionally.");
   });
 
+  it("labels a project's lifecycle stage in llms-full.txt when the record declares one (#300)", async () => {
+    mockContentLayer();
+    const view = projectsView();
+    const first = view.items[0];
+    if (first) {
+      first.project.stage = "proof-of-concept";
+    }
+    getProjectsListView.mockReturnValue(view);
+    const { renderLlmsFullTxt } = await import("./generate-llms.js");
+
+    const text = renderLlmsFullTxt({
+      siteUrl: "https://stub-deploy.example.com",
+      endpointUrl: "https://stub-deploy.example.com/api/mcp",
+    });
+
+    expect(text).toContain(
+      "[Fixture Project](https://stub-deploy.example.com/projects/fixture-project) " +
+        "[stage: proof-of-concept — not deployed to production]: A fixture project summary.",
+    );
+  });
+
   it("emits only absolute URLs", async () => {
     mockContentLayer();
     const { renderLlmsFullTxt } = await import("./generate-llms.js");

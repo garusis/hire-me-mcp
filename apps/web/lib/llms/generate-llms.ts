@@ -262,7 +262,15 @@ function projectEntryLine(
   item: ReturnType<typeof getProjectsListView>["items"][number],
 ): string {
   const { project, slug } = item;
-  return `- [${project.name}](${abs(siteUrl, `/projects/${slug}`)}): ${project.summary} (tech: ${project.tech.join(", ")})`;
+  // #300 — an explicit lifecycle stage travels with the record so an agent
+  // reading this file never has to infer deployment maturity from prose.
+  const stage =
+    project.stage === undefined
+      ? ""
+      : project.stage === "proof-of-concept"
+        ? " [stage: proof-of-concept — not deployed to production]"
+        : ` [stage: ${project.stage}]`;
+  return `- [${project.name}](${abs(siteUrl, `/projects/${slug}`)})${stage}: ${project.summary} (tech: ${project.tech.join(", ")})`;
 }
 
 function skillsByProficiency(skills: ReturnType<typeof getSkillsListView>["items"]): string {

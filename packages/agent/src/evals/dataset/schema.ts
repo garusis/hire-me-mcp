@@ -43,6 +43,41 @@ export type EvalCaseExpectedToolCall = z.infer<typeof expectedToolCallSchema>;
 
 const KEBAB_CASE_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+function isValidRegexSource(source: string): boolean {
+  try {
+    new RegExp(source, "i");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const regexSourceSchema = z
+  .string()
+  .min(1)
+  .refine(isValidRegexSource, { message: "must be a valid regular-expression source" });
+
+/**
+ * Content assertions on the answer text (#300, #295's factual boundaries):
+ * `mustMatch` patterns that a correct answer has to contain (e.g. that the
+ * document-extraction work was a "proof of concept") and `mustNotMatch`
+ * patterns that a correct answer must never contain (a withdrawn metric, a
+ * claim transferred to the wrong employer). Each entry is a
+ * case-insensitive regular-expression source. Scored by
+ * `../scorers/answer-assertions.ts`; a block must assert at least one
+ * thing.
+ */
+export const answerAssertionsSchema = z
+  .object({
+    mustMatch: z.array(regexSourceSchema).optional(),
+    mustNotMatch: z.array(regexSourceSchema).optional(),
+  })
+  .strict()
+  .refine((value) => (value.mustMatch?.length ?? 0) + (value.mustNotMatch?.length ?? 0) > 0, {
+    message: "answerAssertions must declare at least one mustMatch or mustNotMatch pattern",
+  });
+export type EvalCaseAnswerAssertions = z.infer<typeof answerAssertionsSchema>;
+
 const CATEGORY_DIRECTION_PAIRS: Readonly<Record<EvalCaseCategory, EvalCaseGapHonestyDirection>> = {
   grounded: "claimed",
   gap: "gap",
@@ -58,6 +93,7 @@ export const evalCaseSchema = z
     question: z.string().min(1),
     gapHonestyDirection: gapHonestyDirectionSchema,
     expectedToolCall: expectedToolCallSchema.optional(),
+    answerAssertions: answerAssertionsSchema.optional(),
     notes: z.string().min(1).optional(),
   })
   .strict()

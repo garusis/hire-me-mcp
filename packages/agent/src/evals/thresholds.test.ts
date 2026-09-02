@@ -52,6 +52,16 @@ describe("evaluateVerdict", () => {
     expect(EVAL_THRESHOLDS.relevance).toBe(0.48);
   });
 
+  it("carries a provisional answerAssertions threshold (#300), optional like toolRouting", () => {
+    expect(EVAL_THRESHOLDS.answerAssertions).toBe(0.8);
+    const verdict = evaluateVerdict(
+      { groundedness: 0.9, gapHonesty: 0.95, relevance: 0.6, answerAssertions: 0.2 },
+      { groundedness: 0.8, gapHonesty: 0.7, relevance: 0.5, answerAssertions: 0.8 },
+    );
+    expect(verdict.passed).toBe(false);
+    expect(verdict.failures.some((line) => /answer assertions/i.test(line))).toBe(true);
+  });
+
   it("carries a provisional toolRouting threshold (#75), flagged as uncalibrated pending a real CI run", () => {
     expect(EVAL_THRESHOLDS.toolRouting).toBe(0.6);
   });

@@ -116,11 +116,39 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
     id: "fuzzy-ai-demo-to-production",
     query: "How does he take an AI feature from a demo to something reliable in production?",
     category: "fuzzy",
-    expectedSources: [
-      { sourceType: "project", sourceId: "llm-evaluation-infrastructure" },
-      { sourceType: "project", sourceId: "document-extraction-pipeline" },
-    ],
-    notes: "projects/llm-evaluation-infrastructure.mdx, projects/document-extraction-pipeline.mdx",
+    expectedSources: [{ sourceType: "project", sourceId: "llm-evaluation-infrastructure" }],
+    notes:
+      "projects/llm-evaluation-infrastructure.mdx. The document-extraction project is deliberately " +
+      "NOT expected here (#300): it was a proof of concept that never reached production, so it " +
+      "cannot serve as evidence of taking a feature from demo to reliable production.",
+  },
+  // ---- document-extraction PoC status (#300): the record must answer honestly, as a PoC ----
+  {
+    id: "fuzzy-doc-extraction-production-status",
+    query: "Was his document-extraction work deployed to production?",
+    category: "fuzzy",
+    expectedSources: [{ sourceType: "project", sourceId: "document-extraction-pipeline" }],
+    notes:
+      "projects/document-extraction-pipeline.mdx (stage: proof-of-concept) — the answer is no; " +
+      "production kept the incumbent vendor plus the existing fallback.",
+  },
+  {
+    id: "fuzzy-doc-extraction-poc-demonstrated",
+    query: "What did the document-extraction proof of concept actually demonstrate?",
+    category: "fuzzy",
+    expectedSources: [{ sourceType: "project", sourceId: "document-extraction-pipeline" }],
+    notes:
+      "projects/document-extraction-pipeline.mdx: measured experimentation with stated " +
+      "limitations — corpus bias found, a mapper bug corrected, coverage fixed before scoring.",
+  },
+  {
+    id: "fuzzy-doc-extraction-vendor-cost-claim",
+    query: "Did his extraction pipeline beat the OCR vendor at a few percent of its cost?",
+    category: "fuzzy",
+    expectedSources: [{ sourceType: "project", sourceId: "document-extraction-pipeline" }],
+    notes:
+      "projects/document-extraction-pipeline.mdx explains why the blanket claim is invalid: " +
+      "experiment-run costs, no normalized denominator, no apples-to-apples accuracy result.",
   },
   {
     id: "fuzzy-message-classification-routing",

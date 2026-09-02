@@ -116,6 +116,30 @@ describe("Project detail page", () => {
     expect(screen.getByText(/flagship project of this portfolio/i)).toBeDefined();
   });
 
+  it("labels a proof-of-concept project's lifecycle stage explicitly (#300)", async () => {
+    const view = foundView();
+    if (view.found) {
+      view.value.project.stage = "proof-of-concept";
+    }
+    getProjectDetailView.mockReturnValue(view);
+    getProfileView.mockReturnValue(profileView());
+    const { default: ProjectDetailPage } = await import("./page.js");
+
+    render(await ProjectDetailPage({ params: Promise.resolve({ slug: "alpha-project" }) }));
+
+    expect(screen.getByText(/proof of concept — not deployed to production/i)).toBeDefined();
+  });
+
+  it("shows no stage marker when a project declares no lifecycle stage", async () => {
+    getProjectDetailView.mockReturnValue(foundView());
+    getProfileView.mockReturnValue(profileView());
+    const { default: ProjectDetailPage } = await import("./page.js");
+
+    render(await ProjectDetailPage({ params: Promise.resolve({ slug: "alpha-project" }) }));
+
+    expect(screen.queryByText(/proof of concept/i)).toBeNull();
+  });
+
   it("shows no flagship marker on an ordinary (non-featured) project detail page", async () => {
     getProjectDetailView.mockReturnValue(foundView());
     getProfileView.mockReturnValue(profileView());

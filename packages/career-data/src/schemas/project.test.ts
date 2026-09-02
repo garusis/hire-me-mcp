@@ -103,4 +103,29 @@ describe("projectSchema", () => {
       expect(projectSchema.safeParse({ ...validProject, featured: "yes" }).success).toBe(false);
     });
   });
+
+  describe("stage (#300)", () => {
+    it("accepts every lifecycle stage and preserves the value", () => {
+      for (const stage of ["proof-of-concept", "pilot", "production"]) {
+        const result = projectSchema.safeParse({ ...validProject, stage });
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.stage).toBe(stage);
+        }
+      }
+    });
+
+    it("accepts a project without a stage (optional, stays undefined — existing projects are not guessed)", () => {
+      const result = projectSchema.safeParse(validProject);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.stage).toBeUndefined();
+      }
+    });
+
+    it("rejects a stage outside the controlled lifecycle enum", () => {
+      expect(projectSchema.safeParse({ ...validProject, stage: "shipped" }).success).toBe(false);
+      expect(projectSchema.safeParse({ ...validProject, stage: "" }).success).toBe(false);
+    });
+  });
 });

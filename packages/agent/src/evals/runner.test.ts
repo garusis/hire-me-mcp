@@ -130,6 +130,36 @@ describe("runEvalSuite", () => {
     }
   });
 
+  it("scores answerAssertions when a case declares them, and leaves the score null otherwise (#300)", async () => {
+    const runCase = vi.fn().mockResolvedValue({
+      answer:
+        "The extraction work was a proof of concept; accuracy went from 30% to 87% [cite:skill:aws].",
+      toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+    });
+    const assertedCase = makeCase({
+      id: "poc-1",
+      answerAssertions: {
+        mustMatch: ["proof of concept"],
+        mustNotMatch: ["30%\\s*to\\s*87%"],
+      },
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [assertedCase, groundedCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    const asserted = report.cases.find((c) => c.id === "poc-1");
+    expect(asserted?.scores.answerAssertions?.score).toBe(0.5);
+    const plain = report.cases.find((c) => c.id === "grounded-1");
+    expect(plain?.scores.answerAssertions).toBeNull();
+  });
+
   it("scores toolRouting when a case declares expectedToolCall, using the run's toolCallNames (#75)", async () => {
     const runCase = vi.fn().mockResolvedValue({
       answer: "He built things [cite:skill:aws].",

@@ -31,4 +31,29 @@ describe("GOLDEN_QUERIES", () => {
       expect(entry.expectedSources).toEqual([]);
     }
   });
+
+  describe("document-extraction PoC status (#300)", () => {
+    const POC = { sourceType: "project", sourceId: "document-extraction-pipeline" };
+
+    it("no longer treats the PoC as evidence of taking an AI feature from demo to reliable production", () => {
+      const demoToProduction = GOLDEN_QUERIES.find(
+        (entry) => entry.id === "fuzzy-ai-demo-to-production",
+      );
+      expect(demoToProduction).toBeDefined();
+      expect(demoToProduction?.expectedSources).not.toContainEqual(POC);
+    });
+
+    it.each([
+      "fuzzy-doc-extraction-production-status",
+      "fuzzy-doc-extraction-poc-demonstrated",
+      "fuzzy-doc-extraction-vendor-cost-claim",
+    ])(
+      "%s resolves the PoC project as the record that answers the production-status question",
+      (id) => {
+        const entry = GOLDEN_QUERIES.find((candidate) => candidate.id === id);
+        expect(entry).toBeDefined();
+        expect(entry?.expectedSources).toContainEqual(POC);
+      },
+    );
+  });
 });
