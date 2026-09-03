@@ -121,4 +121,164 @@ describe("createEmbeddingClient", () => {
 
     await expect(client.embed(["a", "b"])).rejects.toThrow(EmbeddingFailureError);
   });
+
+  it("honors a provider RetryInfo delay (real Gemini 429 body shape) longer than the exponential backoff", async () => {
+    let attempt = 0;
+    const embedBatch = vi.fn(async (batch: readonly string[]) => {
+      attempt += 1;
+      if (attempt === 1) {
+        throw Object.assign(new Error("rate limited"), {
+          statusCode: 429,
+          responseBody: JSON.stringify({
+            error: {
+              details: [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "47s" }],
+            },
+          }),
+        });
+      }
+      return batch.map((_, index) => fakeVector(index));
+    });
+    const sleep = vi.fn(async () => {});
+
+    const client = createEmbeddingClient({
+      embedBatch,
+      maxRetries: 3,
+      initialDelayMs: 500,
+      sleep,
+    });
+    await client.embed(["x"]);
+
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(47_000);
+  });
+
+  it("honors a provider retry-after header longer than the exponential backoff", async () => {
+    let attempt = 0;
+    const embedBatch = vi.fn(async (batch: readonly string[]) => {
+      attempt += 1;
+      if (attempt === 1) {
+        throw Object.assign(new Error("rate limited"), {
+          statusCode: 429,
+          responseHeaders: { "retry-after": "10" },
+        });
+      }
+      return batch.map((_, index) => fakeVector(index));
+    });
+    const sleep = vi.fn(async () => {});
+
+    const client = createEmbeddingClient({
+      embedBatch,
+      maxRetries: 3,
+      initialDelayMs: 500,
+      sleep,
+    });
+    await client.embed(["x"]);
+
+    expect(sleep).toHaveBeenCalledWith(10_000);
+  });
+
+  it("falls back to exponential backoff when the provider delay is shorter than it", async () => {
+    let attempt = 0;
+    const embedBatch = vi.fn(async (batch: readonly string[]) => {
+      attempt += 1;
+      if (attempt === 1) {
+        throw Object.assign(new Error("rate limited"), {
+          statusCode: 429,
+          responseBody: JSON.stringify({
+            error: {
+              details: [
+                { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "0.1s" },
+              ],
+            },
+          }),
+        });
+      }
+      return batch.map((_, index) => fakeVector(index));
+    });
+    const sleep = vi.fn(async () => {});
+
+    const client = createEmbeddingClient({
+      embedBatch,
+      maxRetries: 3,
+      initialDelayMs: 500,
+      sleep,
+    });
+    await client.embed(["x"]);
+
+    expect(sleep).toHaveBeenCalledWith(500);
+  });
+
+  it("falls back to exponential backoff when no provider delay is present", async () => {
+    let attempt = 0;
+    const embedBatch = vi.fn(async (batch: readonly string[]) => {
+      attempt += 1;
+      if (attempt === 1) {
+        throw Object.assign(new Error("rate limited"), { statusCode: 429 });
+      }
+      return batch.map((_, index) => fakeVector(index));
+    });
+    const sleep = vi.fn(async () => {});
+
+    const client = createEmbeddingClient({
+      embedBatch,
+      maxRetries: 3,
+      initialDelayMs: 500,
+      sleep,
+    });
+    await client.embed(["x"]);
+
+    expect(sleep).toHaveBeenCalledWith(500);
+  });
+
+  it("ignores a malformed RetryInfo delay (negative, non-numeric, or unparseable body) and falls back to backoff", async () => {
+    const malformedCases: Array<() => unknown> = [
+      () =>
+        Object.assign(new Error("rate limited"), {
+          statusCode: 429,
+          responseBody: JSON.stringify({
+            error: { details: [{ "@type": "...RetryInfo", retryDelay: "-5s" }] },
+          }),
+        }),
+      () =>
+        Object.assign(new Error("rate limited"), {
+          statusCode: 429,
+          responseBody: JSON.stringify({
+            error: { details: [{ "@type": "...RetryInfo", retryDelay: "not-a-duration" }] },
+          }),
+        }),
+      () =>
+        Object.assign(new Error("rate limited"), {
+          statusCode: 429,
+          responseBody: "not json at all {{{",
+        }),
+      () =>
+        Object.assign(new Error("rate limited"), {
+          statusCode: 429,
+          responseHeaders: { "retry-after": "-3" },
+        }),
+    ];
+
+    for (const makeError of malformedCases) {
+      let attempt = 0;
+      const embedBatch = vi.fn(async (batch: readonly string[]) => {
+        attempt += 1;
+        if (attempt === 1) throw makeError();
+        return batch.map((_, index) => fakeVector(index));
+      });
+      const sleep = vi.fn(async () => {});
+
+      const client = createEmbeddingClient({
+        embedBatch,
+        maxRetries: 3,
+        initialDelayMs: 500,
+        sleep,
+      });
+      await client.embed(["x"]);
+
+      expect(sleep).toHaveBeenCalledWith(500);
+      expect(
+        sleep.mock.calls.every((call: number[]) => call[0] !== undefined && call[0] >= 0),
+      ).toBe(true);
+    }
+  });
 });
