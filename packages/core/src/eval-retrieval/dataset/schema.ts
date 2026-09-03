@@ -46,6 +46,119 @@ export const expectedSourceSchema = z
   .strict();
 export type ExpectedGoldenSource = z.infer<typeof expectedSourceSchema>;
 
+/**
+ * `"all"` (default): every `expectedSources` entry is required.
+ * `"any"`: at least one `expectedSources` entry is an independently
+ * complete, acceptable answer (#295's "multiple-valid-answer" semantics).
+ */
+export const matchModeSchema = z.enum(["all", "any"]);
+export type MatchMode = z.infer<typeof matchModeSchema>;
+
+function sameSource(a: ExpectedGoldenSource, b: ExpectedGoldenSource): boolean {
+  return a.sourceType === b.sourceType && a.sourceId === b.sourceId;
+}
+
+interface RawGoldenQuery {
+  category: GoldenQueryCategory;
+  expectedSources: ExpectedGoldenSource[];
+  expectEmpty?: true;
+  matchMode?: MatchMode;
+  preferredSource?: ExpectedGoldenSource;
+}
+
+/** `expectEmpty`/`expectedSources` <-> `absent-topic` consistency (this module's docstring's "forbidden for every other category"). */
+function checkAbsentTopicShape(value: RawGoldenQuery, ctx: z.RefinementCtx): void {
+  const isAbsentTopic = value.category === "absent-topic";
+
+  if (isAbsentTopic && value.expectEmpty !== true) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["expectEmpty"],
+      message: 'category "absent-topic" requires expectEmpty: true',
+    });
+  }
+  if (!isAbsentTopic && value.expectEmpty !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["expectEmpty"],
+      message: `category "${value.category}" must not set expectEmpty`,
+    });
+  }
+  if (isAbsentTopic && value.expectedSources.length > 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["expectedSources"],
+      message: 'category "absent-topic" requires an empty expectedSources array',
+    });
+  }
+  if (!isAbsentTopic && value.expectedSources.length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["expectedSources"],
+      message: `category "${value.category}" requires at least one expected source`,
+    });
+  }
+}
+
+/** `matchMode`/`preferredSource` category constraints (#295): forbidden on `absent-topic`, `"any"` forbidden on `cross-cutting`. */
+function checkMatchModeShape(value: RawGoldenQuery, ctx: z.RefinementCtx): void {
+  const isAbsentTopic = value.category === "absent-topic";
+
+  if (isAbsentTopic && value.matchMode !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["matchMode"],
+      message: 'category "absent-topic" must not set matchMode',
+    });
+  }
+  if (isAbsentTopic && value.preferredSource !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["preferredSource"],
+      message: 'category "absent-topic" must not set preferredSource',
+    });
+  }
+  if (value.category === "cross-cutting" && value.matchMode === "any") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["matchMode"],
+      message:
+        'category "cross-cutting" requires matchMode "all" (evidence must span every listed source)',
+    });
+  }
+}
+
+/** No duplicate `(sourceType, sourceId)` pairs in `expectedSources` (#295: "a duplicate is a schema error, never a silently merged entry"). */
+function checkNoDuplicateSources(value: RawGoldenQuery, ctx: z.RefinementCtx): void {
+  const seenSources: ExpectedGoldenSource[] = [];
+  for (const [index, source] of value.expectedSources.entries()) {
+    if (seenSources.some((seen) => sameSource(seen, source))) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["expectedSources", index],
+        message: `duplicate expectedSources entry: "${source.sourceType}:${source.sourceId}"`,
+      });
+    }
+    seenSources.push(source);
+  }
+}
+
+/** `preferredSource`, when declared, must also appear in `expectedSources` (#295). */
+function checkPreferredSourceIsExpected(value: RawGoldenQuery, ctx: z.RefinementCtx): void {
+  if (
+    value.preferredSource !== undefined &&
+    !value.expectedSources.some((source) =>
+      sameSource(source, value.preferredSource as ExpectedGoldenSource),
+    )
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["preferredSource"],
+      message: "preferredSource must also appear in expectedSources",
+    });
+  }
+}
+
 /** One golden retrieval query. */
 export const goldenQuerySchema = z
   .object({
@@ -54,40 +167,16 @@ export const goldenQuerySchema = z
     category: goldenQueryCategorySchema,
     expectedSources: z.array(expectedSourceSchema),
     expectEmpty: z.literal(true).optional(),
+    matchMode: matchModeSchema.optional(),
+    preferredSource: expectedSourceSchema.optional(),
     notes: z.string().min(1).optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
-    const isAbsentTopic = value.category === "absent-topic";
-
-    if (isAbsentTopic && value.expectEmpty !== true) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["expectEmpty"],
-        message: 'category "absent-topic" requires expectEmpty: true',
-      });
-    }
-    if (!isAbsentTopic && value.expectEmpty !== undefined) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["expectEmpty"],
-        message: `category "${value.category}" must not set expectEmpty`,
-      });
-    }
-    if (isAbsentTopic && value.expectedSources.length > 0) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["expectedSources"],
-        message: 'category "absent-topic" requires an empty expectedSources array',
-      });
-    }
-    if (!isAbsentTopic && value.expectedSources.length === 0) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["expectedSources"],
-        message: `category "${value.category}" requires at least one expected source`,
-      });
-    }
+    checkAbsentTopicShape(value, ctx);
+    checkMatchModeShape(value, ctx);
+    checkNoDuplicateSources(value, ctx);
+    checkPreferredSourceIsExpected(value, ctx);
   });
 
 export type GoldenQuery = z.infer<typeof goldenQuerySchema>;

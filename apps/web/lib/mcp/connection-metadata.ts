@@ -26,8 +26,9 @@ export const SERVER_NAME = "hire-me-mcp";
 
 export const SERVER_DESCRIPTION =
   "A public, anonymous Model Context Protocol server over Marcos Alvarez's real career data — " +
-  "profile, work history, projects, and skill evidence — with every tool response citing the " +
-  "specific record it was drawn from.";
+  "profile, work history, projects, skill evidence, and behavioral career stories, the last " +
+  "returned only on explicit request (list-career-stories or search-career), never rendered on " +
+  "a public page — with every tool response citing the specific record it was drawn from.";
 
 /**
  * Builds this server's `ConnectionMetadata` for a given endpoint URL — the

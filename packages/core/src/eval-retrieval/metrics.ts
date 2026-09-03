@@ -53,20 +53,34 @@ export function dedupeRankedSources(retrieved: readonly ScoredSource[]): string[
   return ranked;
 }
 
+/** `"all"` (default): fraction of required sources retrieved. `"any"`: `1` when at least one acceptable source is retrieved, `0` otherwise (#295). */
+export type MatchMode = "all" | "any";
+
 /**
  * Fraction of `expected` sources present anywhere in the deduplicated
- * `retrieved` list. An empty `expected` set is vacuously satisfied (`1`),
- * regardless of what was retrieved — recall has nothing to measure when
- * nothing was expected; that case is what {@link checkExpectEmpty} exists
- * to check instead, on the absent-topic dataset category.
+ * `retrieved` list under `matchMode: "all"` (the default — see #295's
+ * multiple-valid-answer semantics for `"any"`). An empty `expected` set is
+ * vacuously satisfied (`1`), regardless of what was retrieved — recall has
+ * nothing to measure when nothing was expected; that case is what
+ * {@link checkExpectEmpty} exists to check instead, on the absent-topic
+ * dataset category.
  */
 export function recallAtK(
   retrieved: readonly ScoredSource[],
   expected: readonly ExpectedSource[],
+  matchMode: MatchMode = "all",
 ): number {
   if (expected.length === 0) return 1;
   const retrievedKeys = new Set(dedupeRankedSources(retrieved));
   const expectedKeys = new Set(expected.map(sourceKey));
+
+  if (matchMode === "any") {
+    for (const key of expectedKeys) {
+      if (retrievedKeys.has(key)) return 1;
+    }
+    return 0;
+  }
+
   let hits = 0;
   for (const key of expectedKeys) {
     if (retrievedKeys.has(key)) hits++;
@@ -107,6 +121,56 @@ export function reciprocalRank(
     }
   }
   return 0;
+}
+
+/** Result of checking a golden query's `preferredSource` compliance (#295). */
+export interface PreferredSourceCheck {
+  /** `true` only when the preferred source was retrieved AND no other acceptable (`expected`) source outranks it. */
+  passed: boolean;
+  preferredRetrieved: boolean;
+  /** The preferred source's own reciprocal rank in the deduplicated ranked list (`0` if not retrieved). */
+  reciprocalRank: number;
+  /** Acceptable alternatives (other `expected` sources) that ranked above the preferred source — the preference-failure evidence. */
+  outrankedBy: ExpectedSource[];
+}
+
+/**
+ * The preferred-source compliance check (#295, audit #305 point 8): passes
+ * only when `preferredSource` is retrieved AND ranks above every OTHER
+ * acceptable source in `expected`'s deduplicated ranked list. An unexpected,
+ * non-acceptable source outranking it does not break the preference — only
+ * another entry from `expected` does.
+ */
+export function checkPreferredSource(
+  retrieved: readonly ScoredSource[],
+  expected: readonly ExpectedSource[],
+  preferredSource: ExpectedSource,
+): PreferredSourceCheck {
+  const ranked = dedupeRankedSources(retrieved);
+  const preferredKey = sourceKey(preferredSource);
+  const preferredIndex = ranked.indexOf(preferredKey);
+  const preferredRetrieved = preferredIndex !== -1;
+
+  const alternativeKeyToSource = new Map<string, ExpectedSource>();
+  for (const source of expected) {
+    const key = sourceKey(source);
+    if (key !== preferredKey) alternativeKeyToSource.set(key, source);
+  }
+
+  const outrankedBy: ExpectedSource[] = [];
+  if (preferredRetrieved) {
+    for (let index = 0; index < preferredIndex; index++) {
+      const alternative = alternativeKeyToSource.get(ranked[index] as string);
+      if (alternative !== undefined) outrankedBy.push(alternative);
+    }
+  }
+
+  return {
+    passed: preferredRetrieved && outrankedBy.length === 0,
+    preferredRetrieved,
+    reciprocalRank: preferredRetrieved ? 1 / (preferredIndex + 1) : 0,
+    outrankedBy,
+  };
 }
 
 /** Result of checking an absent-topic (`expectEmpty: true`) golden query. */

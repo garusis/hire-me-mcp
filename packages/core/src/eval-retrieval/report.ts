@@ -9,7 +9,7 @@
  * results — the same seam `packages/agent/src/evals/report.ts` uses.
  */
 
-import type { ExpectEmptyCheck, ExpectedSource, ScoredSource } from "./metrics.js";
+import type { ExpectEmptyCheck, ExpectedSource, MatchMode, ScoredSource } from "./metrics.js";
 import type { RetrievalThresholds, RetrievalVerdict } from "./thresholds.js";
 import { evaluateRetrievalVerdict, RETRIEVAL_THRESHOLDS } from "./thresholds.js";
 
@@ -20,7 +20,13 @@ export interface RetrievalCaseMetrics {
   reciprocalRank: number;
 }
 
-/** One golden query's full result: what was retrieved, how it scored, and whether it passed. */
+/**
+ * One golden query's full result: what was retrieved, how it scored, and
+ * whether it passed. `preferencePassed`/`preferredSourceReciprocalRank` are
+ * `null` when the case declares no `preferredSource` (#295) — a distinct
+ * value from `false`, so "no preference declared" is never confused with
+ * "preference declared and failed" in the per-case report.
+ */
 export interface RetrievalCaseReport {
   id: string;
   category: string;
@@ -29,6 +35,15 @@ export interface RetrievalCaseReport {
   retrieved: ScoredSource[];
   metrics: RetrievalCaseMetrics | null;
   expectEmptyCheck: ExpectEmptyCheck | null;
+  matchMode: MatchMode;
+  preferredSource: ExpectedSource | null;
+  /** Whether this case's `matchMode` check passed (recall === 1 for "all", any-hit for "any"); `true` (vacuous) for `absent-topic` cases, which use `expectEmptyCheck` instead. */
+  matchModePassed: boolean;
+  /** `null` when no `preferredSource` is declared; otherwise whether the preference check (`checkPreferredSource`) passed. */
+  preferencePassed: boolean | null;
+  /** `null` when no `preferredSource` is declared; otherwise the preferred source's own reciprocal rank. */
+  preferredSourceReciprocalRank: number | null;
+  /** The combined pass/fail: `matchModePassed` (or `expectEmptyCheck.passed` for absent-topic) AND `preferencePassed` when declared. */
   passed: boolean;
 }
 
@@ -38,6 +53,8 @@ export interface RetrievalAggregates {
   precisionAtK: number;
   mrr: number;
   absentTopicAccuracy: number;
+  /** Fraction of preference-declaring cases whose preference passed — `1` (vacuous) when no case declares a `preferredSource`. */
+  preferredSourceCompliance: number;
 }
 
 /** The full machine-readable retrieval eval report. */
@@ -59,6 +76,7 @@ function mean(values: readonly number[]): number {
 function computeAggregates(cases: readonly RetrievalCaseReport[]): RetrievalAggregates {
   const scored = cases.filter((c) => c.metrics !== null);
   const absentTopic = cases.filter((c) => c.category === "absent-topic");
+  const preferenceDeclaring = cases.filter((c) => c.preferencePassed !== null);
 
   return {
     recallAtK: mean(scored.map((c) => c.metrics?.recallAtK ?? 0)),
@@ -68,6 +86,11 @@ function computeAggregates(cases: readonly RetrievalCaseReport[]): RetrievalAggr
       absentTopic.length === 0
         ? 1
         : absentTopic.filter((c) => c.passed).length / absentTopic.length,
+    preferredSourceCompliance:
+      preferenceDeclaring.length === 0
+        ? 1
+        : preferenceDeclaring.filter((c) => c.preferencePassed === true).length /
+          preferenceDeclaring.length,
   };
 }
 

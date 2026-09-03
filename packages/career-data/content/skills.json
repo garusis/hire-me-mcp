@@ -296,7 +296,7 @@
       {
         "entityType": "project",
         "entityId": "document-extraction-pipeline",
-        "label": "AI Document Extraction Pipeline"
+        "label": "AI Document Extraction Proof of Concept"
       }
     ]
   },
@@ -446,7 +446,7 @@
       {
         "entityType": "project",
         "entityId": "document-extraction-pipeline",
-        "label": "AI Document Extraction Pipeline"
+        "label": "AI Document Extraction Proof of Concept"
       }
     ]
   },
@@ -607,12 +607,12 @@
         "entityType": "experience",
         "entityId": "house-numbers-2022-senior-full-stack-engineer",
         "label": "Senior Full Stack Engineer, House Numbers",
-        "fragment": "highlights.3"
+        "fragment": "highlights.0"
       },
       {
         "entityType": "project",
         "entityId": "document-extraction-pipeline",
-        "label": "AI Document Extraction Pipeline"
+        "label": "AI Document Extraction Proof of Concept"
       }
     ]
   }

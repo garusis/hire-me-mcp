@@ -1,12 +1,15 @@
 ---
 id: document-extraction-pipeline
-name: AI Document Extraction Pipeline
+name: AI Document Extraction Proof of Concept
 summary: >-
-  Production LLM pipeline for extracting structured data from documents —
-  across the vendor-replacement experiments, accuracy went from roughly 30%
-  to 87%, with wider coverage than the incumbent OCR vendor at about 3% of
-  its cost.
+  Multi-round proof of concept — never deployed — testing whether vision-LLM
+  document splitting, classification and extraction were a viable
+  replacement candidate for the incumbent OCR vendor on a mortgage platform,
+  with human-reviewed corpora,
+  evaluation and cost tracing, and measurement bugs found and fixed along
+  the way.
 role: Lead engineer
+stage: proof-of-concept
 tech:
   - typescript
   - nodejs
@@ -19,42 +22,64 @@ tech:
 links: []
 ---
 
-## What it does
+## What it was
 
 Borrowers and loan officers on a mortgage-lending platform upload closing
 packets, pay stubs, bank statements and dozens of other document types.
-Getting structured, field-level data out of them reliably — not "usually" —
-is the difference between straight-through processing and a human re-keying
-everything by hand.
+Production extraction ran on an incumbent OCR vendor plus a pre-existing
+LLM fallback for the documents the vendor only classified. This project was
+a proof of concept, run as greenfield experiments under the evaluation
+harness, to find out whether a vision-LLM pipeline was worth pursuing as a
+replacement. It was not deployed: production kept the vendor and the
+existing fallback throughout, and productionization was explicitly left as
+a later team decision.
 
 ## What I built
 
-The incumbent OCR vendor was doing real work: it extracted roughly 66% of
-the documents in the pipeline at 80–90% accuracy. The remaining third it
-only classified — those documents were never extracted at all. The project
-was to prove the vendor could be replaced, by testing competing theories
-about how to split, index, categorize and extract documents more reliably,
-with more coverage, and cheaper.
+I led the team running the evaluation and personally designed and tested
+the competing pipeline architectures: different ways to split a long packet
+into documents, index and classify them, and extract typed fields per
+document type, each measured against the same human-reviewed ground truth
+instead of trusting any lane's own output.
 
-Across those experiments, field accuracy measured against a human-graded
-ground truth went from roughly 30% on the first pass to 87% — at least as
-reliable as the vendor's scores, extending coverage past the third of
-documents it never extracted, with better categorization and indexing, at
-about 3% of the vendor's cost.
+The work that mattered most was the measurement itself:
 
-The pipeline is not a single prompt. It is a set of typed extraction
-contracts per document type, a routing layer that decides which lane a
-document takes, and a scoring step that measures every lane against the
-same human-graded ground truth instead of trusting any of them.
+- building and reviewing the corpus, then discovering that the first
+  one-loan sample was closing-heavy and biased the comparison — a second
+  round on native income-document types showed the incumbent vendor scoring
+  far higher than the first sample suggested, while the existing fallback
+  stayed in the same high range;
+- a field-level comparison of the new candidate on a 17-document judged
+  sample, first reported too high and then corrected to 0.728 (honest range
+  0.57–0.73) after a mapper bug was found; the earlier inflated value was
+  withdrawn;
+- finding that a later "macro field correctness" number was scoring only
+  25.5% of 4,239 ground-truth fields, then fixing coverage — after which
+  correctness among scored fields was 74.7% at 48.0% coverage, a result that
+  supports "worth pursuing", not "production ready";
+- a splitting and classification round over 136 files / 256 reviewed
+  documents (94.0% split F1 with a match counted at 0.5 page-overlap
+  intersection-over-union, 95.6% page assignment, 88.4% exact and 95.0%
+  family classification) that had no field-level ground truth and
+  therefore produced no extraction-accuracy result;
+- per-run cost tracing (that last round cost $1.47 in model calls across
+  four loans) — experiment-run costs, not a production total cost of
+  ownership, and never normalized against the vendor's per-loan price on
+  the same work and coverage.
 
-I led the team evaluating vision-LLM document classification and extraction
-for the replacement, personally designing and testing the competing
-pipeline architectures — which made 80+ page closing packets processable
-at a small fraction of the vendor's per-loan cost.
+It also showed that long multi-document closing packets — over a hundred
+pages holding dozens of documents — were feasible to process end to end in
+the candidate pipeline once indexing was windowed; an early whole-file
+attempt on an 86-page packet had hit the model's single-request payload
+limit, which is what made windowed indexing a requirement.
 
 ## Why it mattered
 
-Every extraction claim here is backed by a measured before/after on real
-documents, not a demo. That distinction — an AI feature that is tested,
-scored and cost-traced like any other production system — is the throughline
-of most of what I have shipped with LLMs since.
+The PoC's initial success threshold meant "worth pursuing", and that is the
+claim it supports. No apples-to-apples before/after accuracy number exists
+across the rounds, because the early figures came from different systems
+and a biased corpus. What the work demonstrates is the engineering around
+an AI experiment: corpus construction and review, competing architectures
+behind typed schemas, evaluation and cost tracing, and the willingness to
+find and fix bugs in the measurement rather than report the flattering
+number.

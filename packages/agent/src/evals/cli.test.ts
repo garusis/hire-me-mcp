@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractCitationsFromToolResults,
+  extractToolCallsFromToolResults,
   extractToolNamesFromToolResults,
   filterCasesByIds,
   resolveRunnerEnvConfig,
@@ -175,5 +176,107 @@ describe("extractToolNamesFromToolResults (#75)", () => {
     ];
     expect(() => extractToolNamesFromToolResults(toolResults)).not.toThrow();
     expect(extractToolNamesFromToolResults(toolResults)).toEqual(["real"]);
+  });
+});
+
+describe("extractToolCallsFromToolResults (#294)", () => {
+  it("collects every tool result's { toolName, args } pair, in call order, including duplicates — scoreToolRouting (#294) needs actual arguments, not just names, to verify the sourceTypes: ['story'] contract", () => {
+    const toolResults = [
+      {
+        type: "tool-result",
+        payload: {
+          toolName: "search-career",
+          args: { query: "how does he lead", sourceTypes: ["story"] },
+          result: { data: {}, citations: [] },
+        },
+      },
+      {
+        type: "tool-result",
+        payload: {
+          toolName: "list-career-stories",
+          args: { id: "xogito-client-account-recovery" },
+          result: { data: [], citations: [] },
+        },
+      },
+    ];
+
+    expect(extractToolCallsFromToolResults(toolResults)).toEqual([
+      {
+        toolName: "search-career",
+        args: { query: "how does he lead", sourceTypes: ["story"] },
+        citations: [],
+      },
+      {
+        toolName: "list-career-stories",
+        args: { id: "xogito-client-account-recovery" },
+        citations: [],
+      },
+    ]);
+  });
+
+  /**
+   * #294 independent-review correction, finding 1: `scoreToolRouting`'s
+   * `search-career-story-scoped` check needs to distinguish "this call
+   * returned a story" from "this call returned nothing", not just its
+   * name/args — so each call's `citations` (the real `DomainResult.citations`
+   * that specific call returned, same field `extractCitationsFromToolResults`
+   * flattens across the whole run) has to be captured per call, not just
+   * aggregated.
+   */
+  it("captures each call's own citations from its DomainResult payload (#294 independent-review correction)", () => {
+    const toolResults = [
+      {
+        payload: {
+          toolName: "search-career",
+          args: { query: "x", sourceTypes: ["story"] },
+          result: {
+            data: [],
+            citations: [{ entityType: "story", entityId: "mutual-informal-leadership" }],
+          },
+        },
+      },
+      {
+        payload: {
+          toolName: "search-career",
+          args: { query: "y" },
+          result: { data: [], citations: [] },
+        },
+      },
+    ];
+
+    expect(extractToolCallsFromToolResults(toolResults)).toEqual([
+      {
+        toolName: "search-career",
+        args: { query: "x", sourceTypes: ["story"] },
+        citations: [{ entityType: "story", entityId: "mutual-informal-leadership" }],
+      },
+      { toolName: "search-career", args: { query: "y" }, citations: [] },
+    ]);
+  });
+
+  it("leaves citations undefined when a tool result's shape has no parseable citations array", () => {
+    const toolResults = [{ payload: { toolName: "get-experience", args: {} } }];
+    const [call] = extractToolCallsFromToolResults(toolResults);
+    expect(call?.citations).toBeUndefined();
+  });
+
+  it("falls back to a top-level toolName/args when there is no payload one", () => {
+    const toolResults = [{ toolName: "flat-shape", args: { q: 1 } }];
+    expect(extractToolCallsFromToolResults(toolResults)).toEqual([
+      { toolName: "flat-shape", args: { q: 1 } },
+    ]);
+  });
+
+  it("defaults args to undefined when absent, and returns an empty array for no tool calls", () => {
+    expect(extractToolCallsFromToolResults([])).toEqual([]);
+    expect(extractToolCallsFromToolResults([{ payload: { toolName: "no-args-tool" } }])).toEqual([
+      { toolName: "no-args-tool", args: undefined },
+    ]);
+  });
+
+  it("skips a tool result with no string toolName anywhere, without throwing", () => {
+    const toolResults = [{ payload: { toolName: 42 } }, { garbage: true }, undefined];
+    expect(() => extractToolCallsFromToolResults(toolResults)).not.toThrow();
+    expect(extractToolCallsFromToolResults(toolResults)).toEqual([]);
   });
 });

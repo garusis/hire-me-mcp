@@ -1,3 +1,4 @@
+import { createContentCareerDataRepository } from "@hire-me-mcp/core";
 import { describe, expect, it, vi } from "vitest";
 import type {
   CvView,
@@ -361,6 +362,27 @@ describe("renderLlmsFullTxt", () => {
     expect(text).toContain("He has not worked with Fixture Gap professionally.");
   });
 
+  it("labels a project's lifecycle stage in llms-full.txt when the record declares one (#300)", async () => {
+    mockContentLayer();
+    const view = projectsView();
+    const first = view.items[0];
+    if (first) {
+      first.project.stage = "proof-of-concept";
+    }
+    getProjectsListView.mockReturnValue(view);
+    const { renderLlmsFullTxt } = await import("./generate-llms.js");
+
+    const text = renderLlmsFullTxt({
+      siteUrl: "https://stub-deploy.example.com",
+      endpointUrl: "https://stub-deploy.example.com/api/mcp",
+    });
+
+    expect(text).toContain(
+      "[Fixture Project](https://stub-deploy.example.com/projects/fixture-project) " +
+        "[stage: proof-of-concept — not deployed to production]: A fixture project summary.",
+    );
+  });
+
   it("emits only absolute URLs", async () => {
     mockContentLayer();
     const { renderLlmsFullTxt } = await import("./generate-llms.js");
@@ -427,5 +449,105 @@ describe("renderLlmsTxt Writing visibility (#233)", () => {
       ],
     });
     expect(renderLlmsTxt(input)).toContain("https://site.example.com/writing");
+  });
+});
+
+// #296 — the locked visibility boundary (#288): every sentence (>= 8
+// words, same normalisation as the career-data `no-story-detail-in-
+// experience` lint rule) of every real authored story's situation/task/
+// actions/results/reflection, plus every story's title. `getRealContent`
+// pulls the actual content-layer functions (bypassing this file's
+// `vi.mock` for the one call that needs it), fed into the same mocked
+// bindings `renderLlmsTxt`/`renderLlmsFullTxt` import, so these two tests
+// exercise the real production data path end to end.
+const MIN_STORY_SENTENCE_WORDS = 8;
+
+function normalizeStoryProse(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function storySentencesOf(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/u)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+function realStorySentences(): string[] {
+  const dataset = createContentCareerDataRepository().getDataset();
+  const sentences: string[] = [];
+  for (const story of dataset.stories) {
+    const units = [
+      story.situation,
+      story.task,
+      ...story.actions,
+      ...story.results,
+      ...(story.reflection === undefined ? [] : [story.reflection]),
+    ];
+    for (const unit of units) {
+      for (const sentence of storySentencesOf(unit)) {
+        const normalized = normalizeStoryProse(sentence);
+        if (normalized.split(" ").length >= MIN_STORY_SENTENCE_WORDS) {
+          sentences.push(normalized);
+        }
+      }
+    }
+  }
+  return sentences;
+}
+
+function realStoryTitles(): string[] {
+  return createContentCareerDataRepository()
+    .getDataset()
+    .stories.map((story) => normalizeStoryProse(story.title));
+}
+
+function expectNoStoryLeakage(text: string): void {
+  const normalized = ` ${normalizeStoryProse(text)} `;
+  const needles = [...realStorySentences(), ...realStoryTitles()];
+  expect(needles.length).toBeGreaterThan(0);
+  for (const needle of needles) {
+    expect(normalized).not.toContain(` ${needle} `);
+  }
+}
+
+async function mockRealContentLayer(): Promise<void> {
+  const real =
+    await vi.importActual<typeof import("../../src/lib/content")>("../../src/lib/content");
+  getProfileView.mockReturnValue(real.getProfileView());
+  getExperienceListView.mockReturnValue(real.getExperienceListView());
+  getProjectsListView.mockReturnValue(real.getProjectsListView());
+  getSkillsListView.mockReturnValue(real.getSkillsListView());
+  getGapsListView.mockReturnValue(real.getGapsListView());
+  getCvView.mockReturnValue(real.getCvView());
+  getWritingListView.mockReturnValue(real.getWritingListView());
+}
+
+describe("llms.txt / llms-full.txt never leak real story content (#296)", () => {
+  it("renderLlmsTxt, built from the real content layer, contains no story sentence or title", async () => {
+    await mockRealContentLayer();
+    const { renderLlmsTxt } = await import("./generate-llms.js");
+
+    const text = renderLlmsTxt({
+      siteUrl: "https://stub-deploy.example.com",
+      endpointUrl: "https://stub-deploy.example.com/api/mcp",
+    });
+
+    expectNoStoryLeakage(text);
+  });
+
+  it("renderLlmsFullTxt, built from the real content layer, contains no story sentence or title", async () => {
+    await mockRealContentLayer();
+    const { renderLlmsFullTxt } = await import("./generate-llms.js");
+
+    const text = renderLlmsFullTxt({
+      siteUrl: "https://stub-deploy.example.com",
+      endpointUrl: "https://stub-deploy.example.com/api/mcp",
+    });
+
+    expectNoStoryLeakage(text);
   });
 });

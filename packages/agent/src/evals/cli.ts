@@ -212,6 +212,73 @@ export function extractToolNamesFromToolResults(toolResults: readonly unknown[])
   return names;
 }
 
+/**
+ * One real tool call's name, the arguments the model actually supplied, and
+ * the citations that specific call's own `DomainResult` returned — the unit
+ * {@link extractToolCallsFromToolResults} extracts and {@link
+ * scoreToolRouting} inspects (#294; `citations` added in the #294
+ * independent-review correction, finding 1).
+ */
+export interface ToolCall {
+  toolName: string;
+  args: unknown;
+  citations?: ReturnedCitation[];
+}
+
+/** Read one tool result's own `citations`, the same way {@link readCitationsField} does for the whole-run flatten — `undefined` when the tool result's shape doesn't parse, an array (possibly empty) otherwise. */
+function readOwnCitations(toolResult: unknown): ReturnedCitation[] | undefined {
+  const rawCitations = readCitationsField(toolResult);
+  if (!Array.isArray(rawCitations)) return undefined;
+  const citations: ReturnedCitation[] = [];
+  for (const citation of rawCitations) {
+    if (isReturnedCitation(citation)) {
+      citations.push({
+        entityType: citation.entityType,
+        entityId: citation.entityId,
+        fragment: citation.fragment,
+      });
+    }
+  }
+  return citations;
+}
+
+/**
+ * Extract every tool call as `{ toolName, args, citations }` (in call
+ * order, duplicates kept) off a real `agent.generate()` result's
+ * `toolResults` array (#294) — a strict superset of
+ * {@link extractToolNamesFromToolResults} that also carries the
+ * model-supplied arguments and that call's own returned citations, so
+ * `scoreToolRouting` (`./scorers/tool-routing.ts`) can assert on actual
+ * tool INPUT (e.g. `search-career` was called with `sourceTypes:
+ * ["story"]`), call SEQUENCE, and — per the #294 independent-review
+ * correction, finding 1 — whether that specific call's result was actually
+ * non-empty, not just which tool names appeared somewhere in the trace.
+ * Tolerant by design, same as `extractToolNamesFromToolResults` above: a
+ * malformed entry (missing or non-string `toolName`) is skipped, never
+ * thrown on; a call with no `args` field yields `args: undefined`, and one
+ * whose result shape doesn't parse yields `citations: undefined`.
+ */
+export function extractToolCallsFromToolResults(toolResults: readonly unknown[]): ToolCall[] {
+  const calls: ToolCall[] = [];
+  for (const toolResult of toolResults) {
+    if (typeof toolResult !== "object" || toolResult === null) continue;
+    const entry = toolResult as Record<string, unknown>;
+    const payload =
+      typeof entry.payload === "object" && entry.payload !== null
+        ? (entry.payload as Record<string, unknown>)
+        : undefined;
+    const toolName = typeof payload?.toolName === "string" ? payload.toolName : entry.toolName;
+    if (typeof toolName !== "string") continue;
+    const citations = readOwnCitations(toolResult);
+    calls.push({
+      toolName,
+      args: payload?.args ?? (entry as Record<string, unknown>).args,
+      ...(citations !== undefined ? { citations } : {}),
+    });
+  }
+  return calls;
+}
+
 async function main(): Promise<void> {
   const envConfig = resolveRunnerEnvConfig();
   const modelId = resolveChatModelConfig().modelId;
@@ -258,7 +325,7 @@ async function main(): Promise<void> {
         return {
           answer: result.text,
           toolCitations: extractCitationsFromToolResults(result.toolResults ?? []),
-          toolCallNames: extractToolNamesFromToolResults(result.toolResults ?? []),
+          toolCalls: extractToolCallsFromToolResults(result.toolResults ?? []),
           usage: {
             inputTokens: result.totalUsage?.inputTokens ?? 0,
             outputTokens: result.totalUsage?.outputTokens ?? 0,

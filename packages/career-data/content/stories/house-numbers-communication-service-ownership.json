@@ -1,0 +1,42 @@
+{
+  "id": "house-numbers-communication-service-ownership",
+  "experienceId": "house-numbers-2022-senior-full-stack-engineer",
+  "title": "Owning a critical communications service end to end",
+  "primaryCompetency": "ownership",
+  "supportingCompetencies": [
+    "customer-focus",
+    "collaboration",
+    "technical-judgment",
+    "risk-management",
+    "navigating-ambiguity"
+  ],
+  "situation": "At House Numbers, loan processors and support staff communicated with the same borrowers and external contacts across different inboxes and phone numbers. A shared inbox centralized email, but operations still had to manually determine which loan and team member owned each communication.",
+  "task": "Leadership identified the need to automate that process and assigned the technical problem to me.",
+  "actions": [
+    "My ownership began with studying how operations performed triage and researching the integration capabilities of Front.",
+    "I implemented webhook ingestion, then built LLM-assisted extraction and classification based on the criteria operations used manually.",
+    "Operations and I worked as a feedback loop: I documented and implemented my understanding of their process, and they reported missing cases or incorrect behavior.",
+    "I expanded the architecture to communications arriving through Quo, including calls and text messages. The service analyzes incoming communications, extracts relevant information, matches them to encrypted loan data, and applies deterministic rules to update assignments, tags, and workflow context.",
+    "Once adopted, the service became critical to operations, so I added monitoring, alerts, durable retries, periodic reconciliation for missed webhooks, and diagnostic tooling built on traces, structured logs, and persisted processing history."
+  ],
+  "results": [
+    "Other engineers have contributed, but I remain the person with the deepest knowledge of its operational cases and normally review significant changes.",
+    "Human review remains available for exceptions, but operations no longer needs the old manual-triage shifts and usually reports unusual failures to engineering instead.",
+    "A recent seven-month production snapshot contained more than 57,000 communications, with approximately 70% reaching an observed effective-triage outcome. That figure is not LLM accuracy: the remaining bucket includes spam, unsupported edge cases, and an identified observability gap."
+  ],
+  "reflection": "The service was my first successful production system with LLMs deeply embedded in a critical workflow. It taught me that an LLM call is only one component; earning operational trust requires resilience, recoverability, deterministic safeguards, evaluation, and enough traceability to explain behavior and cost.",
+  "retrievalTags": [
+    "communications-infrastructure",
+    "llm-classification",
+    "communication-service-observability",
+    "webhook-reconciliation",
+    "manual-triage-automation",
+    "communication-routing",
+    "production-support",
+    "operations-exception-review",
+    "front",
+    "quo",
+    "webhooks",
+    "opentelemetry"
+  ]
+}

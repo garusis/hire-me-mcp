@@ -11,11 +11,13 @@ name: Agent Evals
 # agent's new `search-career` semantic-search tool — this job's "the
 # extended agent eval suite runs in CI" acceptance criterion — and is what
 # this workflow means by "wired in alongside the retrieval evals from #52"
-# (`retrieval-eval.yml`). Those two jobs no longer queue against each other
-# at all — they spend different models' allowances (see the job-level note
-# below and `scripts/ci/gemini-slot.mjs`) — and this job now also requires
-# `DATABASE_URL` (the same repo secret `reindex-production.yml` uses) so
-# `search-career` has a real store to query.
+# (`retrieval-eval.yml`). This job now also requires `DATABASE_URL` (the
+# same repo secret `reindex-production.yml` uses) so `search-career` has a
+# real store to query — which means, per #296's production-completion
+# correction, it also spends the SAME `ci-embedding` allowance
+# `retrieval-eval.yml` does (real `search-career` calls embed the query),
+# not only `ci-generation` as originally documented here; see the
+# job-level note below and `scripts/ci/gemini-slot.mjs`.
 #
 # ## Why a SEPARATE workflow file, not a job in ci.yml
 #
@@ -29,7 +31,7 @@ name: Agent Evals
 #
 # The model is `gemini-3.5-flash-lite` free tier: 15 RPM / 500 RPD, SHARED
 # with live production chat traffic (see `packages/agent/README.md`'s
-# quota rationale table). Running the ~25-case eval suite (real model
+# quota rationale table). Running the 66-case eval suite (real model
 # spend) on every PR — docs, unrelated packages, CI config — would burn
 # shared quota for no signal. But workflow-level `paths:` filtering is
 # BANNED here by the #176 lesson: a required check that never runs leaves
@@ -44,10 +46,16 @@ name: Agent Evals
 #      the agent package itself OR anything in its dependency closure
 #      (`@hire-me-mcp/core`, `@hire-me-mcp/career-data`, per-package
 #      lockfile changes, root config) changed. Transitive dependency
-#      changes are caught without a hand-maintained path list.
+#      changes are caught without a hand-maintained path list — this is
+#      how a behavioral-story schema/content change (`career-data`), a
+#      chunking/tool change (`core`), or a prompt/tool/eval-dataset
+#      change (this package itself) all mark the suite relevant (#295).
 #   2. An explicit path regex for assets outside that module graph: this
 #      workflow file, the relevance/summary CI scripts, and the chat
-#      route wiring.
+#      route wiring — plus a belt-and-braces `career-data`/`core` source
+#      glob (#295), mirroring `retrieval-eval.yml`'s own belt-and-braces
+#      career-data entry, since this job's target package sits two
+#      dependency hops from `career-data` content.
 #   3. A `run-evals` PR label forces a run regardless of the diff (the
 #      `labeled` trigger type below fires a fresh run when it's added).
 #
@@ -93,9 +101,9 @@ on:
   workflow_dispatch:
     inputs:
       max_cases:
-        description: "Override EVAL_MAX_CASES for this run (default: full 25-case dataset)"
+        description: "Override EVAL_MAX_CASES for this run (default: full 66-case dataset, #295)"
         required: false
-        default: "25"
+        default: "66"
 
 concurrency:
   group: agent-evals-${{ github.workflow }}-${{ github.ref }}
@@ -105,37 +113,66 @@ jobs:
   agent-evals:
     name: agent-evals
     runs-on: ubuntu-latest
-    # Raised from 15 with the slot lease below: the bounded wait must not
-    # eat the eval suite's own budget.
-    timeout-minutes: 30
+    # Raised from 15 (then 30) with the slot lease below: the bounded wait
+    # must not eat the eval suite's own budget. Raised again, 30 -> 60, for
+    # #295's default-cap increase (25 -> 66 cases): at EVAL_RPM_LIMIT's
+    # default of 10 real provider requests/minute and ~2-3 requests per
+    # case, a full 66-case run paces itself over roughly 15-20 minutes of
+    # deliberate rate-limit waiting alone, before accounting for the slot
+    # lease wait and per-case model latency — 60 minutes keeps real margin
+    # rather than being sized to the old 25-case run's own timeout.
+    timeout-minutes: 60
     # NO shared GitHub concurrency group (#264 follow-up). `gemini-free-tier`
     # was described as "queue rather than race", but a GitHub group holds
     # one run in progress and ONE pending — a third contender CANCELS the
     # pending one, and a cancelled run reads as a failed check. With this
     # job, `retrieval-eval` (REQUIRED) and `preview-chat-live` all in the
     # group, a normal multi-PR day evicted whichever entered last. Quota
-    # protection now lives in the in-job `ci-generation` slot lease (see
-    # `scripts/ci/gemini-slot.mjs`), which queues any number of runs and
-    # cancels none.
+    # protection now lives in the in-job `ci-embedding`/`ci-generation`
+    # slot lease (see `scripts/ci/gemini-slot.mjs`), which queues any
+    # number of runs and cancels none.
     #
-    # Budget caps below cover a full 25-case dataset run — #143's real
-    # 17-case run used 111,137 tokens; #75 (this comment's own change) added
-    # 8 more cases (three RAG-grounded fuzzy/cross-cutting, two RAG-grounded
-    # absent-topic, one exact-fact tool-routing case, mirrored into the
-    # `grounded`/`gap` categories, see `packages/agent/src/evals/dataset/cases.ts`),
-    # so the token cap below is raised proportionally with margin, not
-    # measured against a real 25-case run yet (this package's local `.env`
-    # key is a known-invalid placeholder — see `packages/agent/README.md`) —
-    # `assertWithinBudget` (`packages/agent/src/evals/budget.ts`) still
-    # aborts loudly if a run genuinely exceeds it, so an underestimate here
-    # fails loud rather than silently truncating. EVAL_RPM_LIMIT stays at
+    # Budget caps below cover a full 66-case dataset run (#295's
+    # integration task: the default cap was raised from 25 to
+    # `EVAL_CASES.length` = 66 — 28 base cases plus the 38 locked
+    # behavioral-story manifest cases, see
+    # `packages/agent/src/evals/dataset/cases.ts` and
+    # `./dataset/story-manifest-cases.ts` — so the normal PR/push-triggered
+    # route exercises the whole dataset in one run, not a budget-capped
+    # slice that silently skipped most of the manifest depending on
+    # round-robin placement). The token/cost caps are scaled from #143's
+    # real, measured 17-case run (111,137 tokens) proportionally to 66
+    # cases, then given the same ~1.6x margin the prior 25-case cap already
+    # carried (260,000 was itself an unmeasured, margin-padded scale-up from
+    # 17 cases, per the same real-run number) — not measured against a real
+    # 66-case run (this package's local `.env` key is a known-invalid
+    # placeholder — see `packages/agent/README.md`), and likely still an
+    # underestimate given the story-manifest cases' extra
+    # list-career-stories/search-career tool round-trips versus the base
+    # dataset's simpler cases. `assertWithinBudget`
+    # (`packages/agent/src/evals/budget.ts`) still aborts loudly if a run
+    # genuinely exceeds either cap, so an underestimate here fails loud
+    # rather than silently truncating — the first real CI run of the full
+    # dataset is what calibrates these numbers for real, same as #75/#143
+    # already did for the smaller dataset sizes.
+    #
+    # #296 production-completion pass: that first real 66-case CI run
+    # confirmed the underestimate — it aborted via BudgetExceededError at
+    # 700,980 tokens (already over the 690,000 cap) with cases still left
+    # to run. EVAL_MAX_TOTAL_TOKENS is temporarily raised well above any
+    # plausible full-run total so this run can complete and report its
+    # REAL total token usage, which will replace this placeholder with a
+    # properly margined number using the same methodology as #75/#143
+    # (measured total × ~1.6). EVAL_RPM_LIMIT stays at
     # the package default (10) — since #282 that means 10 real PROVIDER
     # REQUESTS per rolling minute, throttled at the model boundary
     # (`packages/agent/src/evals/rate-limit.ts`), not 10 cases per minute;
     # the old case-level throttle let a 2-3-request case overshoot the
     # model's 15 RPM ceiling, which is shared with production chat
-    # traffic. A 25-case run therefore takes several minutes of deliberate
-    # waiting — the 30-minute job timeout above covers it.
+    # traffic. A 66-case run therefore takes on the order of 15-20+ minutes
+    # of deliberate rate-limit waiting alone — the 60-minute job timeout
+    # above covers it with margin for the slot lease wait and per-case
+    # model latency on top.
     # EVAL_REPORT_PATH is
     # intentionally left at its default ("eval-report.json", resolved
     # relative to `pnpm eval:agent`'s own working directory,
@@ -146,9 +183,12 @@ jobs:
     # to the repo root, which is exactly the path the later steps
     # (summary render, artifact upload) reference.
     env:
-      EVAL_MAX_CASES: ${{ github.event.inputs.max_cases || '25' }}
-      EVAL_MAX_TOTAL_TOKENS: "260000"
-      EVAL_MAX_COST_USD: "1"
+      EVAL_MAX_CASES: ${{ github.event.inputs.max_cases || '66' }}
+      # Temporary calibration ceiling — see the comment above. Will be
+      # replaced with measured-total × ~1.6 once this run reports its real
+      # total token usage.
+      EVAL_MAX_TOTAL_TOKENS: "1500000"
+      EVAL_MAX_COST_USD: "3"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -204,7 +244,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.event.pull_request.base.ref) || github.event.before }}
           TARGET_PACKAGE: "@hire-me-mcp/agent"
-          EXTRA_PATH_REGEX: '^(\.github/workflows/agent-evals\.yml|scripts/ci/eval-relevance|scripts/ci/eval-summary\.mjs|apps/web/app/api/chat/)'
+          EXTRA_PATH_REGEX: '^(\.github/workflows/agent-evals\.yml|scripts/ci/eval-relevance|scripts/ci/eval-summary\.mjs|apps/web/app/api/chat/|packages/career-data/content/|packages/career-data/src/|packages/core/src/)'
           OVERRIDE_LABEL: run-evals
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
@@ -242,15 +282,28 @@ jobs:
       # In-job serialization, replacing the old `gemini-free-tier` group
       # (#264 follow-up — see the job comment above and
       # `scripts/ci/gemini-slot.mjs`). Placed AFTER relevance/secrets
-      # detection: an irrelevant PR waits for nothing. `ci-generation` is
-      # this job's real budget — the Actions secret's Google project on
-      # `gemini-3.5-flash-lite`, shared only with `release-readiness`.
-      # Fails open: on timeout or API error it warns and runs anyway.
-      - name: Wait for a Gemini free-tier slot (ci-generation)
+      # detection: an irrelevant PR waits for nothing.
+      #
+      # #296 production-completion correction: this job's real budget is
+      # BOTH `ci-embedding` and `ci-generation`, not `ci-generation` alone
+      # as previously documented here. The RAG-grounded and
+      # story-manifest eval cases drive the interview agent's real
+      # `search-career`/`list-career-stories` tools, which call
+      # `createGoogleEmbeddingClient` against the same Actions-secret
+      # Google project's `gemini-embedding-001` free tier that
+      # `retrieval-eval`/`reindex-production` spend as `ci-embedding` —
+      # this job just never leased that budget, so it could (and, on this
+      # PR's larger 38-case story manifest, reliably did) race
+      # `retrieval-eval` for the same 100-req/min embedding quota and get
+      # a 429 that had nothing to do with `retrieval-eval`'s own change.
+      # Leasing both, like `release-readiness` already does for the same
+      # reason. Fails open: on timeout or API error it warns and runs
+      # anyway.
+      - name: Wait for Gemini free-tier slots (ci-embedding, ci-generation)
         if: steps.secrets-check.outputs.available == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          SLOT_BUDGET: "ci-generation"
+          SLOT_BUDGET: "ci-embedding,ci-generation"
         run: node scripts/ci/gemini-slot.mjs
 
       - name: Build workspace packages the agent depends on

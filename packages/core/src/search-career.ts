@@ -188,10 +188,20 @@ function validateTopK(topK: number): void {
   }
 }
 
+/**
+ * Fetches every chunk matching `sourceTypes` (or every chunk in the store,
+ * when omitted), ranked by ANN cosine distance — deliberately with no
+ * `LIMIT`. `topK` (#292) counts unique source records, not raw chunks: a
+ * single source can contribute several chunks, so cutting the candidate set
+ * at the raw-chunk level here, before {@link selectTopKUniqueSources} groups
+ * by source, could hide another qualifying source entirely. The corpus this
+ * queries against is a single person's portfolio content — small enough
+ * that fetching it in full per query is cheap; `sourceTypes` still narrows
+ * the scan when the caller only cares about part of it.
+ */
 async function runAnnQuery(
   sql: Sql,
   vectorLiteral: string,
-  topK: number,
   sourceTypes: readonly string[] | undefined,
 ): Promise<SearchCareerRow[]> {
   if (sourceTypes !== undefined && sourceTypes.length > 0) {
@@ -201,7 +211,6 @@ async function runAnnQuery(
       FROM career_chunks
       WHERE source_type = ANY(${sourceTypes as string[]})
       ORDER BY embedding <=> ${vectorLiteral}::vector
-      LIMIT ${topK}
     `;
   }
   return sql<SearchCareerRow[]>`
@@ -209,8 +218,60 @@ async function runAnnQuery(
            1 - (embedding <=> ${vectorLiteral}::vector) AS score
     FROM career_chunks
     ORDER BY embedding <=> ${vectorLiteral}::vector
-    LIMIT ${topK}
   `;
+}
+
+/**
+ * Deterministic ordering for {@link selectTopKUniqueSources}: highest score
+ * first; ties broken by `sourceType` then `sourceId` ascending (stable
+ * regardless of row arrival order, and safe even if two different source
+ * types ever shared a raw `sourceId`), then by `chunkIndex` ascending (used
+ * when picking the best chunk *within* one source).
+ */
+function compareRanked(a: SearchCareerResultItem, b: SearchCareerResultItem): number {
+  if (b.score !== a.score) {
+    return b.score - a.score;
+  }
+  if (a.sourceType !== b.sourceType) {
+    return a.sourceType < b.sourceType ? -1 : 1;
+  }
+  if (a.sourceId !== b.sourceId) {
+    return a.sourceId < b.sourceId ? -1 : 1;
+  }
+  return a.chunkIndex - b.chunkIndex;
+}
+
+/**
+ * Groups ranked chunk rows by `(sourceType, sourceId)`, keeping only the
+ * highest-scoring chunk per source (its text and citation become that
+ * source's discovery excerpt), applies `minScore` to each source's best
+ * chunk, orders the resulting unique sources by score (deterministic ties —
+ * see {@link compareRanked}), and only then slices to `topK`. Exported as a
+ * pure function so the grouping contract itself — independent of the
+ * database and embedder — is directly unit-testable (#292).
+ */
+export function selectTopKUniqueSources(
+  rows: readonly SearchCareerResultItem[],
+  topK: number,
+  minScore: number,
+): SearchCareerResultItem[] {
+  const bestBySource = new Map<string, SearchCareerResultItem>();
+  for (const row of rows) {
+    const key = `${row.sourceType}:${row.sourceId}`;
+    const existing = bestBySource.get(key);
+    if (
+      existing === undefined ||
+      row.score > existing.score ||
+      (row.score === existing.score && row.chunkIndex < existing.chunkIndex)
+    ) {
+      bestBySource.set(key, row);
+    }
+  }
+
+  return [...bestBySource.values()]
+    .filter((row) => row.score >= minScore)
+    .sort(compareRanked)
+    .slice(0, topK);
 }
 
 /**
@@ -252,7 +313,7 @@ export function createSearchCareer(options: CreateSearchCareerOptions): SearchCa
     }
 
     const vectorLiteral = toVectorLiteral(queryEmbedding);
-    const rows = await runAnnQuery(sql, vectorLiteral, topK, sourceTypes);
+    const rows = await runAnnQuery(sql, vectorLiteral, sourceTypes);
 
     const mismatchedModels = [
       ...new Set(
@@ -263,19 +324,17 @@ export function createSearchCareer(options: CreateSearchCareerOptions): SearchCa
       throw new StoredEmbeddingModelMismatchError(modelId, mismatchedModels);
     }
 
-    const results = rows
-      .map(
-        (row): SearchCareerResultItem => ({
-          text: row.content,
-          score: Number(row.score),
-          citation: parseCitation(row.citation),
-          sourceType: row.source_type,
-          sourceId: row.source_id,
-          chunkIndex: row.chunk_index,
-        }),
-      )
-      .filter((item) => item.score >= minScore)
-      .sort((a, b) => b.score - a.score);
+    const mapped = rows.map(
+      (row): SearchCareerResultItem => ({
+        text: row.content,
+        score: Number(row.score),
+        citation: parseCitation(row.citation),
+        sourceType: row.source_type,
+        sourceId: row.source_id,
+        chunkIndex: row.chunk_index,
+      }),
+    );
+    const results = selectTopKUniqueSources(mapped, topK, minScore);
 
     return { query, results, tookMs: now() - startedAt };
   };

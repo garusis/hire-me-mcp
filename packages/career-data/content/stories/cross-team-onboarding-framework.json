@@ -1,0 +1,30 @@
+{
+  "id": "cross-team-onboarding-framework",
+  "experienceId": "xogito-group-2020-senior-software-development-engineer",
+  "relatedExperienceIds": ["house-numbers-2022-senior-full-stack-engineer"],
+  "title": "Turning a poor onboarding experience into a repeatable framework",
+  "primaryCompetency": "mentoring",
+  "supportingCompetencies": ["communication", "collaboration", "process-improvement", "leadership"],
+  "situation": "When I joined Xogito as the first engineer assigned to a new project team, there was no established onboarding support. I received a Confluence page and some general company information, but no clear person to guide me. I had to discover the environment myself and find people on Slack who could answer different questions.",
+  "task": "I decided future teammates should have a better experience.",
+  "actions": [
+    "I developed an onboarding approach in which I make the first contact, explain the product and technical foundations, and show the newcomer where information lives and who can help with different topics.",
+    "I stay closely involved during their first couple of days, remain readily available for the following weeks, and act as a bridge to the wider team while encouraging them to develop their own voice and independence.",
+    "In one challenging case, a developer I supervised needed both technical support and confidence. Instead of correcting his mistakes for him, I guided him through finding, debugging, and resolving them himself. I also encouraged him to advocate for a more sustainable workload."
+  ],
+  "results": [
+    "His confidence, debugging ability, and overall work improved.",
+    "I have personally used this approach with at least 15 people across Xogito and House Numbers.",
+    "House Numbers later adopted and adapted it for different functions, using rotating onboarding buddies so that people who receive support can eventually guide future newcomers.",
+    "The results have been qualitative rather than formally measured: greater autonomy, more focused questions, stronger meeting participation, and a better ability to find answers independently."
+  ],
+  "reflection": "For me, mentoring means more than transferring technical knowledge. It also means understanding someone's workload and context, helping create acceptable working conditions, and giving them enough support to succeed without becoming dependent on me.",
+  "retrievalTags": [
+    "onboarding",
+    "knowledge-sharing",
+    "psychological-safety",
+    "self-advocacy",
+    "sustainable-workload",
+    "buddy-system"
+  ]
+}

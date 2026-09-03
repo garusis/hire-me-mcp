@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildAliasIndex,
   buildCitation,
+  COMPETENCIES,
   chunkCareerData,
+  citableEntityTypeSchema,
+  competencySchema,
   createDomainResult,
   createInMemoryCareerDataRepository,
   emptyCareerDataset,
@@ -10,6 +13,7 @@ import {
   getExperience,
   getProfile,
   getSkillEvidence,
+  listCareerStories,
   search,
   searchProjects,
   slugify,
@@ -165,6 +169,45 @@ describe("public entry point", () => {
     expect(result.data.kind).toBe("claimed");
   });
 
+  it("re-exports listCareerStories, returning parent context and a story citation", () => {
+    const repository = createInMemoryCareerDataRepository({
+      ...emptyCareerDataset(),
+      experience: [
+        {
+          id: "fixture-role-fixtureco-2020",
+          company: "Fixtureco",
+          role: "Fixture Engineer",
+          startDate: "2020-01",
+          endDate: "2022-01",
+          summary: "Fixture summary.",
+          highlights: ["Did a fixture thing"],
+          tech: ["typescript"],
+        },
+      ],
+      stories: [
+        {
+          id: "fixture-story",
+          experienceId: "fixture-role-fixtureco-2020",
+          title: "Fixture Story",
+          primaryCompetency: "leadership",
+          supportingCompetencies: [],
+          situation: "Situation.",
+          task: "Task.",
+          actions: ["Action."],
+          results: ["Result."],
+          retrievalTags: ["fixture-tag"],
+        },
+      ],
+    });
+
+    const result = listCareerStories(repository, { competencies: ["leadership"] });
+    expect(result.data.map((entry) => entry.story.id)).toEqual(["fixture-story"]);
+    expect(result.data[0]?.primaryExperience.company).toBe("Fixtureco");
+    expect(result.citations).toEqual([
+      { entityType: "story", entityId: "fixture-story", label: "Fixture Story" },
+    ]);
+  });
+
   it("re-exports chunkCareerData from ./chunking/index.js", () => {
     const dataset = {
       ...emptyCareerDataset(),
@@ -198,5 +241,21 @@ describe("public entry point", () => {
     });
 
     expect(result.status).toBe("accepted");
+  });
+
+  it("re-exports COMPETENCIES and competencySchema from @hire-me-mcp/career-data — the canonical enum packages/agent's list-career-stories tool validates against without depending on career-data directly (#294)", async () => {
+    const careerData = await import("@hire-me-mcp/career-data");
+    expect(COMPETENCIES).toBe(careerData.COMPETENCIES);
+    expect(competencySchema).toBe(careerData.competencySchema);
+    expect(COMPETENCIES).toContain("leadership");
+    expect(competencySchema.safeParse("leadership").success).toBe(true);
+    expect(competencySchema.safeParse("not-a-real-competency").success).toBe(false);
+  });
+
+  it("re-exports citableEntityTypeSchema from @hire-me-mcp/career-data — the canonical source-type enum packages/agent's search-career tool validates sourceTypes against (#294)", async () => {
+    const careerData = await import("@hire-me-mcp/career-data");
+    expect(citableEntityTypeSchema).toBe(careerData.citableEntityTypeSchema);
+    expect(citableEntityTypeSchema.safeParse("story").success).toBe(true);
+    expect(citableEntityTypeSchema.safeParse("not-a-real-source-type").success).toBe(false);
   });
 });

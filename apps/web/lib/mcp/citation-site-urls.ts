@@ -20,7 +20,7 @@
 import type { Citation } from "@hire-me-mcp/core";
 import { resolveCitationHref } from "../../app/skills/citation-href";
 import { getSiteUrl } from "../../src/lib/config/site-url";
-import { getWritingListView } from "../../src/lib/content";
+import { getWritingListView, listStoryParents } from "../../src/lib/content";
 
 /** A citation that may already carry its own canonical external URL (`ChunkCitation` does). */
 export type CitationWithOptionalUrl = Citation & { url?: string };
@@ -44,16 +44,32 @@ function writingEntriesSafe(): Parameters<typeof resolveCitationHref>[1] {
 }
 
 /**
+ * Story → primary-experience pointers for `resolveCitationHref`'s story
+ * case (#293) — best-effort for the same reason as `writingEntriesSafe`: a
+ * content layer that can't serve the lookup degrades to the `/experience`
+ * page link rather than failing the whole tool call.
+ */
+function storyParentsSafe(): Parameters<typeof resolveCitationHref>[2] {
+  try {
+    return listStoryParents();
+  } catch {
+    return [];
+  }
+}
+
+/**
  * The absolute URL a human should follow to verify `citation`: its own
  * external `url` when it has one, otherwise the citation's canonical page
- * on this site.
+ * on this site. A `story` citation keeps its entity type and lands on its
+ * primary parent experience entry — the site has no story page (#293).
  */
 export function resolveCitationSiteUrl(citation: CitationWithOptionalUrl): string {
   if (citation.url !== undefined) {
     return citation.url;
   }
   const writingEntries = citation.entityType === "writing" ? writingEntriesSafe() : [];
-  const href = resolveCitationHref(citation, writingEntries);
+  const storyParents = citation.entityType === "story" ? storyParentsSafe() : [];
+  const href = resolveCitationHref(citation, writingEntries, storyParents);
   return href.startsWith("http") ? href : `${getSiteUrl()}${href}`;
 }
 

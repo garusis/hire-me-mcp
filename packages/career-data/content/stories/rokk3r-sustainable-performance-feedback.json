@@ -1,0 +1,36 @@
+{
+  "id": "rokk3r-sustainable-performance-feedback",
+  "experienceId": "rokk3r-2016-senior-full-stack-developer-and-devops",
+  "relatedExperienceIds": ["kubesoft-2015-senior-full-stack-and-mobile-developer"],
+  "title": "Replacing the rockstar-developer mindset with sustainable performance",
+  "primaryCompetency": "receptiveness-to-feedback",
+  "supportingCompetencies": [
+    "self-awareness",
+    "communication",
+    "personal-accountability",
+    "resilience",
+    "learning-from-failure"
+  ],
+  "situation": "Early in my career, while employed by Kubesoft, I was embedded in a Rokk3r project and working directly with its product manager. It was my first opportunity to contribute to a large project, and I felt that I needed to prove how much I could accomplish. I responded by pushing myself harder instead of communicating. I worked late into the night and treated speed, volume, and personal endurance as evidence that I was a strong developer. The workload was entirely self-imposed; neither the product manager nor the company had asked me to work that way. Eventually, exhaustion began producing the opposite result. My attention to detail deteriorated and the quality of my work declined.",
+  "task": "The product manager noticed and invited me to a private conversation. He asked why I was putting myself under pressure that nobody had requested. He reminded me that I already had the team's trust and did not need to prove my value by damaging my health. If I needed rest, assistance, or a deadline adjustment, my responsibility was to communicate that rather than silently trying to absorb everything myself.",
+  "actions": [
+    "That feedback challenged the \"rockstar developer\" model I had adopted, the idea that the strongest engineer should be able to carry everything alone. I took a week away from the work, recovered, and returned with my quality and working rhythm restored.",
+    "I began communicating capacity and risk more openly, asking for help when necessary, and treating planning conversations as part of engineering rather than as evidence that I could not handle the work."
+  ],
+  "results": [
+    "I returned with my quality and working rhythm restored.",
+    "We subsequently delivered the MVP successfully, and the client was very happy with the result."
+  ],
+  "reflection": "The conversation also gave me my first strong example of what a product manager and team leader should be. Leadership was not demanding more output from an exhausted contributor; it was noticing the problem, creating safety to discuss it, and helping the team find a sustainable path. That lesson has stayed with me. I no longer equate individual heroics with strong performance, and I do not believe a healthy project should depend on one talented person carrying the weight of the team.",
+  "retrievalTags": [
+    "sustainable-performance",
+    "burnout-prevention",
+    "capacity-communication",
+    "psychological-safety",
+    "product-management",
+    "workload-management",
+    "quality-recovery",
+    "rockstar-developer",
+    "mvp-delivery"
+  ]
+}

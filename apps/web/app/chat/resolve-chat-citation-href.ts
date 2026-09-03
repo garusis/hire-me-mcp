@@ -34,7 +34,7 @@
 
 import { CITABLE_ENTITY_TYPES, type CitationMarker } from "@hire-me-mcp/agent/citations";
 import type { Citation } from "@hire-me-mcp/core";
-import type { WritingEntry } from "../../src/lib/content";
+import type { StoryParentRef, WritingEntry } from "../../src/lib/content";
 import { resolveCitationHref } from "../skills/citation-href";
 
 const RESOLVABLE_ENTITY_TYPES: ReadonlySet<CitationMarker["entityType"]> = new Set(
@@ -49,6 +49,7 @@ const RESOLVABLE_ENTITY_TYPES: ReadonlySet<CitationMarker["entityType"]> = new S
 export function resolveChatCitationHref(
   marker: CitationMarker,
   writingEntries: readonly WritingEntry[],
+  storyParents: readonly StoryParentRef[] = [],
 ): string | undefined {
   if (!RESOLVABLE_ENTITY_TYPES.has(marker.entityType)) {
     return undefined;
@@ -60,5 +61,5 @@ export function resolveChatCitationHref(
     // Unused by `resolveCitationHref` — required only to satisfy `Citation`'s shape.
     label: marker.entityId,
   };
-  return resolveCitationHref(citation, writingEntries);
+  return resolveCitationHref(citation, writingEntries, storyParents);
 }

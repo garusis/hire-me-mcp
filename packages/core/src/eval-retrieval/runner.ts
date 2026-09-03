@@ -29,7 +29,13 @@
  */
 
 import type { GoldenQuery } from "./dataset/schema.js";
-import { checkExpectEmpty, precisionAtK, recallAtK, reciprocalRank } from "./metrics.js";
+import {
+  checkExpectEmpty,
+  checkPreferredSource,
+  precisionAtK,
+  recallAtK,
+  reciprocalRank,
+} from "./metrics.js";
 import type { RetrievalCaseReport } from "./report.js";
 import { buildRetrievalReport, type RetrievalReport } from "./report.js";
 import type { RetrievalThresholds } from "./thresholds.js";
@@ -65,6 +71,11 @@ function baseCaseReport(
     retrieved,
     metrics: null,
     expectEmptyCheck: null,
+    matchMode: query.matchMode ?? "all",
+    preferredSource: query.preferredSource ?? null,
+    matchModePassed: false,
+    preferencePassed: null,
+    preferredSourceReciprocalRank: null,
     passed: false,
   };
 }
@@ -73,15 +84,26 @@ function scoreExpectedCase(
   query: GoldenQuery,
   retrieved: RetrievalCaseReport["retrieved"],
 ): RetrievalCaseReport {
+  const matchMode = query.matchMode ?? "all";
   const metrics = {
-    recallAtK: recallAtK(retrieved, query.expectedSources),
+    recallAtK: recallAtK(retrieved, query.expectedSources, matchMode),
     precisionAtK: precisionAtK(retrieved, query.expectedSources),
     reciprocalRank: reciprocalRank(retrieved, query.expectedSources),
   };
+  const matchModePassed = metrics.recallAtK === 1;
+
+  const preferenceCheck =
+    query.preferredSource === undefined
+      ? null
+      : checkPreferredSource(retrieved, query.expectedSources, query.preferredSource);
+
   return {
     ...baseCaseReport(query, retrieved),
     metrics,
-    passed: metrics.recallAtK === 1,
+    matchModePassed,
+    preferencePassed: preferenceCheck?.passed ?? null,
+    preferredSourceReciprocalRank: preferenceCheck?.reciprocalRank ?? null,
+    passed: matchModePassed && (preferenceCheck === null || preferenceCheck.passed),
   };
 }
 
@@ -94,6 +116,7 @@ function scoreAbsentTopicCase(
   return {
     ...baseCaseReport(query, retrieved),
     expectEmptyCheck: check,
+    matchModePassed: true,
     passed: check.passed,
   };
 }

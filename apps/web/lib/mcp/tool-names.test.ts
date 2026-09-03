@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EXPECTED_TOOL_NAMES } from "./tool-names.js";
 
 describe("EXPECTED_TOOL_NAMES", () => {
-  it("lists exactly the eleven career tools plus ping, with no duplicates (#61 adds search-career; #211-#215 add the list tools)", () => {
+  it("lists exactly the twelve career tools plus ping, with no duplicates (#61 adds search-career; #211-#215 add the list tools; #293 adds list-career-stories)", () => {
     expect(EXPECTED_TOOL_NAMES).toEqual([
       "ping",
       "get-profile",
@@ -16,8 +16,14 @@ describe("EXPECTED_TOOL_NAMES", () => {
       "list-projects",
       "list-writing",
       "list-recommendations",
+      "list-career-stories",
     ]);
     expect(new Set(EXPECTED_TOOL_NAMES).size).toBe(EXPECTED_TOOL_NAMES.length);
+  });
+
+  it("includes list-career-stories (#293), the deterministic behavioral-story tool, and no duplicate search-stories tool (#288)", () => {
+    expect(EXPECTED_TOOL_NAMES).toContain("list-career-stories");
+    expect(EXPECTED_TOOL_NAMES).not.toContain("search-stories");
   });
 
   it("includes search-career (#61), the server's semantic-retrieval tool", () => {

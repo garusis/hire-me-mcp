@@ -2,15 +2,16 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import * as citationsModule from "@hire-me-mcp/agent/citations";
 import { describe, expect, it } from "vitest";
-import type { WritingEntry } from "../../src/lib/content";
+import type { StoryParentRef, WritingEntry } from "../../src/lib/content";
 import { buildCitedAnswer } from "./chat-citation-sources";
 
 const SOURCE_PATH = path.join(process.cwd(), "app", "chat", "chat-citation-sources.ts");
 
 const NO_WRITING: readonly WritingEntry[] = [];
+const NO_STORY_PARENTS: readonly StoryParentRef[] = [];
 
 function textOf(text: string, writingEntries: readonly WritingEntry[] = NO_WRITING): string {
-  return buildCitedAnswer(text, writingEntries)
+  return buildCitedAnswer(text, writingEntries, NO_STORY_PARENTS)
     .segments.filter((segment) => segment.kind === "text")
     .map((segment) => segment.text)
     .join("");
@@ -121,7 +122,12 @@ describe("buildCitedAnswer", () => {
     // Injected resolver: no real entity type is unresolvable any more (see
     // the exhaustive case below), so this branch is only reachable through
     // the seam `buildCitedAnswer` exposes for it.
-    const answer = buildCitedAnswer("A claim. [cite:project:cowork]", NO_WRITING, () => undefined);
+    const answer = buildCitedAnswer(
+      "A claim. [cite:project:cowork]",
+      NO_WRITING,
+      NO_STORY_PARENTS,
+      () => undefined,
+    );
 
     expect(answer.sources).toEqual([]);
     expect(
@@ -202,6 +208,33 @@ describe("buildCitedAnswer", () => {
     expect(sources).toHaveLength(1);
     expect(sources[0]?.href).not.toBe("/");
     expect(sources[0]?.label).toContain("·");
+  });
+
+  it("renders a story citation with a real, non-generic label (#294)", () => {
+    const { sources } = buildCitedAnswer(
+      "A claim. [cite:story:mutual-informal-leadership]",
+      NO_WRITING,
+      NO_STORY_PARENTS,
+    );
+    expect(sources).toHaveLength(1);
+    expect(sources[0]?.label).toContain("·");
+    expect(sources[0]?.label).not.toContain("Source ·");
+  });
+
+  // Issue 295, epic 288: a story citation must land on its PRIMARY parent
+  // experience's anchor when the caller supplies the story -> parent lookup
+  // — not the generic `/experience` fallback used when it can't be found.
+  it("resolves a story citation's href to its PRIMARY parent experience's anchor when storyParents are supplied", () => {
+    const storyParents: readonly StoryParentRef[] = [
+      { storyId: "mutual-informal-leadership", experienceId: "mutual" },
+    ];
+    const { sources } = buildCitedAnswer(
+      "A claim. [cite:story:mutual-informal-leadership]",
+      NO_WRITING,
+      storyParents,
+    );
+    expect(sources).toHaveLength(1);
+    expect(sources[0]?.href).toBe("/experience#mutual");
   });
 
   it("covers every citable entity type the agent can emit, so a new type can't silently vanish from answers", () => {

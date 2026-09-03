@@ -274,3 +274,57 @@ describe("skills, gaps and projects content (#50)", () => {
     });
   });
 });
+
+/**
+ * The document-extraction work was a multi-round proof of concept, not a
+ * production vendor replacement (#300). These invariants keep the public
+ * record from drifting back to the withdrawn "production pipeline / 30% →
+ * 87% / 3% of vendor cost / 0.844" framing. Recommendations are excluded:
+ * they are verbatim third-party text, attributed as such, never rewritten.
+ */
+describe("document-extraction PoC record (#300)", () => {
+  const dataset: CareerDataset = loadContentDir(contentDir);
+
+  it("types the document-extraction project explicitly as a proof of concept", () => {
+    const project = dataset.projects.find((entry) => entry.id === "document-extraction-pipeline");
+    expect(project).toBeDefined();
+    expect(project?.stage).toBe("proof-of-concept");
+  });
+
+  it("no first-person canonical record repeats the withdrawn PoC metrics or production framing", () => {
+    const WITHDRAWN = [
+      /0\.844/,
+      /30%\s*(?:→|->|to)\s*87%/i,
+      /from (?:roughly )?30% (?:on the first pass )?to 87%/i,
+      /3% of (?:its|the vendor'?s) cost/i,
+      /shipped production LLM/i,
+      /production LLM pipelines? for document/i,
+      /replaced? the (?:incumbent )?(?:OCR )?vendor/i,
+    ];
+    // Behavioral stories (#289/#290) are first-person narrative too and the
+    // most likely place for this framing to leak back in; include them as
+    // soon as the loader exposes `stories`, without depending on it yet.
+    const { stories = [] } = dataset as CareerDataset & { stories?: readonly unknown[] };
+    const firstPersonRecords = [
+      ...dataset.experience.map((entry) => JSON.stringify(entry)),
+      ...dataset.projects.map((project) => JSON.stringify(project)),
+      ...dataset.skills.map((skill) => JSON.stringify(skill)),
+      ...stories.map((story) => JSON.stringify(story)),
+      JSON.stringify(dataset.profile),
+    ];
+    for (const record of firstPersonRecords) {
+      for (const pattern of WITHDRAWN) {
+        expect(record, `matched withdrawn pattern ${pattern}`).not.toMatch(pattern);
+      }
+    }
+  });
+
+  it("keeps the House Numbers highlight describing the PoC as experimental, with production on the vendor plus the existing fallback", () => {
+    const houseNumbers = dataset.experience.find(
+      (entry) => entry.id === "house-numbers-2022-senior-full-stack-engineer",
+    );
+    const highlight = houseNumbers?.highlights.find((text) => /proof of concept/i.test(text));
+    expect(highlight).toBeDefined();
+    expect(highlight).toMatch(/production kept the vendor/i);
+  });
+});

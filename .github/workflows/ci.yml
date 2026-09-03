@@ -373,6 +373,16 @@ jobs:
   # no new secret. The `gemini-free-tier` concurrency group went with the
   # live specs — see the job's own note below for why staying in it was
   # actively harmful once this job stopped calling the model.
+  #
+  # ## Relevance for behavioral-story changes (#295)
+  #
+  # Unlike the standalone eval workflows, this job carries no in-job
+  # relevance detection at all — it's part of `ci.yml`, which has no
+  # `paths:` filter on its own `pull_request`/`push` triggers (see the top
+  # of this file), so it already runs on every PR unconditionally. A
+  # behavioral-story schema/content, chunking, tool, prompt, or eval-dataset
+  # change therefore always exercises `chat-deterministic.spec.ts` here —
+  # nothing further to wire for this job.
   preview-e2e:
     name: preview-e2e
     if: github.event_name == 'pull_request'

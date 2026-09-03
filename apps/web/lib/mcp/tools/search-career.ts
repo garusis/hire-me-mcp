@@ -89,6 +89,8 @@ const SEARCH_SOURCE_TYPES = [
   "gap",
   "education",
   "writing",
+  "recommendation",
+  "story",
 ] as const;
 
 const inputSchema = z.object({
@@ -187,7 +189,8 @@ export const searchCareerTool: ToolDefinition<typeof inputSchema, SearchCareerTo
   title: "Search career content",
   description:
     "Runs a fuzzy, semantic search over the full text of Marcos Alvarez's career content " +
-    "(experience, projects, skills, writing) and returns ranked excerpts, each with a " +
+    "(experience, projects, skills, writing, recommendations, and behavioral stories) and " +
+    "returns ranked excerpts, each with a " +
     "relevance score and a citation, or an explicit 'no relevant content found' result when " +
     "nothing clears the server's calibrated relevance floor — off-topic questions get that " +
     "honest empty result, not low-scoring noise. Use this for open-ended, cross-cutting, or " +

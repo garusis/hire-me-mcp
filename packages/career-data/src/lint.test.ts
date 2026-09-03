@@ -33,6 +33,102 @@ describe("runLint", () => {
     });
   });
 
+  it("flags a story whose primary and related experience ids do not resolve, naming the story file", () => {
+    const result = runLint(fixtureDir("lint-broken-content"));
+    const storyViolations = result.violations.filter((v) => v.rule === "story-experience-resolves");
+    expect(storyViolations).toHaveLength(2);
+    for (const violation of storyViolations) {
+      expect(violation).toMatchObject({
+        severity: "error",
+        file: "stories/fixture-story.json",
+        entityId: "fixture-story",
+      });
+    }
+    expect(storyViolations.map((v) => v.message).join("\n")).toMatch(/does-not-exist/);
+    expect(storyViolations.map((v) => v.message).join("\n")).toMatch(/also-does-not-exist/);
+  });
+
+  it("flags a story sentence copied verbatim into its parent experience, naming the experience file (#297)", () => {
+    const result = runLint(fixtureDir("lint-broken-content"));
+    const violations = result.violations.filter((v) => v.rule === "no-story-detail-in-experience");
+    expect(violations).toEqual([
+      expect.objectContaining({
+        severity: "error",
+        file: "experience/fixture-role.json",
+        entityId: "fixture-role-fixtureco-2020",
+      }),
+    ]);
+    expect(violations[0]?.message).toContain("fixture-copied-story");
+    expect(violations[0]?.message).toContain("highlights.1");
+  });
+
+  it("reports a story with an invalid competency as a schema error naming the story file", () => {
+    const result = runLint(fixtureDir("invalid-content"));
+    expect(result.ok).toBe(false);
+    expect(result.schemaErrors).toContainEqual(
+      expect.objectContaining({ file: "stories/fixture-story.json", path: "primaryCompetency" }),
+    );
+  });
+
+  it("accepts a story whose related experience resolves to a second real experience entry", () => {
+    const result = runLint(fixtureDir("lint-valid-content"));
+    expect(result.ok).toBe(true);
+    expect(result.violations.some((v) => v.rule === "story-experience-resolves")).toBe(false);
+  });
+
+  it("flags every broken preservation-map entry in the broken fixture, naming the map file (#290)", () => {
+    const result = runLint(fixtureDir("lint-broken-content"));
+    const violations = result.violations.filter(
+      (v) => v.rule === "story-preservation-map-resolves",
+    );
+    expect(violations.length).toBeGreaterThanOrEqual(4);
+    for (const violation of violations) {
+      expect(violation).toMatchObject({ severity: "error", file: "story-preservation-map.json" });
+    }
+    const messages = violations.map((v) => v.message).join("\n");
+    expect(messages).toMatch(/detailed-story.*no story/);
+    expect(messages).toMatch(/highlights\.7/);
+    expect(messages).toMatch(/no-such-story/);
+    expect(messages).toMatch(/does-not-exist-role/);
+  });
+
+  it("flags the broken fixture's unclassified highlight as a blocking completeness error (#290 Codex review)", () => {
+    const result = runLint(fixtureDir("lint-broken-content"));
+    const violations = result.violations.filter(
+      (v) => v.rule === "story-preservation-map-complete",
+    );
+    expect(violations).toEqual([
+      expect.objectContaining({
+        severity: "error",
+        file: "story-preservation-map.json",
+        entityId: "fixture-role-fixtureco-2020#highlights.1",
+        message: expect.stringMatching(/highlights\.1.*not classified/),
+      }),
+    ]);
+  });
+
+  it("treats a content set with no preservation map as nothing to check for completeness", () => {
+    const result = runLint(fixtureDir("valid-content"));
+    expect(result.violations.some((v) => v.rule === "story-preservation-map-complete")).toBe(false);
+  });
+
+  it("accepts the valid fixture map as complete — every summary and highlight is classified", () => {
+    const result = runLint(fixtureDir("lint-valid-content"));
+    expect(result.violations.some((v) => v.rule === "story-preservation-map-complete")).toBe(false);
+  });
+
+  it("accepts the valid fixture map, including a story associated through relatedExperienceIds", () => {
+    const result = runLint(fixtureDir("lint-valid-content"));
+    expect(result.violations.some((v) => v.rule === "story-preservation-map-resolves")).toBe(false);
+  });
+
+  it("reports a preservation map with an out-of-set classification as a schema error", () => {
+    const result = runLint(fixtureDir("invalid-content"));
+    expect(result.schemaErrors).toContainEqual(
+      expect.objectContaining({ file: "story-preservation-map.json", path: "[0].classification" }),
+    );
+  });
+
   it("reports every violation in a run, not just the first", () => {
     const result = runLint(fixtureDir("lint-broken-content"));
     const rules = new Set(result.violations.map((v) => v.rule));

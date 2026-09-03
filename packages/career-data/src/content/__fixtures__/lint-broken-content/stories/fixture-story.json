@@ -1,0 +1,13 @@
+{
+  "id": "fixture-story",
+  "experienceId": "does-not-exist",
+  "relatedExperienceIds": ["also-does-not-exist"],
+  "title": "A schema-valid story whose experience references do not resolve",
+  "primaryCompetency": "ownership",
+  "supportingCompetencies": [],
+  "situation": "A fixture situation.",
+  "task": "A fixture task.",
+  "actions": ["Did a fixture action."],
+  "results": ["Got a fixture result."],
+  "retrievalTags": ["fixture-tag"]
+}

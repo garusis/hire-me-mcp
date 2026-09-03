@@ -33,6 +33,7 @@ import {
   getExperienceOutputSchema,
   getProfileOutputSchema,
   getSkillEvidenceOutputSchema,
+  listCareerStoriesOutputSchema,
   listEducationOutputSchema,
   listGapsOutputSchema,
   listProjectsOutputSchema,
@@ -510,7 +511,212 @@ describe("tools/call — list tools (#211-#215)", () => {
 
     await client.close();
   });
+
+  it("list-career-stories returns complete stories with parent context, and story citations that resolve to the parent experience anchor without a public story page (#293)", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "list-career-stories",
+      arguments: { competencies: ["leadership"] },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const parsed = listCareerStoriesOutputSchema.safeParse(result.structuredContent);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error?.issues)).toBe(
+      true,
+    );
+    const structuredContent = result.structuredContent as {
+      data: Array<{
+        story: { id: string; primaryCompetency: string; supportingCompetencies: string[] };
+        primaryExperience: { id: string };
+        citation: { entityType: string; entityId: string };
+      }>;
+      citations: Array<{ entityType: string; entityId: string; url: string }>;
+    };
+    expect(structuredContent.data.length).toBeGreaterThan(0);
+    expect(structuredContent.citations.length).toBe(structuredContent.data.length);
+    expectWellFormedCitations(structuredContent.citations);
+
+    // Every returned story really carries the requested competency.
+    for (const item of structuredContent.data) {
+      expect([item.story.primaryCompetency, ...item.story.supportingCompetencies]).toContain(
+        "leadership",
+      );
+    }
+
+    // Precise, clickable citations: entityType stays "story" (never downgraded
+    // to "experience") and the URL lands on the PRIMARY parent's entry on
+    // /experience — there is no /stories route on the site (#288).
+    for (const [index, citation] of structuredContent.citations.entries()) {
+      const item = structuredContent.data[index];
+      expect(citation.entityType).toBe("story");
+      expect(citation.entityId).toBe(item?.story.id);
+      expect(citation).toMatchObject(item?.citation ?? {});
+      expect(citation.url).toContain(`/experience#${item?.primaryExperience.id}`);
+      expect(citation.url).not.toContain("/stories");
+    }
+
+    await client.close();
+  });
+
+  it("list-career-stories rejects an unknown competency with a validation error naming the allowed values, and returns a successful empty list for an unmatched company (#293)", async () => {
+    const { client, transport } = connectClient();
+    await client.connect(transport);
+
+    const invalid = await client.callTool({
+      name: "list-career-stories",
+      arguments: { competencies: ["grit"] },
+    });
+    expect(invalid.isError).toBe(true);
+    const [firstBlock] = invalid.content as Array<{ type: string; text?: string }>;
+    expect(firstBlock?.text).toContain('"grit"');
+    expect(firstBlock?.text).toContain('"leadership"');
+
+    const empty = await client.callTool({
+      name: "list-career-stories",
+      arguments: { company: "No Such Company" },
+    });
+    expect(empty.isError).not.toBe(true);
+    expect(empty.structuredContent).toEqual({ data: [], citations: [] });
+
+    await client.close();
+  });
 });
+
+/**
+ * `search-career` filtered to `sourceTypes: ["story"]` (#296) needs a real
+ * embedding + a real, already-indexed corpus to distinguish a hit from an
+ * honest empty — this job's OWN case just above documents that
+ * `mcp-integration` deliberately runs with neither `DATABASE_URL` nor
+ * `GOOGLE_GENERATIVE_AI_API_KEY` set, so every `search-career` call here
+ * today hits that graceful-degradation path regardless of query. Gating on
+ * both env vars keeps these assertions honest about what they need, rather
+ * than either skipping the real acceptance criteria (a bare "no crash"
+ * check) or asserting a "hit" that this job can never actually produce.
+ * They run for real once this lane — or a future Neon-branch-backed one —
+ * carries that config; see `apps/web/e2e-preview/specs/mcp.spec.ts`'s
+ * `search-career` case for the same pattern already run against a real
+ * deployed origin with the config present.
+ */
+const SEARCH_CAREER_DB_CONFIGURED =
+  Boolean(process.env.DATABASE_URL) && Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY);
+
+/**
+ * The real story → primary-experience mapping, fetched black-box through
+ * this suite's own `list-career-stories` call (no filter — the full
+ * inventory) rather than importing `apps/web`'s content layer directly, so
+ * this stays a wire-level assertion against the same server under test.
+ * Used to bind a `search-career` story hit's `sourceId`/`citationUrl` (and
+ * the envelope's top-level `citations`) to its EXACT primary parent anchor,
+ * not just any existing `/experience#...` fragment (Codex review on #296).
+ */
+async function fetchStoryParentMap(client: Client): Promise<Map<string, string>> {
+  const result = await client.callTool({ name: "list-career-stories", arguments: {} });
+  expect(result.isError).not.toBe(true);
+  const structuredContent = result.structuredContent as {
+    data: Array<{ story: { id: string }; primaryExperience: { id: string } }>;
+  };
+  return new Map(structuredContent.data.map((item) => [item.story.id, item.primaryExperience.id]));
+}
+
+/** Asserts `url` is exactly `/experience#<primaryExperienceId>` for `storyId`, never a downgraded, mismatched, or merely-existing-but-wrong anchor. */
+function expectExactPrimaryParentUrl(
+  url: string,
+  storyId: string,
+  storyParents: Map<string, string>,
+): void {
+  const primaryExperienceId = storyParents.get(storyId);
+  expect(primaryExperienceId, `no known primary parent for story "${storyId}"`).toBeTruthy();
+  const parsed = new URL(url);
+  expect(parsed.pathname).toBe("/experience");
+  expect(parsed.hash).toBe(`#${primaryExperienceId}`);
+}
+
+describe.skipIf(!SEARCH_CAREER_DB_CONFIGURED)(
+  "tools/call — search-career filtered to behavioral stories (#296)",
+  () => {
+    it("a natural leadership question filtered to sourceTypes: ['story'] returns at least one story hit with an anchored, non-/stories citationUrl", async () => {
+      const { client, transport } = connectClient();
+      await client.connect(transport);
+
+      const storyParents = await fetchStoryParentMap(client);
+
+      const result = await client.callTool({
+        name: "search-career",
+        arguments: {
+          query: "Tell me about a time Marcos showed leadership",
+          sourceTypes: ["story"],
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      const structuredContent = result.structuredContent as {
+        data: {
+          found: boolean;
+          results?: Array<{ sourceType: string; sourceId: string; citationUrl: string }>;
+        };
+        citations: Array<{ entityType: string; entityId: string; url: string }>;
+      };
+      expect(structuredContent.data.found).toBe(true);
+      const results = structuredContent.data.results ?? [];
+      expect(results.length).toBeGreaterThan(0);
+      expectWellFormedCitations(structuredContent.citations);
+
+      // The handler builds `data.results` and the envelope's top-level
+      // `citations` via the same `.map` over one source array
+      // (`lib/mcp/tools/search-career.ts`), so they must stay index-aligned
+      // 1:1 — citation i really describes hit i, not just "some real
+      // citation" paired with "some real hit" (Codex review on #296:
+      // validating the two arrays independently let hit A's sourceId/url
+      // pass alongside an unrelated-but-also-valid citation B).
+      expect(structuredContent.citations.length).toBe(results.length);
+      for (const [index, citation] of structuredContent.citations.entries()) {
+        const hit = results[index];
+        expect(hit, `no result at index ${index} to bind citation to`).toBeTruthy();
+        // Mutation-sensitive: entityId/url are exactly the fields a swapped
+        // or mismatched citation would get wrong while still passing every
+        // per-array check below on its own.
+        expect(citation.entityId).toBe(hit?.sourceId);
+        expect(citation.url).toBe(hit?.citationUrl);
+        expect(citation.entityType).toBe("story");
+        expectExactPrimaryParentUrl(citation.url, citation.entityId, storyParents);
+      }
+
+      // The filter is honored (every hit really is a story), its `sourceId`
+      // names a real story, and its `citationUrl` lands on that EXACT story's
+      // PRIMARY parent's /experience anchor — never a downgraded type, a
+      // mismatched story id, or a wrong-but-existing anchor.
+      for (const hit of results) {
+        expect(hit.sourceType).toBe("story");
+        expectExactPrimaryParentUrl(hit.citationUrl, hit.sourceId, storyParents);
+      }
+
+      await client.close();
+    });
+
+    it("an off-topic query filtered to sourceTypes: ['story'] returns the honest empty result, not an error", async () => {
+      const { client, transport } = connectClient();
+      await client.connect(transport);
+
+      const result = await client.callTool({
+        name: "search-career",
+        arguments: { query: "favorite pizza toppings", sourceTypes: ["story"] },
+      });
+
+      expect(result.isError).not.toBe(true);
+      const structuredContent = result.structuredContent as {
+        data: { found: boolean; message?: string };
+        citations: unknown[];
+      };
+      expect(structuredContent.data.found).toBe(false);
+      expect(structuredContent.data.message).toBeTruthy();
+      expect(structuredContent.citations).toEqual([]);
+
+      await client.close();
+    });
+  },
+);
 
 describe("error paths — documented MCP errors, not transport failures", () => {
   it("calling an unregistered tool name fails with a documented JSON-RPC error, not a transport crash", async () => {

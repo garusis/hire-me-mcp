@@ -1,0 +1,12 @@
+{
+  "id": "fixture-copied-story",
+  "experienceId": "fixture-role-fixtureco-2020",
+  "title": "A story whose situation sentence is copied verbatim into its parent highlight",
+  "primaryCompetency": "ownership",
+  "supportingCompetencies": [],
+  "situation": "This sentence is copied verbatim from the fixture story into the parent highlight on purpose.",
+  "task": "A fixture task.",
+  "actions": ["Did a fixture action."],
+  "results": ["Got a fixture result."],
+  "retrievalTags": ["fixture-tag"]
+}

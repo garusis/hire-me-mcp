@@ -1,6 +1,8 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { runRules } from "../lint/rules.js";
 import { formatLintReport, runLint } from "../lint.js";
+import { loadContentDirWithSources, loadStoryPreservationMap } from "./loader.js";
 
 /**
  * Runs the #51 content-lint rule engine against the *real* authored content
@@ -47,5 +49,24 @@ describe("real career-data content — lint (#51)", () => {
     expect(
       result.violations.every((v) => v.rule !== "no-orphan-entities" || v.severity === "warning"),
     ).toBe(true);
+  });
+
+  it("gates the real corpus on preservation-map completeness in the lint itself: dropping one real row is a blocking lint error (#290)", () => {
+    const { dataset, sources } = loadContentDirWithSources(contentDir);
+    const map = loadStoryPreservationMap(contentDir);
+    const dropped = map.find((entry) => entry.classification === "detailed-story");
+    if (dropped === undefined) throw new Error("real map has no detailed-story row");
+    const violations = runRules({
+      dataset,
+      sources,
+      storyPreservationMap: map.filter((entry) => entry !== dropped),
+    }).filter((violation) => violation.rule === "story-preservation-map-complete");
+    expect(violations).toEqual([
+      expect.objectContaining({
+        severity: "error",
+        file: "story-preservation-map.json",
+        entityId: `${dropped.experienceId}#${dropped.field}`,
+      }),
+    ]);
   });
 });

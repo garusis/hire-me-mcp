@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CareerDataset, EntitySource } from "../content/loader.js";
+import type { LintContext } from "./rules.js";
 import {
   ALL_RULES,
   citationResolvesRule,
@@ -7,8 +8,12 @@ import {
   gapRelatedSkillsResolveRule,
   noClaimGapCollisionRule,
   noOrphanEntitiesRule,
+  noStoryDetailInExperienceRule,
   runRules,
   skillHasEvidenceRule,
+  storyExperienceResolvesRule,
+  storyPreservationMapCompleteRule,
+  storyPreservationMapResolvesRule,
   tagInVocabularyRule,
   uniqueAliasesRule,
   uniqueIdsRule,
@@ -102,6 +107,20 @@ function baseDataset(): CareerDataset {
     ],
     writing: [],
     recommendations: [],
+    stories: [
+      {
+        id: "fixture-story",
+        experienceId: "fixture-role-fixtureco-2020",
+        title: "Fixture story",
+        primaryCompetency: "ownership",
+        supportingCompetencies: ["problem-solving"],
+        situation: "Fixture situation.",
+        task: "Fixture task.",
+        actions: ["Fixture action one.", "Fixture action two."],
+        results: ["Fixture result."],
+        retrievalTags: ["fixture-tag"],
+      },
+    ],
   };
 }
 
@@ -118,7 +137,14 @@ function baseSources(): EntitySource[] {
     { entityType: "skill", id: "mentoring", file: "skills.json" },
     { entityType: "gap", id: "fixture-gap", file: "gaps.json" },
     { entityType: "education", id: "fixture-degree-fixture-university", file: "education.json" },
+    { entityType: "story", id: "fixture-story", file: "stories/fixture-story.json" },
   ];
+}
+
+function firstStory(ctx: ReturnType<typeof context>) {
+  const story = ctx.dataset.stories[0];
+  if (story === undefined) throw new Error("fixture story missing");
+  return story;
 }
 
 function context() {
@@ -173,6 +199,35 @@ describe("citation-resolves", () => {
         message: expect.stringContaining("does-not-exist"),
       }),
     ]);
+  });
+
+  it("resolves a citation (and its fragment) pointing at a story", () => {
+    const ctx = context();
+    const skill = ctx.dataset.skills[0];
+    if (skill === undefined) throw new Error("fixture skill missing");
+    skill.evidence = [
+      {
+        entityType: "story",
+        entityId: "fixture-story",
+        fragment: "actions.1",
+        label: "Fixture story",
+      },
+    ];
+    expect(citationResolvesRule.check(ctx)).toEqual([]);
+  });
+
+  it("flags a story citation whose id or fragment does not resolve", () => {
+    const ctx = context();
+    const skill = ctx.dataset.skills[0];
+    if (skill === undefined) throw new Error("fixture skill missing");
+    skill.evidence = [
+      { entityType: "story", entityId: "no-such-story", label: "Missing" },
+      { entityType: "story", entityId: "fixture-story", fragment: "actions.9", label: "Bad" },
+    ];
+    const violations = citationResolvesRule.check(ctx);
+    expect(violations).toHaveLength(2);
+    expect(violations.map((v) => v.message).join("\n")).toMatch(/no-such-story/);
+    expect(violations.map((v) => v.message).join("\n")).toMatch(/actions\.9/);
   });
 
   it("flags a citation whose fragment does not resolve within the target entity", () => {
@@ -323,9 +378,77 @@ describe("tag-in-vocabulary", () => {
   });
 });
 
+describe("story-experience-resolves", () => {
+  it("passes when the primary and every related experience id resolve to real experience entries", () => {
+    const ctx = context();
+    ctx.dataset.experience.push({
+      id: "fixture-role-otherco-2016",
+      company: "Otherco",
+      role: "Earlier Fixture Engineer",
+      startDate: "2016-01",
+      endDate: "2019-12",
+      summary: "Earlier fixture role.",
+      highlights: ["Did an earlier thing."],
+      tech: ["typescript"],
+    });
+    ctx.sources.push({
+      entityType: "experience",
+      id: "fixture-role-otherco-2016",
+      file: "experience/fixture-role-two.json",
+    });
+    firstStory(ctx).relatedExperienceIds = ["fixture-role-otherco-2016"];
+    expect(storyExperienceResolvesRule.check(ctx)).toEqual([]);
+  });
+
+  it("passes for a story with no relatedExperienceIds at all", () => {
+    expect(storyExperienceResolvesRule.check(context())).toEqual([]);
+  });
+
+  it("flags a story whose primary experienceId does not resolve, naming the story file", () => {
+    const ctx = context();
+    firstStory(ctx).experienceId = "does-not-exist";
+    expect(storyExperienceResolvesRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: "story-experience-resolves",
+        severity: "error",
+        file: "stories/fixture-story.json",
+        entityId: "fixture-story",
+        message: expect.stringContaining("does-not-exist"),
+      }),
+    ]);
+  });
+
+  it("flags each related experience id that does not resolve", () => {
+    const ctx = context();
+    firstStory(ctx).relatedExperienceIds = ["missing-one", "missing-two"];
+    const violations = storyExperienceResolvesRule.check(ctx);
+    expect(violations).toHaveLength(2);
+    expect(violations.map((v) => v.message).join("\n")).toMatch(/missing-one/);
+    expect(violations.map((v) => v.message).join("\n")).toMatch(/missing-two/);
+  });
+
+  it("does not accept a story id, project id or other non-experience entity as the parent", () => {
+    const ctx = context();
+    firstStory(ctx).experienceId = "fixture-project";
+    expect(storyExperienceResolvesRule.check(ctx)).toHaveLength(1);
+  });
+});
+
 describe("unique-ids", () => {
   it("passes when every entity id is globally unique", () => {
     expect(uniqueIdsRule.check(context())).toEqual([]);
+  });
+
+  it("flags a story id that collides with another entity's id — stories participate in global uniqueness", () => {
+    const ctx = context();
+    firstStory(ctx).id = "fixture-project";
+    ctx.sources = ctx.sources.map((source) =>
+      source.entityType === "story" ? { ...source, id: "fixture-project" } : source,
+    );
+    const violations = uniqueIdsRule.check(ctx);
+    expect(violations.length).toBeGreaterThanOrEqual(2);
+    expect(violations.every((v) => v.entityId === "fixture-project")).toBe(true);
+    expect(violations.some((v) => v.file === "stories/fixture-story.json")).toBe(true);
   });
 
   it("flags a duplicate id shared across two entities of different types", () => {
@@ -412,6 +535,11 @@ describe("no-orphan-entities", () => {
     ]);
   });
 
+  it("does not flag stories — a story is narrative evidence, not something a skill must cite", () => {
+    const violations = noOrphanEntitiesRule.check(context());
+    expect(violations.some((v) => v.entityId === "fixture-story")).toBe(false);
+  });
+
   it("does not flag profile, skills or gaps — they are roots by design, not evidence", () => {
     const violations = noOrphanEntitiesRule.check(context());
     const flaggedTypes = new Set(
@@ -431,6 +559,412 @@ describe("no-orphan-entities", () => {
   });
 });
 
+describe("story-preservation-map-resolves", () => {
+  const RULE = "story-preservation-map-resolves";
+  const FILE = "story-preservation-map.json";
+
+  function mapped(entries: NonNullable<LintContext["storyPreservationMap"]>): LintContext {
+    return { ...context(), storyPreservationMap: entries };
+  }
+
+  it("passes with no map at all — an absent map is nothing to check", () => {
+    expect(storyPreservationMapResolvesRule.check(context())).toEqual([]);
+  });
+
+  it("passes when every entry resolves and every detailed field names an associated story", () => {
+    const ctx = mapped([
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "summary",
+        classification: "role-context",
+        action: "keep",
+      },
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "highlights.1",
+        classification: "detailed-story",
+        storyIds: ["fixture-story"],
+        action: "shorten",
+      },
+    ]);
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([]);
+  });
+
+  it("flags an entry whose experience id does not resolve", () => {
+    const ctx = mapped([
+      {
+        experienceId: "does-not-exist",
+        field: "summary",
+        classification: "role-context",
+        action: "keep",
+      },
+    ]);
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        severity: "error",
+        file: FILE,
+        entityId: "does-not-exist#summary",
+        message: expect.stringContaining("does-not-exist"),
+      }),
+    ]);
+  });
+
+  it("flags an entry whose highlight index does not exist on the experience", () => {
+    const ctx = mapped([
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "highlights.2",
+        classification: "concise-outcome",
+        action: "keep",
+      },
+    ]);
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        entityId: "fixture-role-fixtureco-2020#highlights.2",
+        message: expect.stringContaining("highlights.2"),
+      }),
+    ]);
+  });
+
+  it("flags a story id that does not resolve", () => {
+    const ctx = mapped([
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "highlights.0",
+        classification: "concise-outcome",
+        storyIds: ["no-such-story"],
+        action: "keep",
+      },
+    ]);
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        entityId: "fixture-role-fixtureco-2020#highlights.0",
+        message: expect.stringContaining("no-such-story"),
+      }),
+    ]);
+  });
+
+  it("flags a story that is neither the primary nor a related role of the field's experience — attribution never transfers (#305 point 2)", () => {
+    const ctx = mapped([
+      {
+        experienceId: "fixture-role-otherco-2016",
+        field: "summary",
+        classification: "role-context",
+        storyIds: ["fixture-story"],
+        action: "keep",
+      },
+    ]);
+    ctx.dataset.experience.push({
+      id: "fixture-role-otherco-2016",
+      company: "Otherco",
+      role: "Earlier Fixture Engineer",
+      startDate: "2016-01",
+      endDate: "2019-12",
+      summary: "Earlier fixture role.",
+      highlights: ["Did an earlier thing."],
+      tech: ["typescript"],
+    });
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        entityId: "fixture-role-otherco-2016#summary",
+        message: expect.stringMatching(/fixture-story.*not associated/),
+      }),
+    ]);
+    // A related-experience link makes the association legitimate.
+    firstStory(ctx).relatedExperienceIds = ["fixture-role-otherco-2016"];
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([]);
+  });
+
+  it("flags a detailed-story field with no story — the blocking #290 evidence-preservation check", () => {
+    const ctx = mapped([
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "highlights.0",
+        classification: "detailed-story",
+        action: "shorten",
+      },
+    ]);
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        severity: "error",
+        file: FILE,
+        entityId: "fixture-role-fixtureco-2020#highlights.0",
+        message: expect.stringMatching(/detailed-story.*no story/),
+      }),
+    ]);
+  });
+
+  it("flags a move-detail-to-story action with no story to move the detail into", () => {
+    const ctx = mapped([
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "highlights.0",
+        classification: "concise-outcome",
+        action: "move-detail-to-story",
+      },
+    ]);
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        entityId: "fixture-role-fixtureco-2020#highlights.0",
+        message: expect.stringMatching(/move-detail-to-story.*no story/),
+      }),
+    ]);
+  });
+
+  it("does not require an experience to have any story or any map entry (coverage is evidence-driven, #305 point 1)", () => {
+    const ctx = mapped([]);
+    ctx.dataset.stories = [];
+    ctx.sources = ctx.sources.filter((source) => source.entityType !== "story");
+    expect(storyPreservationMapResolvesRule.check(ctx)).toEqual([]);
+  });
+});
+
+describe("story-preservation-map-complete", () => {
+  const RULE = "story-preservation-map-complete";
+  const FILE = "story-preservation-map.json";
+
+  function mapped(entries: NonNullable<LintContext["storyPreservationMap"]>): LintContext {
+    return { ...context(), storyPreservationMap: entries };
+  }
+
+  /** Every field of the fixture experience, classified — the complete map for the base context. */
+  function completeMap(): NonNullable<LintContext["storyPreservationMap"]> {
+    return [
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "summary",
+        classification: "role-context",
+        action: "keep",
+      },
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "highlights.0",
+        classification: "concise-outcome",
+        action: "keep",
+      },
+      {
+        experienceId: "fixture-role-fixtureco-2020",
+        field: "highlights.1",
+        classification: "detailed-story",
+        storyIds: ["fixture-story"],
+        action: "shorten",
+      },
+    ];
+  }
+
+  it("passes with no map at all — an absent map is nothing to check", () => {
+    expect(storyPreservationMapCompleteRule.check(context())).toEqual([]);
+  });
+
+  it("passes when every experience summary and highlight has exactly one classification", () => {
+    expect(storyPreservationMapCompleteRule.check(mapped(completeMap()))).toEqual([]);
+  });
+
+  it("flags a summary that the map does not classify — a removed row is a blocking lint error, not only a Vitest invariant", () => {
+    const entries = completeMap().filter((entry) => entry.field !== "summary");
+    expect(storyPreservationMapCompleteRule.check(mapped(entries))).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        severity: "error",
+        file: FILE,
+        entityId: "fixture-role-fixtureco-2020#summary",
+        message: expect.stringMatching(/summary.*not classified/),
+      }),
+    ]);
+  });
+
+  it("flags a highlight that the map does not classify, naming the field so #297 cannot shorten unmapped prose", () => {
+    const entries = completeMap().filter((entry) => entry.field !== "highlights.1");
+    expect(storyPreservationMapCompleteRule.check(mapped(entries))).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        severity: "error",
+        file: FILE,
+        entityId: "fixture-role-fixtureco-2020#highlights.1",
+        message: expect.stringMatching(/highlights\.1.*not classified/),
+      }),
+    ]);
+  });
+
+  it("reports every missing field of every experience, not just the first", () => {
+    const ctx = mapped(completeMap());
+    ctx.dataset.experience.push({
+      id: "fixture-role-otherco-2016",
+      company: "Otherco",
+      role: "Earlier Fixture Engineer",
+      startDate: "2016-01",
+      endDate: "2019-12",
+      summary: "Earlier fixture role.",
+      highlights: ["Did an earlier thing.", "Did another earlier thing."],
+      tech: ["typescript"],
+    });
+    const ids = storyPreservationMapCompleteRule.check(ctx).map((v) => v.entityId);
+    expect(ids).toEqual([
+      "fixture-role-otherco-2016#summary",
+      "fixture-role-otherco-2016#highlights.0",
+      "fixture-role-otherco-2016#highlights.1",
+    ]);
+  });
+
+  it("still does not require an experience to have a story — only a classification (#305 point 1)", () => {
+    const ctx = mapped(
+      completeMap().map((entry) =>
+        entry.field === "highlights.1"
+          ? {
+              ...entry,
+              classification: "concise-outcome" as const,
+              storyIds: undefined,
+              action: "keep" as const,
+            }
+          : entry,
+      ),
+    );
+    ctx.dataset.stories = [];
+    ctx.sources = ctx.sources.filter((source) => source.entityType !== "story");
+    expect(storyPreservationMapCompleteRule.check(ctx)).toEqual([]);
+  });
+});
+
+describe("no-story-detail-in-experience", () => {
+  const RULE = "no-story-detail-in-experience";
+  const FILE = "experience/fixture-role.json";
+  const COPIED =
+    "The client was deeply frustrated with our progress and several core workflows required substantial correction.";
+
+  function withStoryUnit(field: "situation" | "task" | "reflection", text: string) {
+    const ctx = context();
+    firstStory(ctx)[field] = text;
+    return ctx;
+  }
+
+  function experience(ctx: ReturnType<typeof context>) {
+    const entry = ctx.dataset.experience[0];
+    if (entry === undefined) throw new Error("fixture experience missing");
+    return entry;
+  }
+
+  it("passes when the parent experience only names the event concisely, in its own words", () => {
+    const ctx = withStoryUnit("situation", COPIED);
+    experience(ctx).highlights[1] =
+      "Recovered a frustrated client account by realigning requirements.";
+    expect(noStoryDetailInExperienceRule.check(ctx)).toEqual([]);
+  });
+
+  it("flags a story situation sentence copied verbatim into a parent highlight, naming the experience file and story", () => {
+    const ctx = withStoryUnit("situation", COPIED);
+    experience(ctx).highlights[1] = `Took over the account. ${COPIED}`;
+    const violations = noStoryDetailInExperienceRule.check(ctx);
+    expect(violations).toEqual([
+      {
+        rule: RULE,
+        severity: "error",
+        file: FILE,
+        entityId: "fixture-role-fixtureco-2020",
+        message: expect.stringContaining('story "fixture-story"'),
+      },
+    ]);
+    expect(violations[0]?.message).toContain("highlights.1");
+    expect(violations[0]?.message).toContain("situation");
+  });
+
+  it("flags near-verbatim copies that differ only in case, punctuation, or whitespace", () => {
+    const ctx = withStoryUnit("task", COPIED);
+    experience(ctx).summary =
+      `  the CLIENT was deeply frustrated with our progress, and several core workflows required substantial correction!  `;
+    const violations = noStoryDetailInExperienceRule.check(ctx);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.message).toContain("summary");
+    expect(violations[0]?.message).toContain("task");
+  });
+
+  it("flags a complete action or result sentence copied into the parent summary", () => {
+    const ctx = context();
+    firstStory(ctx).actions = [
+      "I suggested a capacity split while the frontend developer and QA refined the estimates.",
+    ];
+    firstStory(ctx).results = [
+      "Trust returned gradually over two or three sprints of working software.",
+    ];
+    experience(ctx).summary =
+      "I suggested a capacity split while the frontend developer and QA refined the estimates. Trust returned gradually over two or three sprints of working software.";
+    const violations = noStoryDetailInExperienceRule.check(ctx);
+    expect(violations.map((violation) => violation.message).join("\n")).toMatch(/actions\.0/);
+    expect(violations.map((violation) => violation.message).join("\n")).toMatch(/results\.0/);
+    expect(violations).toHaveLength(2);
+  });
+
+  it("also flags the reflection — lessons and interview follow-up belong only in the story", () => {
+    const ctx = withStoryUnit(
+      "reflection",
+      "Meaningful quick wins can reduce tension while the deeper corrective work continues.",
+    );
+    experience(ctx).highlights[0] =
+      "Meaningful quick wins can reduce tension while the deeper corrective work continues.";
+    expect(noStoryDetailInExperienceRule.check(ctx)).toHaveLength(1);
+  });
+
+  it("checks related experiences too — a related role must not carry the story's detail either", () => {
+    const ctx = withStoryUnit("situation", COPIED);
+    ctx.dataset.experience.push({
+      id: "fixture-role-otherco-2016",
+      company: "Otherco",
+      role: "Earlier Fixture Engineer",
+      startDate: "2016-01",
+      endDate: "2019-12",
+      summary: COPIED,
+      highlights: ["Did an earlier fixture thing."],
+      tech: ["typescript"],
+    });
+    ctx.sources.push({
+      entityType: "experience",
+      id: "fixture-role-otherco-2016",
+      file: "experience/fixture-role-two.json",
+    });
+    firstStory(ctx).relatedExperienceIds = ["fixture-role-otherco-2016"];
+    expect(noStoryDetailInExperienceRule.check(ctx)).toEqual([
+      expect.objectContaining({
+        rule: RULE,
+        file: "experience/fixture-role-two.json",
+        entityId: "fixture-role-otherco-2016",
+      }),
+    ]);
+  });
+
+  it("ignores an unrelated experience that happens to contain the same sentence — attribution is not this rule's job", () => {
+    const ctx = withStoryUnit("situation", COPIED);
+    ctx.dataset.experience.push({
+      id: "fixture-role-unrelated-2010",
+      company: "Unrelatedco",
+      role: "Unrelated Engineer",
+      startDate: "2010-01",
+      endDate: "2011-01",
+      summary: COPIED,
+      highlights: ["Did something."],
+      tech: ["typescript"],
+    });
+    expect(noStoryDetailInExperienceRule.check(ctx)).toEqual([]);
+  });
+
+  it("ignores short sentences — a story unit under eight words is a name, not a narrative", () => {
+    const ctx = withStoryUnit("task", "I stayed and kept the account.");
+    experience(ctx).highlights[1] = "I stayed and kept the account.";
+    expect(noStoryDetailInExperienceRule.check(ctx)).toEqual([]);
+  });
+
+  it("does not flag a story whose experience id does not resolve — that is story-experience-resolves' job", () => {
+    const ctx = withStoryUnit("situation", COPIED);
+    experience(ctx).summary = COPIED;
+    firstStory(ctx).experienceId = "does-not-exist";
+    expect(noStoryDetailInExperienceRule.check(ctx)).toEqual([]);
+  });
+});
+
 describe("ALL_RULES", () => {
   it("names every rule required by #51's scope, exactly once", () => {
     const names = ALL_RULES.map((rule) => rule.name).sort();
@@ -441,7 +975,11 @@ describe("ALL_RULES", () => {
         "gap-related-skills-resolve",
         "no-claim-gap-collision",
         "no-orphan-entities",
+        "no-story-detail-in-experience",
         "skill-has-evidence",
+        "story-experience-resolves",
+        "story-preservation-map-complete",
+        "story-preservation-map-resolves",
         "tag-in-vocabulary",
         "unique-aliases",
         "unique-ids",
@@ -465,9 +1003,11 @@ describe("runRules", () => {
       { entityType: "experience", entityId: "does-not-exist", label: "Nonexistent" },
     ];
     gap.statement = "   ";
+    firstStory(ctx).experienceId = "does-not-exist";
     const violations = runRules(ctx);
     const rules = new Set(violations.map((v) => v.rule));
     expect(rules.has("citation-resolves")).toBe(true);
     expect(rules.has("gap-has-statement")).toBe(true);
+    expect(rules.has("story-experience-resolves")).toBe(true);
   });
 });

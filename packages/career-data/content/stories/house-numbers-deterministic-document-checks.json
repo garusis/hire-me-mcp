@@ -1,0 +1,42 @@
+{
+  "id": "house-numbers-deterministic-document-checks",
+  "experienceId": "house-numbers-2022-senior-full-stack-engineer",
+  "title": "Replacing unreliable LLM checks with deterministic validation and bounded AI observations",
+  "primaryCompetency": "technical-judgment",
+  "supportingCompetencies": [
+    "decision-making",
+    "influence",
+    "customer-focus",
+    "risk-management",
+    "learning-from-failure"
+  ],
+  "situation": "One of our early LLM-enabled services analyzed structured data extracted from loan documents and generated a variable list of checks intended to alert loan processors to potential problems. After the system had been in production for an extended period, our product manager shadowed the processing team and discovered that nobody was using those checks. Follow-up conversations showed why: their number and wording varied, some were unclear, and others hallucinated information.",
+  "task": "I was asked to determine how to make the analysis useful and trustworthy.",
+  "actions": [
+    "I considered two paths: keep the generic LLM checks and invest in representative golden-set evaluations, or replace the operational checks with deterministic code.",
+    "I recommended the deterministic approach, even though the team initially saw moving away from LLM-generated checks as a regression. The extracted fields already had known structures, and modern agentic coding tools had changed the implementation economics: deterministic checks and tests could now be created and maintained much faster.",
+    "I also compared the continuing model, evaluation, and runtime costs of the LLM approach, as well as the privacy controls required to prevent real-document PII from entering evolving golden sets.",
+    "In less than two weeks, I removed the open-ended LLM overview from every supported document type and expanded deterministic coverage across the service.",
+    "I preserved a narrower role for AI: capped, evaluated observations could provide up to three complementary suggestions beyond the authoritative deterministic checks."
+  ],
+  "results": [
+    "The product manager reported successful results from follow-up interviews with the processing team.",
+    "The authoritative checks became stable, reproducible, and covered by deterministic tests instead of changing with model output.",
+    "The design removed unnecessary LLM runtime cost and reduced the need to maintain sensitive golden-set data for rules that could be expressed directly in code.",
+    "We retained LLMs where their flexibility added value, but no longer allowed open-ended generations to define the operational checks processors were expected to trust."
+  ],
+  "reflection": "I still consider the original architecture reasonable for the tools and experience available when it was created. The important lesson was to revisit earlier decisions when the economics and evidence change. I also learned that technical evals, cost tracing, and observability are not enough for nondeterministic product features: they need direct user-feedback mechanisms that reveal whether people understand, trust, and actually use their output.",
+  "retrievalTags": [
+    "privacy",
+    "cost-awareness",
+    "deterministic-validation",
+    "deterministic-over-ai",
+    "llm-evaluation",
+    "user-research",
+    "golden-sets",
+    "hallucination-mitigation",
+    "bounded-ai",
+    "document-analysis",
+    "nondeterminism"
+  ]
+}

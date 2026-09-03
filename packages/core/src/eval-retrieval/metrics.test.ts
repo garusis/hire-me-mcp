@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   checkExpectEmpty,
+  checkPreferredSource,
   dedupeRankedSources,
   precisionAtK,
   recallAtK,
@@ -109,6 +110,69 @@ describe("reciprocalRank", () => {
     const retrieved = [res("project", "z"), res("skill", "a"), res("skill", "a")];
     const expected = [exp("skill", "a")];
     expect(reciprocalRank(retrieved, expected)).toBe(0.5);
+  });
+});
+
+describe("recallAtK: matchMode (#295)", () => {
+  it("matchMode 'any': recall is 1 when at least one acceptable source is retrieved", () => {
+    const retrieved = [res("story", "a")];
+    const expected = [exp("story", "a"), exp("story", "b")];
+    expect(recallAtK(retrieved, expected, "any")).toBe(1);
+  });
+
+  it("matchMode 'any': recall is 0 when no acceptable source is retrieved", () => {
+    const retrieved = [res("story", "z")];
+    const expected = [exp("story", "a"), exp("story", "b")];
+    expect(recallAtK(retrieved, expected, "any")).toBe(0);
+  });
+
+  it("matchMode 'all' (explicit) behaves like the default fraction-of-required computation", () => {
+    const retrieved = [res("story", "a")];
+    const expected = [exp("story", "a"), exp("story", "b")];
+    expect(recallAtK(retrieved, expected, "all")).toBe(0.5);
+  });
+
+  it("defaults to 'all' semantics when matchMode is omitted", () => {
+    const retrieved = [res("story", "a")];
+    const expected = [exp("story", "a"), exp("story", "b")];
+    expect(recallAtK(retrieved, expected)).toBe(recallAtK(retrieved, expected, "all"));
+  });
+});
+
+describe("checkPreferredSource (#295)", () => {
+  it("passes when the preferred source is retrieved and ranks above every other acceptable source", () => {
+    const retrieved = [res("story", "preferred"), res("story", "alt")];
+    const expected = [exp("story", "preferred"), exp("story", "alt")];
+    const check = checkPreferredSource(retrieved, expected, exp("story", "preferred"));
+    expect(check.passed).toBe(true);
+    expect(check.preferredRetrieved).toBe(true);
+    expect(check.reciprocalRank).toBe(1);
+    expect(check.outrankedBy).toEqual([]);
+  });
+
+  it("fails when an acceptable alternative outranks the preferred source", () => {
+    const retrieved = [res("story", "alt"), res("story", "preferred")];
+    const expected = [exp("story", "preferred"), exp("story", "alt")];
+    const check = checkPreferredSource(retrieved, expected, exp("story", "preferred"));
+    expect(check.passed).toBe(false);
+    expect(check.outrankedBy).toEqual([exp("story", "alt")]);
+  });
+
+  it("passes when an unexpected, non-acceptable source ranks above the preferred source", () => {
+    const retrieved = [res("story", "unrelated"), res("story", "preferred")];
+    const expected = [exp("story", "preferred"), exp("story", "alt")];
+    const check = checkPreferredSource(retrieved, expected, exp("story", "preferred"));
+    expect(check.passed).toBe(true);
+    expect(check.outrankedBy).toEqual([]);
+  });
+
+  it("fails when the preferred source is not retrieved at all", () => {
+    const retrieved = [res("story", "alt")];
+    const expected = [exp("story", "preferred"), exp("story", "alt")];
+    const check = checkPreferredSource(retrieved, expected, exp("story", "preferred"));
+    expect(check.passed).toBe(false);
+    expect(check.preferredRetrieved).toBe(false);
+    expect(check.reciprocalRank).toBe(0);
   });
 });
 

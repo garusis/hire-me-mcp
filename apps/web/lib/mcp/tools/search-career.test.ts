@@ -131,11 +131,26 @@ describe("searchCareerTool", () => {
 
     const result = await executor({
       query: "kubernetes",
-      sourceTypes: ["profile", "experience", "project", "skill", "gap", "education", "writing"],
+      sourceTypes: [
+        "profile",
+        "experience",
+        "project",
+        "skill",
+        "gap",
+        "education",
+        "writing",
+        "recommendation",
+        "story",
+      ],
     });
 
     expect(result.isError).toBeUndefined();
     expect(fakeSearchCareer).toHaveBeenCalled();
+  });
+
+  it("mentions recommendations and stories as covered content, matching the corpus actually indexed (#292)", () => {
+    expect(searchCareerTool.description).toContain("recommendations");
+    expect(searchCareerTool.description).toContain("stories");
   });
 
   it("has no duplicated copy/paste clause in its description (#240)", () => {
@@ -202,6 +217,48 @@ describe("searchCareerTool", () => {
     expect(structuredContent.data.results?.[0]?.citationUrl).toBe(
       "http://localhost:3000/projects/ci-pipeline",
     );
+  });
+
+  it("resolves a story-sourced hit's citationUrl to its real anchored /experience#<primary-parent> url, never a bare /experience fallback (#296)", async () => {
+    const { listStoryParents } = await vi.importActual<
+      typeof import("../../../src/lib/content/index.js")
+    >("../../../src/lib/content/index.js");
+    const realStoryParents = listStoryParents();
+    const parent = realStoryParents[0];
+    if (parent === undefined) {
+      throw new Error("real dataset has no authored stories to exercise this guard against");
+    }
+
+    fakeSearchCareer.mockResolvedValue(
+      fixtureResult({
+        results: [
+          {
+            text: "A behavioral story excerpt.",
+            score: 0.9,
+            citation: {
+              entityType: "story",
+              entityId: parent.storyId,
+              label: "Story label",
+            },
+            sourceType: "story",
+            sourceId: parent.storyId,
+            chunkIndex: 0,
+          },
+        ],
+      }),
+    );
+    const executor = createToolExecutor(searchCareerTool);
+
+    const result = await executor({ query: "a time Marcos showed leadership" });
+
+    const structuredContent = result.structuredContent as {
+      data: { results?: Array<{ citationUrl?: string }> };
+    };
+    const citationUrl = structuredContent.data.results?.[0]?.citationUrl;
+    expect(citationUrl, `story "${parent.storyId}" fell back to bare /experience`).toBe(
+      `http://localhost:3000/experience#${parent.experienceId}`,
+    );
+    expect(citationUrl).not.toBe("http://localhost:3000/experience");
   });
 
   it("returns an explicit found:false 'no relevant content found' result for an empty match set, not an empty blob", async () => {

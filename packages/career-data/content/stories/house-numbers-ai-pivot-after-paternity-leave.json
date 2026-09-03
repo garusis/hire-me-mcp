@@ -1,0 +1,41 @@
+{
+  "id": "house-numbers-ai-pivot-after-paternity-leave",
+  "experienceId": "house-numbers-2022-senior-full-stack-engineer",
+  "title": "Returning from paternity leave into an AI-driven company pivot",
+  "primaryCompetency": "adaptability",
+  "supportingCompetencies": [
+    "resilience",
+    "learning-agility",
+    "self-awareness",
+    "communication",
+    "collaboration"
+  ],
+  "situation": "When I returned to House Numbers after a long paternity leave, the engineering team consisted of three people and the company still operated with a B2C model. Two weeks later, our CEO told us that the model was not working and that the company would pivot to a B2B mortgage platform built heavily around AI. This was early in the LLM boom. We had run a few experiments, but none of us had a real background in machine learning, LLMs, or agents. I normally have a lot of confidence in my ability to learn and solve technical problems. This time I could not see it. I was exhausted, emotionally overwhelmed, and still adapting to becoming a father when the company changed both its business and its technical direction. The combination made the new work feel beyond me.",
+  "task": "I seriously considered leaving because I did not want to slow down the team or become a burden while everyone else was trying to make the pivot work. I had to decide whether to stay and learn the new AI work or leave.",
+  "actions": [
+    "Before making that decision, I spoke openly with my CTO, who told me that the rest of the team was probably facing the same technical uncertainty. A teammate then shared that he also felt a strong sense of impostor syndrome around the new AI work.",
+    "My wife and my colleagues could still see my ability clearly during a period when I could not. They listened and adjusted expectations. Some of the workload was shared, and I had space to recover while learning alongside them.",
+    "Once I started working directly with LLMs, the change in perspective came quickly. The names and tools were new, but the underlying work still involved problems I had handled throughout my career: system boundaries, data contracts, failure modes, testing, and operational tradeoffs. I already knew how to enter an unfamiliar technical domain and work out its rules. I had simply lost sight of that while exhausted."
+  ],
+  "results": [
+    "I stayed.",
+    "Over the following years, I became one of the engineers building House Numbers' production LLM and agentic systems, with work ranging from the Communication Service to evaluation infrastructure and operational tooling.",
+    "Areas that had initially made me question my place became areas where teammates regularly trusted my judgment."
+  ],
+  "reflection": "I keep coming back to this story because it reminds me what I am capable of. I entered the pivot convinced that I might become a burden, then helped build the production systems that made AI central to House Numbers' new direction. That result gives my confidence something concrete to rest on. I know I am very good at what I do, and I trust the depth of my engineering experience. When a new technical challenge arrives, I may need to learn its language and tools, but I know I have the skills to find a sound way through it once I decide to begin.",
+  "retrievalTags": [
+    "technical-confidence",
+    "impostor-syndrome",
+    "paternity-leave",
+    "return-to-work",
+    "company-pivot",
+    "b2c-to-b2b",
+    "emerging-technology",
+    "llms",
+    "ai-agents",
+    "transferable-skills",
+    "peer-support",
+    "psychological-safety",
+    "workload-support"
+  ]
+}

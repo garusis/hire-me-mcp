@@ -1,0 +1,34 @@
+{
+  "id": "mutual-informal-leadership",
+  "experienceId": "kubesoft-2015-senior-full-stack-and-mobile-developer",
+  "title": "Creating momentum when a mission-driven project stalled",
+  "primaryCompetency": "leadership",
+  "supportingCompetencies": [
+    "integrity",
+    "influence",
+    "collaboration",
+    "ownership",
+    "decision-making"
+  ],
+  "situation": "At Kubesoft, where I was a Senior Full Stack & Mobile Developer, I participated in one of two company teams entering a hackathon. Before competing, we agreed that if either team won, the prize and ownership of the winning project would be shared. The other team won with Mutual, a government-supported application designed to help parents guide children toward activities and conversations that could reduce the risk of drug use. After the win, disagreement emerged over how the prize should be allocated between the participants, product development, and the broader company. The conflict stalled development.",
+  "task": "I had not been on the winning team and did not feel entitled to argue over their compensation. What I chose to take on was getting the product built, because I believed in its mission.",
+  "actions": [
+    "I renounced my own share of the prize money and began building the backend.",
+    "After I released the first backend version, other contributors began developing the mobile application and frontend dashboard.",
+    "I worked closely with the mobile developer and continued pushing the project forward through informal leadership."
+  ],
+  "results": [
+    "We launched the product before the proposed deadline and handed it over to the government, although we did not receive post-launch usage metrics.",
+    "My contribution created delivery momentum and helped the product launch, but it did not resolve the disagreement that had stalled the team."
+  ],
+  "reflection": "The project showed me what informal leadership can accomplish when formal authority is absent: a concrete first step can turn a stalled discussion into shared action. It also showed its limits.",
+  "retrievalTags": [
+    "social-impact",
+    "mission-driven-product",
+    "stalled-project",
+    "personal-sacrifice",
+    "working-first-version",
+    "hackathon",
+    "public-sector"
+  ]
+}

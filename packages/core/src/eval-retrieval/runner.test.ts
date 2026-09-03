@@ -139,6 +139,145 @@ describe("runRetrievalEval", () => {
     expect(report.verdict.passed).toBe(true);
   });
 
+  it("scores a matchMode: 'any' query as passed when only one acceptable source is retrieved", async () => {
+    const { searchCareer } = fakeSearchCareer({
+      "leadership without formal authority": [{ sourceType: "story", sourceId: "a", score: 0.9 }],
+    });
+
+    const report = await runRetrievalEval(
+      {
+        queries: [
+          query({
+            id: "any-leadership",
+            query: "leadership without formal authority",
+            category: "fuzzy",
+            expectedSources: [
+              { sourceType: "story", sourceId: "a" },
+              { sourceType: "story", sourceId: "b" },
+            ],
+            matchMode: "any",
+          }),
+        ],
+        topK: 5,
+        absentTopicMinScore: 0.4,
+      },
+      { searchCareer },
+    );
+
+    expect(report.cases[0]?.passed).toBe(true);
+    expect(report.cases[0]?.matchModePassed).toBe(true);
+    expect(report.cases[0]?.metrics?.recallAtK).toBe(1);
+  });
+
+  it("fails a case whose preferredSource is outranked by an acceptable alternative", async () => {
+    const { searchCareer } = fakeSearchCareer({
+      "leadership without formal authority": [
+        { sourceType: "story", sourceId: "b", score: 0.9 },
+        { sourceType: "story", sourceId: "a", score: 0.8 },
+      ],
+    });
+
+    const report = await runRetrievalEval(
+      {
+        queries: [
+          query({
+            id: "preferred-leadership",
+            query: "leadership without formal authority",
+            category: "fuzzy",
+            expectedSources: [
+              { sourceType: "story", sourceId: "a" },
+              { sourceType: "story", sourceId: "b" },
+            ],
+            matchMode: "any",
+            preferredSource: { sourceType: "story", sourceId: "a" },
+          }),
+        ],
+        topK: 5,
+        absentTopicMinScore: 0.4,
+      },
+      { searchCareer },
+    );
+
+    expect(report.cases[0]?.matchModePassed).toBe(true);
+    expect(report.cases[0]?.preferencePassed).toBe(false);
+    expect(report.cases[0]?.passed).toBe(false);
+  });
+
+  it("passes a case whose preferredSource is retrieved and outranks every acceptable alternative", async () => {
+    const { searchCareer } = fakeSearchCareer({
+      "leadership without formal authority": [
+        { sourceType: "story", sourceId: "a", score: 0.9 },
+        { sourceType: "story", sourceId: "b", score: 0.8 },
+      ],
+    });
+
+    const report = await runRetrievalEval(
+      {
+        queries: [
+          query({
+            id: "preferred-leadership-ok",
+            query: "leadership without formal authority",
+            category: "fuzzy",
+            expectedSources: [
+              { sourceType: "story", sourceId: "a" },
+              { sourceType: "story", sourceId: "b" },
+            ],
+            matchMode: "any",
+            preferredSource: { sourceType: "story", sourceId: "a" },
+          }),
+        ],
+        topK: 5,
+        absentTopicMinScore: 0.4,
+      },
+      { searchCareer },
+    );
+
+    expect(report.cases[0]?.preferencePassed).toBe(true);
+    expect(report.cases[0]?.passed).toBe(true);
+  });
+
+  it("leaves preferencePassed null for a case that declares no preferredSource", async () => {
+    const { searchCareer } = fakeSearchCareer({
+      "does he know typescript": [{ sourceType: "skill", sourceId: "typescript", score: 0.9 }],
+    });
+
+    const report = await runRetrievalEval(
+      { queries: [query()], topK: 5, absentTopicMinScore: 0.4 },
+      { searchCareer },
+    );
+
+    expect(report.cases[0]?.preferencePassed).toBeNull();
+    expect(report.cases[0]?.preferredSourceReciprocalRank).toBeNull();
+  });
+
+  it("scores an absent-topic query's matchModePassed as vacuously true even when it fails (#295 correction)", async () => {
+    const { searchCareer } = fakeSearchCareer({
+      "blockchain experience": [{ sourceType: "skill", sourceId: "typescript", score: 0.9 }],
+    });
+
+    const report = await runRetrievalEval(
+      { queries: [absentQuery()], topK: 5, absentTopicMinScore: 0.4 },
+      { searchCareer },
+    );
+
+    expect(report.cases[0]?.passed).toBe(false);
+    expect(report.cases[0]?.matchModePassed).toBe(true);
+  });
+
+  it("scores an absent-topic query's matchModePassed as vacuously true when it passes (#295 correction)", async () => {
+    const { searchCareer } = fakeSearchCareer({
+      "blockchain experience": [{ sourceType: "skill", sourceId: "typescript", score: 0.1 }],
+    });
+
+    const report = await runRetrievalEval(
+      { queries: [absentQuery()], topK: 5, absentTopicMinScore: 0.4 },
+      { searchCareer },
+    );
+
+    expect(report.cases[0]?.passed).toBe(true);
+    expect(report.cases[0]?.matchModePassed).toBe(true);
+  });
+
   it("produces an empty report for an empty query list", async () => {
     const { searchCareer } = fakeSearchCareer({});
     const report = await runRetrievalEval(

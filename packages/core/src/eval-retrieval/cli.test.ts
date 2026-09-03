@@ -76,11 +76,28 @@ describe("formatCaseTable", () => {
           retrieved: [{ sourceType: "skill", sourceId: "typescript", score: 0.9 }],
           metrics: { recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 },
           expectEmptyCheck: null,
+          matchMode: "all",
+          preferredSource: null,
+          matchModePassed: true,
+          preferencePassed: null,
+          preferredSourceReciprocalRank: null,
           passed: true,
         },
       ],
-      aggregates: { recallAtK: 1, precisionAtK: 1, mrr: 1, absentTopicAccuracy: 1 },
-      thresholds: { recallAtK: 0.5, precisionAtK: 0.2, mrr: 0.4, absentTopicAccuracy: 0.8 },
+      aggregates: {
+        recallAtK: 1,
+        precisionAtK: 1,
+        mrr: 1,
+        absentTopicAccuracy: 1,
+        preferredSourceCompliance: 1,
+      },
+      thresholds: {
+        recallAtK: 0.5,
+        precisionAtK: 0.2,
+        mrr: 0.4,
+        absentTopicAccuracy: 0.8,
+        preferredSourceCompliance: 0.7,
+      },
       verdict: { passed: true, failures: [] },
     };
 
@@ -105,11 +122,28 @@ describe("formatCaseTable", () => {
           retrieved: [],
           metrics: { recallAtK: 0, precisionAtK: 0, reciprocalRank: 0 },
           expectEmptyCheck: null,
+          matchMode: "all",
+          preferredSource: null,
+          matchModePassed: false,
+          preferencePassed: null,
+          preferredSourceReciprocalRank: null,
           passed: false,
         },
       ],
-      aggregates: { recallAtK: 0, precisionAtK: 0, mrr: 0, absentTopicAccuracy: 1 },
-      thresholds: { recallAtK: 0.5, precisionAtK: 0.2, mrr: 0.4, absentTopicAccuracy: 0.8 },
+      aggregates: {
+        recallAtK: 0,
+        precisionAtK: 0,
+        mrr: 0,
+        absentTopicAccuracy: 1,
+        preferredSourceCompliance: 1,
+      },
+      thresholds: {
+        recallAtK: 0.5,
+        precisionAtK: 0.2,
+        mrr: 0.4,
+        absentTopicAccuracy: 0.8,
+        preferredSourceCompliance: 0.7,
+      },
       verdict: {
         passed: false,
         failures: ["recall@k aggregate 0.0000 is below its threshold 0.5000"],
@@ -123,6 +157,30 @@ describe("formatCaseTable", () => {
   });
 });
 
+describe("runRetrievalEvalCli: preferredSourceCompliance (#295)", () => {
+  it("logs the preferredSourceCompliance aggregate alongside recall/precision/MRR/absent-topic", async () => {
+    const writeFile = vi.fn(async () => undefined);
+    const log = vi.fn();
+
+    await runRetrievalEvalCli(
+      {
+        queries: [PASSING_QUERY],
+        envConfig: { topK: 5, absentTopicMinScore: 0.4, reportPath: "out.json" },
+      },
+      {
+        searchCareer: fakeSearchCareer({
+          "does he know typescript": [{ sourceType: "skill", sourceId: "typescript", score: 0.9 }],
+        }),
+        writeFile,
+        log,
+      },
+    );
+
+    const logged = log.mock.calls.map((call) => call[0] as string).join("\n");
+    expect(logged).toContain("preferred-source compliance");
+  });
+});
+
 describe("runRetrievalEvalCli", () => {
   it("exits 0 and writes the report when the run meets every threshold", async () => {
     const writeFile = vi.fn(async (_path: string, _contents: string) => undefined);
@@ -132,7 +190,13 @@ describe("runRetrievalEvalCli", () => {
       {
         queries: [PASSING_QUERY, ABSENT_QUERY],
         envConfig: { topK: 5, absentTopicMinScore: 0.4, reportPath: "out.json" },
-        thresholds: { recallAtK: 0.5, precisionAtK: 0.5, mrr: 0.5, absentTopicAccuracy: 0.5 },
+        thresholds: {
+          recallAtK: 0.5,
+          precisionAtK: 0.5,
+          mrr: 0.5,
+          absentTopicAccuracy: 0.5,
+          preferredSourceCompliance: 0.5,
+        },
       },
       {
         searchCareer: fakeSearchCareer({
@@ -157,7 +221,13 @@ describe("runRetrievalEvalCli", () => {
       {
         queries: [PASSING_QUERY],
         envConfig: { topK: 5, absentTopicMinScore: 0.4, reportPath: "out.json" },
-        thresholds: { recallAtK: 1, precisionAtK: 1, mrr: 1, absentTopicAccuracy: 1 },
+        thresholds: {
+          recallAtK: 1,
+          precisionAtK: 1,
+          mrr: 1,
+          absentTopicAccuracy: 1,
+          preferredSourceCompliance: 1,
+        },
       },
       {
         searchCareer: fakeSearchCareer({

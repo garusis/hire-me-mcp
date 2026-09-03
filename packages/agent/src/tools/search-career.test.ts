@@ -83,7 +83,10 @@ describe("searchCareerTool", () => {
 
     const result = await execute({ query: "event-driven architecture", topK: 3 });
 
-    expect(searchCareer).toHaveBeenCalledWith("event-driven architecture", { topK: 3 });
+    expect(searchCareer).toHaveBeenCalledWith("event-driven architecture", {
+      topK: 3,
+      sourceTypes: undefined,
+    });
     expect(result).toMatchObject({
       query: "event-driven architecture",
       available: true,
@@ -100,6 +103,55 @@ describe("searchCareerTool", () => {
         marker: "[cite:experience:house-numbers-2022-senior-full-stack-engineer]",
       },
     ]);
+  });
+
+  it("forwards sourceTypes to searchCareer exactly — the story-scoped fuzzy-behavioral route (#294, #305 decision 5) needs sourceTypes: ['story'] to reach core", async () => {
+    const searchCareer = vi.fn().mockResolvedValue({
+      query: "how does he lead without formal authority",
+      results: [fixtureResult({ sourceType: "story" })],
+      tookMs: 12,
+    });
+    vi.mocked(searchCareerClient.getAgentSearchCareer).mockReturnValue({
+      available: true,
+      searchCareer,
+    });
+
+    await execute({
+      query: "how does he lead without formal authority",
+      sourceTypes: ["story"],
+    });
+
+    expect(searchCareer).toHaveBeenCalledWith("how does he lead without formal authority", {
+      topK: undefined,
+      sourceTypes: ["story"],
+    });
+  });
+
+  it("accepts every controlled sourceTypes value and rejects an unknown one", async () => {
+    const { searchCareerInputSchema } = await import("./search-career.js");
+    for (const sourceType of [
+      "profile",
+      "experience",
+      "project",
+      "skill",
+      "gap",
+      "education",
+      "writing",
+      "recommendation",
+      "story",
+    ]) {
+      expect(
+        searchCareerInputSchema.safeParse({ query: "x", sourceTypes: [sourceType] }).success,
+      ).toBe(true);
+    }
+    expect(
+      searchCareerInputSchema.safeParse({ query: "x", sourceTypes: ["not-a-real-type"] }).success,
+    ).toBe(false);
+  });
+
+  it("rejects an empty sourceTypes array — omit the field for no constraint instead", async () => {
+    const { searchCareerInputSchema } = await import("./search-career.js");
+    expect(searchCareerInputSchema.safeParse({ query: "x", sourceTypes: [] }).success).toBe(false);
   });
 
   it("returns a typed unavailable result — never throws — when the real searchCareer call fails", async () => {

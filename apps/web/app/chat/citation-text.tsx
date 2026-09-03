@@ -39,7 +39,7 @@
  */
 
 import { Fragment, type ReactNode } from "react";
-import type { WritingEntry } from "../../src/lib/content";
+import type { StoryParentRef, WritingEntry } from "../../src/lib/content";
 import { Link } from "../design-system/primitives/link";
 import { buildCitedAnswer } from "./chat-citation-sources";
 import { buildChatBlocks, type ChatBlock, type ChatInline } from "./chat-markdown";
@@ -48,6 +48,13 @@ import styles from "./citation-text.module.css";
 export interface CitationTextProps {
   text: string;
   writingEntries: readonly WritingEntry[];
+  /**
+   * The story -> primary-experience lookup a `story` citation's href needs
+   * (issue 295, epic 288). Optional and defaulted to empty: a caller with no
+   * lookup available gets the honest `/experience` fallback rather than a
+   * crash — see `chat-citation-sources.ts`'s `buildCitedAnswer` doc.
+   */
+  storyParents?: readonly StoryParentRef[];
 }
 
 function renderInline(node: ChatInline, position: number): ReactNode {
@@ -113,8 +120,8 @@ function renderBlock(block: ChatBlock, position: number): ReactNode {
 }
 
 /** The answer's prose — Markdown rendered, each citation marker a numbered superscript link. */
-export function CitationText({ text, writingEntries }: CitationTextProps) {
-  const { segments } = buildCitedAnswer(text, writingEntries);
+export function CitationText({ text, writingEntries, storyParents = [] }: CitationTextProps) {
+  const { segments } = buildCitedAnswer(text, writingEntries, storyParents);
   return <>{buildChatBlocks(segments).map(renderBlock)}</>;
 }
 
@@ -124,8 +131,8 @@ export function CitationText({ text, writingEntries }: CitationTextProps) {
  * the answer cited nothing (a clarifying question, an honest "not in the
  * data" reply), so an empty heading never appears.
  */
-export function CitationSources({ text, writingEntries }: CitationTextProps) {
-  const { sources } = buildCitedAnswer(text, writingEntries);
+export function CitationSources({ text, writingEntries, storyParents = [] }: CitationTextProps) {
+  const { sources } = buildCitedAnswer(text, writingEntries, storyParents);
   if (sources.length === 0) {
     return null;
   }

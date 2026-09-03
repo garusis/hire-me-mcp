@@ -17,6 +17,10 @@ import type { Recommendation } from "../schemas/recommendation.js";
 import { recommendationSchema } from "../schemas/recommendation.js";
 import type { Skill } from "../schemas/skill.js";
 import { skillSchema } from "../schemas/skill.js";
+import type { CareerStory } from "../schemas/story.js";
+import { careerStorySchema } from "../schemas/story.js";
+import type { StoryPreservationEntry } from "../schemas/story-preservation.js";
+import { storyPreservationMapSchema } from "../schemas/story-preservation.js";
 import type { WritingEntry } from "../schemas/writing.js";
 import { writingEntrySchema } from "../schemas/writing.js";
 
@@ -40,9 +44,14 @@ type ContentLayoutEntry =
  * which schema validates them. `content/profile.json` is a JSON singleton,
  * `content/experience/*.json` is one ExperienceEntry per file,
  * `content/projects/*.mdx` and `content/writing/*.mdx` are MDX
- * (frontmatter + body), and `skills.json`/`gaps.json`/`education.json` are
- * JSON arrays.
+ * (frontmatter + body), `skills.json`/`gaps.json`/`education.json` are
+ * JSON arrays, `content/recommendations/*.json` and `content/stories/*.json`
+ * are one entity per JSON file, and `story-preservation-map.json` is the
+ * #290 review fixture (validated here, loaded separately by
+ * {@link loadStoryPreservationMap} — it is not a citable entity).
  */
+const STORY_PRESERVATION_MAP_FILE = "story-preservation-map.json";
+
 const contentLayout: ContentLayoutEntry[] = [
   { entityType: "profile", kind: "single-json", relPath: "profile.json", schema: profileSchema },
   {
@@ -66,6 +75,13 @@ const contentLayout: ContentLayoutEntry[] = [
     kind: "per-file-json",
     dir: "recommendations",
     schema: recommendationSchema,
+  },
+  { entityType: "story", kind: "per-file-json", dir: "stories", schema: careerStorySchema },
+  {
+    entityType: "story-preservation-map",
+    kind: "array-json",
+    relPath: STORY_PRESERVATION_MAP_FILE,
+    schema: storyPreservationMapSchema,
   },
 ];
 
@@ -202,6 +218,8 @@ export interface CareerDataset {
   education: EducationEntry[];
   writing: WritingEntry[];
   recommendations: Recommendation[];
+  /** Behavioral stories (#289), each linked to one primary experience entry. */
+  stories: CareerStory[];
 }
 
 /** Which file backs a given loaded entity — the cross-reference the content lint (#51) needs to name an offending file per violation. */
@@ -350,6 +368,7 @@ export function loadContentDirWithSources(
     education: [],
     writing: [],
     recommendations: [],
+    stories: [],
   };
   const sources: EntitySource[] = [];
 
@@ -409,6 +428,15 @@ export function loadContentDirWithSources(
     dataset.recommendations,
     sources,
   );
+  readPerFileInto(
+    contentDir,
+    "stories",
+    "json",
+    "story",
+    careerStorySchema,
+    dataset.stories,
+    sources,
+  );
 
   if (!allowEmpty && sources.length === 0) {
     throw new Error(
@@ -419,6 +447,44 @@ export function loadContentDirWithSources(
   }
 
   return { dataset, sources };
+}
+
+/**
+ * Loads `story-preservation-map.json` — the #290 field-to-story
+ * preservation map that classifies every experience `summary` /
+ * `highlights.N` and names the canonical story preserving its detail.
+ * Returns `[]` when the file is absent (a content set with no review yet);
+ * throws with a readable report when the file is present but invalid, for
+ * the same reason `loadContentDir` does — a partially-valid map is worse
+ * than none. The map is review data consumed by the content lint and by
+ * #297, never a citable entity, so it lives outside {@link CareerDataset}.
+ */
+/**
+ * Whether `contentDir` carries a `story-preservation-map.json` at all. The
+ * lint needs this distinction — an absent map is nothing to check, while a
+ * present map must classify every experience field — and
+ * {@link loadStoryPreservationMap} deliberately flattens "absent" to `[]`.
+ */
+export function hasStoryPreservationMap(contentDir: string): boolean {
+  return fs.existsSync(path.join(contentDir, STORY_PRESERVATION_MAP_FILE));
+}
+
+export function loadStoryPreservationMap(contentDir: string): StoryPreservationEntry[] {
+  const absPath = path.join(contentDir, STORY_PRESERVATION_MAP_FILE);
+  if (!fs.existsSync(absPath)) {
+    return [];
+  }
+  const errors: ContentValidationError[] = [];
+  const data = parseJsonFile(absPath, STORY_PRESERVATION_MAP_FILE, errors);
+  if (data !== undefined) {
+    validateParsed(data, storyPreservationMapSchema, STORY_PRESERVATION_MAP_FILE, errors);
+  }
+  if (errors.length > 0 || data === undefined) {
+    throw new Error(
+      `career-data: cannot load invalid ${STORY_PRESERVATION_MAP_FILE}:\n${formatValidationReport(errors)}`,
+    );
+  }
+  return storyPreservationMapSchema.parse(data);
 }
 
 /**

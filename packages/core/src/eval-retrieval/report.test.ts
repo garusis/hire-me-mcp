@@ -11,6 +11,11 @@ function caseReport(overrides: Partial<RetrievalCaseReport> = {}): RetrievalCase
     retrieved: [{ sourceType: "skill", sourceId: "typescript", score: 0.9 }],
     metrics: { recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 },
     expectEmptyCheck: null,
+    matchMode: "all",
+    preferredSource: null,
+    matchModePassed: true,
+    preferencePassed: null,
+    preferredSourceReciprocalRank: null,
     passed: true,
     ...overrides,
   };
@@ -25,10 +30,96 @@ function absentCaseReport(overrides: Partial<RetrievalCaseReport> = {}): Retriev
     retrieved: [],
     metrics: null,
     expectEmptyCheck: { passed: true, aboveThreshold: [] },
+    matchMode: "all",
+    preferredSource: null,
+    matchModePassed: true,
+    preferencePassed: null,
+    preferredSourceReciprocalRank: null,
     passed: true,
     ...overrides,
   };
 }
+
+function preferenceCaseReport(overrides: Partial<RetrievalCaseReport> = {}): RetrievalCaseReport {
+  return {
+    id: "preference-1",
+    category: "fuzzy",
+    query: "tell me about a time he stepped into leadership",
+    expectedSources: [
+      { sourceType: "story", sourceId: "preferred" },
+      { sourceType: "story", sourceId: "alt" },
+    ],
+    retrieved: [
+      { sourceType: "story", sourceId: "preferred", score: 0.9 },
+      { sourceType: "story", sourceId: "alt", score: 0.8 },
+    ],
+    metrics: { recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 },
+    expectEmptyCheck: null,
+    matchMode: "any",
+    preferredSource: { sourceType: "story", sourceId: "preferred" },
+    matchModePassed: true,
+    preferencePassed: true,
+    preferredSourceReciprocalRank: 1,
+    passed: true,
+    ...overrides,
+  };
+}
+
+describe("buildRetrievalReport: preferredSourceCompliance (#295)", () => {
+  it("computes preferredSourceCompliance as the fraction of preference-declaring cases whose preference passed", () => {
+    const report = buildRetrievalReport({
+      cases: [
+        preferenceCaseReport({ id: "a", preferencePassed: true }),
+        preferenceCaseReport({ id: "b", preferencePassed: false }),
+        caseReport(),
+      ],
+      topK: 5,
+      absentTopicMinScore: 0.4,
+    });
+    expect(report.aggregates.preferredSourceCompliance).toBeCloseTo(0.5, 10);
+  });
+
+  it("edge case: no preference-declaring cases -> preferredSourceCompliance is 1 (vacuously satisfied)", () => {
+    const report = buildRetrievalReport({
+      cases: [caseReport(), absentCaseReport()],
+      topK: 5,
+      absentTopicMinScore: 0.4,
+    });
+    expect(report.aggregates.preferredSourceCompliance).toBe(1);
+  });
+
+  it("carries matchMode/preferredSource/matchModePassed/preferencePassed verbatim in the per-case report", () => {
+    const cases = [preferenceCaseReport()];
+    const report = buildRetrievalReport({ cases, topK: 5, absentTopicMinScore: 0.4 });
+    expect(report.cases[0]).toEqual(cases[0]);
+  });
+
+  it("a single failed preferred-source case blocks the overall verdict under the committed thresholds even when most preference cases pass (#295 correction: preference is blocking, not merely observational/averaged)", () => {
+    const report = buildRetrievalReport({
+      cases: [
+        preferenceCaseReport({ id: "a", preferencePassed: true }),
+        preferenceCaseReport({ id: "b", preferencePassed: true }),
+        preferenceCaseReport({ id: "c", preferencePassed: true }),
+        preferenceCaseReport({ id: "d", preferencePassed: true }),
+        preferenceCaseReport({
+          id: "e",
+          preferencePassed: false,
+          preferredSourceReciprocalRank: 0,
+          passed: false,
+        }),
+        caseReport(),
+        absentCaseReport(),
+      ],
+      topK: 5,
+      absentTopicMinScore: 0.4,
+    });
+    expect(report.aggregates.preferredSourceCompliance).toBeCloseTo(0.8, 10);
+    expect(report.verdict.passed).toBe(false);
+    expect(report.verdict.failures.some((f) => f.includes("preferred-source compliance"))).toBe(
+      true,
+    );
+  });
+});
 
 describe("buildRetrievalReport", () => {
   it("computes recall/precision/MRR aggregates as the mean over non-absent-topic cases only", () => {
@@ -87,7 +178,13 @@ describe("buildRetrievalReport", () => {
       cases: [caseReport(), absentCaseReport()],
       topK: 5,
       absentTopicMinScore: 0.4,
-      thresholds: { recallAtK: 0.5, precisionAtK: 0.5, mrr: 0.5, absentTopicAccuracy: 0.5 },
+      thresholds: {
+        recallAtK: 0.5,
+        precisionAtK: 0.5,
+        mrr: 0.5,
+        absentTopicAccuracy: 0.5,
+        preferredSourceCompliance: 0.5,
+      },
     });
     expect(report.verdict.passed).toBe(true);
   });
@@ -97,7 +194,13 @@ describe("buildRetrievalReport", () => {
       cases: [caseReport(), absentCaseReport()],
       topK: 5,
       absentTopicMinScore: 0.4,
-      thresholds: { recallAtK: 1, precisionAtK: 1, mrr: 1, absentTopicAccuracy: 1.1 },
+      thresholds: {
+        recallAtK: 1,
+        precisionAtK: 1,
+        mrr: 1,
+        absentTopicAccuracy: 1.1,
+        preferredSourceCompliance: 1,
+      },
     });
     expect(report.verdict.passed).toBe(false);
   });

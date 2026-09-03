@@ -30,6 +30,32 @@ export interface CaseReport {
     gapHonesty: ScoreResult | null;
     relevance: ScoreResult;
     toolRouting: ScoreResult | null;
+    /** `null` for any case that declares no `EvalCase.answerAssertions` (#300). */
+    answerAssertions: ScoreResult | null;
+    /**
+     * `null` for any case the runner doesn't score for behavioral-story
+     * completeness (#295 correction, finding 2 —
+     * `./scorers/story-completeness.ts`).
+     */
+    storyCompleteness: ScoreResult | null;
+    /**
+     * `null` for any case whose `answerAssertions.citationGroups` declares
+     * no `preferredRef` (#295 second independent-review correction, finding
+     * 4 — `./scorers/answer-assertions.ts`'s `scorePreferredSourceCompliance`).
+     * Reported and thresholded independently of `answerAssertions` so a
+     * failed preference cannot be diluted by other passing assertions.
+     */
+    preferredSourceCompliance: ScoreResult | null;
+    /**
+     * `null` for any case that declares no `mustMatch`/`mustNotMatch`/
+     * `conditionalMustMatch` entry (#295 third-independent-review
+     * correction, finding 1 —
+     * `./scorers/answer-assertions.ts`'s `scoreFactualBoundaryCompliance`).
+     * Reported and thresholded independently of `answerAssertions` — a
+     * BINARY pass/fail per case — so a single factual-boundary violation
+     * cannot be diluted by other passing assertions in the same case.
+     */
+    factualBoundaryCompliance: ScoreResult | null;
   };
 }
 
@@ -58,6 +84,10 @@ export interface EvalReport {
     gapHonesty: ScorerAggregate;
     relevance: ScorerAggregate;
     toolRouting: ScorerAggregate;
+    answerAssertions: ScorerAggregate;
+    storyCompleteness: ScorerAggregate;
+    preferredSourceCompliance: ScorerAggregate;
+    factualBoundaryCompliance: ScorerAggregate;
   };
   totals: EvalTotals & { cases: number };
   thresholds: ScorerThresholds;
@@ -89,6 +119,14 @@ export function buildReport(params: {
     gapHonesty: aggregate(params.cases.map((c) => c.scores.gapHonesty)),
     relevance: aggregate(params.cases.map((c) => c.scores.relevance)),
     toolRouting: aggregate(params.cases.map((c) => c.scores.toolRouting)),
+    answerAssertions: aggregate(params.cases.map((c) => c.scores.answerAssertions)),
+    storyCompleteness: aggregate(params.cases.map((c) => c.scores.storyCompleteness)),
+    preferredSourceCompliance: aggregate(
+      params.cases.map((c) => c.scores.preferredSourceCompliance),
+    ),
+    factualBoundaryCompliance: aggregate(
+      params.cases.map((c) => c.scores.factualBoundaryCompliance),
+    ),
   };
 
   return {
@@ -109,6 +147,34 @@ export function buildReport(params: {
         // compared against the threshold as if it were a real 0 score (see
         // ./thresholds.ts's ScorerThresholds doc comment).
         ...(aggregates.toolRouting.count > 0 ? { toolRouting: aggregates.toolRouting.mean } : {}),
+        // Same optional treatment for answer assertions (#300): only cases
+        // that declare them contribute, so a run without any never fails on it.
+        ...(aggregates.answerAssertions.count > 0
+          ? { answerAssertions: aggregates.answerAssertions.mean }
+          : {}),
+        // Same optional treatment for story completeness (#295 correction,
+        // finding 2): only cases the runner scores for it contribute.
+        ...(aggregates.storyCompleteness.count > 0
+          ? { storyCompleteness: aggregates.storyCompleteness.mean }
+          : {}),
+        // Same optional treatment for preferred-source compliance (#295
+        // second independent-review correction, finding 4): only cases
+        // declaring a `preferredRef` contribute, and — unlike the other
+        // optional scorers — its committed threshold is blocking (1.0), so
+        // a single failed preference case fails the run regardless of how
+        // many others passed.
+        ...(aggregates.preferredSourceCompliance.count > 0
+          ? { preferredSourceCompliance: aggregates.preferredSourceCompliance.mean }
+          : {}),
+        // Same optional treatment for factual-boundary compliance (#295
+        // third-independent-review correction, finding 1): only cases
+        // declaring mustMatch/mustNotMatch/conditionalMustMatch contribute,
+        // and — like preferredSourceCompliance — its committed threshold is
+        // blocking (1.0): a single violated boundary in ANY case fails the
+        // run, regardless of how many other assertions or cases passed.
+        ...(aggregates.factualBoundaryCompliance.count > 0
+          ? { factualBoundaryCompliance: aggregates.factualBoundaryCompliance.mean }
+          : {}),
       },
       thresholds,
     ),

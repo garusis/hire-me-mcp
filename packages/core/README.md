@@ -254,6 +254,68 @@ thrown error — when nothing matches or nothing is authored.
   `publishedDate` descending (ties by `id`). With the currently-empty writing corpus the honest
   result is `{ data: [], citations: [] }` — "nothing published yet" is data.
 
+### `listCareerStories(repository: CareerDataRepository, filter?: CareerStoryFilter): DomainResult<CareerStoryListEntry[]>`
+
+The deterministic behavioral-story service (#291, epic #288): every `CareerStory` matching a
+structured filter, returned **complete** and joined to compact parent-role context so a caller can
+answer "tell me about a time Marcos…" without a second lookup. No fuzzy matching — topic,
+technology, vendor, situation and outcome wording routes through `searchCareer` with
+`sourceTypes: ["story"]` (#305 decision 5); this service is the stable route for a known
+competency, id, experience or company.
+
+Each `CareerStoryListEntry` is:
+
+- `story` — the full authored `CareerStory` record, `retrievalTags` included. Retrieval tags are
+  semantic discovery hints for `searchCareer`, not a second deterministic taxonomy, so there is
+  deliberately **no tag filter** here (#305 decision 3). Eval-only retrieval questions never
+  appear on the record (the story schema is strict).
+- `primaryExperience` — `{ id, company, role, startDate, endDate? }` for the single role where
+  the event occurred. `endDate` is omitted for a current role exactly as on the `ExperienceEntry`.
+  The full entry and its highlights are *not* duplicated per result.
+- `relatedExperiences` — zero or more contexts with the same compact fields, resolved from the
+  story's optional `relatedExperienceIds`. Labelled separately because a related role aids
+  discovery only; it never becomes the event's parent or inherits its actions or outcomes (#305
+  decision 2).
+- `citation` — the story's own `{ entityType: "story", entityId, label: title }`. The story is the
+  only cited entity: related roles do not produce extra citations. `citations[i]` on the envelope
+  is `data[i].citation`.
+
+`CareerStoryFilter` fields — every value is trimmed and lower-cased before an **exact** comparison
+(the same convention as `getExperience`'s `company` filter), and an unknown value matches nothing:
+
+- `id?: string` — exact story id.
+- `experienceId?: string` — matches a story whose primary `experienceId` **or** one of its
+  `relatedExperienceIds` is the given id.
+- `company?: string` — matches a story whose primary **or** related experience has that company.
+- `competencies?: string[]` — controlled `COMPETENCIES` values; a story matches if **any** given
+  value is its `primaryCompetency` or in `supportingCompetencies` (OR within this field). Omitted
+  or an empty array imposes no constraint.
+
+**Filter combination semantics:** AND across fields, OR within `competencies`. When `company` and
+`experienceId` are both supplied they must be satisfied by **the same** primary-or-related
+association — a story is never matched by taking the company from one associated role and the id
+from another.
+
+**Stable sort order** (fully deterministic regardless of input array order):
+
+1. with a `competencies` filter, stories matched on their **primary** competency come before
+   stories matched only through a supporting competency (no effect without that filter);
+2. then parent experiences in reverse-chronological order — exactly `getExperience`'s exported
+   `compareExperience` rule (`startDate` desc, open-ended role first among same-start ties, `id`
+   asc);
+3. then story `id` ascending.
+
+Concretely, `{ competencies: ["leadership"] }` against the real corpus ranks the Xogito
+client-account recovery story ahead of the Mutual story — a locked invariant (#305 decision 8),
+tested against the content directory.
+
+**Empty results and defensive behaviour:** a filter matching nothing, an unknown id, company or
+competency, all return `{ data: [], citations: [] }` — never a throw; schema-invalid input is the
+adapter boundary's concern. A story whose primary experience does not resolve (content lint
+normally blocks this) is **excluded** rather than thrown on, since it can satisfy neither the
+context contract nor the parent-chronological order; a related id that does not resolve is simply
+dropped from that story's `relatedExperiences`. The repository's dataset is never mutated.
+
 ## The career-data chunker (`chunkCareerData`)
 
 `chunkCareerData(dataset: CareerDataset, options?: ChunkingOptions): Chunk[]` (#21, epic #6) turns
@@ -350,7 +412,16 @@ interface DomainResult<T> {
 }
 
 interface Citation {
-  entityType: "profile" | "experience" | "project" | "skill" | "gap" | "education" | "writing";
+  entityType:
+    | "profile"
+    | "experience"
+    | "project"
+    | "skill"
+    | "gap"
+    | "education"
+    | "writing"
+    | "recommendation"
+    | "story";
   entityId: string;
   label: string;
   fragment?: string;
@@ -642,14 +713,20 @@ in a narrower positive band. Higher is always more similar, and `results` is alw
 
 `SearchCareerOptions`:
 
-- **`topK?: number`** — max results to return. Defaults to **10**. Must be an integer in `[1, 50]`
-  (`MIN_TOP_K`/`MAX_TOP_K`) — anything else throws `InvalidTopKError` before any embedding call.
+- **`topK?: number`** — max **unique sources** to return (#292), not raw chunks: results are
+  grouped by `(sourceType, sourceId)`, keeping only each source's highest-scoring chunk as its
+  discovery excerpt and citation, before `topK` is applied — a source that happens to produce
+  several chunks can never consume more than one slot, and can never hide another qualifying
+  source. Defaults to **10**. Must be an integer in `[1, 50]` (`MIN_TOP_K`/`MAX_TOP_K`) — anything
+  else throws `InvalidTopKError` before any embedding call.
 - **`minScore?: number`** — minimum cosine-similarity score a result must meet. Defaults to **0**
   (no filtering) — cosine similarity of `0` means "no discernible relationship", so the default
   leaves everything the ANN index returns in place and lets a caller raise the bar explicitly.
+  Applied to each source's best chunk after grouping, so the final result set may contain fewer
+  than `topK` sources.
 - **`sourceTypes?: readonly string[]`** — restricts results to the given `sourceType`s (e.g.
-  `["project", "experience"]`), pushed into the SQL `WHERE` clause (not filtered after the fact) so
-  `topK` is still applied to the filtered set. Omitted/empty imposes no constraint.
+  `["project", "experience"]`), pushed into the SQL `WHERE` clause and applied **before** source
+  grouping. Omitted/empty imposes no constraint.
 
 ### Validation, empty store, and the embedding-model guard
 

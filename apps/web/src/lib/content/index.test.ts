@@ -13,6 +13,7 @@ import {
   getWritingListView,
   listExperienceSlugs,
   listProjectSlugs,
+  listStoryParents,
   listWritingSlugs,
 } from "./index";
 
@@ -49,5 +50,12 @@ describe("apps/web content layer public entry point", () => {
     const cv = getCvView();
     expect(cv.profile.id).toBe(profile.profile.id);
     expect(cv.filename).toMatch(/-cv\.pdf$/);
+
+    // #293: every story's parent pointer resolves to a real experience slug.
+    const storyParents = listStoryParents();
+    expect(storyParents.length).toBeGreaterThan(0);
+    for (const parent of storyParents) {
+      expect(experienceSlugs).toContain(parent.experienceId);
+    }
   });
 });

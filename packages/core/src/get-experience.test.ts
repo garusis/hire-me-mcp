@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import type { ExperienceEntry } from "@hire-me-mcp/career-data";
 import { describe, expect, it } from "vitest";
-import { getExperience } from "./get-experience.js";
+import { compareExperience, getExperience } from "./get-experience.js";
 import {
   createContentCareerDataRepository,
   createInMemoryCareerDataRepository,
@@ -196,5 +196,19 @@ describe("getExperience", () => {
       });
       expect(result.data.map((e) => e.id)).toEqual(result.citations.map((c) => c.entityId));
     });
+  });
+});
+
+describe("compareExperience", () => {
+  it("is exported so sibling services (listCareerStories, #291) order parents the same way", () => {
+    const sorted = [oldest, current, middleB, pastRecent, middleA].sort(compareExperience);
+    expect(sorted.map((e) => e.id)).toEqual([
+      "current-role",
+      "recent-role",
+      "middle-role-a",
+      "middle-role-b",
+      "oldest-role",
+    ]);
+    expect(compareExperience(current, current)).toBe(0);
   });
 });

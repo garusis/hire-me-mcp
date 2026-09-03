@@ -1,9 +1,12 @@
 import type { Citation } from "@hire-me-mcp/core";
 import { describe, expect, it, vi } from "vitest";
-import { getWritingListView } from "../../src/lib/content/index.js";
+import { getWritingListView, listStoryParents } from "../../src/lib/content/index.js";
 import { resolveCitationSiteUrl, withCitationSiteUrls } from "./citation-site-urls.js";
 
-vi.mock("../../src/lib/content/index.js", () => ({ getWritingListView: vi.fn() }));
+vi.mock("../../src/lib/content/index.js", () => ({
+  getWritingListView: vi.fn(),
+  listStoryParents: vi.fn(),
+}));
 
 // In tests no SITE_URL/VERCEL_* env vars are set, so getSiteUrl() resolves
 // to the local dev origin — see src/lib/config/site-url.ts.
@@ -81,12 +84,65 @@ describe("resolveCitationSiteUrl", () => {
     ).toBe(`${ORIGIN}/writing`);
   });
 
+  it("maps a story citation to its PRIMARY parent experience anchor on /experience, keeping entityType 'story' (#293)", () => {
+    vi.mocked(listStoryParents).mockReturnValue([
+      { storyId: "other-story", experienceId: "other-role" },
+      { storyId: "fixture-story", experienceId: "acme-role" },
+    ]);
+
+    const enriched = withCitationSiteUrls([
+      citation({ entityType: "story", entityId: "fixture-story" }),
+    ]);
+
+    expect(enriched).toEqual([
+      {
+        entityType: "story",
+        entityId: "fixture-story",
+        label: "Fixture",
+        url: `${ORIGIN}/experience#acme-role`,
+      },
+    ]);
+  });
+
+  it("falls back to the /experience page for a story citation when the story lookup cannot be loaded", () => {
+    vi.mocked(listStoryParents).mockImplementation(() => {
+      throw new Error("no dataset");
+    });
+
+    expect(
+      resolveCitationSiteUrl(citation({ entityType: "story", entityId: "fixture-story" })),
+    ).toBe(`${ORIGIN}/experience`);
+  });
+
   it("keeps a citation's own external url when it already has one", () => {
     const chunkCitation = {
       ...citation({ entityType: "project", entityId: "cowork" }),
       url: "https://github.com/garusis/cowork",
     };
     expect(resolveCitationSiteUrl(chunkCitation)).toBe("https://github.com/garusis/cowork");
+  });
+});
+
+describe("resolveCitationSiteUrl over the real dataset (#296)", () => {
+  it("resolves every authored story to an anchored /experience#<primary-parent> url, never a bare /experience fallback", async () => {
+    const actual = await vi.importActual<typeof import("../../src/lib/content/index.js")>(
+      "../../src/lib/content/index.js",
+    );
+    const realStoryParents = actual.listStoryParents();
+    vi.mocked(listStoryParents).mockReturnValue(realStoryParents);
+
+    expect(realStoryParents.length).toBeGreaterThan(0);
+    for (const parent of realStoryParents) {
+      const url = resolveCitationSiteUrl({
+        entityType: "story",
+        entityId: parent.storyId,
+        label: parent.storyId,
+      });
+      expect(url, `story "${parent.storyId}" fell back to bare /experience`).toBe(
+        `${ORIGIN}/experience#${parent.experienceId}`,
+      );
+      expect(url).not.toBe(`${ORIGIN}/experience`);
+    }
   });
 });
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { scoreAnswerAssertions } from "../scorers/answer-assertions.js";
 import { EVAL_CASES } from "./cases.js";
 import { evalDatasetSchema } from "./schema.js";
+import { STORY_MANIFEST_CASES } from "./story-manifest-cases.js";
 
 describe("EVAL_CASES", () => {
   it("validates against the dataset schema", () => {
@@ -38,6 +40,264 @@ describe("EVAL_CASES", () => {
   it("includes at least one exact-fact case expecting deterministic-only routing (#75)", () => {
     const exactCases = EVAL_CASES.filter((c) => c.expectedToolCall === "deterministic-only");
     expect(exactCases.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("includes at least one known-competency behavioral case expecting list-career-stories to be called (#294), each declaring the competency it routes on (#295 broadens the covered vocabulary beyond leadership/ownership)", () => {
+    const storyCases = EVAL_CASES.filter((c) => c.expectedToolCall === "list-career-stories");
+    expect(storyCases.length).toBeGreaterThanOrEqual(1);
+    for (const evalCase of storyCases) {
+      expect(evalCase.question).toMatch(
+        /tell me about a|leadership|led|ownership|when has|give (?:an|me an) example|how (?:has|did)/i,
+      );
+      expect(evalCase.expectedCompetencies?.length ?? 0).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * #305 decision 8's locked "story 001 > 002" invariant: story
+   * `xogito-client-account-recovery` (001) must outrank
+   * `mutual-informal-leadership` (002) whenever both are honest candidates —
+   * both share `primaryCompetency: "leadership"`, and this case's generic
+   * "leadership without formal authority" wording carries none of Mutual's
+   * distinguishing signals (hackathon, prize money, the Mutual app), so
+   * 001 is the preferred grounding, not 002 (independent review of #294's
+   * 099e9d1, corrected here).
+   */
+  it("grounds the generic known-competency leadership case in story 001 (xogito-client-account-recovery), not story 002 (mutual-informal-leadership), per the #305 story-001-over-002 invariant", () => {
+    const storyCase = EVAL_CASES.find((c) => c.id === "story-informal-leadership");
+    expect(storyCase).toBeDefined();
+    expect(storyCase?.notes).toMatch(/xogito-client-account-recovery/);
+    expect(storyCase?.notes).toMatch(/305|story 001|001 (?:over|>|outrank)/i);
+    expect(storyCase?.answerAssertions?.mustMatch).toBeDefined();
+    expect(storyCase?.answerAssertions?.mustNotMatch).toBeDefined();
+  });
+
+  /**
+   * #294 independent-review correction (findings 2-4): tool-name presence
+   * and text-only assertions cannot prove the LOCATED call asked for the
+   * right competency, nor that the returned citation is actually story 001
+   * rather than a recommendation/experience/story-002 citation that happens
+   * to sit alongside on-topic prose. Both are now asserted directly.
+   */
+  it("requires the leadership case to assert its competency and the story 001 citation directly, not just tool presence or wording (#294 independent-review correction)", () => {
+    const storyCase = EVAL_CASES.find((c) => c.id === "story-informal-leadership");
+    expect(storyCase?.expectedCompetencies).toEqual(["leadership"]);
+    expect(storyCase?.answerAssertions?.mustCiteEntity).toEqual([
+      { entityType: "story", entityId: "xogito-client-account-recovery" },
+    ]);
+    expect(storyCase?.answerAssertions?.mustNotCiteEntity).toEqual([
+      { entityType: "story", entityId: "mutual-informal-leadership" },
+    ]);
+  });
+
+  describe("story-informal-leadership answer assertions (#305 story-001-over-002 invariant)", () => {
+    function assertionsFor(id: string) {
+      const evalCase = EVAL_CASES.find((c) => c.id === id);
+      const assertions = evalCase?.answerAssertions;
+      if (!assertions) {
+        throw new Error(`eval case ${id} must declare answerAssertions`);
+      }
+      return assertions;
+    }
+
+    it("scores a Xogito-grounded (story 001) answer, cited as such, as fully passing", () => {
+      const answer =
+        "At Xogito, after the project manager resigned, Marcos became the team's main " +
+        "spokesperson with no formal product-management authority, rebuilding the client's " +
+        "trust over several sprints by proposing quick wins alongside the core delivery repairs " +
+        "[cite:story:xogito-client-account-recovery].";
+      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"));
+      expect(result.reason).not.toMatch(
+        /forbidden pattern matched|missing required pattern|missing required citation|forbidden citation present/,
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("scores an answer grounded only in the Mutual hackathon story (002) as failing", () => {
+      const answer =
+        "After the hackathon, disagreement over the Mutual prize money stalled the project, so " +
+        "Marcos renounced his own share and kept building the backend through informal leadership " +
+        "[cite:story:mutual-informal-leadership].";
+      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"));
+      expect(result.score).toBeLessThan(1);
+    });
+
+    /**
+     * #294 independent-review correction, finding 4b: the pre-correction
+     * `mustMatch: ["Xogito"]` alone accepted a run whose prose names Xogito
+     * but whose actual returned citation is a DIFFERENT entity — the exact
+     * gap `mustCiteEntity` closes.
+     */
+    it("scores an answer that NAMES Xogito in prose but is actually cited to story 002 as failing", () => {
+      const answer =
+        "Unlike his time at Xogito, this story is about renouncing prize money after a " +
+        "hackathon to keep a stalled product moving [cite:story:mutual-informal-leadership].";
+      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"));
+      expect(result.score).toBeLessThan(1);
+      expect(result.reason).toMatch(/forbidden citation present/i);
+    });
+
+    /**
+     * #294 independent-review correction, finding 3: recommendation- or
+     * experience-only evidence must not pass as the sole event narrative
+     * for a behavioral case — an answer that never actually cites the
+     * required story fails even if it cites something else real.
+     */
+    it("scores an answer grounded only in a recommendation/experience citation (no story at all) as failing", () => {
+      const answer =
+        "Colleagues have praised his leadership under pressure [cite:recommendation:some-rec].";
+      const result = scoreAnswerAssertions(answer, assertionsFor("story-informal-leadership"));
+      expect(result.score).toBeLessThan(1);
+      expect(result.reason).toMatch(/missing required citation/i);
+    });
+  });
+
+  it("includes at least one fuzzy behavioral case expecting search-career (story-scoped) routing, reground on the Mutual-specific story it targets (#294 independent-review correction, finding 4)", () => {
+    const fuzzyStoryCase = EVAL_CASES.find(
+      (c) => c.id === "rag-stalled-project-no-formal-authority",
+    );
+    expect(fuzzyStoryCase).toBeDefined();
+    // #294 independent-review correction: "search-career" alone only checks
+    // tool-name presence, not that it was actually called with
+    // sourceTypes: ["story"] — the argument- and sequence-aware variant is
+    // required so a run that calls search-career unscoped still fails.
+    expect(fuzzyStoryCase?.expectedToolCall).toBe("search-career-story-scoped");
+    expect(fuzzyStoryCase?.notes).toMatch(/sourceTypes.*story|story.*sourceTypes/is);
+    // Finding 4: the generic pre-correction wording carried no Mutual-
+    // specific signal, so Xogito (story 001) was also an honest candidate
+    // under the #305 001-over-002 invariant. The reworded question must
+    // name Mutual-specific facts (the hackathon prize dispute) that only
+    // story 002 supports, and the citation requirement — not text alone —
+    // must enforce that story.
+    expect(fuzzyStoryCase?.question).toMatch(/hackathon|prize/i);
+    expect(fuzzyStoryCase?.answerAssertions?.mustCiteEntity).toEqual([
+      { entityType: "story", entityId: "mutual-informal-leadership" },
+    ]);
+    expect(fuzzyStoryCase?.answerAssertions?.mustNotCiteEntity).toEqual([
+      { entityType: "story", entityId: "xogito-client-account-recovery" },
+    ]);
+  });
+
+  it("probes the document-extraction PoC status with answer assertions that reject the withdrawn production framing (#300)", () => {
+    const pocCases = EVAL_CASES.filter((c) => c.id.startsWith("poc-doc-extraction-"));
+    expect(pocCases.length).toBeGreaterThanOrEqual(3);
+    for (const evalCase of pocCases) {
+      expect(evalCase.answerAssertions).toBeDefined();
+      expect(evalCase.answerAssertions?.mustNotMatch?.length ?? 0).toBeGreaterThan(0);
+    }
+    const demoToProduction = EVAL_CASES.find((c) => c.id === "rag-ai-demo-to-production");
+    expect(demoToProduction?.notes).not.toMatch(/document-extraction-pipeline/);
+  });
+
+  /**
+   * The PoC assertions must not be negation-blind (#300 review): an honest
+   * answer naturally echoes the question's own phrasing under a negation
+   * ("it was not shipped to production", "the 3% of its cost claim is
+   * invalid") and has to score 1, while the withdrawn affirmative framing
+   * still fails.
+   */
+  describe("document-extraction PoC answer assertions (#300)", () => {
+    function assertionsFor(id: string) {
+      const evalCase = EVAL_CASES.find((c) => c.id === id);
+      const assertions = evalCase?.answerAssertions;
+      if (!assertions) {
+        throw new Error(`eval case ${id} must declare answerAssertions`);
+      }
+      return assertions;
+    }
+
+    const HONEST_ANSWERS: ReadonlyArray<readonly [id: string, answer: string]> = [
+      [
+        "poc-doc-extraction-production-status",
+        "No — it was not shipped to production. The document-extraction work was a multi-round " +
+          "proof of concept; production kept the incumbent OCR vendor plus the existing LLM " +
+          "fallback, and productionization was explicitly left as a later team decision.",
+      ],
+      [
+        "poc-doc-extraction-production-status",
+        "It never reached production. The PoC stayed experimental under the evaluation harness; " +
+          "it was never deployed and never replaced the vendor.",
+      ],
+      [
+        "poc-doc-extraction-demonstrated",
+        "The proof of concept demonstrated measured experimentation rather than a shipped " +
+          "system: competing split, classify and extract architectures were scored against " +
+          "human-reviewed ground truth, with stated limitations — a corrected 0.728 field " +
+          "result on a 17-document judged sample and 74.7% correctness among scored fields at " +
+          "only 48.0% coverage. It was not deployed.",
+      ],
+      [
+        "poc-doc-extraction-vendor-cost-claim",
+        "No. The claim that it beat the vendor at 3% of its cost is invalid: the PoC's cost " +
+          "figures are experiment-run costs, never normalized against the vendor's per-loan " +
+          "price on the same work and coverage, and it never replaced the vendor. Andre Treib's " +
+          'recommendation does mention "$0.30 vs $25", but that is his attributed wording, ' +
+          "not a measured result.",
+      ],
+    ];
+
+    it.each(HONEST_ANSWERS)(
+      "scores an honest, negated answer to %s as fully passing",
+      (id, answer) => {
+        const result = scoreAnswerAssertions(answer, assertionsFor(id));
+        expect(result.reason).not.toMatch(/forbidden pattern matched|missing required pattern/);
+        expect(result.score).toBe(1);
+      },
+    );
+
+    const WITHDRAWN_ANSWERS: ReadonlyArray<readonly [id: string, answer: string]> = [
+      [
+        "poc-doc-extraction-production-status",
+        "Yes — he shipped it to production, where it replaced the incumbent vendor.",
+      ],
+      [
+        "poc-doc-extraction-production-status",
+        "Yes, the pipeline was deployed to production and accuracy went from 30% to 87%.",
+      ],
+      [
+        "poc-doc-extraction-demonstrated",
+        "It demonstrated a jump from 30% → 87% accuracy and a 0.844 field score.",
+      ],
+      [
+        "poc-doc-extraction-vendor-cost-claim",
+        "Yes — it beat the vendor at roughly 3% of its cost, going from 30% to 87%.",
+      ],
+    ];
+
+    it.each(WITHDRAWN_ANSWERS)("rejects the withdrawn affirmative framing for %s", (id, answer) => {
+      expect(scoreAnswerAssertions(answer, assertionsFor(id)).score).toBeLessThan(1);
+    });
+  });
+
+  it("includes the full #295 locked 38-case behavioral-story manifest", () => {
+    const manifestIds = new Set(STORY_MANIFEST_CASES.map((c) => c.id));
+    const includedIds = new Set(EVAL_CASES.map((c) => c.id));
+    for (const id of manifestIds) {
+      expect(includedIds.has(id)).toBe(true);
+    }
+    expect(manifestIds.size).toBe(38);
+  });
+
+  /**
+   * #295 integration correction: the normal agent-evals CI route
+   * (`.github/workflows/agent-evals.yml`'s `EVAL_MAX_CASES` default) was
+   * raised to `EVAL_CASES.length` specifically so a default run executes the
+   * whole dataset, not a budget-capped slice. That CI-owned default is a
+   * plain number in YAML this package can't import, so this test locks the
+   * dataset-side half of the invariant it depends on: the total case count
+   * (66 = 28 base + 38 locked story-manifest) this integration's budget
+   * figures (token/cost caps in the workflow file, and
+   * `packages/agent/README.md`'s "Running evals in CI" section) were sized
+   * against. A silent change to either count without updating the other two
+   * would make the CI budget or the durable-coverage guard in
+   * `story-manifest-cases.test.ts` false; this test is what forces that to
+   * be caught here instead.
+   */
+  it("has exactly 66 total cases (28 base + the 38 locked story-manifest cases) — the size the CI default cap and budget were set against (#295 integration)", () => {
+    expect(EVAL_CASES.length).toBe(66);
+    expect(STORY_MANIFEST_CASES.length).toBe(38);
+    const baseCaseCount = EVAL_CASES.length - STORY_MANIFEST_CASES.length;
+    expect(baseCaseCount).toBe(28);
   });
 
   it("carries no private personal data (no email addresses or phone-like digit runs)", () => {

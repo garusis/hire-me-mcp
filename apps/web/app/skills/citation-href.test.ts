@@ -139,6 +139,51 @@ describe("resolveCitationHref", () => {
     expect(href).toBe("/recommendations#some-recommender");
   });
 
+  // #293 (epic #288): a story citation keeps `entityType: "story"` for
+  // precise grounding, but the site renders no story page, so it resolves
+  // to the primary parent entry on /experience — the page verifies the
+  // employment context while the story body stays in the tool response.
+  it("points a story citation at its PRIMARY parent experience anchor on /experience, without downgrading the entity type", () => {
+    const href = resolveCitationHref(
+      {
+        entityType: "story",
+        entityId: "xogito-client-account-recovery",
+        label: "Rebuilding client trust through emerging leadership",
+      },
+      [],
+      [
+        { storyId: "other-story", experienceId: "other-role" },
+        {
+          storyId: "xogito-client-account-recovery",
+          experienceId: "xogito-group-2020-senior-software-development-engineer",
+        },
+      ],
+    );
+
+    expect(href).toBe("/experience#xogito-group-2020-senior-software-development-engineer");
+  });
+
+  it("never builds a /stories route for a story citation", () => {
+    const href = resolveCitationHref(
+      { entityType: "story", entityId: "some-story", label: "Some Story" },
+      [],
+      [{ storyId: "some-story", experienceId: "some-role" }],
+    );
+
+    expect(href).not.toContain("/stories");
+    expect(href).not.toContain("some-story");
+  });
+
+  it("falls back to the /experience page for a story citation whose parent can't be resolved, never the bare home page", () => {
+    const href = resolveCitationHref(
+      { entityType: "story", entityId: "missing-story", label: "Missing" },
+      [],
+      [],
+    );
+
+    expect(href).toBe("/experience");
+  });
+
   it("maps every citable entity type to a real surface, never the bare home-page fallback", () => {
     for (const entityType of CITABLE_ENTITY_TYPES) {
       const href = resolveCitationHref(

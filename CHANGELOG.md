@@ -24,6 +24,58 @@ To cut a release: certify production with the release-readiness pyramid
 reports `apps/web/package.json`'s version in `initialize`), add a section here, then tag the
 deployed commit and publish a GitHub Release.
 
+## [1.1.0] — Unreleased
+
+Milestone: [v1.1 — Behavioral Career Stories](https://github.com/garusis/hire-me-mcp/milestone/11) ·
+Epic: [#288](https://github.com/garusis/hire-me-mcp/issues/288)
+
+### Added
+
+- A `CareerStory` content type — 16 owner-approved behavioral events (situation, task, ordered
+  actions, results, optional reflection), each tagged with one primary and up to five supporting
+  competencies from a controlled vocabulary
+  ([#289](https://github.com/garusis/hire-me-mcp/issues/289),
+  [#290](https://github.com/garusis/hire-me-mcp/issues/290)).
+- `list-career-stories` — a new, deterministic MCP tool and matching interview-agent tool
+  returning the complete matching story (never an excerpt) filtered by story id, experience id,
+  company, and/or competency, plus `search-career` extended to index and rank story content
+  alongside every other source type
+  ([#291](https://github.com/garusis/hire-me-mcp/issues/291),
+  [#292](https://github.com/garusis/hire-me-mcp/issues/292),
+  [#293](https://github.com/garusis/hire-me-mcp/issues/293),
+  [#294](https://github.com/garusis/hire-me-mcp/issues/294)).
+
+### Visibility boundary
+
+**Behavioral stories are queryable only, never passively rendered.** A story's full narrative
+reaches an agent only in response to an explicit `list-career-stories` or `search-career` tool
+call — the same public, rate-limited MCP surface every other tool uses. There is no `/stories`
+route, no story link in navigation, and no story text anywhere in the sitemap, home or experience
+pages, the CV, page metadata/OG/JSON-LD, or `llms.txt`/`llms-full.txt`; a story citation's URL
+always resolves to its parent role's anchor on the experience page, never a dedicated story page.
+This boundary is enforced by real-dataset guards across every passive surface and every citation
+consumer, not asserted by convention alone
+([#296](https://github.com/garusis/hire-me-mcp/issues/296) — see
+[`docs/mcp.md`](docs/mcp.md#available-tools) for the full statement).
+
+### Testing
+
+- Comprehensive eval, protocol, and end-to-end coverage for story retrieval, agent routing
+  (deterministic `list-career-stories` vs. semantic `search-career`), citation resolution, and
+  the passive-surface boundary above
+  ([#295](https://github.com/garusis/hire-me-mcp/issues/295),
+  [#296](https://github.com/garusis/hire-me-mcp/issues/296)).
+- A pre-launch data-integrity and retrieval-metadata audit that corrected several story facts and
+  normalized retrieval tags before this release
+  ([#300](https://github.com/garusis/hire-me-mcp/issues/300),
+  [#305](https://github.com/garusis/hire-me-mcp/issues/305)).
+
+### Changed
+
+- Deduplicated three experience `summary`/`highlights` fields whose full narrative now lives only
+  in the corresponding story, after preserving every fact and result claim in the canonical story
+  first ([#297](https://github.com/garusis/hire-me-mcp/issues/297)).
+
 ## [1.0.0] — 2026-08-25
 
 Milestone: [v1.0 — Launch](https://github.com/garusis/hire-me-mcp/milestone/9) ·

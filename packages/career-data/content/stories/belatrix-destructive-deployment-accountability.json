@@ -1,0 +1,40 @@
+{
+  "id": "belatrix-destructive-deployment-accountability",
+  "experienceId": "belatrix-software-2018-senior-nodejs-software-developer",
+  "title": "Owning a destructive deployment mistake and rebuilding trust",
+  "primaryCompetency": "personal-accountability",
+  "supportingCompetencies": [
+    "technical-leadership",
+    "communication",
+    "mentoring",
+    "risk-management",
+    "ownership"
+  ],
+  "situation": "At Belatrix, I held the title of Senior Node.js Developer while acting as the technical lead for a small team of two junior full-stack developers and two QA engineers. I guided the developers, reviewed their work, gathered requirements with the client, and represented the team internally. For local development, we used a script that cleared DynamoDB data so we could begin testing from a clean state. While building our deployment pipeline for a shared development environment, that script was included in the deployment process. I reviewed the change but failed to notice that the script was not restricted to our project's tables. When the pipeline ran, it cleared data across every DynamoDB table in the shared development environment, including tables belonging to other teams. The environment had no backups, so the deleted information could not be restored and those teams had to reconstruct their development data. No production or customer data was affected, but the incident caused substantial disruption inside the company.",
+  "task": "I had not written or executed the script, but I had reviewed it and was responsible for the team.",
+  "actions": [
+    "As soon as we understood what had happened, I reported it rather than waiting for someone else to discover the source. I accepted responsibility with the affected teams and company leadership.",
+    "I did not identify or blame the junior developer who had implemented the change; authorship did not remove my responsibility for approving a destructive operation without adequately evaluating its scope.",
+    "Within our project, we restricted the script to an explicit list of authorized DynamoDB resources and added pipeline controls to prevent it from executing again with an unintended scope.",
+    "We followed the new controls, continued delivering successfully, and demonstrated that the incident had been isolated rather than representative of how the team normally worked."
+  ],
+  "results": [
+    "The broader organization introduced stricter permissions and isolation across shared development resources. Those organization-wide protections were not my implementation, and our team initially operated with restricted access and additional supervision.",
+    "We rebuilt trust gradually. After approximately a month, our normal access was restored to the same level as the rest of the company."
+  ],
+  "reflection": "The incident changed how I think about technical leadership and review responsibility. Trusting capable junior developers does not mean reviewing their work less carefully, especially when code can delete data or cross environment boundaries. Leadership also means owning the outcome of work approved under your responsibility, protecting less-experienced teammates from disproportionate blame, communicating transparently, and rebuilding trust through safer controls and consistent behavior.",
+  "retrievalTags": [
+    "trust-rebuilding",
+    "code-review",
+    "deployment-safety",
+    "destructive-operations",
+    "dynamodb",
+    "data-loss",
+    "development-environment",
+    "ci-cd",
+    "resource-allowlist",
+    "pipeline-guardrails",
+    "least-privilege",
+    "aws"
+  ]
+}

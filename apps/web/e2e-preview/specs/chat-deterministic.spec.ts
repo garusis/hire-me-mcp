@@ -2,7 +2,7 @@ import { readChatTestCitationIds } from "../../lib/chat/test-scenario-fixture";
 import { CHAT_TEST_FIXTURE_SENTINEL } from "../../lib/chat/test-scenarios";
 import { CHAT_ANSWER_SELECTOR } from "../helpers/chat-answer";
 import { useScriptedChat } from "../helpers/chat-scenario";
-import { slugify } from "../helpers/dataset";
+import { dataset, slugify } from "../helpers/dataset";
 import { expect, test } from "../helpers/fixtures";
 
 /**
@@ -54,6 +54,24 @@ const SCRIPTED_TURN_TIMEOUT_MS = 30_000;
 const ids = readChatTestCitationIds();
 
 /**
+ * The scripted `story` marker's own PRIMARY parent experience id — read
+ * directly off the real dataset (never through
+ * `app/chat/resolve-chat-citation-href.ts` or its `storyParents` lookup),
+ * so this spec stays an independent check of the promised behavior: a
+ * story citation must land on its own parent role's anchor, not the
+ * generic `/experience` fallback (issue 295, epic 288).
+ */
+const scriptedStoryParentExperienceId = dataset.stories.find(
+  (story) => story.id === ids.story,
+)?.experienceId;
+if (scriptedStoryParentExperienceId === undefined) {
+  throw new Error(
+    `the scripted story id "${ids.story}" (from readChatTestCitationIds) has no matching entry ` +
+      "in the real dataset — the fixture and the dataset have drifted apart",
+  );
+}
+
+/**
  * The href each scripted marker must resolve to.
  *
  * Derived here from the entity ids and this file's OWN copy of the
@@ -76,6 +94,12 @@ const EXPECTED_CITATION_HREFS: ReadonlyArray<{ entityType: string; href: string 
   { entityType: "profile", href: "/#profile" },
   { entityType: "education", href: `/experience#${slugify(ids.education)}` },
   { entityType: "recommendation", href: `/recommendations#${slugify(ids.recommendation)}` },
+  // Issue 295, epic 288: a `story` citation must resolve to its own PRIMARY
+  // parent experience's anchor — the site renders no story page at all.
+  {
+    entityType: "story",
+    href: `/experience#${slugify(scriptedStoryParentExperienceId)}`,
+  },
 ];
 
 /**
@@ -137,8 +161,15 @@ test("scripted answer: every citable entity type renders as the link it should, 
   }
   // Exactly the linkable types and nothing else: an unlinkable marker
   // silently degrading to a home-page link would be a dishonest citation.
+  // Deduplicated (`Set`, matching `renderedHrefs` above): the fixture's
+  // `story` marker's PRIMARY parent experience can legitimately coincide
+  // with the fixture's own `experience` marker's id — both are "the first
+  // entry of its collection" — in which case the two citations honestly
+  // share one href, exactly as two `[cite:project:cowork]` markers do
+  // elsewhere in this same fixture (chat-citation-sources.ts's
+  // `buildCitedAnswer` gives repeats one shared source, never two).
   expect([...renderedHrefs].sort()).toEqual(
-    EXPECTED_CITATION_HREFS.map((expected) => expected.href).sort(),
+    [...new Set(EXPECTED_CITATION_HREFS.map((expected) => expected.href))].sort(),
   );
 
   const answerText = await assistantMessage.innerText();

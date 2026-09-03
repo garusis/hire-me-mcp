@@ -38,6 +38,7 @@
 
 import type {
   CareerDataset,
+  CareerStory,
   CitableEntityType,
   EducationEntry,
   ExperienceEntry,
@@ -58,6 +59,7 @@ import {
   renderProject,
   renderRecommendation,
   renderSkill,
+  renderStory,
   renderWriting,
 } from "./render.js";
 import {
@@ -137,6 +139,93 @@ function buildEntityChunks(
     citation: buildCitation(sourceType, sourceId, rendered, chunkIndex, pieces.length),
     metadata: rendered.metadata,
   }));
+}
+
+/**
+ * Token budget left for body content once `header` (already reserving one
+ * token for the blank line that joins header and body) is repeated on every
+ * chunk. Negative/zero means `header` alone leaves no room for any body
+ * text within `maxTokens`.
+ */
+function storyBodyBudget(header: string, maxTokens: number): number {
+  const headerTokens = estimateTokens(header) + 1;
+  return maxTokens - headerTokens;
+}
+
+/**
+ * Renders and chunks one `CareerStory` (#289/#292), guaranteeing every
+ * resulting chunk stays self-contained *and* respects `options.maxTokens`
+ * (no exemption — #292 review fix): `rendered.header` (title, primary
+ * role/company/dates, related context, competencies, retrieval tags) is
+ * repeated on every chunk, not just the first, so a continuation chunk of a
+ * long story never reads as anonymous prose. The body's own splitting
+ * budget is reduced by the header's size so the combined header+body text
+ * still respects `options.maxTokens`. If the full header doesn't leave room
+ * for any body content, this falls back to `rendered.minimalHeader`
+ * (title/primary-role/primary-competency only — still self-contained, just
+ * smaller). If even that minimal header leaves no room, chunking this
+ * story under this budget is genuinely impossible, so this throws rather
+ * than silently returning an oversized chunk.
+ */
+function buildStoryChunks(
+  sourceId: string,
+  rendered: RenderedEntity,
+  options: ResolvedOptions,
+): Chunk[] {
+  const body = normalizeText(rendered.body);
+  if (body.length === 0) {
+    return buildEntityChunks("story", sourceId, rendered, options);
+  }
+
+  const fullHeader = normalizeText(rendered.header);
+  let header = fullHeader;
+  let bodyMaxTokens = storyBodyBudget(header, options.maxTokens);
+
+  if (bodyMaxTokens < 1 && rendered.minimalHeader !== undefined) {
+    header = normalizeText(rendered.minimalHeader);
+    bodyMaxTokens = storyBodyBudget(header, options.maxTokens);
+  }
+
+  if (bodyMaxTokens < 1) {
+    throw new Error(
+      `Story "${sourceId}" cannot be chunked within maxTokens=${options.maxTokens}: even its ` +
+        `minimal self-contained header (title, primary role, primary competency) leaves no room ` +
+        `for body content. Increase maxTokens, or shorten the story's title/role/competency.`,
+    );
+  }
+
+  const bodyPieces = splitLongText(body, bodyMaxTokens, options.overlapTokens);
+  const texts = bodyPieces.map((piece) => normalizeText(`${header}\n\n${piece}`));
+
+  return texts.map((text, chunkIndex) => ({
+    id: computeChunkId("story", sourceId, chunkIndex),
+    sourceType: "story",
+    sourceId,
+    chunkIndex,
+    text,
+    contentHash: computeContentHash(text),
+    tokenCount: estimateTokens(text),
+    citation: buildCitation("story", sourceId, rendered, chunkIndex, texts.length),
+    metadata: rendered.metadata,
+  }));
+}
+
+/**
+ * Chunks a single `CareerStory`, resolving its primary and related
+ * `ExperienceEntry` context and splitting into self-contained chunks (see
+ * {@link buildStoryChunks}) if it exceeds the chunk budget.
+ */
+export function chunkStory(
+  story: CareerStory,
+  primaryExperience: ExperienceEntry,
+  relatedExperiences: readonly ExperienceEntry[],
+  options?: ChunkingOptions,
+): Chunk[] {
+  return buildStoryChunks(
+    story.id,
+    renderStory(story, primaryExperience, relatedExperiences),
+    resolveOptions(options),
+  );
 }
 
 /** Chunks a single `Profile` (the dataset's singleton). */
@@ -229,6 +318,23 @@ export function chunkCareerData(dataset: CareerDataset, options?: ChunkingOption
   for (const entry of dataset.recommendations) {
     chunks.push(
       ...buildEntityChunks("recommendation", entry.id, renderRecommendation(entry), resolved),
+    );
+  }
+  const experienceById = new Map(dataset.experience.map((entry) => [entry.id, entry]));
+  for (const story of dataset.stories) {
+    const primaryExperience = experienceById.get(story.experienceId);
+    if (primaryExperience === undefined) {
+      continue;
+    }
+    const relatedExperiences = (story.relatedExperienceIds ?? [])
+      .map((id) => experienceById.get(id))
+      .filter((entry): entry is ExperienceEntry => entry !== undefined);
+    chunks.push(
+      ...buildStoryChunks(
+        story.id,
+        renderStory(story, primaryExperience, relatedExperiences),
+        resolved,
+      ),
     );
   }
 

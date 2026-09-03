@@ -1,5 +1,12 @@
+import { createContentCareerDataRepository } from "@hire-me-mcp/core";
 import { describe, expect, it } from "vitest";
 import type { ProfileView, ProjectListItemView, Skill, WritingListItemView } from "../content";
+import {
+  getProfileView,
+  getProjectsListView,
+  getSkillsListView,
+  getWritingListView,
+} from "../content";
 import { buildArticleJsonLd, buildPersonJsonLd, buildProjectJsonLd } from "./json-ld";
 
 const SITE_URL = "https://stub-deploy.example.com";
@@ -152,5 +159,85 @@ describe("buildArticleJsonLd", () => {
     item.entry.title = "Renamed Article";
     const jsonLd = buildArticleJsonLd(item, "Ada Fixture", SITE_URL);
     expect(jsonLd.headline).toBe("Renamed Article");
+  });
+});
+
+// #296 — the locked visibility boundary (#288): every sentence (>= 8
+// words, same normalisation as the career-data `no-story-detail-in-
+// experience` lint rule) of every real authored story's situation/task/
+// actions/results/reflection, plus every story's title. Built from real
+// data, checked against real JSON-LD output — not fixtures.
+const MIN_STORY_SENTENCE_WORDS = 8;
+
+function normalizeStoryProse(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function storySentencesOf(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/u)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+function realStorySentences(): string[] {
+  const dataset = createContentCareerDataRepository().getDataset();
+  const sentences: string[] = [];
+  for (const story of dataset.stories) {
+    const units = [
+      story.situation,
+      story.task,
+      ...story.actions,
+      ...story.results,
+      ...(story.reflection === undefined ? [] : [story.reflection]),
+    ];
+    for (const unit of units) {
+      for (const sentence of storySentencesOf(unit)) {
+        const normalized = normalizeStoryProse(sentence);
+        if (normalized.split(" ").length >= MIN_STORY_SENTENCE_WORDS) {
+          sentences.push(normalized);
+        }
+      }
+    }
+  }
+  return sentences;
+}
+
+function realStoryTitles(): string[] {
+  return createContentCareerDataRepository()
+    .getDataset()
+    .stories.map((story) => normalizeStoryProse(story.title));
+}
+
+function expectNoStoryLeakage(value: unknown): void {
+  const normalized = ` ${normalizeStoryProse(JSON.stringify(value))} `;
+  const needles = [...realStorySentences(), ...realStoryTitles()];
+  expect(needles.length).toBeGreaterThan(0);
+  for (const needle of needles) {
+    expect(normalized).not.toContain(` ${needle} `);
+  }
+}
+
+describe("JSON-LD builders never leak real story content (#296)", () => {
+  it("buildPersonJsonLd, built from the real profile and skills, contains no story sentence or title", () => {
+    const jsonLd = buildPersonJsonLd(getProfileView(), getSkillsListView().items, SITE_URL);
+    expectNoStoryLeakage(jsonLd);
+  });
+
+  it("buildProjectJsonLd, built from every real project, contains no story sentence or title", () => {
+    for (const item of getProjectsListView().items) {
+      const jsonLd = buildProjectJsonLd(item, "Marcos Alvarez", SITE_URL);
+      expectNoStoryLeakage(jsonLd);
+    }
+  });
+
+  it("buildArticleJsonLd, built from every real published writing entry, contains no story sentence or title", () => {
+    for (const item of getWritingListView().items) {
+      const jsonLd = buildArticleJsonLd(item, "Marcos Alvarez", SITE_URL);
+      expectNoStoryLeakage(jsonLd);
+    }
   });
 });

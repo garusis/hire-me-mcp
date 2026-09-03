@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { chatRequestSchema } from "../../lib/chat/request-schema";
-import type { WritingEntry } from "../../src/lib/content";
+import type { StoryParentRef, WritingEntry } from "../../src/lib/content";
 import { CHAT_CLIENT_TIMEOUT_MS, CHAT_SLOW_TURN_NOTICE_MS, ChatWidget } from "./chat-widget";
 
 const NO_WRITING: readonly WritingEntry[] = [];
@@ -140,12 +140,16 @@ describe("ChatWidget", () => {
   });
 
   /** Streams one complete assistant answer and returns once it has rendered. */
-  async function streamAnswer(question: string, answer: string): Promise<void> {
+  async function streamAnswer(
+    question: string,
+    answer: string,
+    storyParents: readonly StoryParentRef[] = [],
+  ): Promise<void> {
     const { response, push, done } = createControlledStreamResponse();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
 
     const user = userEvent.setup();
-    render(<ChatWidget writingEntries={NO_WRITING} />);
+    render(<ChatWidget writingEntries={NO_WRITING} storyParents={storyParents} />);
     await openWidget(user);
     await user.type(screen.getByLabelText(/message/i), question);
     await user.click(screen.getByRole("button", { name: /^send$/i }));
@@ -171,6 +175,34 @@ describe("ChatWidget", () => {
     expect(link).toHaveAttribute("data-citation", "[cite:experience:house-numbers]");
     link.focus();
     expect(link).toHaveFocus();
+  });
+
+  // Issue 295, epic 288: the live widget must thread its storyParents prop
+  // all the way to the rendered link, so a behavioral story citation lands
+  // on its own PRIMARY parent experience — not the generic /experience
+  // fallback `resolveStoryHref` uses when it has nothing to look up.
+  it("renders a story citation linking to its PRIMARY parent experience's anchor when storyParents is supplied (#295)", async () => {
+    await streamAnswer(
+      "Tell me about a time Marcos showed leadership.",
+      "He led without formal authority. [cite:story:mutual-informal-leadership]",
+      [{ storyId: "mutual-informal-leadership", experienceId: "mutual" }],
+    );
+
+    const link = await screen.findByRole("link", { name: /source 1/i });
+    expect(link).toHaveAttribute("href", "/experience#mutual");
+  });
+
+  it("lists a story citation's Sources entry linking to its PRIMARY parent experience's anchor too (#295)", async () => {
+    await streamAnswer(
+      "Tell me about a time Marcos showed leadership.",
+      "He led without formal authority. [cite:story:mutual-informal-leadership]",
+      [{ storyId: "mutual-informal-leadership", experienceId: "mutual" }],
+    );
+
+    await screen.findByText("Sources");
+    expect(
+      screen.getByRole("link", { name: "Story · Mutual Informal Leadership" }),
+    ).toHaveAttribute("href", "/experience#mutual");
   });
 
   it("lists the answer's sources under the message, so a reader can see what it was grounded in", async () => {

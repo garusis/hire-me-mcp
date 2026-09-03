@@ -52,6 +52,14 @@ export const projectSchema = z.object({
    * overlap alone can't relate the 2026 portfolio to a 2013 role (#224).
    */
   period: periodSchema.optional(),
+  /**
+   * Optional lifecycle stage (#300) — explicit deployment maturity so search
+   * and agents never have to infer from prose whether a write-up describes
+   * something shipped or something tested. `proof-of-concept` work is
+   * rendered and indexed with that label. Existing projects may omit it
+   * until separately reviewed; never guessed.
+   */
+  stage: z.enum(["proof-of-concept", "pilot", "production"]).optional(),
 });
 
 export type Project = z.infer<typeof projectSchema>;

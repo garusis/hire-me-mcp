@@ -87,7 +87,7 @@ import "./configure-zod-jitless";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { type FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { WritingEntry } from "../../src/lib/content";
+import type { StoryParentRef, WritingEntry } from "../../src/lib/content";
 import { Button } from "../design-system/primitives/button";
 import { Link } from "../design-system/primitives/link";
 import { describeChatError, parseChatErrorText } from "./chat-error-messages";
@@ -202,10 +202,16 @@ function transcriptActivityKey(messages: readonly UIMessage[], status: string): 
 
 export interface ChatWidgetProps {
   writingEntries: readonly WritingEntry[];
+  /**
+   * The story -> primary-experience lookup a `story` citation's href needs
+   * (issue 295, epic 288) — see `citation-text.tsx`'s `CitationTextProps` for
+   * why it's optional and defaults to empty.
+   */
+  storyParents?: readonly StoryParentRef[];
 }
 
 /** Floating launcher + expandable chat panel — see module doc for placement rationale. */
-export function ChatWidget({ writingEntries }: ChatWidgetProps) {
+export function ChatWidget({ writingEntries, storyParents = [] }: ChatWidgetProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState("");
   const sessionId = useChatSessionId();
@@ -426,10 +432,18 @@ export function ChatWidget({ writingEntries }: ChatWidgetProps) {
                     bubble's layout).
                   */}
                   <div className={styles.text} data-chat-answer="true">
-                    <CitationText text={text} writingEntries={writingEntries} />
+                    <CitationText
+                      text={text}
+                      writingEntries={writingEntries}
+                      storyParents={storyParents}
+                    />
                   </div>
                   {message.role === "assistant" && (
-                    <CitationSources text={text} writingEntries={writingEntries} />
+                    <CitationSources
+                      text={text}
+                      writingEntries={writingEntries}
+                      storyParents={storyParents}
+                    />
                   )}
                   {hasFailed && errorDescription !== null && (
                     <div className={styles.messageError} role="alert">

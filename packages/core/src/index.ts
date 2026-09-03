@@ -6,6 +6,16 @@
  * README.md for the enforced dependency/import boundary.
  */
 
+/**
+ * Re-exported from `@hire-me-mcp/career-data`, whose package `packages/agent`
+ * does not depend on directly (architecture boundary) — this is the single
+ * canonical source `packages/agent`'s `list-career-stories` and
+ * `search-career` tool adapters validate model-supplied `competencies` and
+ * `sourceTypes` input against, matching the public MCP surface's strict
+ * input semantics (#294).
+ */
+export type { CitableEntityType, Competency } from "@hire-me-mcp/career-data";
+export { COMPETENCIES, citableEntityTypeSchema, competencySchema } from "@hire-me-mcp/career-data";
 export type {
   Chunk,
   ChunkCitation,
@@ -55,7 +65,7 @@ export {
 export type { DependencyAllowlist } from "./dependency-allowlist.js";
 export { findDisallowedDependencies } from "./dependency-allowlist.js";
 export type { ExperienceFilter } from "./get-experience.js";
-export { getExperience } from "./get-experience.js";
+export { compareExperience, getExperience } from "./get-experience.js";
 export { getProfile, ProfileNotFoundError } from "./get-profile.js";
 export type {
   ClaimedSkillOutcome,
@@ -65,6 +75,12 @@ export type {
   UnknownSkillOutcome,
 } from "./get-skill-evidence.js";
 export { getSkillEvidence } from "./get-skill-evidence.js";
+export type {
+  CareerStoryFilter,
+  CareerStoryListEntry,
+  StoryExperienceContext,
+} from "./list-career-stories.js";
+export { listCareerStories } from "./list-career-stories.js";
 export { listEducation } from "./list-education.js";
 export type { GapListEntry } from "./list-gaps.js";
 export { listGaps } from "./list-gaps.js";

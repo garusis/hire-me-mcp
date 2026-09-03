@@ -6,6 +6,7 @@ import { withRateLimit } from "../../../lib/mcp/rate-limit/with-rate-limit";
 import { getExperienceTool } from "../../../lib/mcp/tools/get-experience";
 import { getProfileTool } from "../../../lib/mcp/tools/get-profile";
 import { getSkillEvidenceTool } from "../../../lib/mcp/tools/get-skill-evidence";
+import { listCareerStoriesTool } from "../../../lib/mcp/tools/list-career-stories";
 import { listEducationTool } from "../../../lib/mcp/tools/list-education";
 import { listGapsTool } from "../../../lib/mcp/tools/list-gaps";
 import { listProjectsTool } from "../../../lib/mcp/tools/list-projects";
@@ -54,6 +55,7 @@ const handler = createMcpHandler(
     defineTool(server, listProjectsTool);
     defineTool(server, listWritingTool);
     defineTool(server, listRecommendationsTool);
+    defineTool(server, listCareerStoriesTool);
   },
   {
     serverInfo: {
@@ -71,7 +73,11 @@ const handler = createMcpHandler(
       "career text. To enumerate whole collections deterministically — e.g. for CV-style " +
       "rendering — use the read-only list tools: `list-education`, `list-skills`, " +
       "`list-gaps` (his honest, self-declared skill gaps), `list-projects`, and " +
-      "`list-writing`. Every tool call is recorded as an anonymized, aggregate-only usage " +
+      "`list-writing`. For behavioral, 'tell me about a time' questions (leadership, " +
+      "ownership, conflict, ambiguity, stakeholder management, failure, decision making), use " +
+      "`list-career-stories`: it deterministically returns complete situation/task/actions/" +
+      "results stories filtered by competency, company, or experience id, each cited to the " +
+      "role where the event occurred. Every tool call is recorded as an anonymized, aggregate-only usage " +
       "event (which tool, which surface, the outcome) — never the raw arguments, your IP, " +
       "or any identifying information. See the privacy note at /privacy for the full, " +
       "auditable list of what is and isn't collected.",

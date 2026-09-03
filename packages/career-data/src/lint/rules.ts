@@ -1,5 +1,6 @@
 import type { CareerDataset, EntitySource } from "../content/loader.js";
 import type { CitableEntityType } from "../schemas/common.js";
+import type { StoryPreservationEntry } from "../schemas/story-preservation.js";
 import { isKnownTechTag } from "../schemas/tech-tags.js";
 
 /**
@@ -23,6 +24,8 @@ export interface LintViolation {
 export interface LintContext {
   dataset: CareerDataset;
   sources: EntitySource[];
+  /** The #290 field-to-story preservation map, when the content set carries one. Absent means nothing to check. */
+  storyPreservationMap?: StoryPreservationEntry[];
 }
 
 /** A single named, independently addressable lint rule. */
@@ -57,6 +60,7 @@ function idsByType(dataset: CareerDataset): Record<CitableEntityType, Set<string
     education: new Set(dataset.education.map((entry) => entry.id)),
     writing: new Set(dataset.writing.map((entry) => entry.id)),
     recommendation: new Set(dataset.recommendations.map((entry) => entry.id)),
+    story: new Set(dataset.stories.map((story) => story.id)),
   };
 }
 
@@ -72,6 +76,8 @@ function entityByTypeAndId(dataset: CareerDataset): Map<string, unknown> {
   for (const gap of dataset.gaps) map.set(`gap:${gap.id}`, gap);
   for (const entry of dataset.education) map.set(`education:${entry.id}`, entry);
   for (const entry of dataset.writing) map.set(`writing:${entry.id}`, entry);
+  for (const entry of dataset.recommendations) map.set(`recommendation:${entry.id}`, entry);
+  for (const story of dataset.stories) map.set(`story:${story.id}`, story);
   return map;
 }
 
@@ -251,6 +257,285 @@ export const gapRelatedSkillsResolveRule: LintRule = {
   },
 };
 
+/**
+ * `story-experience-resolves` — every CareerStory's `experienceId` and each
+ * `relatedExperienceIds` entry references an existing ExperienceEntry id
+ * (#289). The schema already guarantees related ids are distinct and never
+ * the primary; only the cross-entity resolution has to live here. Each
+ * unresolved id is its own violation so a report names every broken link.
+ */
+export const storyExperienceResolvesRule: LintRule = {
+  name: "story-experience-resolves",
+  severity: "error",
+  check({ dataset, sources }) {
+    const index = fileIndex(sources);
+    const experienceIds = new Set(dataset.experience.map((entry) => entry.id));
+    const violations: LintViolation[] = [];
+    for (const story of dataset.stories) {
+      const references = [
+        { field: "experienceId", id: story.experienceId },
+        ...(story.relatedExperienceIds ?? []).map((id) => ({ field: "relatedExperienceIds", id })),
+      ];
+      for (const { field, id } of references) {
+        if (!experienceIds.has(id)) {
+          violations.push({
+            rule: "story-experience-resolves",
+            severity: "error",
+            file: fileFor(index, "story", story.id),
+            entityId: story.id,
+            message: `story "${story.id}" ${field} references nonexistent experience id "${id}"`,
+          });
+        }
+      }
+    }
+    return violations;
+  },
+};
+
+const STORY_PRESERVATION_MAP_FILE = "story-preservation-map.json";
+
+/** Whether `field` (`summary` or `highlights.<n>`) exists on `entry`. */
+function experienceFieldExists(entry: CareerDataset["experience"][number], field: string): boolean {
+  if (field === "summary") {
+    return true;
+  }
+  const index = Number(field.slice("highlights.".length));
+  return Number.isInteger(index) && index >= 0 && index < entry.highlights.length;
+}
+
+/** Whether `story` occurred during, or is related to, `experienceId` — the only associations a mapping may rely on (#305 decision 2). */
+function storyAssociatedWith(
+  story: CareerDataset["stories"][number],
+  experienceId: string,
+): boolean {
+  return (
+    story.experienceId === experienceId || (story.relatedExperienceIds ?? []).includes(experienceId)
+  );
+}
+
+function checkPreservationEntry(
+  entry: StoryPreservationEntry,
+  dataset: CareerDataset,
+): LintViolation[] {
+  const violation = (message: string): LintViolation => ({
+    rule: "story-preservation-map-resolves",
+    severity: "error",
+    file: STORY_PRESERVATION_MAP_FILE,
+    entityId: `${entry.experienceId}#${entry.field}`,
+    message,
+  });
+  const violations: LintViolation[] = [];
+  const experience = dataset.experience.find((candidate) => candidate.id === entry.experienceId);
+  if (experience === undefined) {
+    violations.push(violation(`references nonexistent experience id "${entry.experienceId}"`));
+  } else if (!experienceFieldExists(experience, entry.field)) {
+    violations.push(
+      violation(`field "${entry.field}" does not exist on experience "${entry.experienceId}"`),
+    );
+  }
+  for (const storyId of entry.storyIds ?? []) {
+    const story = dataset.stories.find((candidate) => candidate.id === storyId);
+    if (story === undefined) {
+      violations.push(violation(`references nonexistent story id "${storyId}"`));
+    } else if (!storyAssociatedWith(story, entry.experienceId)) {
+      violations.push(
+        violation(
+          `story "${storyId}" is not associated with experience "${entry.experienceId}" (neither its primary nor a related experience) — attribution never transfers`,
+        ),
+      );
+    }
+  }
+  const needsStory =
+    entry.classification === "detailed-story" || entry.action === "move-detail-to-story";
+  if (needsStory && (entry.storyIds ?? []).length === 0) {
+    const reason =
+      entry.classification === "detailed-story" ? "detailed-story" : "move-detail-to-story";
+    violations.push(
+      violation(
+        `${reason} field has no story: author and approve the canonical story before this prose may be shortened or removed (#290)`,
+      ),
+    );
+  }
+  return violations;
+}
+
+/**
+ * `story-preservation-map-resolves` — the #290 evidence-preservation gate
+ * over `story-preservation-map.json`. Every entry's experience and field
+ * must exist, every named story must exist and be associated with that
+ * experience (primary or related — a mapping never transfers an event to
+ * another role, #305 decision 2), and every field classified
+ * `detailed-story` or slated to `move-detail-to-story` must name at least
+ * one story. Deliberately *not* an `experience-has-story` rule: coverage
+ * is evidence-driven and an experience may have no story and no detailed
+ * field at all (#305 decision 1). An absent map is nothing to check;
+ * completeness of a present map is `story-preservation-map-complete`.
+ */
+export const storyPreservationMapResolvesRule: LintRule = {
+  name: "story-preservation-map-resolves",
+  severity: "error",
+  check({ dataset, storyPreservationMap = [] }) {
+    return storyPreservationMap.flatMap((entry) => checkPreservationEntry(entry, dataset));
+  },
+};
+
+/**
+ * `story-preservation-map-complete` — the other half of the #290
+ * evidence-preservation gate. Once a content set carries a
+ * `story-preservation-map.json`, every experience `summary` and
+ * `highlights.<n>` must be classified in it: a row that is missing (never
+ * written, or removed) is an error-severity violation in `lint:content`
+ * itself, not only in the Vitest real-content invariant. This is still not
+ * an `experience-has-story` rule — a field may be classified `role-context`
+ * or `concise-outcome` with no story at all (#305 decision 1); only the
+ * *classification* must be complete. An absent map is nothing to check.
+ */
+export const storyPreservationMapCompleteRule: LintRule = {
+  name: "story-preservation-map-complete",
+  severity: "error",
+  check({ dataset, storyPreservationMap }) {
+    if (storyPreservationMap === undefined) {
+      return [];
+    }
+    const classified = new Set(
+      storyPreservationMap.map((entry) => `${entry.experienceId}#${entry.field}`),
+    );
+    const violations: LintViolation[] = [];
+    for (const experience of dataset.experience) {
+      const fields = ["summary", ...experience.highlights.map((_, index) => `highlights.${index}`)];
+      for (const field of fields) {
+        const locator = `${experience.id}#${field}`;
+        if (!classified.has(locator)) {
+          violations.push({
+            rule: "story-preservation-map-complete",
+            severity: "error",
+            file: STORY_PRESERVATION_MAP_FILE,
+            entityId: locator,
+            message: `experience "${experience.id}" field "${field}" is not classified in ${STORY_PRESERVATION_MAP_FILE}: every summary and highlight must be mapped before #297 may shorten or remove it (#290)`,
+          });
+        }
+      }
+    }
+    return violations;
+  },
+};
+
+/**
+ * A story sentence must be at least this many words before a verbatim copy
+ * in the parent experience counts as duplicated narrative. Shorter
+ * sentences ("I stayed.") are a name for the event, which a highlight may
+ * legitimately carry (#297 content-ownership contract).
+ */
+const MIN_DUPLICATED_SENTENCE_WORDS = 8;
+
+/** Lowercase, punctuation-free, single-spaced form of `text` — so a copy that differs only in case, punctuation, or whitespace still matches. */
+function normalizeProse(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+/** Splits prose into sentences on terminal punctuation; each sentence is compared on its own. */
+function sentencesOf(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/u)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+/** Every narrative unit of a story, addressed by the story field it came from. */
+function storyNarrativeUnits(
+  story: CareerDataset["stories"][number],
+): Array<{ field: string; text: string }> {
+  return [
+    { field: "situation", text: story.situation },
+    { field: "task", text: story.task },
+    ...story.actions.map((text, index) => ({ field: `actions.${index}`, text })),
+    ...story.results.map((text, index) => ({ field: `results.${index}`, text })),
+    ...(story.reflection === undefined ? [] : [{ field: "reflection", text: story.reflection }]),
+  ];
+}
+
+/** Every prose field of an experience entry, addressed by the citation-style locator the map and skills use. */
+function experienceProseFields(
+  entry: CareerDataset["experience"][number],
+): Array<{ field: string; text: string }> {
+  return [
+    { field: "summary", text: entry.summary },
+    ...entry.highlights.map((text, index) => ({ field: `highlights.${index}`, text })),
+  ];
+}
+
+function findDuplicatedStoryDetail(
+  story: CareerDataset["stories"][number],
+  entry: CareerDataset["experience"][number],
+  file: string,
+): LintViolation[] {
+  const violations: LintViolation[] = [];
+  const prose = experienceProseFields(entry).map(({ field, text }) => ({
+    field,
+    normalized: ` ${normalizeProse(text)} `,
+  }));
+  for (const unit of storyNarrativeUnits(story)) {
+    for (const sentence of sentencesOf(unit.text)) {
+      const normalized = normalizeProse(sentence);
+      if (normalized.split(" ").length < MIN_DUPLICATED_SENTENCE_WORDS) {
+        continue;
+      }
+      for (const { field, normalized: haystack } of prose) {
+        if (haystack.includes(` ${normalized} `)) {
+          violations.push({
+            rule: "no-story-detail-in-experience",
+            severity: "error",
+            file,
+            entityId: entry.id,
+            message: `experience "${entry.id}" ${field} repeats story "${story.id}" ${unit.field} verbatim: "${sentence}" — the story is the canonical detailed record; keep the experience text concise (#297)`,
+          });
+        }
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * `no-story-detail-in-experience` — the #297 deduplication gate. Once a
+ * `CareerStory` is the canonical record of an event, its narrative must not
+ * also live, verbatim, in the experience it belongs to: no sentence of a
+ * story's situation, task, action, result, or reflection (of at least
+ * {@link MIN_DUPLICATED_SENTENCE_WORDS} words, compared case-,
+ * punctuation- and whitespace-insensitively) may appear inside the primary
+ * or a related experience's `summary` or `highlights`. A highlight may
+ * still name the event in its own concise words. Unrelated experiences are
+ * not checked (attribution is `story-experience-resolves`' and the map's
+ * concern), and a story whose experience ids do not resolve is skipped
+ * here because that rule already reports it. This is a mechanical
+ * exact-string guard; semantic near-duplication still needs human review.
+ */
+export const noStoryDetailInExperienceRule: LintRule = {
+  name: "no-story-detail-in-experience",
+  severity: "error",
+  check({ dataset, sources }) {
+    const index = fileIndex(sources);
+    const experiences = new Map(dataset.experience.map((entry) => [entry.id, entry]));
+    const violations: LintViolation[] = [];
+    for (const story of dataset.stories) {
+      const parents = [story.experienceId, ...(story.relatedExperienceIds ?? [])];
+      for (const experienceId of parents) {
+        const entry = experiences.get(experienceId);
+        if (entry === undefined) {
+          continue;
+        }
+        violations.push(
+          ...findDuplicatedStoryDetail(story, entry, fileFor(index, "experience", entry.id)),
+        );
+      }
+    }
+    return violations;
+  },
+};
+
 /** Flags every `tech` tag outside the controlled vocabulary on one collection of `{ id, tech }` entities (experience entries or projects). */
 function findUnknownTechTags(
   entries: Array<{ id: string; tech: string[] }>,
@@ -397,7 +682,9 @@ export const uniqueAliasesRule: LintRule = {
  * it yet (the real content set has exactly this: two education credentials
  * no skill cites). This surfaces the gap for a human to judge rather than
  * blocking the build. `profile`, `gap` and `skill` are roots by design
- * (nothing is expected to cite them) and are not checked.
+ * (nothing is expected to cite them) and are not checked; neither are
+ * `recommendation` and `story` entries, which are narrative evidence served
+ * by their own tools rather than something a skill must cite.
  */
 export const noOrphanEntitiesRule: LintRule = {
   name: "no-orphan-entities",
@@ -439,6 +726,10 @@ export const ALL_RULES: LintRule[] = [
   noClaimGapCollisionRule,
   gapHasStatementRule,
   gapRelatedSkillsResolveRule,
+  storyExperienceResolvesRule,
+  storyPreservationMapResolvesRule,
+  storyPreservationMapCompleteRule,
+  noStoryDetailInExperienceRule,
   tagInVocabularyRule,
   uniqueIdsRule,
   uniqueAliasesRule,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildReport } from "./report.js";
+import { buildReport, type CaseReport } from "./report.js";
 
 const baseCases = [
   {
@@ -12,6 +12,10 @@ const baseCases = [
       gapHonesty: { score: 1, reason: "engaged, no refusal" },
       relevance: { score: 0.9, reason: "addresses AWS" },
       toolRouting: null,
+      answerAssertions: null,
+      storyCompleteness: null,
+      preferredSourceCompliance: null,
+      factualBoundaryCompliance: null,
     },
   },
   {
@@ -25,6 +29,10 @@ const baseCases = [
       gapHonesty: { score: 0.8, reason: "states gap, cites evidence" },
       relevance: { score: 0.8, reason: "addresses Rust" },
       toolRouting: null,
+      answerAssertions: null,
+      storyCompleteness: null,
+      preferredSourceCompliance: null,
+      factualBoundaryCompliance: null,
     },
   },
   {
@@ -37,6 +45,10 @@ const baseCases = [
       gapHonesty: null,
       relevance: { score: 0.1, reason: "does not address pizza" },
       toolRouting: null,
+      answerAssertions: null,
+      storyCompleteness: null,
+      preferredSourceCompliance: null,
+      factualBoundaryCompliance: null,
     },
   },
 ];
@@ -95,6 +107,40 @@ describe("buildReport", () => {
     expect(report.verdict.failures.some((line) => /relevance/i.test(line))).toBe(true);
   });
 
+  it("aggregates answerAssertions as 0-count/0-mean and never fails the verdict on it when no case declared assertions (#300)", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: baseCases,
+      totals,
+    });
+
+    expect(report.aggregates.answerAssertions).toEqual({ mean: 0, count: 0 });
+    expect(report.verdict.failures.some((line) => /answer assertions/i.test(line))).toBe(false);
+  });
+
+  it("includes answerAssertions in the aggregate and the verdict once at least one case scored it (#300)", () => {
+    const casesWithAssertions = [
+      ...baseCases.slice(0, 2),
+      {
+        ...baseCases[2],
+        scores: { ...baseCases[2]?.scores, answerAssertions: { score: 0.5, reason: "half" } },
+      },
+    ];
+
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: casesWithAssertions as typeof baseCases,
+      totals,
+      thresholds: { groundedness: 0, gapHonesty: 0, relevance: 0, answerAssertions: 0.9 },
+    });
+
+    expect(report.aggregates.answerAssertions).toEqual({ mean: 0.5, count: 1 });
+    expect(report.verdict.passed).toBe(false);
+    expect(report.verdict.failures.some((line) => /answer assertions/i.test(line))).toBe(true);
+  });
+
   it("aggregates toolRouting as 0-count/0-mean and never fails the verdict on it when no case declared expectedToolCall (#75)", () => {
     const report = buildReport({
       promptVersion: "test-version",
@@ -127,5 +173,183 @@ describe("buildReport", () => {
     expect(report.aggregates.toolRouting).toEqual({ mean: 0.5, count: 1 });
     expect(report.verdict.passed).toBe(false);
     expect(report.verdict.failures.some((line) => /tool routing/i.test(line))).toBe(true);
+  });
+
+  /**
+   * #295 correction (independent Codex review, agent package `1dd7ac7`,
+   * finding 2): `storyCompleteness` (`./scorers/story-completeness.ts`)
+   * gets the same optional, zero-count-skips-verdict treatment as
+   * `answerAssertions`/`toolRouting` above — most of the base dataset
+   * doesn't declare a behavioral-story completeness expectation.
+   */
+  it("aggregates storyCompleteness as 0-count/0-mean and never fails the verdict on it when no case scored it (#295)", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: baseCases,
+      totals,
+    });
+
+    expect(report.aggregates.storyCompleteness).toEqual({ mean: 0, count: 0 });
+    expect(report.verdict.failures.some((line) => /story completeness/i.test(line))).toBe(false);
+  });
+
+  it("includes storyCompleteness in the aggregate and the verdict once at least one case scored it (#295)", () => {
+    const casesWithCompleteness = [
+      ...baseCases.slice(0, 2),
+      {
+        ...baseCases[2],
+        scores: { ...baseCases[2]?.scores, storyCompleteness: { score: 0.5, reason: "half" } },
+      },
+    ];
+
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: casesWithCompleteness as typeof baseCases,
+      totals,
+      thresholds: { groundedness: 0, gapHonesty: 0, relevance: 0, storyCompleteness: 0.9 },
+    });
+
+    expect(report.aggregates.storyCompleteness).toEqual({ mean: 0.5, count: 1 });
+    expect(report.verdict.passed).toBe(false);
+    expect(report.verdict.failures.some((line) => /story completeness/i.test(line))).toBe(true);
+  });
+
+  /**
+   * #295 second independent-review correction (finding 4): a declared
+   * preference is a locked per-case contract, not a statistical target — a
+   * SINGLE failed preferred-source case must block the verdict on its own,
+   * exactly like the retrieval package's own `preferredSourceCompliance`
+   * fix. Same optional, zero-count-skips-verdict treatment as
+   * `answerAssertions`/`toolRouting`/`storyCompleteness` when no case
+   * declares a preference at all.
+   */
+  it("aggregates preferredSourceCompliance as 0-count/0-mean and never fails the verdict on it when no case scored it (#295)", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: baseCases,
+      totals,
+    });
+
+    expect(report.aggregates.preferredSourceCompliance).toEqual({ mean: 0, count: 0 });
+    expect(report.verdict.failures.some((line) => /preferred.source/i.test(line))).toBe(false);
+  });
+
+  it("blocks the verdict when even one case's declared preference failed, despite four other passing preference cases averaging above a lenient threshold (#295)", () => {
+    const passingPreference = { score: 1, reason: "complied" };
+    const failingPreference = { score: 0, reason: "preferred source was returned but not cited" };
+    const emptyScores: CaseReport["scores"] = {
+      groundedness: { score: 1, reason: "n/a" },
+      gapHonesty: null,
+      relevance: { score: 1, reason: "n/a" },
+      toolRouting: null,
+      answerAssertions: null,
+      storyCompleteness: null,
+      preferredSourceCompliance: null,
+      factualBoundaryCompliance: null,
+    };
+    const casesWithPreferences: CaseReport[] = [
+      "preference-1",
+      "preference-2",
+      "preference-3",
+      "preference-4",
+    ].map((id) => ({
+      id,
+      category: "grounded",
+      question: `question for ${id}`,
+      answer: "answer",
+      scores: { ...emptyScores, preferredSourceCompliance: passingPreference },
+    }));
+    casesWithPreferences.push({
+      id: "preference-5-failing",
+      category: "grounded",
+      question: "question for preference-5-failing",
+      answer: "answer",
+      scores: { ...emptyScores, preferredSourceCompliance: failingPreference },
+    });
+
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: casesWithPreferences,
+      totals,
+      thresholds: { groundedness: 0, gapHonesty: 0, relevance: 0, preferredSourceCompliance: 1 },
+    });
+
+    // 4/5 compliant is 0.8 — well above a lenient 0.7 threshold, but the
+    // committed default is blocking (1.0): the report must fail.
+    expect(report.aggregates.preferredSourceCompliance).toEqual({ mean: 0.8, count: 5 });
+    expect(report.verdict.passed).toBe(false);
+    expect(report.verdict.failures.some((line) => /preferred.source/i.test(line))).toBe(true);
+  });
+
+  /**
+   * #295 fourth independent-review correction, finding 2: "The runner test
+   * titled 'blocking' only checks the per-case scorer value; it would
+   * remain green if the threshold were lowered/removed or the aggregate
+   * stopped gating the verdict." Same durable end-to-end pattern already
+   * used for `preferredSourceCompliance` above — a declared factual
+   * boundary is a locked per-case contract, not a statistical target.
+   */
+  it("aggregates factualBoundaryCompliance as 0-count/0-mean and never fails the verdict on it when no case scored it (#295)", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: baseCases,
+      totals,
+    });
+
+    expect(report.aggregates.factualBoundaryCompliance).toEqual({ mean: 0, count: 0 });
+    expect(report.verdict.failures.some((line) => /factual.boundary/i.test(line))).toBe(false);
+  });
+
+  it("blocks the verdict when even one case's factual-boundary check failed, despite four other passing cases averaging above a lenient threshold (#295)", () => {
+    const passingBoundary = { score: 1, reason: "held" };
+    const failingBoundary = { score: 0, reason: "missing required caveat" };
+    const emptyScores: CaseReport["scores"] = {
+      groundedness: { score: 1, reason: "n/a" },
+      gapHonesty: null,
+      relevance: { score: 1, reason: "n/a" },
+      toolRouting: null,
+      answerAssertions: null,
+      storyCompleteness: null,
+      preferredSourceCompliance: null,
+      factualBoundaryCompliance: null,
+    };
+    const casesWithBoundaries: CaseReport[] = [
+      "boundary-1",
+      "boundary-2",
+      "boundary-3",
+      "boundary-4",
+    ].map((id) => ({
+      id,
+      category: "grounded",
+      question: `question for ${id}`,
+      answer: "answer",
+      scores: { ...emptyScores, factualBoundaryCompliance: passingBoundary },
+    }));
+    casesWithBoundaries.push({
+      id: "boundary-5-failing",
+      category: "grounded",
+      question: "question for boundary-5-failing",
+      answer: "answer",
+      scores: { ...emptyScores, factualBoundaryCompliance: failingBoundary },
+    });
+
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: casesWithBoundaries,
+      totals,
+      thresholds: { groundedness: 0, gapHonesty: 0, relevance: 0, factualBoundaryCompliance: 1 },
+    });
+
+    // 4/5 compliant is 0.8 — well above a lenient 0.7 threshold, but the
+    // committed default is blocking (1.0): the report must fail.
+    expect(report.aggregates.factualBoundaryCompliance).toEqual({ mean: 0.8, count: 5 });
+    expect(report.verdict.passed).toBe(false);
+    expect(report.verdict.failures.some((line) => /factual.boundary/i.test(line))).toBe(true);
   });
 });

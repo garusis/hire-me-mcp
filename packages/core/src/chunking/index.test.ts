@@ -1,5 +1,7 @@
+import { fileURLToPath } from "node:url";
 import type { CareerDataset } from "@hire-me-mcp/career-data";
 import { describe, expect, it } from "vitest";
+import { createContentCareerDataRepository } from "../repository.js";
 import {
   chunkCareerData,
   chunkEducation,
@@ -8,8 +10,11 @@ import {
   chunkProfile,
   chunkProject,
   chunkSkill,
+  chunkStory,
   chunkWriting,
 } from "./index.js";
+
+const realContentDir = fileURLToPath(new URL("../../../career-data/content/", import.meta.url));
 
 function buildDataset(overrides: Partial<CareerDataset> = {}): CareerDataset {
   const base: CareerDataset = {
@@ -111,6 +116,41 @@ function buildDataset(overrides: Partial<CareerDataset> = {}): CareerDataset {
         text: "Jane is a fantastic engineer who ships reliable systems and mentors everyone around her.",
         recommenderProfileUrl: "https://www.linkedin.com/in/john-smith/",
         sourceUrl: "https://www.linkedin.com/in/jane-doe/details/recommendations/",
+      },
+    ],
+    stories: [
+      {
+        id: "acme-quick-fix-story",
+        experienceId: "acme-role",
+        title: "Fixing a flaky deploy check",
+        primaryCompetency: "problem-solving",
+        supportingCompetencies: [],
+        situation: "A flaky deploy check was blocking releases.",
+        task: "I owned tracking down the flakiness.",
+        actions: ["I added retry logging and found a race condition."],
+        results: ["The check became reliable."],
+        retrievalTags: ["ci-flakiness"],
+      },
+      {
+        id: "globex-migration-story",
+        experienceId: "globex-role",
+        relatedExperienceIds: ["acme-role"],
+        title: "Leading a zero-downtime platform migration",
+        primaryCompetency: "technical-leadership",
+        supportingCompetencies: ["risk-management", "stakeholder-management"],
+        situation: "The platform needed a zero-downtime migration to a new deploy pipeline.",
+        task: "I led the migration end to end.",
+        actions: Array.from(
+          { length: 30 },
+          (_, i) =>
+            `Migration action number ${i} describes a concrete, detailed step taken during the platform migration.`,
+        ),
+        results: Array.from(
+          { length: 10 },
+          (_, i) => `Migration result number ${i} describes a concrete outcome of the migration.`,
+        ),
+        reflection: "I would stage the cutover in smaller batches next time.",
+        retrievalTags: ["zero-downtime", "platform-migration"],
       },
     ],
   };
@@ -257,14 +297,141 @@ describe("chunkCareerData — per-entity-type coverage", () => {
   });
 });
 
+describe("chunkCareerData — story coverage", () => {
+  it("covers a short story with exactly one citable chunk", () => {
+    const dataset = buildDataset();
+    const chunks = chunkCareerData(dataset);
+    const storyChunks = chunks.filter(
+      (chunk) => chunk.sourceType === "story" && chunk.sourceId === "acme-quick-fix-story",
+    );
+    expect(storyChunks).toHaveLength(1);
+    expect(storyChunks[0]?.text).toContain("Fixing a flaky deploy check");
+    expect(storyChunks[0]?.text).toContain("Engineer, Acme");
+    expect(storyChunks[0]?.citation).toMatchObject({
+      entityType: "story",
+      entityId: "acme-quick-fix-story",
+      label: "Fixing a flaky deploy check",
+    });
+    expect(storyChunks[0]?.metadata).toEqual({
+      company: "Acme",
+      tags: ["ci-flakiness"],
+      dateFrom: "2020-01",
+      dateTo: "2021-01",
+    });
+  });
+
+  it("splits a long story into multiple chunks, each self-contained with title, parent role, and competency context", () => {
+    const dataset = buildDataset();
+    const chunks = chunkCareerData(dataset);
+    const storyChunks = chunks.filter(
+      (chunk) => chunk.sourceType === "story" && chunk.sourceId === "globex-migration-story",
+    );
+    expect(storyChunks.length).toBeGreaterThan(1);
+    for (const [index, chunk] of storyChunks.entries()) {
+      expect(chunk.text).toContain("Leading a zero-downtime platform migration");
+      expect(chunk.text).toContain("Senior Engineer, Globex");
+      expect(chunk.text).toContain("technical leadership");
+      expect(chunk.citation).toMatchObject({
+        entityType: "story",
+        entityId: "globex-migration-story",
+        fragment: `chunk-${index}`,
+      });
+    }
+  });
+
+  it("labels related experience context distinctly without relocating the event", () => {
+    const dataset = buildDataset();
+    const chunks = chunkCareerData(dataset);
+    const storyChunks = chunks.filter(
+      (chunk) => chunk.sourceType === "story" && chunk.sourceId === "globex-migration-story",
+    );
+    expect(storyChunks[0]?.text).toContain("Related context");
+    expect(storyChunks[0]?.text).toContain("Engineer, Acme");
+    expect(storyChunks[0]?.text).toMatch(/related context.*not where this event occurred/i);
+  });
+
+  it("never exceeds the default max token budget, even for a story with rich related context and competencies", () => {
+    const dataset = buildDataset();
+    const chunks = chunkCareerData(dataset).filter((chunk) => chunk.sourceType === "story");
+    expect(chunks.length).toBeGreaterThan(0);
+    for (const chunk of chunks) {
+      expect(chunk.tokenCount).toBeLessThanOrEqual(320);
+    }
+  });
+
+  it("chunkStory matches chunkCareerData's chunk(s) for the same story", () => {
+    const dataset = buildDataset();
+    const story = dataset.stories.find((s) => s.id === "acme-quick-fix-story");
+    const primaryExperience = dataset.experience.find((e) => e.id === story?.experienceId);
+    expect(story).toBeDefined();
+    expect(primaryExperience).toBeDefined();
+    expect(
+      chunkStory(
+        story as (typeof dataset.stories)[number],
+        primaryExperience as (typeof dataset.experience)[number],
+        [],
+      ),
+    ).toEqual(
+      chunkCareerData(dataset).filter(
+        (chunk) => chunk.sourceType === "story" && chunk.sourceId === "acme-quick-fix-story",
+      ),
+    );
+  });
+});
+
+describe("chunkCareerData — real dataset story coverage (#296)", () => {
+  const repository = createContentCareerDataRepository({ contentDir: realContentDir });
+  const dataset = repository.getDataset();
+  const chunks = chunkCareerData(dataset);
+  const storyChunks = chunks.filter((chunk) => chunk.sourceType === "story");
+
+  it("has all 16 authored stories in the real content directory", () => {
+    expect(dataset.stories).toHaveLength(16);
+  });
+
+  it("produces at least one chunk for every authored story, with a matching sourceId", () => {
+    const storyIds = new Set(dataset.stories.map((story) => story.id));
+    const chunkedStoryIds = new Set(storyChunks.map((chunk) => chunk.sourceId));
+
+    expect(chunkedStoryIds).toEqual(storyIds);
+    for (const storyId of storyIds) {
+      const chunksForStory = storyChunks.filter((chunk) => chunk.sourceId === storyId);
+      expect(chunksForStory.length).toBeGreaterThanOrEqual(1);
+      for (const chunk of chunksForStory) {
+        expect(chunk.sourceType).toBe("story");
+        expect(chunk.citation.entityType).toBe("story");
+        expect(chunk.citation.entityId).toBe(storyId);
+      }
+    }
+  });
+
+  // Locked total: the exact number of story chunks the real content directory
+  // produces today. This is the number the production `reindex-production`
+  // summary must report as inserts the first time stories are ingested
+  // (#296 P5 -> P4 handoff). If authoring a new story or editing an existing
+  // one's length changes this count, update it deliberately here alongside
+  // `docs/development.md`'s recorded expectation — never loosen this into a
+  // range to make a failure go away.
+  it("records the exact total story-chunk count for the production reindex handoff", () => {
+    expect(storyChunks.length).toBe(90);
+  });
+});
+
 describe("chunkCareerData — max token budget and overlap over a long-prose fixture", () => {
-  it("never exceeds the configured max token budget", () => {
+  it("never exceeds the configured max token budget, including story chunks", () => {
     const dataset = buildDataset();
     const maxTokens = 60;
     const chunks = chunkCareerData(dataset, { maxTokens, overlapTokens: 10 });
     for (const chunk of chunks) {
       expect(chunk.tokenCount).toBeLessThanOrEqual(maxTokens);
     }
+  });
+
+  it("fails deterministically instead of returning an oversized chunk when even a story's minimal header cannot fit the configured budget", () => {
+    const dataset = buildDataset();
+    expect(() => chunkCareerData(dataset, { maxTokens: 10, overlapTokens: 2 })).toThrow(
+      /minimal.*header/i,
+    );
   });
 
   it("overlaps consecutive long-prose chunks from the same source by the configured amount", () => {
@@ -296,6 +463,7 @@ describe("chunkCareerData — citations resolve to real source records", () => {
       education: new Set(dataset.education.map((e) => e.id)),
       writing: new Set(dataset.writing.map((w) => w.id)),
       recommendation: new Set(dataset.recommendations.map((r) => r.id)),
+      story: new Set(dataset.stories.map((s) => s.id)),
     };
 
     expect(chunks.length).toBeGreaterThan(0);
@@ -379,6 +547,7 @@ describe("chunkCareerData — empty dataset", () => {
       education: [],
       writing: [],
       recommendations: [],
+      stories: [],
     };
     expect(chunkCareerData(empty)).toEqual([]);
   });

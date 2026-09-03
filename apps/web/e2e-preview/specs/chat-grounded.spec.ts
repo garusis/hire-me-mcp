@@ -1,4 +1,7 @@
 import { parseCitationMarker } from "@hire-me-mcp/agent/citations";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { bypassHeaders } from "../helpers/bypass";
 import {
   answerParagraph,
   CITATION_LINK_SELECTOR,
@@ -136,4 +139,122 @@ test("grounded chat flow: streamed answer renders with a citation link to a real
     await gotoRoute(path || "/");
     await expect(page.locator(`#${fragment}`)).toBeVisible();
   }
+});
+
+const LEADERSHIP_QUESTION = "Tell me about a time Marcos showed leadership";
+
+/**
+ * The real primary-experience id for `storyId`, fetched black-box from the
+ * SAME deployed origin's `/api/mcp` endpoint via `list-career-stories`'s
+ * exact-id filter — so the leadership flow's citation anchor can be checked
+ * against the site's OWN answer for "where does this story really live",
+ * not just any anchor that happens to exist on `/experience` (Codex review
+ * on #296: a story linked to the wrong role must fail this check).
+ */
+async function fetchPrimaryExperienceId(baseURL: string, storyId: string): Promise<string> {
+  const client = new Client({ name: "hire-me-mcp-preview-chat-grounded", version: "0.0.0" });
+  const transport = new StreamableHTTPClientTransport(new URL(`${baseURL}/api/mcp`), {
+    requestInit: { headers: bypassHeaders() },
+  });
+  await client.connect(transport);
+
+  const result = await client.callTool({
+    name: "list-career-stories",
+    arguments: { id: storyId },
+  });
+  expect(result.isError, `list-career-stories({ id: "${storyId}" }) failed`).not.toBe(true);
+  const structuredContent = result.structuredContent as {
+    data: Array<{ primaryExperience: { id: string } }>;
+  };
+  const [entry] = structuredContent.data;
+  expect(entry, `no story found for id "${storyId}"`).toBeTruthy();
+
+  await client.close();
+  return (entry as { primaryExperience: { id: string } }).primaryExperience.id;
+}
+
+/**
+ * Behavioral-story chat flow (#296, epic 288). Not a starter prompt —
+ * `app/chat/starter-prompts.ts` has no leadership entry — so this types the
+ * natural question directly into the message input, exactly as a real
+ * visitor would.
+ *
+ * The interview agent's `list-career-stories`/`search-career` tools can
+ * cite more than one record for an open-ended question like this, so this
+ * scans every citation link the turn renders rather than assuming the
+ * FIRST is the story — the acceptance criterion is that a story citation
+ * appears somewhere in the answer, not that it's the only or first one.
+ * When it does, its href must resolve to its PRIMARY parent experience's
+ * `/experience#<anchor>` — the exact parent anchor, never the bare
+ * `/experience` fallback a resolver falls back to for an unmapped parent
+ * (`resolveCitationHref`'s `story` case) — and never a `/stories` path,
+ * since there is no public stories route on the site (#288, #293).
+ */
+test("leadership story flow: a natural leadership question renders a story citation whose href is its parent experience anchor, never a /stories path (#296)", {
+  tag: "@live-model",
+}, async ({ gotoRoute, page, request, baseURL }) => {
+  test.setTimeout(LIVE_MODEL_TIMEOUT_MS + 15_000);
+
+  await gotoRoute("/");
+  await page.getByRole("button", { name: "Ask about Marcos" }).click();
+
+  const log = page.getByRole("log");
+  await expect(log).toBeVisible();
+
+  const chatInput = page.getByLabel("Message");
+  await chatInput.fill(LEADERSHIP_QUESTION);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+
+  const assistantMessage = log.locator('[data-role="assistant"]').last();
+  await expect(assistantMessage).toBeVisible({ timeout: LIVE_MODEL_TIMEOUT_MS });
+
+  const citationLinks = assistantMessage.locator(CITATION_LINK_SELECTOR);
+  await expect(citationLinks.first()).toBeVisible({ timeout: LIVE_MODEL_TIMEOUT_MS });
+
+  let storyHref: string | null = null;
+  let storyId: string | null = null;
+  const citationCount = await citationLinks.count();
+  for (let index = 0; index < citationCount; index++) {
+    const link = citationLinks.nth(index);
+    const markerText = await link.getAttribute("data-citation");
+    const marker = markerText ? parseCitationMarker(markerText) : null;
+    if (marker?.entityType === "story") {
+      storyHref = await link.getAttribute("href");
+      storyId = marker.entityId;
+      break;
+    }
+  }
+
+  expect(
+    storyHref,
+    "expected the leadership answer to cite at least one behavioral story",
+  ).not.toBeNull();
+  expect(storyHref, "story citation must never link to a /stories path").not.toContain("/stories");
+
+  const [path, fragment] = (storyHref as string).split("#");
+  expect(path).toBe("/experience");
+  expect(
+    fragment,
+    "story citation must resolve to its PARENT experience anchor, not the bare /experience fallback",
+  ).toBeTruthy();
+
+  // Not just ANY existing /experience anchor: the fragment must be the
+  // EXACT primary-parent experience for the cited story — fetched from the
+  // same origin's own MCP endpoint, so a story linked to the wrong role (a
+  // wrong-but-existing anchor) fails this check.
+  const primaryExperienceId = await fetchPrimaryExperienceId(baseURL as string, storyId as string);
+  expect(
+    fragment,
+    `story citation anchor must be its story's real primary parent "${primaryExperienceId}"`,
+  ).toBe(primaryExperienceId);
+
+  // The parent anchor must actually exist on the rendered page — a
+  // citation pointing at a section that doesn't really exist would be a
+  // broken, dishonest link.
+  const response = await request.get(`${baseURL}${path}`);
+  expect(response.ok(), `citation target ${path} did not load (status ${response.status()})`).toBe(
+    true,
+  );
+  await gotoRoute("/experience");
+  await expect(page.locator(`#${fragment}`)).toBeVisible();
 });

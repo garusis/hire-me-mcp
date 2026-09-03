@@ -3,10 +3,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  COMPETENCIES,
+  careerStorySchema,
   citationSchema,
+  competencySchema,
   formatYearRange,
+  hasStoryPreservationMap,
+  isCompetency,
   loadContentDir,
+  loadStoryPreservationMap,
   resolveDefaultContentDir,
+  storyPreservationMapSchema,
 } from "./index.js";
 
 /**
@@ -57,6 +64,12 @@ describe("formatYearRange", () => {
 });
 
 describe("public entry point", () => {
+  it("re-exports the #290 story-preservation map loader and schema", () => {
+    expect(storyPreservationMapSchema).toBeDefined();
+    expect(loadStoryPreservationMap(resolveDefaultContentDir()).length).toBeGreaterThan(0);
+    expect(hasStoryPreservationMap(resolveDefaultContentDir())).toBe(true);
+  });
+
   it("re-exports the citation schema for downstream consumers like packages/core", () => {
     const result = citationSchema.safeParse({
       entityType: "experience",
@@ -71,6 +84,20 @@ describe("public entry point", () => {
       new URL("./content/__fixtures__/valid-content/", import.meta.url),
     );
     expect(loadContentDir(fixtureDir).profile?.id).toBe("profile-fixture");
+  });
+
+  it("re-exports the story schema and the competency taxonomy (#289)", () => {
+    expect(
+      citationSchema.safeParse({ entityType: "story", entityId: "s", label: "S" }).success,
+    ).toBe(true);
+    expect(COMPETENCIES).toContain("leadership");
+    expect(competencySchema.safeParse("leadership").success).toBe(true);
+    expect(isCompetency("leadership")).toBe(true);
+    expect(careerStorySchema.safeParse({}).success).toBe(false);
+    const fixtureDir = fileURLToPath(
+      new URL("./content/__fixtures__/valid-content/", import.meta.url),
+    );
+    expect(loadContentDir(fixtureDir).stories.map((story) => story.id)).toEqual(["fixture-story"]);
   });
 
   it("resolveDefaultContentDir points at this package's own content/ directory", () => {

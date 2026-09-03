@@ -1,0 +1,12 @@
+{
+  "id": "fixture-story",
+  "experienceId": "fixture-role-fixtureco-2020",
+  "title": "A fake story used only to exercise the content loader in tests",
+  "primaryCompetency": "ownership",
+  "supportingCompetencies": ["problem-solving"],
+  "situation": "A fixture situation.",
+  "task": "A fixture task.",
+  "actions": ["Did a fixture action."],
+  "results": ["Got a fixture result."],
+  "retrievalTags": ["fixture-tag"]
+}

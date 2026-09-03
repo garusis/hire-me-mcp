@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { WritingEntry } from "../../src/lib/content";
+import type { StoryParentRef, WritingEntry } from "../../src/lib/content";
 import { CitationSources, CitationText } from "./citation-text";
 
 const NO_WRITING: readonly WritingEntry[] = [];
@@ -175,6 +175,24 @@ describe("CitationText", () => {
     expect(container.querySelectorAll("img")).toHaveLength(0);
   });
 
+  // Issue 295, epic 288: a story citation must resolve through the
+  // storyParents prop to its own PRIMARY parent experience's anchor, not
+  // the generic /experience fallback.
+  it("renders a story citation linking to its PRIMARY parent experience's anchor when storyParents is supplied", () => {
+    const storyParents: readonly StoryParentRef[] = [
+      { storyId: "mutual-informal-leadership", experienceId: "mutual" },
+    ];
+    render(
+      <CitationText
+        text="Tell me about a time Marcos led without formal authority. [cite:story:mutual-informal-leadership]"
+        writingEntries={NO_WRITING}
+        storyParents={storyParents}
+      />,
+    );
+    const link = screen.getByRole("link");
+    expect(link).toHaveAttribute("href", "/experience#mutual");
+  });
+
   it("renders multiple citation markers as separate numbered links", () => {
     render(
       <CitationText
@@ -222,5 +240,19 @@ describe("CitationSources", () => {
     ]);
     expect(links[0]).toHaveTextContent("Experience · House Numbers");
     expect(links[1]).toHaveTextContent("Skill · Typescript");
+  });
+
+  it("links a story source to its PRIMARY parent experience's anchor when storyParents is supplied (#295)", () => {
+    const storyParents: readonly StoryParentRef[] = [
+      { storyId: "mutual-informal-leadership", experienceId: "mutual" },
+    ];
+    render(
+      <CitationSources
+        text="A claim. [cite:story:mutual-informal-leadership]"
+        writingEntries={NO_WRITING}
+        storyParents={storyParents}
+      />,
+    );
+    expect(screen.getByRole("link")).toHaveAttribute("href", "/experience#mutual");
   });
 });

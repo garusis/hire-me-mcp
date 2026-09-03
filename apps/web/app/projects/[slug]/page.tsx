@@ -85,6 +85,11 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
             <Badge variant="accent">Flagship project of this portfolio</Badge>
           </p>
         )}
+        {project.stage === "proof-of-concept" && (
+          <p className={styles.flagshipBadge}>
+            <Badge>Proof of concept — not deployed to production</Badge>
+          </p>
+        )}
         <Heading level={1}>{project.name}</Heading>
         <p>{project.role}</p>
         <Prose>

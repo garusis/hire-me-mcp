@@ -66,6 +66,8 @@ interface FixtureChunk {
   content: string;
   embedding: number[];
   embeddingModel?: string;
+  /** 0-based index among chunks from the same source. Defaults to 0 — most fixtures are one chunk per source. */
+  chunkIndex?: number;
 }
 
 function citationFor(chunk: FixtureChunk): ChunkCitation {
@@ -87,7 +89,7 @@ async function seedChunks(sql: TestSql, chunks: FixtureChunk[]): Promise<void> {
           INSERT INTO career_chunks (
             id, source_type, source_id, chunk_index, citation, content, content_hash, embedding, embedding_model
           ) VALUES (
-            ${chunk.id}, ${chunk.sourceType}, ${chunk.sourceId}, 0,
+            ${chunk.id}, ${chunk.sourceType}, ${chunk.sourceId}, ${chunk.chunkIndex ?? 0},
             ${JSON.stringify(citationFor(chunk))}::jsonb,
             ${chunk.content}, ${`hash-${chunk.id}`}, ${vectorLiteral}::vector,
             ${chunk.embeddingModel ?? MODEL_ID}
@@ -246,6 +248,45 @@ describe.runIf(neonConfig !== undefined)("searchCareer (real Neon branch)", () =
       embedding: embeddingMix(30, 371, 0.9),
     };
 
+    // Fixtures for the source-diverse topK contract (#292): one source
+    // contributes three higher-scoring chunks, another contributes a single
+    // lower-scoring (but still relevant) chunk. A naive chunk-level `LIMIT`
+    // would let the first source alone fill `topK`, hiding the second.
+    const multiChunkSource: FixtureChunk[] = [
+      {
+        id: "multi-source-chunk-0",
+        sourceType: "gap",
+        sourceId: "multi-chunk-source",
+        chunkIndex: 0,
+        content: "Multi-chunk source, chunk 0 (best match).",
+        embedding: embeddingMix(50, 390, 0.99),
+      },
+      {
+        id: "multi-source-chunk-1",
+        sourceType: "gap",
+        sourceId: "multi-chunk-source",
+        chunkIndex: 1,
+        content: "Multi-chunk source, chunk 1.",
+        embedding: embeddingMix(50, 391, 0.97),
+      },
+      {
+        id: "multi-source-chunk-2",
+        sourceType: "gap",
+        sourceId: "multi-chunk-source",
+        chunkIndex: 2,
+        content: "Multi-chunk source, chunk 2.",
+        embedding: embeddingMix(50, 392, 0.95),
+      },
+    ];
+    const singleChunkSource: FixtureChunk = {
+      id: "single-source-chunk-0",
+      sourceType: "gap",
+      sourceId: "single-chunk-source",
+      chunkIndex: 0,
+      content: "Single-chunk source, lower-scoring but still relevant.",
+      embedding: embeddingMix(50, 393, 0.5),
+    };
+
     await seedChunks(sql, [
       ...noise,
       ...ranking,
@@ -254,6 +295,8 @@ describe.runIf(neonConfig !== undefined)("searchCareer (real Neon branch)", () =
       staleModelChunk,
       filterA,
       filterB,
+      ...multiChunkSource,
+      singleChunkSource,
     ]);
   }, 180_000);
 
@@ -291,7 +334,18 @@ describe.runIf(neonConfig !== undefined)("searchCareer (real Neon branch)", () =
     const embedder = embedderReturning({ "json roundtrip query": queryVector });
     const searchCareer = createSearchCareer({ sql, embedder, modelId: MODEL_ID });
 
-    const result = await searchCareer("json roundtrip query", { topK: 3 });
+    // Scoped to "project" (as every other cross-type-unaware test in this
+    // suite is — see "returns seeded results..." and the ranking fixtures
+    // above): `runAnnQuery` deliberately has no LIMIT and scans the whole
+    // store when `sourceTypes` is omitted (see its doc comment), so an
+    // unfiltered query here would also hit the "skill"-typed
+    // `stale-model-chunk` fixture seeded above specifically for the
+    // dedicated stale-embedding-model test below, and fail on a concern
+    // this test isn't about — result shape, not filtering breadth.
+    const result = await searchCareer("json roundtrip query", {
+      topK: 3,
+      sourceTypes: ["project"],
+    });
 
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);
   }, 30_000);
@@ -307,6 +361,24 @@ describe.runIf(neonConfig !== undefined)("searchCareer (real Neon branch)", () =
     const ids = result.results.map((r) => r.sourceId);
     expect(ids).toContain("filter-experience");
     expect(ids).not.toContain("filter-project");
+  }, 30_000);
+
+  it("topK counts unique sources against real seeded data: several higher-scoring chunks from one source cannot hide another qualifying source", async () => {
+    if (sql === undefined) throw new Error("sql not initialized");
+    const queryVector = embeddingWithSpike(50);
+    const embedder = embedderReturning({ "unique source topK query": queryVector });
+    const searchCareer = createSearchCareer({ sql, embedder, modelId: MODEL_ID });
+
+    const result = await searchCareer("unique source topK query", {
+      topK: 2,
+      sourceTypes: ["gap"],
+    });
+
+    const sourceIds = result.results.map((r) => r.sourceId);
+    expect(sourceIds).toEqual(["multi-chunk-source", "single-chunk-source"]);
+    // The best chunk (chunk 0) is the one that surfaces as the discovery excerpt.
+    const multi = result.results.find((r) => r.sourceId === "multi-chunk-source");
+    expect(multi?.chunkIndex).toBe(0);
   }, 30_000);
 
   it("a fuzzy, cross-cutting query (no literal wording overlap) returns the conceptually related source in the top results", async () => {

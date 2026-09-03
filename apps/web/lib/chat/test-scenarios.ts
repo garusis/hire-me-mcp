@@ -174,6 +174,7 @@ export interface ChatTestCitationIds {
   profile: string;
   education: string;
   recommendation: string;
+  story: string;
 }
 
 /**
@@ -188,6 +189,10 @@ export interface ChatTestCitationIds {
  * - `profile`/`education`/`recommendation` are the three types #227 taught
  *   the resolver, which it used to drop mid-sentence — so each must render
  *   as a link too, never as a raw `[cite:...]` string.
+ * - `story` (#295, epic #288) is the deterministic behavioral-story path: it
+ *   must render as a link to its PRIMARY parent experience's anchor on
+ *   `/experience`, never a bare `/experience` fallback or a `/stories` route
+ *   that doesn't exist.
  * - One marker's entity type is a TOOL NAME (`get-skill-evidence`), which is
  *   what the live model actually wrote in issue 270. It is not a citable
  *   entity, so it must leave the prose entirely (as a hidden
@@ -208,7 +213,8 @@ export function scriptedAnswerText(ids: ChatTestCitationIds): string {
     `[cite:writing:${ids.writing}]. Citation types this site cannot link to are dropped from `,
     `the prose entirely — profile [cite:profile:${ids.profile}] education `,
     `[cite:education:${ids.education}] recommendation [cite:recommendation:${ids.recommendation}] `,
-    `— and this sentence still reads cleanly (${CHAT_TEST_FIXTURE_SENTINEL}).\n`,
+    `— and this sentence still reads cleanly (${CHAT_TEST_FIXTURE_SENTINEL}). `,
+    `Tell me about a time Marcos showed leadership: [cite:story:${ids.story}].\n`,
     // Issue 270: the entity-type slot holds a TOOL's name, exactly as the
     // live model wrote it. Not a citation; must never be read as prose.
     `A marker naming a tool is not a citation [cite:get-skill-evidence:${ids.gap}]; it is `,

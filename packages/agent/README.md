@@ -173,6 +173,42 @@ weakest matches first; an oversized single chunk is trimmed to the
 remaining budget rather than dropped whole. Covered by
 `search-career.test.ts` with a synthetically oversized result set.
 
+## Behavioral stories: deterministic lookup vs. semantic discovery (#294, #296)
+
+`list-career-stories` (`src/tools/list-career-stories.ts`) is a sixth tool, added alongside
+`search-career` for behavioral "tell me about a time" questions. The two never duplicate each
+other's job — the routing policy is stated in the tool's own `description`, restated in the
+`retrievalPolicy` prompt section (`src/prompt/sections.ts`), and exercised by the eval suite
+below:
+
+- **`list-career-stories` is the deterministic path.** It wraps `@hire-me-mcp/core`'s
+  `listCareerStories(repository, filter?)` — the same domain service the MCP server's tool of the
+  same name wraps — filtering by exact story id, exact experience id, exact company, and/or a
+  controlled competency vocabulary. Given any of those, it returns the complete story (situation,
+  task, actions, results, reflection), never a fragment. Prefer this whenever the competency,
+  company, or experience id is already known.
+- **`search-career` scoped to `sourceTypes: ["story"]` is the semantic discovery path.** For fuzzy
+  behavioral phrasing that doesn't map cleanly onto a listed competency (e.g. "a time things went
+  sideways" rather than "failure"), the model calls `search-career` first, scoped to stories, to
+  find the matching story by relevance rather than exact filter.
+- **Fallback order, story-scoped first.** If a story-scoped `search-career` call comes back empty
+  (nothing clears the relevance floor), the model may fall back to a broader, unscoped
+  `search-career` call — but must present that broader result explicitly as "closest evidence,"
+  never re-presented as if it were a behavioral story. There is deliberately no dedicated
+  story-search tool: `list-career-stories` never takes a free-text query, and `search-career` is
+  the only fuzzy entry point into story content.
+
+A story fetched either way carries its own citation whose URL resolves to its primary
+experience's anchor on the experience page (`/experience#<experience-id>`) — never a dedicated
+story page, since none is ever rendered on the site (#288's visibility boundary). Both paths are
+covered end to end by the 38-case story manifest in `src/evals/dataset/story-manifest-cases.ts`
+(#295): `expectedToolCall: "list-career-stories"` asserts the deterministic path fires for a
+competency-naming question, `"search-career-story-scoped"` asserts a story-scoped `search-career`
+call (and, when a `list-career-stories` fetch follows, that it precedes it) for fuzzy or
+genuinely-absent-topic questions, all checked by `src/evals/scorers/tool-routing.ts`'s
+`scoreToolRouting` — pure, zero model calls, same as the other scorers. `groundedness`/
+`gap-honesty` then verify the returned story content is what actually backs the answer.
+
 ## Public API
 
 ```ts
@@ -345,8 +381,9 @@ The throttle now wraps the language model itself (the AI SDK's `wrapLanguageMode
 `wrapGenerate`/`wrapStream` await a slot before delegating), so it counts exactly what the provider
 counts — multi-step turns, retries, and anything a future change adds. It is a true **sliding
 window** over admitted-request timestamps, not a fixed inter-request delay, and acquisitions are
-serialized so concurrent callers cannot both slip through. A full 25-case run therefore paces
-itself over several minutes of deliberate waiting — that wait is the fix working, not a hang.
+serialized so concurrent callers cannot both slip through. A full run therefore paces itself over
+several minutes of deliberate waiting (roughly 15-20+ minutes for the current 66-case dataset,
+per #295) — that wait is the fix working, not a hang.
 
 **One source for the number.** `FREE_TIER_RPM_CEILING = 15` (the quota rationale table above) minus
 `RPM_SAFETY_MARGIN = 5` (headroom for the production chat traffic sharing this key) *is* the
@@ -603,7 +640,7 @@ pnpm eval:agent                          # root proxy — same as the filtered c
 pnpm --filter @hire-me-mcp/agent eval:agent
 
 # A full-dataset run, matching what CI runs (default local run is budget-capped to 8 cases):
-EVAL_MAX_CASES=25 EVAL_MAX_TOTAL_TOKENS=260000 EVAL_MAX_COST_USD=1 pnpm eval:agent
+EVAL_MAX_CASES=66 EVAL_MAX_TOTAL_TOKENS=690000 EVAL_MAX_COST_USD=3 pnpm eval:agent
 
 # Re-run a single case while debugging a specific failure (see #143's methodology above):
 EVAL_CASE_IDS=grounded-nodejs-experience pnpm eval:agent
@@ -632,9 +669,12 @@ allowance, shared with `retrieval-eval` and anyone running this suite locally ag
 key. The required `preview-e2e` job spends none of it: since #264 its chat assertions run against
 a scripted, model-free response path. A full 17-case run costs ~110K tokens (per the real run
 recorded in "Real-run results" above) and roughly one call per case (more for a multi-tool-call
-turn); the full 25-case dataset (post-#75) is expected to cost proportionally more but has not yet
-been measured against a real key (see "RAG-grounded cases and the tool-routing scorer" above) —
-budget accordingly if running locally the same day CI or another contributor might also run it.
+turn); the full 66-case dataset (post-#295, up from 25 cases) is expected to cost proportionally
+more — CI's budget caps (`.github/workflows/agent-evals.yml`) scale the measured 17-case number to
+66 cases with margin, per that workflow's own comments — but has not yet been measured against a
+real key (this package's local `.env` key is a known-invalid placeholder, see "Provider
+abstraction" above) — budget accordingly if running locally the same day CI or another contributor
+might also run it.
 `EVAL_RPM_LIMIT` (default 10) caps real provider requests per rolling minute — counted at the model
 boundary, so a multi-request case can no longer overshoot the 15 RPM ceiling (see "Request rate
 limiting" above).

@@ -70,6 +70,26 @@ describe("README.md environment variables (#23 AC: names only, no secret-looking
   });
 });
 
+describe("README.md ping tool wording (independent review, #293)", () => {
+  // The generated tool table (`<!-- BEGIN/END GENERATED: mcp-tool-table -->`)
+  // grows every time a tool is added, but a hand-authored ordinal claim
+  // about `ping`'s position ("a seventh tool") does not — it silently goes
+  // stale the moment the table does. Ban ordinal/numeric tool-count wording
+  // outright rather than trying to keep a second number in sync by hand.
+  const ORDINAL_TOOL_COUNT_WORDING =
+    /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth)\s+tool\b/i;
+
+  it("never claims ping's numeric position among the registered tools", () => {
+    const source = readReadme();
+    expect(source).not.toMatch(ORDINAL_TOOL_COUNT_WORDING);
+  });
+
+  it("still documents ping as a connectivity diagnostic, without the ordinal wording", () => {
+    const source = readReadme();
+    expect(source).toMatch(/`ping`.*connectivity diagnostic/i);
+  });
+});
+
 /**
  * Reconstructs each leaf path from the indented tree (top-level dirs end in
  * "/", their children are two-space-indented lines starting with a path

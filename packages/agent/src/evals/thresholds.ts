@@ -30,6 +30,43 @@ export interface ScorerThresholds {
    * compared against this threshold as if it were a real failing score.
    */
   toolRouting?: number;
+  /**
+   * Optional (#300): only cases that declare `EvalCase.answerAssertions`
+   * contribute, so a run without any never fails on it — same treatment as
+   * `toolRouting` above.
+   */
+  answerAssertions?: number;
+  /**
+   * Optional (#295 correction, finding 2): only cases that get scored by
+   * `./scorers/story-completeness.ts` contribute — same zero-count-skips
+   * treatment as `toolRouting`/`answerAssertions` above.
+   */
+  storyCompleteness?: number;
+  /**
+   * Optional (#295 second independent-review correction, finding 4): only
+   * cases whose `answerAssertions.citationGroups` declares a `preferredRef`
+   * contribute — same zero-count-skips treatment as the other optional
+   * scorers above. UNLIKE those, this threshold is blocking (1.0, see
+   * {@link EVAL_THRESHOLDS}'s doc comment) rather than a statistical target:
+   * a declared preference is a locked per-case contract from the #295
+   * manifest, not something a fraction of cases may fail.
+   */
+  preferredSourceCompliance?: number;
+  /**
+   * Optional (#295 third-independent-review correction, finding 1): only
+   * cases that get scored by `./scorers/answer-assertions.ts`'s
+   * `scoreFactualBoundaryCompliance` (i.e. declare `mustMatch`/
+   * `mustNotMatch`/`conditionalMustMatch`) contribute — same zero-count-
+   * skips treatment as the other optional scorers above. UNLIKE the
+   * provisional-lenient scorers (`answerAssertions`, `storyCompleteness`),
+   * this threshold is BLOCKING (1.0, see {@link EVAL_THRESHOLDS}'s doc
+   * comment) for the identical reason `preferredSourceCompliance` is: a
+   * factual boundary (no invented metrics, no LLM-accuracy framing, a
+   * required positive caveat) is a locked per-case contract, not a
+   * statistical target with acceptable slack — one violated case must fail
+   * the run regardless of how many others pass.
+   */
+  factualBoundaryCompliance?: number;
 }
 
 /**
@@ -99,6 +136,45 @@ export const EVAL_THRESHOLDS: ScorerThresholds = {
   // documents for the other three scorers — raising this threshold with the
   // real aggregate is a follow-up, not silently deferred.
   toolRouting: 0.6,
+  // answerAssertions (#300, #295): content boundaries — "this was a proof of
+  // concept", "never 30% to 87%", "never transfer actions to a related
+  // employer". Not calibrated against a real run yet (same local-key
+  // limitation as toolRouting); 0.8 is a deliberately conservative
+  // placeholder so a model occasionally paraphrasing around one boundary
+  // does not gate merge on an unverified guess, while a systematic
+  // regression (most asserted cases crossing a boundary) still fails.
+  // Recalibrate from the first real `agent-evals` run of the story dataset.
+  answerAssertions: 0.8,
+  // storyCompleteness (#295 correction, finding 2): the 3-signal (situation/
+  // action/result) heuristic in ./scorers/story-completeness.ts. Not
+  // calibrated against a real run yet (same local-key limitation as
+  // toolRouting/answerAssertions above); 0.7 is a deliberately conservative
+  // placeholder — two of three signal classes must typically hold — so an
+  // answer missing one signal class doesn't gate merge on an unverified
+  // guess, while an adjective/testimonial-only answer (0/3 or 1/3) still
+  // fails. Recalibrate from the first real agent-evals run of the story
+  // dataset, same procedure as the other provisional thresholds above.
+  storyCompleteness: 0.7,
+  // preferredSourceCompliance (#295 second independent-review correction,
+  // finding 4): BLOCKING, not provisional-lenient like the scorers above —
+  // "For X01, citing story 002 while tools returned 001 and 002 scores
+  // answerAssertions: 0.8; the committed threshold is also 0.8, so the
+  // overall verdict passes... make any available-but-skipped preferred
+  // source fail the eval." A single failed preferred-source case must fail
+  // the run regardless of how many other cases (or other assertions in the
+  // SAME case) pass — mirrors the retrieval package's own
+  // `preferredSourceCompliance` fix, which raised that threshold from 0.7
+  // to 1.0 for the identical reason: this is a locked per-case contract,
+  // not a statistical target with acceptable slack.
+  preferredSourceCompliance: 1,
+  // factualBoundaryCompliance (#295 third-independent-review correction,
+  // finding 1): BLOCKING like preferredSourceCompliance, for the same
+  // reason — "Make factual-boundary compliance blocking per applicable
+  // case." A run where any case's answer crosses a declared factual
+  // boundary (an invented metric, an "LLM accuracy" framing, a missing
+  // mandatory caveat) fails outright, never diluted by the case's other
+  // passing assertions or averaged away across the rest of the suite.
+  factualBoundaryCompliance: 1,
 };
 
 const SCORER_LABELS: Readonly<Record<keyof ScorerThresholds, string>> = {
@@ -106,6 +182,10 @@ const SCORER_LABELS: Readonly<Record<keyof ScorerThresholds, string>> = {
   gapHonesty: "gap honesty",
   relevance: "relevance",
   toolRouting: "tool routing",
+  answerAssertions: "answer assertions",
+  storyCompleteness: "story completeness",
+  preferredSourceCompliance: "preferred-source compliance",
+  factualBoundaryCompliance: "factual-boundary compliance",
 };
 
 /** Verdict for one eval run: whether every scorer aggregate met its threshold, and a human-readable failure line per scorer that didn't. */

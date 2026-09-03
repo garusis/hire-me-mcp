@@ -1,9 +1,10 @@
 import { CITABLE_ENTITY_TYPES, type CitationMarker } from "@hire-me-mcp/agent/citations";
 import { describe, expect, it } from "vitest";
-import type { WritingEntry } from "../../src/lib/content";
+import type { StoryParentRef, WritingEntry } from "../../src/lib/content";
 import { resolveChatCitationHref } from "./resolve-chat-citation-href";
 
 const NO_WRITING: readonly WritingEntry[] = [];
+const NO_STORY_PARENTS: readonly StoryParentRef[] = [];
 
 describe("resolveChatCitationHref", () => {
   it("resolves an experience citation to the /experience anchor, reusing the /skills href mapping", () => {
@@ -63,6 +64,33 @@ describe("resolveChatCitationHref", () => {
         NO_WRITING,
       ),
     ).toBe("/experience#unad-bs-systems-engineering");
+  });
+
+  // Issue 295, epic 288: a story citation must land on its PRIMARY parent
+  // experience's anchor, exactly like the MCP/site resolver does — not the
+  // generic `/experience` fallback `resolveCitationHref` uses when no
+  // storyParents are supplied at all.
+  it("resolves a story citation to its PRIMARY parent experience's anchor when storyParents are supplied", () => {
+    const storyParents: readonly StoryParentRef[] = [
+      { storyId: "xogito-client-account-recovery", experienceId: "xogito" },
+    ];
+    expect(
+      resolveChatCitationHref(
+        { entityType: "story", entityId: "xogito-client-account-recovery" },
+        NO_WRITING,
+        storyParents,
+      ),
+    ).toBe("/experience#xogito");
+  });
+
+  it("falls back to the bare /experience page for a story citation whose parent cannot be found", () => {
+    expect(
+      resolveChatCitationHref(
+        { entityType: "story", entityId: "no-such-story" },
+        NO_WRITING,
+        NO_STORY_PARENTS,
+      ),
+    ).toBe("/experience");
   });
 
   it("resolves a recommendation citation to its card on /recommendations", () => {

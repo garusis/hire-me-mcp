@@ -1,0 +1,34 @@
+{
+  "id": "mutual-sustainable-ownership-failure",
+  "experienceId": "kubesoft-2015-senior-full-stack-and-mobile-developer",
+  "title": "Shipping the product while failing to build sustainable ownership",
+  "primaryCompetency": "learning-from-failure",
+  "supportingCompetencies": [
+    "personal-accountability",
+    "decision-making",
+    "self-awareness",
+    "integrity"
+  ],
+  "situation": "At Kubesoft, I participated in one of two company teams entering a hackathon. Before the competition, we agreed that if either team won, the prize and ownership of the winning product would be shared. The other team won with Mutual, a government-supported application intended to help parents guide children toward activities and conversations that could reduce the risk of drug use. After the win, disagreements over how the prize should be divided between the participants, product development, and the broader company stalled the project.",
+  "task": "I had not been part of the winning team and did not believe I had the right to dispute their compensation. I cared about the product's mission and wanted to create enough momentum for development to begin.",
+  "actions": [
+    "I renounced my share of the prize money and began building the backend.",
+    "After I released the first backend version, other contributors began working on the mobile application and frontend dashboard. I collaborated closely with the mobile developer and continued pushing the work forward through informal leadership."
+  ],
+  "results": [
+    "The decision worked from a delivery perspective. We launched the product before the proposed deadline and handed it over to the government.",
+    "However, I do not consider the broader project a success. We delivered the software, but the original conflict remained unresolved and the team never recovered shared ownership.",
+    "My responsibility was not creating the dispute, but choosing how I responded to it. I tried to compensate for the lack of collective commitment with personal effort. That helped us ship, but it did not create a healthy or sustainable team."
+  ],
+  "reflection": "Today, I would still give up the money, but I would not begin carrying a team project alone. I would first require explicit ownership, responsibilities, and commitment from the people expected to build and support it. Mutual taught me that meeting a deadline and launching a product are not sufficient measures of success. A project also needs a team capable of owning its decisions, workload, and future together.",
+  "retrievalTags": [
+    "missed-outcome",
+    "delivery-vs-team-health",
+    "shared-ownership",
+    "team-sustainability",
+    "team-conflict",
+    "mission-driven-product",
+    "hackathon",
+    "public-sector"
+  ]
+}

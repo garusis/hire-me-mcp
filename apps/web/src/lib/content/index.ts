@@ -64,6 +64,7 @@ export {
   type SlugLookup,
   toSlug,
 } from "./slug";
+export { listStoryParents, type StoryParentRef } from "./stories";
 export {
   getWritingEntryView,
   getWritingListView,

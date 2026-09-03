@@ -1,3 +1,4 @@
+import { CITABLE_ENTITY_TYPES } from "@hire-me-mcp/agent/citations";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -5,17 +6,18 @@ import type {
   ProfileView,
   Skill,
   SkillsListView,
+  StoryParentRef,
   WritingListView,
 } from "../../src/lib/content";
 
-const { getSkillsListView, getGapsListView, getWritingListView, getProfileView } = vi.hoisted(
-  () => ({
+const { getSkillsListView, getGapsListView, getWritingListView, getProfileView, listStoryParents } =
+  vi.hoisted(() => ({
     getSkillsListView: vi.fn(),
     getGapsListView: vi.fn(),
     getWritingListView: vi.fn(),
     getProfileView: vi.fn(),
-  }),
-);
+    listStoryParents: vi.fn((): StoryParentRef[] => []),
+  }));
 
 vi.mock("../../src/lib/content", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/lib/content")>();
@@ -25,6 +27,7 @@ vi.mock("../../src/lib/content", async (importOriginal) => {
     getGapsListView,
     getWritingListView,
     getProfileView,
+    listStoryParents,
   };
 });
 
@@ -128,10 +131,87 @@ function writingView(): WritingListView {
   };
 }
 
+const storyEvidenceSkill: Skill = {
+  id: "leadership",
+  name: "Leadership",
+  aliases: [],
+  category: "craft",
+  proficiency: "proficient",
+  evidence: [
+    {
+      entityType: "story",
+      entityId: "mutual-informal-leadership",
+      label: "Creating momentum when a mission-driven project stalled",
+    },
+  ],
+};
+
 describe("Skills page", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    listStoryParents.mockReturnValue([]);
+  });
+
+  // #296 (P2): before this, `/skills` called `resolveCitationHref` with no
+  // `storyParents` argument at all — the one consumer not taught about the
+  // `story` entity type — so a story citation there would fall back to the
+  // bare `/experience` page regardless of a real parent existing.
+  it("resolves a skill's story evidence citation to its PRIMARY parent experience anchor, via the site's shared listStoryParents lookup", async () => {
+    getSkillsListView.mockReturnValue(skillsView([storyEvidenceSkill]));
+    getGapsListView.mockReturnValue({ items: [] });
+    getWritingListView.mockReturnValue({ items: [], citations: [] });
+    listStoryParents.mockReturnValue([
+      { storyId: "mutual-informal-leadership", experienceId: "mutual" },
+    ]);
+    const { default: SkillsPage } = await import("./page.js");
+
+    render(await SkillsPage());
+
+    const link = screen.getByRole("link", {
+      name: "Creating momentum when a mission-driven project stalled",
+    });
+    expect(link).toHaveAttribute("href", "/experience#mutual");
+  });
+
+  it("resolves every citable entity type's evidence citation to a real surface, never the bare home-page fallback", async () => {
+    const evidence = CITABLE_ENTITY_TYPES.map((entityType) => ({
+      entityType,
+      entityId: `${entityType}-fixture`,
+      label: `${entityType} fixture label`,
+    }));
+    const skill: Skill = {
+      id: "exhaustive",
+      name: "Exhaustive Skill",
+      aliases: [],
+      category: "craft",
+      proficiency: "proficient",
+      evidence,
+    };
+    getSkillsListView.mockReturnValue(skillsView([skill]));
+    getGapsListView.mockReturnValue({ items: [] });
+    getWritingListView.mockReturnValue({ items: [], citations: [] });
+    listStoryParents.mockReturnValue([
+      { storyId: "story-fixture", experienceId: "some-experience" },
+    ]);
+    const { default: SkillsPage } = await import("./page.js");
+
+    render(await SkillsPage());
+
+    const heading = screen.getByRole("heading", { name: "Exhaustive Skill" });
+    const card = heading.closest("article");
+    if (card === null) {
+      throw new Error("expected the exhaustive skill card to render as an article");
+    }
+    const links = within(card).getAllByRole("link");
+    expect(links).toHaveLength(evidence.length);
+    for (const [index, link] of links.entries()) {
+      const entityType = evidence[index]?.entityType;
+      expect(link, `"${entityType}" citation falls back to the home page`).not.toHaveAttribute(
+        "href",
+        "/",
+      );
+    }
   });
 
   it("renders every skill from the stubbed content layer with at least one evidence citation link", async () => {

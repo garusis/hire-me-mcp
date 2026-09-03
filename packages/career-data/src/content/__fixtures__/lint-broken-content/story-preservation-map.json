@@ -1,0 +1,32 @@
+[
+  {
+    "experienceId": "fixture-role-fixtureco-2020",
+    "field": "highlights.0",
+    "classification": "detailed-story",
+    "action": "shorten",
+    "note": "Broken on purpose: a detailed field selected for cleanup with no canonical story."
+  },
+  {
+    "experienceId": "fixture-role-fixtureco-2020",
+    "field": "highlights.7",
+    "classification": "concise-outcome",
+    "storyIds": ["fixture-story"],
+    "action": "keep",
+    "note": "Broken on purpose: the field does not exist, and the story is not associated with this experience."
+  },
+  {
+    "experienceId": "fixture-role-fixtureco-2020",
+    "field": "summary",
+    "classification": "concise-outcome",
+    "storyIds": ["no-such-story"],
+    "action": "move-detail-to-story",
+    "note": "Broken on purpose: the story id does not resolve."
+  },
+  {
+    "experienceId": "does-not-exist-role",
+    "field": "summary",
+    "classification": "role-context",
+    "action": "keep",
+    "note": "Broken on purpose: the experience id does not resolve."
+  }
+]

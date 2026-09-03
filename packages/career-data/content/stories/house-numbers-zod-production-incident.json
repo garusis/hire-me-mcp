@@ -1,0 +1,43 @@
+{
+  "id": "house-numbers-zod-production-incident",
+  "experienceId": "house-numbers-2022-senior-full-stack-engineer",
+  "title": "Tracing a production crash loop to an environment-specific schema failure",
+  "primaryCompetency": "problem-solving",
+  "supportingCompetencies": [
+    "ownership",
+    "risk-management",
+    "technical-judgment",
+    "decision-making"
+  ],
+  "situation": "At House Numbers, a loan processor reported that none of the documents they had uploaded were being processed and that many appeared as \"Unknown.\" The service had restarted 96 times in 24 hours. Its normal range was zero to four restarts per day. The immediate trigger was a webhook carrying a document identifier that our database did not contain. Several operations handling that identifier failed in parallel, and the first rejection masked sibling failures that remained unhandled. Those unhandled errors terminated the process, ECS replaced the task, and each restart could interrupt uploads already in progress. That created a feedback loop capable of producing more missing records and more crashes.",
+  "task": "I had the deepest familiarity with that document-processing path, so I took ownership of the incident and began tracing it from the production symptoms backward.",
+  "actions": [
+    "I first contained the cascade. A missing document identifier became a recoverable error that was logged and skipped, and parallel work was allowed to settle without leaving unhandled failures. I also added instrumentation around the upload and persistence boundaries so I could see whether the external system had accepted a file and whether our database had recorded the returned identifier.",
+    "That evidence led me back to a recent major-version migration from the previous Zod release to Zod 4. The migration changed how some schemas treated absent values, and this response schema still relied on the earlier behavior. Local development and the production container also resolved different Zod 4.x versions because the production build did not install from a frozen lockfile. A response field accepted as absent locally was rejected in production. The external processor had successfully accepted the documents, but our application swallowed the validation error before saving their identifiers. When later webhooks arrived, the identifiers looked orphaned. Every document uploaded through the affected production build encountered this failure.",
+    "I reproduced the production error against a real failing response, matched its validation output locally, and changed the schema to preserve backward compatibility. I also changed the extraction path so future upload failures would reach the message bus retry and dead-letter mechanisms instead of disappearing inside a catch block. Regression tests covered each valid response shape, the parallel-failure case, and replay behavior. Persistence was made idempotent when a replay returned an identifier the system had already seen.",
+    "After deploying the correction, I identified the full affected window, prepared and executed the reconciliation work, and reprocessed the documents from that window. I then checked the remaining \"Unknown\" records in the database to distinguish unrecovered incident failures from legitimate cases where the external system had not sent an update or could not classify the document."
+  ],
+  "results": [
+    "The cascade was contained and the failing path became observable and retryable instead of terminating the process.",
+    "The documents from the affected window were reprocessed, and the remaining \"Unknown\" records were checked to separate unrecovered incident failures from legitimate cases.",
+    "The incident caused no permanent data loss."
+  ],
+  "reflection": "This incident reinforced the way I already handle failures of this kind. I stop the bleeding first by containing the cascade. Once the system is stable, I make the failing path observable and retryable, reproduce the production environment, fix the underlying cause, and reconcile historical data before I consider the recovery complete.",
+  "retrievalTags": [
+    "production-incident",
+    "crash-loop",
+    "cascading-failure",
+    "async-errors",
+    "dead-letter-queue",
+    "incident-reconciliation",
+    "backward-compatibility",
+    "major-version-migration",
+    "dependency-drift",
+    "schema-validation",
+    "zod-4",
+    "idempotency",
+    "ecs",
+    "document-reprocessing",
+    "no-permanent-loss"
+  ]
+}

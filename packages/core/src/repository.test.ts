@@ -9,6 +9,27 @@ import {
 const fixtureDir = (name: string) =>
   fileURLToPath(new URL(`../../career-data/src/content/__fixtures__/${name}/`, import.meta.url));
 
+describe("emptyCareerDataset", () => {
+  it("has an empty collection for every entity type, stories included (#289)", () => {
+    expect(emptyCareerDataset()).toEqual({
+      profile: undefined,
+      experience: [],
+      projects: [],
+      skills: [],
+      gaps: [],
+      education: [],
+      writing: [],
+      recommendations: [],
+      stories: [],
+    });
+  });
+
+  it("returns a fresh object every call so one test's mutation cannot leak into another", () => {
+    expect(emptyCareerDataset()).not.toBe(emptyCareerDataset());
+    expect(emptyCareerDataset().stories).not.toBe(emptyCareerDataset().stories);
+  });
+});
+
 describe("createInMemoryCareerDataRepository", () => {
   it("returns exactly the fixture dataset it was given, with no filesystem access", () => {
     const dataset = {
@@ -47,6 +68,7 @@ describe("createContentCareerDataRepository", () => {
     });
 
     expect(repository.getDataset().profile?.id).toBe("profile-fixture");
+    expect(repository.getDataset().stories.map((story) => story.id)).toEqual(["fixture-story"]);
   });
 
   it("memoizes: the content directory is read only once across repeated getDataset() calls", () => {

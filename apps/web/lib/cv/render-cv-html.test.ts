@@ -1,5 +1,7 @@
+import { createContentCareerDataRepository } from "@hire-me-mcp/core";
 import { describe, expect, it } from "vitest";
 import type { CvView } from "../../src/lib/content/cv";
+import { getCvView } from "../../src/lib/content/cv";
 import { renderCvHtml } from "./render-cv-html";
 
 const FIXTURE_VIEW: CvView = {
@@ -171,5 +173,69 @@ describe("renderCvHtml", () => {
       '<meta name="viewport" content="width=device-width, initial-scale=1" />',
     );
     expect(html).toContain('<link rel="icon" href="/icon" />');
+  });
+});
+
+// #296 — the locked visibility boundary (#288): every sentence (>= 8
+// words, same normalisation as the career-data `no-story-detail-in-
+// experience` lint rule) of every real authored story's situation/task/
+// actions/results/reflection, plus every story's title. Rendered against
+// the real CV view (real repository), not fixture data.
+const MIN_STORY_SENTENCE_WORDS = 8;
+
+function normalizeStoryProse(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function storySentencesOf(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/u)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+function realStorySentences(): string[] {
+  const dataset = createContentCareerDataRepository().getDataset();
+  const sentences: string[] = [];
+  for (const story of dataset.stories) {
+    const units = [
+      story.situation,
+      story.task,
+      ...story.actions,
+      ...story.results,
+      ...(story.reflection === undefined ? [] : [story.reflection]),
+    ];
+    for (const unit of units) {
+      for (const sentence of storySentencesOf(unit)) {
+        const normalized = normalizeStoryProse(sentence);
+        if (normalized.split(" ").length >= MIN_STORY_SENTENCE_WORDS) {
+          sentences.push(normalized);
+        }
+      }
+    }
+  }
+  return sentences;
+}
+
+function realStoryTitles(): string[] {
+  return createContentCareerDataRepository()
+    .getDataset()
+    .stories.map((story) => normalizeStoryProse(story.title));
+}
+
+describe("renderCvHtml never leaks real story content (#296)", () => {
+  it("the real CV, rendered to HTML, contains no story sentence or title from the real dataset", () => {
+    const realView = getCvView(createContentCareerDataRepository());
+    const html = renderCvHtml(realView, FIXTURE_OPTIONS);
+    const normalized = ` ${normalizeStoryProse(html)} `;
+    const needles = [...realStorySentences(), ...realStoryTitles()];
+    expect(needles.length).toBeGreaterThan(0);
+
+    for (const needle of needles) {
+      expect(normalized).not.toContain(` ${needle} `);
+    }
   });
 });

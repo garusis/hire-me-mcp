@@ -1,0 +1,44 @@
+{
+  "id": "house-numbers-secure-public-document-upload",
+  "experienceId": "house-numbers-2022-senior-full-stack-engineer",
+  "title": "Redesigning a public document-upload flow around privacy and traceability",
+  "primaryCompetency": "risk-management",
+  "supportingCompetencies": [
+    "technical-judgment",
+    "ownership",
+    "customer-focus",
+    "decision-making"
+  ],
+  "situation": "At House Numbers, borrowers used a public WordPress form to submit sensitive loan documents without creating an account. The downstream email workflow worked well: it received the documents, used an LLM to extract identifying information, and passed the submission into our existing triage process. The problems were in the client-facing WordPress portal. It was unreliable and offered very little traceability, so borrowers could not tell what had happened after submitting their files and our support team had difficulty reconstructing reported failures. Operationally, we estimated that roughly two out of every three submissions ended in a borrower complaint or support escalation.",
+  "task": "I proposed replacing the public portal for an extended period. Once the migration was approved, I researched the requirements and designed and implemented the replacement, including its security architecture. We needed to accept files from an unauthenticated public user without exposing borrower information, loan identifiers, tenant details, routing decisions, or other internal platform state.",
+  "actions": [
+    "I designed the public boundary so that access was validated before a request reached internal services. The browser received an opaque session rather than internal loan or tenant identifiers, and client-provided identity information was removed before the request was forwarded.",
+    "I added CAPTCHA verification, scoped and global rate limiting, upload-size and file-count limits, replay protection, and defensive handling for malformed or expired sessions. Public responses were deliberately minimal so they could not reveal whether a loan had been found or which internal processing path had been selected.",
+    "The simplest implementation would have sent every submission through the existing email workflow. However, uploads already had significant volume, and that path incurred an LLM extraction cost for every submission. The new form collected the relevant matching information as structured fields, so using an LLM to extract the same information again would have added unnecessary cost and processing.",
+    "I instead designed a hybrid routing model. When the submitted information contained strong enough signals to associate the documents with a loan, deterministic rules performed the match directly without involving the LLM or Communication Service. When the signals were incomplete or ambiguous, the system preserved the proven email workflow as a fallback so operations could review the submission manually. This reduced unnecessary LLM processing while ensuring that an uncertain match became a human decision rather than a potentially unsafe automated assignment.",
+    "Every session and file submission produced a correlated audit history that followed the request from the public form through routing and document processing. Sensitive fields were encrypted, while structured logs retained identifiers and processing outcomes without unnecessarily copying raw personal information. I also created a diagnostic skill that uses this history to reconstruct an upload's journey across the participating services."
+  ],
+  "results": [
+    "The new page began handling many uploads every day, and borrower complaints about failed uploads stopped.",
+    "Internal support reports still occurred, but we could investigate them quickly. In the cases we reviewed, the trace showed that the upload had succeeded and that the files had later been renamed, archived, or moved within the operational workflow. Instead of guessing whether the original submission had failed, we could show what had happened and direct support to the files.",
+    "I have applied the same principles elsewhere in the platform: tenant-scoping sensitive reads as defense in depth, removing raw PII payloads from logs, and preventing evaluation artifacts containing real document values from entering source control."
+  ],
+  "reflection": "I do not treat security as a checklist added after implementation. I identify what an untrusted actor could submit, infer, replay, or overwhelm; minimize the information crossing each boundary; automate only when the evidence is strong; preserve a human fallback; and retain enough auditability to explain every outcome without exposing the sensitive data itself.",
+  "retrievalTags": [
+    "privacy",
+    "pii",
+    "security-by-design",
+    "threat-modeling",
+    "public-upload",
+    "borrower-documents",
+    "data-minimization",
+    "tenant-isolation",
+    "field-level-encryption",
+    "traceability",
+    "rate-limiting",
+    "replay-protection",
+    "deterministic-matching",
+    "human-in-the-loop",
+    "llm-cost-control"
+  ]
+}

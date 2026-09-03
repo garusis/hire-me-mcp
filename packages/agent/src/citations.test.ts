@@ -15,6 +15,12 @@ describe("serializeCitation", () => {
     );
   });
 
+  it("serializes a story citation (#294)", () => {
+    expect(serializeCitation({ entityType: "story", entityId: "mutual-informal-leadership" })).toBe(
+      "[cite:story:mutual-informal-leadership]",
+    );
+  });
+
   it("serializes an optional fragment as a trailing #fragment", () => {
     expect(
       serializeCitation({
@@ -117,6 +123,10 @@ describe("CITABLE_ENTITY_TYPES", () => {
 
   it("has no duplicates", () => {
     expect(new Set(CITABLE_ENTITY_TYPES).size).toBe(CITABLE_ENTITY_TYPES.length);
+  });
+
+  it("includes 'story' — career stories are citable (#294)", () => {
+    expect(CITABLE_ENTITY_TYPES).toContain("story");
   });
 });
 

@@ -7,15 +7,16 @@
  *
  * `createToolExecutor` (`define-tool.ts`) already exists precisely so a
  * tool's full validate/handle pipeline can be driven without a live
- * `McpServer` — this file's only job is to point it at the four
- * career-domain tools (`ping` is excluded: it wraps no core service, so it
- * has nothing to compare against).
+ * `McpServer` — this file's only job is to point it at the career-domain
+ * tools (`ping` is excluded: it wraps no core service, so it has nothing to
+ * compare against).
  */
 
 import { createToolExecutor } from "./define-tool";
 import { getExperienceTool } from "./tools/get-experience";
 import { getProfileTool } from "./tools/get-profile";
 import { getSkillEvidenceTool } from "./tools/get-skill-evidence";
+import { listCareerStoriesTool } from "./tools/list-career-stories";
 import { listRecommendationsTool } from "./tools/list-recommendations";
 import { searchProjectsTool } from "./tools/search-projects";
 
@@ -26,4 +27,5 @@ export const MCP_TOOL_EXECUTORS = {
   "search-projects": createToolExecutor(searchProjectsTool),
   "get-skill-evidence": createToolExecutor(getSkillEvidenceTool),
   "list-recommendations": createToolExecutor(listRecommendationsTool),
+  "list-career-stories": createToolExecutor(listCareerStoriesTool),
 } as const;

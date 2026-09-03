@@ -27,6 +27,13 @@
  * - `education` → the matching credential card in `/experience#education`
  *   (issue 231 added both the section and the per-entry anchors).
  * - `recommendation` → the matching card on `/recommendations` (issue 190).
+ * - `story` → the story's PRIMARY parent experience anchor on `/experience`
+ *   (issue 293, epic 288). The site deliberately renders no story page, so
+ *   the citation keeps `entityType: "story"` for precise grounding while
+ *   its link lands on the entry that verifies the employment context; the
+ *   story body is only ever returned by the MCP/chat tool response. The
+ *   parent is looked up through `storyParents` (the content layer's
+ *   `listStoryParents()`); an unresolvable story falls back to `/experience`.
  * - Anything else — a `CitableEntityType` added later with no site surface
  *   yet — falls back to the home page rather than producing a broken link.
  *
@@ -40,7 +47,7 @@
  */
 
 import type { Citation } from "@hire-me-mcp/core";
-import type { WritingEntry } from "../../src/lib/content";
+import type { StoryParentRef, WritingEntry } from "../../src/lib/content";
 // `toSlug` comes from its own leaf module, not the `../../src/lib/content`
 // barrel: that barrel's `index.ts` (and `writing.ts`, which re-exports
 // `WritingEntry`) starts with `import "server-only"`, so a *value* import
@@ -63,8 +70,11 @@ export const PROFILE_SECTION_ID = "profile";
 export function resolveCitationHref(
   citation: Citation,
   writingEntries: readonly WritingEntry[],
+  storyParents: readonly StoryParentRef[] = [],
 ): string {
   switch (citation.entityType) {
+    case "story":
+      return resolveStoryHref(citation.entityId, storyParents);
     case "experience":
       return `/experience#${toSlug(citation.entityId)}`;
     case "project":
@@ -84,6 +94,15 @@ export function resolveCitationHref(
     default:
       return "/";
   }
+}
+
+/** `/experience#<primary-experience-id>` — never a story route (issue 293). */
+function resolveStoryHref(entityId: string, storyParents: readonly StoryParentRef[]): string {
+  const parent = storyParents.find((candidate) => candidate.storyId === entityId);
+  if (parent === undefined) {
+    return "/experience";
+  }
+  return `/experience#${toSlug(parent.experienceId)}`;
 }
 
 function resolveWritingHref(entityId: string, writingEntries: readonly WritingEntry[]): string {

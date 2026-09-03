@@ -52,6 +52,68 @@ describe("evaluateVerdict", () => {
     expect(EVAL_THRESHOLDS.relevance).toBe(0.48);
   });
 
+  it("carries a provisional answerAssertions threshold (#300), optional like toolRouting", () => {
+    expect(EVAL_THRESHOLDS.answerAssertions).toBe(0.8);
+    const verdict = evaluateVerdict(
+      { groundedness: 0.9, gapHonesty: 0.95, relevance: 0.6, answerAssertions: 0.2 },
+      { groundedness: 0.8, gapHonesty: 0.7, relevance: 0.5, answerAssertions: 0.8 },
+    );
+    expect(verdict.passed).toBe(false);
+    expect(verdict.failures.some((line) => /answer assertions/i.test(line))).toBe(true);
+  });
+
+  /**
+   * #295 correction (independent Codex review, agent package `1dd7ac7`,
+   * finding 2): `storyCompleteness` (`./scorers/story-completeness.ts`)
+   * gets the same optional, provisional-threshold treatment as
+   * `answerAssertions`/`toolRouting` above.
+   */
+  it("carries a provisional storyCompleteness threshold (#295), optional like answerAssertions/toolRouting", () => {
+    expect(EVAL_THRESHOLDS.storyCompleteness).toBe(0.7);
+    const verdict = evaluateVerdict(
+      { groundedness: 0.9, gapHonesty: 0.95, relevance: 0.6, storyCompleteness: 0.2 },
+      { groundedness: 0.8, gapHonesty: 0.7, relevance: 0.5, storyCompleteness: 0.7 },
+    );
+    expect(verdict.passed).toBe(false);
+    expect(verdict.failures.some((line) => /story completeness/i.test(line))).toBe(true);
+  });
+
+  /**
+   * #295 second independent-review correction (finding 4): unlike every
+   * other optional threshold above, preferred-source compliance is
+   * BLOCKING (1.0) — a declared preference is a locked per-case contract,
+   * not a statistical target that tolerates a fraction of failures. Same
+   * pinned-literal pattern as the retrieval package's own
+   * `preferredSourceCompliance` fix.
+   */
+  it("carries a blocking (1.0) preferredSourceCompliance threshold (#295), unlike the other optional scorers", () => {
+    expect(EVAL_THRESHOLDS.preferredSourceCompliance).toBe(1);
+    const verdict = evaluateVerdict(
+      { groundedness: 0.9, gapHonesty: 0.95, relevance: 0.6, preferredSourceCompliance: 0.8 },
+      { groundedness: 0.8, gapHonesty: 0.7, relevance: 0.5, preferredSourceCompliance: 1 },
+    );
+    expect(verdict.passed).toBe(false);
+    expect(verdict.failures.some((line) => /preferred.source/i.test(line))).toBe(true);
+  });
+
+  /**
+   * #295 fourth independent-review correction, finding 2: "The new blocking
+   * verdict contract is not pinned end to end... it would remain green if
+   * the threshold were lowered/removed or the aggregate stopped gating the
+   * verdict." Same pinned-literal-plus-blocking-verdict pattern as
+   * `preferredSourceCompliance`'s own test above — a declared factual
+   * boundary is a locked per-case contract, not a statistical target.
+   */
+  it("carries a blocking (1.0) factualBoundaryCompliance threshold (#295), unlike the other optional scorers", () => {
+    expect(EVAL_THRESHOLDS.factualBoundaryCompliance).toBe(1);
+    const verdict = evaluateVerdict(
+      { groundedness: 0.9, gapHonesty: 0.95, relevance: 0.6, factualBoundaryCompliance: 0.8 },
+      { groundedness: 0.8, gapHonesty: 0.7, relevance: 0.5, factualBoundaryCompliance: 1 },
+    );
+    expect(verdict.passed).toBe(false);
+    expect(verdict.failures.some((line) => /factual.boundary/i.test(line))).toBe(true);
+  });
+
   it("carries a provisional toolRouting threshold (#75), flagged as uncalibrated pending a real CI run", () => {
     expect(EVAL_THRESHOLDS.toolRouting).toBe(0.6);
   });

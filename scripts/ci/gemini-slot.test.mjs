@@ -38,7 +38,12 @@ test("resolveCohort expands one budget to its workflows", () => {
   assert.deepEqual(budgets, ["ci-embedding"]);
   assert.ok(cohort.includes(RETRIEVAL));
   assert.ok(cohort.includes(REINDEX));
-  assert.ok(!cohort.includes(AGENT_EVALS));
+  // #296 correction: agent-evals.yml's RAG-grounded/story-manifest eval
+  // cases drive real search-career calls (embedding, ci-embedding budget),
+  // so it belongs in this cohort now — preview-chat-live never does (it
+  // spends the Vercel *Preview* project's key, not the Actions secret).
+  assert.ok(cohort.includes(AGENT_EVALS));
+  assert.ok(!cohort.includes(CHAT_LIVE));
 });
 
 test("resolveCohort unions and de-duplicates multiple budgets", () => {
@@ -57,9 +62,12 @@ test("the required check is not blocked by budgets it does not spend", () => {
   // The whole point of splitting the old single `gemini-free-tier` group:
   // preview-chat-live spends the Vercel *Preview* project's key, which
   // retrieval-eval (Actions-secret key, embedding model) never touches.
+  // agent-evals.yml is no longer a valid second example here (#296
+  // correction: it now genuinely spends ci-embedding too), so the second
+  // run below is a workflow that never asks for any Gemini slot at all.
   const { cohort } = resolveCohort("ci-embedding");
   const blockers = selectBlockingRuns({
-    runs: [run(100, CHAT_LIVE), run(101, AGENT_EVALS)],
+    runs: [run(100, CHAT_LIVE), run(101, ".github/workflows/ci.yml")],
     selfRunId: 200,
     cohort,
   });

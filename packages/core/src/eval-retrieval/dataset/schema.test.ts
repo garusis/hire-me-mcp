@@ -73,6 +73,97 @@ describe("goldenQuerySchema", () => {
   });
 });
 
+describe("goldenQuerySchema: matchMode / preferredSource (#295)", () => {
+  function validFuzzy(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "fuzzy-leadership-general",
+      query: "Tell me about a time he stepped into leadership without formal authority.",
+      category: "fuzzy" as const,
+      expectedSources: [
+        { sourceType: "story", sourceId: "xogito-client-account-recovery" },
+        { sourceType: "story", sourceId: "mutual-informal-leadership" },
+      ],
+      ...overrides,
+    };
+  }
+
+  it("accepts an entry that omits matchMode and preferredSource", () => {
+    expect(goldenQuerySchema.safeParse(validExact()).success).toBe(true);
+  });
+
+  it("accepts matchMode: 'any' with a single acceptable source", () => {
+    expect(goldenQuerySchema.safeParse(validFuzzy({ matchMode: "any" })).success).toBe(true);
+  });
+
+  it("accepts matchMode: 'all'", () => {
+    expect(goldenQuerySchema.safeParse(validFuzzy({ matchMode: "all" })).success).toBe(true);
+  });
+
+  it("rejects an unknown matchMode value", () => {
+    expect(goldenQuerySchema.safeParse(validFuzzy({ matchMode: "some" })).success).toBe(false);
+  });
+
+  it("accepts a preferredSource that also appears in expectedSources", () => {
+    expect(
+      goldenQuerySchema.safeParse(
+        validFuzzy({
+          matchMode: "any",
+          preferredSource: { sourceType: "story", sourceId: "xogito-client-account-recovery" },
+        }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it("rejects a preferredSource that does not appear in expectedSources", () => {
+    const result = goldenQuerySchema.safeParse(
+      validFuzzy({
+        matchMode: "any",
+        preferredSource: { sourceType: "story", sourceId: "not-in-expected-sources" },
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects duplicate (sourceType, sourceId) pairs in expectedSources", () => {
+    const result = goldenQuerySchema.safeParse(
+      validFuzzy({
+        expectedSources: [
+          { sourceType: "story", sourceId: "xogito-client-account-recovery" },
+          { sourceType: "story", sourceId: "xogito-client-account-recovery" },
+        ],
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an absent-topic entry that declares matchMode", () => {
+    expect(goldenQuerySchema.safeParse({ ...validAbsent(), matchMode: "any" }).success).toBe(false);
+  });
+
+  it("rejects an absent-topic entry that declares preferredSource", () => {
+    expect(
+      goldenQuerySchema.safeParse({
+        ...validAbsent(),
+        preferredSource: { sourceType: "story", sourceId: "x" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a cross-cutting entry that declares matchMode: 'any'", () => {
+    const result = goldenQuerySchema.safeParse(
+      validFuzzy({ category: "cross-cutting", matchMode: "any" }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a cross-cutting entry that declares matchMode: 'all'", () => {
+    const result = goldenQuerySchema.safeParse(
+      validFuzzy({ category: "cross-cutting", matchMode: "all" }),
+    );
+    expect(result.success).toBe(true);
+  });
+});
+
 describe("goldenDatasetSchema", () => {
   it("accepts an array of valid, uniquely-id'd entries", () => {
     expect(goldenDatasetSchema.safeParse([validExact(), validAbsent()]).success).toBe(true);
