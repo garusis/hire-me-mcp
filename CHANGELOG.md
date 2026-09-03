@@ -68,7 +68,6 @@ consumer, not asserted by convention alone
 - A pre-launch data-integrity and retrieval-metadata audit that corrected several story facts and
   normalized retrieval tags before this release
   ([#300](https://github.com/garusis/hire-me-mcp/issues/300),
-  [#304](https://github.com/garusis/hire-me-mcp/issues/304),
   [#305](https://github.com/garusis/hire-me-mcp/issues/305)).
 
 ### Changed

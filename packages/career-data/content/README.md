@@ -89,10 +89,10 @@ The re-evaluation (#296) kept all three as-is:
   message-bus decomposition, idempotent stage writes, independent per-stage retries — reachable
   today through `search-career` or `list-career-stories`. It was **not** migrated because
   `apps/web/app/skills/page.tsx` renders a citation's `label` (the story's title) directly into
-  pre-rendered, publicly-crawlable `/skills` HTML, and the same story text would surface through
-  `get-skill-evidence`'s output — exactly the passive-surface leak the story visibility boundary
-  (#288, enforced by #296) exists to prevent. Citing the story from a skill would put the first
-  story text on a page nothing else reveals it through.
+  pre-rendered, publicly-crawlable `/skills` HTML, and `get-skill-evidence`'s output would surface
+  that same story title/label — exactly the passive-surface leak the story visibility boundary
+  (#288, enforced by #296) exists to prevent. Citing the story from a skill would put the story's
+  title/label, not its narrative body, on a page nothing else reveals it through.
 
 This decision is reversible, not permanent: if the owner later decides a story title may appear on
 `/skills`, migrating `event-driven-architecture`'s citation would additionally require wiring
