@@ -88,6 +88,7 @@ export const BUDGETS = {
     ".github/workflows/retrieval-eval.yml",
     ".github/workflows/reindex-production.yml",
     ".github/workflows/release-readiness.yml",
+    ".github/workflows/agent-evals.yml",
   ],
   "ci-generation": [".github/workflows/agent-evals.yml", ".github/workflows/release-readiness.yml"],
   "preview-generation": [".github/workflows/preview-chat-live.yml"],

@@ -11,11 +11,13 @@ name: Agent Evals
 # agent's new `search-career` semantic-search tool — this job's "the
 # extended agent eval suite runs in CI" acceptance criterion — and is what
 # this workflow means by "wired in alongside the retrieval evals from #52"
-# (`retrieval-eval.yml`). Those two jobs no longer queue against each other
-# at all — they spend different models' allowances (see the job-level note
-# below and `scripts/ci/gemini-slot.mjs`) — and this job now also requires
-# `DATABASE_URL` (the same repo secret `reindex-production.yml` uses) so
-# `search-career` has a real store to query.
+# (`retrieval-eval.yml`). This job now also requires `DATABASE_URL` (the
+# same repo secret `reindex-production.yml` uses) so `search-career` has a
+# real store to query — which means, per #296's production-completion
+# correction, it also spends the SAME `ci-embedding` allowance
+# `retrieval-eval.yml` does (real `search-career` calls embed the query),
+# not only `ci-generation` as originally documented here; see the
+# job-level note below and `scripts/ci/gemini-slot.mjs`.
 #
 # ## Why a SEPARATE workflow file, not a job in ci.yml
 #
@@ -126,9 +128,9 @@ jobs:
     # pending one, and a cancelled run reads as a failed check. With this
     # job, `retrieval-eval` (REQUIRED) and `preview-chat-live` all in the
     # group, a normal multi-PR day evicted whichever entered last. Quota
-    # protection now lives in the in-job `ci-generation` slot lease (see
-    # `scripts/ci/gemini-slot.mjs`), which queues any number of runs and
-    # cancels none.
+    # protection now lives in the in-job `ci-embedding`/`ci-generation`
+    # slot lease (see `scripts/ci/gemini-slot.mjs`), which queues any
+    # number of runs and cancels none.
     #
     # Budget caps below cover a full 66-case dataset run (#295's
     # integration task: the default cap was raised from 25 to
@@ -280,15 +282,28 @@ jobs:
       # In-job serialization, replacing the old `gemini-free-tier` group
       # (#264 follow-up — see the job comment above and
       # `scripts/ci/gemini-slot.mjs`). Placed AFTER relevance/secrets
-      # detection: an irrelevant PR waits for nothing. `ci-generation` is
-      # this job's real budget — the Actions secret's Google project on
-      # `gemini-3.5-flash-lite`, shared only with `release-readiness`.
-      # Fails open: on timeout or API error it warns and runs anyway.
-      - name: Wait for a Gemini free-tier slot (ci-generation)
+      # detection: an irrelevant PR waits for nothing.
+      #
+      # #296 production-completion correction: this job's real budget is
+      # BOTH `ci-embedding` and `ci-generation`, not `ci-generation` alone
+      # as previously documented here. The RAG-grounded and
+      # story-manifest eval cases drive the interview agent's real
+      # `search-career`/`list-career-stories` tools, which call
+      # `createGoogleEmbeddingClient` against the same Actions-secret
+      # Google project's `gemini-embedding-001` free tier that
+      # `retrieval-eval`/`reindex-production` spend as `ci-embedding` —
+      # this job just never leased that budget, so it could (and, on this
+      # PR's larger 38-case story manifest, reliably did) race
+      # `retrieval-eval` for the same 100-req/min embedding quota and get
+      # a 429 that had nothing to do with `retrieval-eval`'s own change.
+      # Leasing both, like `release-readiness` already does for the same
+      # reason. Fails open: on timeout or API error it warns and runs
+      # anyway.
+      - name: Wait for Gemini free-tier slots (ci-embedding, ci-generation)
         if: steps.secrets-check.outputs.available == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          SLOT_BUDGET: "ci-generation"
+          SLOT_BUDGET: "ci-embedding,ci-generation"
         run: node scripts/ci/gemini-slot.mjs
 
       - name: Build workspace packages the agent depends on
