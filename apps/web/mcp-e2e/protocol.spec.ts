@@ -602,12 +602,45 @@ describe("tools/call — list tools (#211-#215)", () => {
 const SEARCH_CAREER_DB_CONFIGURED =
   Boolean(process.env.DATABASE_URL) && Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY);
 
+/**
+ * The real story → primary-experience mapping, fetched black-box through
+ * this suite's own `list-career-stories` call (no filter — the full
+ * inventory) rather than importing `apps/web`'s content layer directly, so
+ * this stays a wire-level assertion against the same server under test.
+ * Used to bind a `search-career` story hit's `sourceId`/`citationUrl` (and
+ * the envelope's top-level `citations`) to its EXACT primary parent anchor,
+ * not just any existing `/experience#...` fragment (Codex review on #296).
+ */
+async function fetchStoryParentMap(client: Client): Promise<Map<string, string>> {
+  const result = await client.callTool({ name: "list-career-stories", arguments: {} });
+  expect(result.isError).not.toBe(true);
+  const structuredContent = result.structuredContent as {
+    data: Array<{ story: { id: string }; primaryExperience: { id: string } }>;
+  };
+  return new Map(structuredContent.data.map((item) => [item.story.id, item.primaryExperience.id]));
+}
+
+/** Asserts `url` is exactly `/experience#<primaryExperienceId>` for `storyId`, never a downgraded, mismatched, or merely-existing-but-wrong anchor. */
+function expectExactPrimaryParentUrl(
+  url: string,
+  storyId: string,
+  storyParents: Map<string, string>,
+): void {
+  const primaryExperienceId = storyParents.get(storyId);
+  expect(primaryExperienceId, `no known primary parent for story "${storyId}"`).toBeTruthy();
+  const parsed = new URL(url);
+  expect(parsed.pathname).toBe("/experience");
+  expect(parsed.hash).toBe(`#${primaryExperienceId}`);
+}
+
 describe.skipIf(!SEARCH_CAREER_DB_CONFIGURED)(
   "tools/call — search-career filtered to behavioral stories (#296)",
   () => {
     it("a natural leadership question filtered to sourceTypes: ['story'] returns at least one story hit with an anchored, non-/stories citationUrl", async () => {
       const { client, transport } = connectClient();
       await client.connect(transport);
+
+      const storyParents = await fetchStoryParentMap(client);
 
       const result = await client.callTool({
         name: "search-career",
@@ -619,21 +652,33 @@ describe.skipIf(!SEARCH_CAREER_DB_CONFIGURED)(
 
       expect(result.isError).not.toBe(true);
       const structuredContent = result.structuredContent as {
-        data: { found: boolean; results?: Array<{ sourceType: string; citationUrl: string }> };
-        citations: unknown;
+        data: {
+          found: boolean;
+          results?: Array<{ sourceType: string; sourceId: string; citationUrl: string }>;
+        };
+        citations: Array<{ entityType: string; entityId: string; url: string }>;
       };
       expect(structuredContent.data.found).toBe(true);
       const results = structuredContent.data.results ?? [];
       expect(results.length).toBeGreaterThan(0);
       expectWellFormedCitations(structuredContent.citations);
 
-      // The filter is honored (every hit really is a story) and each
-      // citation lands on its PRIMARY parent's /experience anchor — there
-      // is no public /stories route on the site (#288, #293).
+      // The top-level envelope citations must stay `entityType: "story"` for
+      // every hit (never downgraded to "experience") and each must carry a
+      // real story id, resolving to its EXACT primary parent anchor.
+      expect(structuredContent.citations.length).toBeGreaterThan(0);
+      for (const citation of structuredContent.citations) {
+        expect(citation.entityType).toBe("story");
+        expectExactPrimaryParentUrl(citation.url, citation.entityId, storyParents);
+      }
+
+      // The filter is honored (every hit really is a story), its `sourceId`
+      // names a real story, and its `citationUrl` lands on that EXACT story's
+      // PRIMARY parent's /experience anchor — never a downgraded type, a
+      // mismatched story id, or a wrong-but-existing anchor.
       for (const hit of results) {
         expect(hit.sourceType).toBe("story");
-        expect(hit.citationUrl).toContain("/experience#");
-        expect(hit.citationUrl).not.toContain("/stories");
+        expectExactPrimaryParentUrl(hit.citationUrl, hit.sourceId, storyParents);
       }
 
       await client.close();
