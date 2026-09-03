@@ -27,15 +27,25 @@ function absentQuery(overrides: Partial<GoldenQuery> = {}): GoldenQuery {
 function fakeSearchCareer(
   resultsByQuery: Record<string, Array<{ sourceType: string; sourceId: string; score: number }>>,
 ) {
-  const calls: Array<{ query: string; options?: unknown }> = [];
+  const calls: Array<{
+    query: string;
+    options?: { topK?: number; sourceTypes?: readonly string[] };
+  }> = [];
   return {
     calls,
-    async searchCareer(text: string, options?: { topK?: number; minScore?: number }) {
+    async searchCareer(
+      text: string,
+      options?: { topK?: number; minScore?: number; sourceTypes?: readonly string[] },
+    ) {
       calls.push({ query: text, options });
       const results = resultsByQuery[text] ?? [];
+      const scoped =
+        options?.sourceTypes === undefined
+          ? results
+          : results.filter((r) => options.sourceTypes?.includes(r.sourceType));
       return {
         query: text,
-        results: results.map((r) => ({
+        results: scoped.map((r) => ({
           text: `chunk for ${r.sourceId}`,
           score: r.score,
           citation: { entityType: r.sourceType, entityId: r.sourceId, label: r.sourceId },
@@ -285,5 +295,103 @@ describe("runRetrievalEval", () => {
       { searchCareer },
     );
     expect(report.cases).toEqual([]);
+  });
+});
+
+describe("runRetrievalEval: retrieval lanes (#307)", () => {
+  it("calls searchCareer twice per query: once unscoped, once with sourceTypes: ['story']", async () => {
+    const { searchCareer, calls } = fakeSearchCareer({
+      "does he know typescript": [{ sourceType: "skill", sourceId: "typescript", score: 0.9 }],
+    });
+
+    await runRetrievalEval(
+      { queries: [query()], topK: 5, absentTopicMinScore: 0.4 },
+      { searchCareer },
+    );
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.options?.sourceTypes).toBeUndefined();
+    expect(calls[1]?.options?.sourceTypes).toEqual(["story"]);
+  });
+
+  it("scores the unscoped lane identically to the case's top-level metrics", async () => {
+    const { searchCareer } = fakeSearchCareer({
+      "does he know typescript": [{ sourceType: "skill", sourceId: "typescript", score: 0.9 }],
+    });
+
+    const report = await runRetrievalEval(
+      { queries: [query()], topK: 5, absentTopicMinScore: 0.4 },
+      { searchCareer },
+    );
+
+    expect(report.cases[0]?.lanes.unscoped.lane).toBe("unscoped");
+    expect(report.cases[0]?.lanes.unscoped.metrics).toEqual(report.cases[0]?.metrics);
+    expect(report.cases[0]?.lanes.unscoped.retrievedIds).toEqual(["skill:typescript"]);
+  });
+
+  it("scores the story-scoped lane against only the story-typed results searchCareer returned for that lane", async () => {
+    const { searchCareer } = fakeSearchCareer({
+      "tell me about a time he stepped into leadership": [
+        { sourceType: "experience", sourceId: "acme", score: 0.95 },
+        { sourceType: "story", sourceId: "leadership-story", score: 0.7 },
+      ],
+    });
+
+    const report = await runRetrievalEval(
+      {
+        queries: [
+          query({
+            id: "story-lane",
+            query: "tell me about a time he stepped into leadership",
+            category: "fuzzy",
+            expectedSources: [{ sourceType: "story", sourceId: "leadership-story" }],
+          }),
+        ],
+        topK: 5,
+        absentTopicMinScore: 0.4,
+      },
+      { searchCareer },
+    );
+
+    expect(report.cases[0]?.lanes.unscoped.retrievedIds).toEqual([
+      "experience:acme",
+      "story:leadership-story",
+    ]);
+    expect(report.cases[0]?.lanes.unscoped.metrics?.reciprocalRank).toBe(0.5);
+    expect(report.cases[0]?.lanes.storyScoped.retrievedIds).toEqual(["story:leadership-story"]);
+    expect(report.cases[0]?.lanes.storyScoped.metrics).toEqual({
+      recallAtK: 1,
+      precisionAtK: 1,
+      reciprocalRank: 1,
+    });
+  });
+
+  it("leaves both lanes' metrics null for an absent-topic case, but still records what each lane retrieved", async () => {
+    const { searchCareer } = fakeSearchCareer({
+      "blockchain experience": [{ sourceType: "story", sourceId: "unrelated-story", score: 0.2 }],
+    });
+
+    const report = await runRetrievalEval(
+      { queries: [absentQuery()], topK: 5, absentTopicMinScore: 0.4 },
+      { searchCareer },
+    );
+
+    expect(report.cases[0]?.lanes.unscoped.metrics).toBeNull();
+    expect(report.cases[0]?.lanes.storyScoped.metrics).toBeNull();
+    expect(report.cases[0]?.lanes.storyScoped.retrievedIds).toEqual(["story:unrelated-story"]);
+  });
+
+  it("passes the configured topK to both the unscoped and story-scoped searchCareer calls", async () => {
+    const { searchCareer, calls } = fakeSearchCareer({
+      "does he know typescript": [{ sourceType: "skill", sourceId: "typescript", score: 0.9 }],
+    });
+
+    await runRetrievalEval(
+      { queries: [query()], topK: 9, absentTopicMinScore: 0.4 },
+      { searchCareer },
+    );
+
+    expect(calls[0]?.options?.topK).toBe(9);
+    expect(calls[1]?.options?.topK).toBe(9);
   });
 });
