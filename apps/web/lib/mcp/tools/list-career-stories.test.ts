@@ -3,6 +3,8 @@ import * as core from "@hire-me-mcp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { COMPETENCIES } from "../../../src/lib/content/entity-schemas.js";
+import { getWritingListView, listStoryParents } from "../../../src/lib/content/index.js";
+import { getCareerDataRepository } from "../../../src/lib/content/repository.js";
 import { recordMcpToolEvent } from "../../analytics/record.js";
 import { withCitationSiteUrls } from "../citation-site-urls.js";
 import { createToolExecutor } from "../define-tool.js";
@@ -329,6 +331,53 @@ describe("listCareerStoriesTool (#293)", () => {
     expect(recordMcpToolEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(recordMcpToolEvent).mock.calls[0]?.[0]).toBe("list-career-stories");
     expect(vi.mocked(recordMcpToolEvent).mock.calls[0]?.[1]).toBe("invalid_input");
+  });
+
+  describe("over the real dataset (#296)", () => {
+    it("returns every real story with an exact entityId/label citation anchored to its real primary-experience parent, never a bare /experience fallback", async () => {
+      const actualCore =
+        await vi.importActual<typeof import("@hire-me-mcp/core")>("@hire-me-mcp/core");
+      const actualRepository = await vi.importActual<
+        typeof import("../../../src/lib/content/repository.js")
+      >("../../../src/lib/content/repository.js");
+      const actualContent = await vi.importActual<
+        typeof import("../../../src/lib/content/index.js")
+      >("../../../src/lib/content/index.js");
+
+      const repository = actualRepository.getCareerDataRepository();
+      vi.mocked(getCareerDataRepository).mockReturnValue(repository);
+      vi.mocked(core.listCareerStories).mockImplementation((repo, filter) =>
+        actualCore.listCareerStories(repo, filter),
+      );
+      vi.mocked(listStoryParents).mockReturnValue(actualContent.listStoryParents(repository));
+      vi.mocked(getWritingListView).mockReturnValue({
+        items: [],
+      } as unknown as ReturnType<typeof getWritingListView>);
+
+      const executor = createToolExecutor(listCareerStoriesTool);
+
+      const outcome = await executor({});
+
+      const structured = outcome.structuredContent as {
+        data: CareerStoryListEntry[];
+        citations: Array<{ entityType: string; entityId: string; label: string; url: string }>;
+      };
+      expect(structured.data.length).toBeGreaterThan(0);
+      expect(structured.citations.length).toBe(structured.data.length);
+      for (const [index, item] of structured.data.entries()) {
+        const citation = structured.citations[index];
+        if (citation === undefined) {
+          throw new Error("missing citation for story");
+        }
+        expect(citation.entityType).toBe("story");
+        expect(citation.entityId).toBe(item.story.id);
+        expect(citation.label).toBe(item.story.title);
+        expect(citation.url, `story "${item.story.id}" fell back to bare /experience`).toBe(
+          `http://localhost:3000/experience#${item.primaryExperience.id}`,
+        );
+        expect(citation.url).not.toBe("http://localhost:3000/experience");
+      }
+    });
   });
 
   describe("routing description (#293, #305 decision 5)", () => {

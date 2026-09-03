@@ -123,6 +123,29 @@ describe("resolveCitationSiteUrl", () => {
   });
 });
 
+describe("resolveCitationSiteUrl over the real dataset (#296)", () => {
+  it("resolves every authored story to an anchored /experience#<primary-parent> url, never a bare /experience fallback", async () => {
+    const actual = await vi.importActual<typeof import("../../src/lib/content/index.js")>(
+      "../../src/lib/content/index.js",
+    );
+    const realStoryParents = actual.listStoryParents();
+    vi.mocked(listStoryParents).mockReturnValue(realStoryParents);
+
+    expect(realStoryParents.length).toBeGreaterThan(0);
+    for (const parent of realStoryParents) {
+      const url = resolveCitationSiteUrl({
+        entityType: "story",
+        entityId: parent.storyId,
+        label: parent.storyId,
+      });
+      expect(url, `story "${parent.storyId}" fell back to bare /experience`).toBe(
+        `${ORIGIN}/experience#${parent.experienceId}`,
+      );
+      expect(url).not.toBe(`${ORIGIN}/experience`);
+    }
+  });
+});
+
 describe("withCitationSiteUrls", () => {
   it("adds a url to every citation lacking one, preserving every other field byte-for-byte", () => {
     const input: Citation[] = [

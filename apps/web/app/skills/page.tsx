@@ -1,11 +1,12 @@
 import type { Citation } from "@hire-me-mcp/core";
 import type { Metadata } from "next";
-import type { GapListItemView, Skill, WritingEntry } from "../../src/lib/content";
+import type { GapListItemView, Skill, StoryParentRef, WritingEntry } from "../../src/lib/content";
 import {
   getGapsListView,
   getProfileView,
   getSkillsListView,
   getWritingListView,
+  listStoryParents,
   toSlug,
 } from "../../src/lib/content";
 import { buildPageMetadata } from "../../src/lib/seo/page-metadata";
@@ -29,9 +30,11 @@ const PROFICIENCY_LABEL: Record<Skill["proficiency"], string> = {
 function EvidenceCitations({
   evidence,
   writingEntries,
+  storyParents,
 }: {
   evidence: Citation[];
   writingEntries: readonly WritingEntry[];
+  storyParents: readonly StoryParentRef[];
 }) {
   if (evidence.length === 0) {
     return (
@@ -45,7 +48,9 @@ function EvidenceCitations({
     <ul className={styles.evidenceList}>
       {evidence.map((citation) => (
         <li key={`${citation.entityType}-${citation.entityId}-${citation.fragment ?? ""}`}>
-          <Link href={resolveCitationHref(citation, writingEntries)}>{citation.label}</Link>
+          <Link href={resolveCitationHref(citation, writingEntries, storyParents)}>
+            {citation.label}
+          </Link>
         </li>
       ))}
     </ul>
@@ -71,9 +76,11 @@ function EvidenceStrengthBadge({ count }: { count: number }) {
 function SkillCard({
   skill,
   writingEntries,
+  storyParents,
 }: {
   skill: Skill;
   writingEntries: readonly WritingEntry[];
+  storyParents: readonly StoryParentRef[];
 }) {
   return (
     <Card as="article" id={toSlug(skill.id)}>
@@ -81,7 +88,11 @@ function SkillCard({
         <Heading level={3}>{skill.name}</Heading>
         <EvidenceStrengthBadge count={skill.evidence.length} />
       </div>
-      <EvidenceCitations evidence={skill.evidence} writingEntries={writingEntries} />
+      <EvidenceCitations
+        evidence={skill.evidence}
+        writingEntries={writingEntries}
+        storyParents={storyParents}
+      />
     </Card>
   );
 }
@@ -135,6 +146,7 @@ export default function SkillsPage() {
   const { items: gaps } = getGapsListView();
   const { items: writingItems } = getWritingListView();
   const writingEntries = writingItems.map((item) => item.entry);
+  const storyParents = listStoryParents();
   const groups = groupByProficiency(skills);
 
   return (
@@ -147,7 +159,11 @@ export default function SkillsPage() {
             <ul className={styles.tierList}>
               {group.items.map((skill) => (
                 <li key={skill.id}>
-                  <SkillCard skill={skill} writingEntries={writingEntries} />
+                  <SkillCard
+                    skill={skill}
+                    writingEntries={writingEntries}
+                    storyParents={storyParents}
+                  />
                 </li>
               ))}
             </ul>
