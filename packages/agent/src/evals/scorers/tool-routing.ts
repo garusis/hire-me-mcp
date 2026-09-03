@@ -83,13 +83,24 @@ function isBroaderSearch(call: ToolCall): boolean {
  * assertions share this same broadened wording instead of maintaining a
  * second, narrower copy that could drift out of sync.
  */
+/**
+ * #307 fourth independent-review correction: the prior pattern recognized
+ * only "no direct/specific/matching story"-shaped sentences, missing the
+ * prompt's own phrase "no evidence" and common "no example"/"could not find
+ * an example" equivalents observed as false negatives. These three
+ * additional alternatives extend, not replace, the existing ones.
+ */
 export const ABSENT_STORY_PATTERN =
   "no (?:direct|specific|matching) story|" +
   "doesn'?t have a (?:direct|specific|matching) story|" +
   "hasn'?t (?:got|captured) a (?:direct|specific|matching) story|" +
   "(?:career records?|records?) (?:do|does) not (?:contain|include|have|show) (?:an? )?" +
   "(?:direct |specific |matching )?(?:account|story|record|example) of|" +
-  "hasn'?t done (?:a|that|this|an?) [a-z ]{0,40}where";
+  "hasn'?t done (?:a|that|this|an?) [a-z ]{0,40}where|" +
+  "no evidence(?: of (?:an? )?(?:matching |direct |specific |behavioral )?" +
+  "(?:story|example|event))?|" +
+  "no (?:matching |direct |specific |behavioral )?examples?\\b|" +
+  "(?:could not|couldn'?t|did not|didn'?t) find (?:an? )?(?:story|evidence|example)";
 
 const NO_DIRECT_STORY_REGEX = new RegExp(ABSENT_STORY_PATTERN, "i");
 const RELATED_EVIDENCE_LABEL_REGEX =
@@ -129,18 +140,20 @@ function checkNonEmptyScopedFollowUp(
     };
   }
 
-  // #307 third independent-review correction (repro 4): merely issuing the
-  // fetch call with a matching `id` argument is not proof it actually
-  // returned that story — a confirmed (non-`undefined`) result must itself
-  // include the fetched id. `undefined` (unparseable/unknown, same leniency
-  // as elsewhere in this file) is not treated as a violation, but a
-  // confirmed result that does NOT include the id — including a confirmed
-  // empty `[]` — is.
+  // #307 fourth independent-review correction: full-fetch confirmation must
+  // fail closed. Merely issuing the fetch call with a matching `id` argument
+  // is not proof it actually returned that story, and neither is `undefined`
+  // (unparseable/unknown) — unlike elsewhere in this file, `undefined` here
+  // cannot stand in for "unavailable, nothing more required": the scoped
+  // search already confirmed a non-empty result exists, so a fetch that
+  // cannot itself confirm returning it (undefined, empty `[]`, wrong
+  // entityType, or wrong id) fails. Only a defined citation with
+  // `entityType: "story"` and `entityId === fetchedId` counts as confirmed.
   const fetchedCitations = fetchCall?.citations;
-  if (
-    fetchedCitations !== undefined &&
-    !fetchedCitations.some((citation) => citation.entityId === fetchedId)
-  ) {
+  const fetchConfirmed = (fetchedCitations ?? []).some(
+    (citation) => citation.entityType === "story" && citation.entityId === fetchedId,
+  );
+  if (!fetchConfirmed) {
     return {
       score: clampScore(0),
       reason:
