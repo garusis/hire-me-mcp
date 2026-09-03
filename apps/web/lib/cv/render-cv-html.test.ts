@@ -316,3 +316,107 @@ describe("renderCvHtml never leaks real story content (#296)", () => {
     }
   });
 });
+
+// #309 stage 1 — the "everything on the table" full projection intentionally
+// carries per-role summaries and every attached story. This is the parallel
+// case the #296 guard test above calls for: the guard stays scoped to the
+// default (web) projection (`getCvView()` with no options, asserted above,
+// unchanged), while this describe block proves the opt-in `includeSummary`/
+// `includeStories` full mode DOES surface that same content when the view
+// model is built to carry it.
+const FULL_MODE_FIXTURE_VIEW: CvView = {
+  ...FIXTURE_VIEW,
+  experience: [
+    {
+      company: "Fixture Employer Inc",
+      role: "Fixture Senior Role",
+      startDate: "2020-01",
+      endDate: undefined,
+      highlights: ["Fixture highlight about shipping fixture things."],
+      summary: "Fixture full-mode role summary paragraph.",
+      stories: [
+        {
+          title: "Fixture Full-Mode Story Title",
+          situation: "Fixture full-mode story situation prose.",
+          task: "Fixture full-mode story task prose.",
+          actions: ["Fixture full-mode story action one.", "Fixture full-mode story action two."],
+          results: ["Fixture full-mode story result one."],
+        },
+      ],
+    },
+  ],
+};
+
+/**
+ * Reverses `escapeHtml` so a quote-heavy sentence (rendered as `&quot;`)
+ * still matches its plain source text when normalized, instead of picking
+ * up a spurious "quot" token from the untouched entity.
+ */
+function decodeEscapedHtml(html: string): string {
+  return html
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+/**
+ * Every real story's title/situation/task/actions/results needle, same
+ * shape as {@link realStorySentences}/{@link realStoryTitles} but excluding
+ * `reflection` — `CvStoryView` deliberately has no reflection field, so a
+ * full-mode-renders-everything assertion must not expect it either.
+ */
+function realStoryNeedlesExcludingReflection(): string[] {
+  const dataset = createContentCareerDataRepository().getDataset();
+  const needles: string[] = [];
+  for (const story of dataset.stories) {
+    needles.push(normalizeStoryProse(story.title));
+    const units = [story.situation, story.task, ...story.actions, ...story.results];
+    for (const unit of units) {
+      for (const sentence of storySentencesOf(unit)) {
+        const normalizedSentence = normalizeStoryProse(sentence);
+        if (normalizedSentence.split(" ").length >= MIN_STORY_SENTENCE_WORDS) {
+          needles.push(normalizedSentence);
+        }
+      }
+    }
+  }
+  return needles;
+}
+
+describe("renderCvHtml full mode (#309 stage 1)", () => {
+  it("renders each role's summary and every attached story's full title/situation/task/actions/results", () => {
+    const html = renderCvHtml(FULL_MODE_FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).toContain("Fixture full-mode role summary paragraph.");
+    expect(html).toContain("Fixture Full-Mode Story Title");
+    expect(html).toContain("Fixture full-mode story situation prose.");
+    expect(html).toContain("Fixture full-mode story task prose.");
+    expect(html).toContain("Fixture full-mode story action one.");
+    expect(html).toContain("Fixture full-mode story action two.");
+    expect(html).toContain("Fixture full-mode story result one.");
+  });
+
+  it("renders the real CV view built with includeSummary/includeStories: every real story's title/situation/task/actions/results appears (reflection is deliberately not part of CvStoryView, so it's excluded here too)", () => {
+    const fullView = getCvView(createContentCareerDataRepository(), {
+      maxHighlightsPerRole: Number.POSITIVE_INFINITY,
+      includeSummary: true,
+      includeStories: true,
+    });
+    const html = renderCvHtml(fullView, FIXTURE_OPTIONS);
+    const normalized = ` ${normalizeStoryProse(decodeEscapedHtml(html))} `;
+    const needles = realStoryNeedlesExcludingReflection();
+    expect(needles.length).toBeGreaterThan(0);
+
+    for (const needle of needles) {
+      expect(normalized).toContain(` ${needle} `);
+    }
+  });
+
+  it("omits summary/stories elements when a role has neither (default projection still renders cleanly)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).not.toContain('<p class="role-summary">');
+    expect(html).not.toContain('<div class="role-stories">');
+    expect(html).not.toContain("Situation:");
+    expect(html).not.toContain("Actions:");
+  });
+});

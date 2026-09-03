@@ -146,6 +146,51 @@ function renderSummary(summary: string): string {
   <p>${escapeHtml(summary)}</p>`;
 }
 
+/**
+ * A role's full summary paragraph — populated only when `getCvView()` was
+ * called with `includeSummary: true` (#309 stage 1's "full" projection).
+ * The default (web) projection never sets `item.summary`, so this renders
+ * nothing there, exactly as before.
+ */
+function renderRoleSummary(summary: string | undefined): string {
+  if (summary === undefined) {
+    return "";
+  }
+  return `<p class="role-summary">${escapeHtml(summary)}</p>`;
+}
+
+/**
+ * A role's attached behavioral stories — populated only when `getCvView()`
+ * was called with `includeStories: true` (#309 stage 1's "full"
+ * projection). The default (web) projection never sets `item.stories`, so
+ * this renders nothing there — the exact case `render-cv-html.test.ts`'s
+ * #296 story-leakage guard exercises and keeps green unchanged.
+ */
+function renderRoleStories(stories: CvView["experience"][number]["stories"]): string {
+  if (stories === undefined || stories.length === 0) {
+    return "";
+  }
+  const items = stories
+    .map(
+      (story) => `
+        <div class="role-story">
+          <p class="story-title"><strong>${escapeHtml(story.title)}</strong></p>
+          <p class="story-field"><strong>Situation:</strong> ${escapeHtml(story.situation)}</p>
+          <p class="story-field"><strong>Task:</strong> ${escapeHtml(story.task)}</p>
+          <p class="story-field"><strong>Actions:</strong></p>
+          <ul class="story-list">
+            ${story.actions.map((action) => `<li>${escapeHtml(action)}</li>`).join("")}
+          </ul>
+          <p class="story-field"><strong>Results:</strong></p>
+          <ul class="story-list">
+            ${story.results.map((result) => `<li>${escapeHtml(result)}</li>`).join("")}
+          </ul>
+        </div>`,
+    )
+    .join("");
+  return `<div class="role-stories">${items}</div>`;
+}
+
 function renderExperience(experience: CvView["experience"]): string {
   const items = experience
     .map((item) => {
@@ -156,12 +201,15 @@ function renderExperience(experience: CvView["experience"]): string {
         item.tech.length === 0
           ? ""
           : `\n    <p class="tech">Tech: ${escapeHtml(item.tech.join(", "))}.</p>`;
+      const summary = renderRoleSummary(item.summary);
+      const stories = renderRoleStories(item.stories);
       return `
   <div class="entry">
     <p class="role"><strong>${escapeHtml(item.company)}</strong> &mdash; ${escapeHtml(
       item.role,
     )} &middot; ${escapeHtml(formatPeriod(item.startDate, item.endDate))}</p>
-    <ul>${highlights}</ul>${tech}
+${summary}
+    <ul>${highlights}</ul>${tech}${stories}
   </div>`;
     })
     .join("");
@@ -254,6 +302,12 @@ const STYLE = `
   ul { margin: 0 0 6pt; padding-left: 18pt; }
   li { margin: 0 0 5pt; orphans: 2; widows: 2; }
   .tech { font-style: italic; margin: 0; }
+  .role-summary { margin: 2pt 0 0; }
+  .role-stories { margin: 4pt 0 0; }
+  .role-story { break-inside: avoid; margin: 0 0 4pt; padding-left: 6pt; border-left: 2px solid #ccc; }
+  .story-title, .story-field { margin: 1pt 0; }
+  .story-list { margin: 1pt 0; padding-left: 14pt; }
+  .story-list li { margin: 0 0 1pt; }
   @media print { .sheet { max-width: none; margin: 0; padding: 0; } }
 `;
 
