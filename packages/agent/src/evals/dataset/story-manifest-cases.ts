@@ -90,17 +90,29 @@ const FACTUAL_BOUNDARY_GUARDS: readonly string[] = [
 const STORY_FACTUAL_GUARDS: Readonly<Record<string, string>> = {
   // 001: additional client work (further projects, an internal-team
   // invitation) may be a later observed OUTCOME, never something Marcos
-  // personally caused, won, or secured.
+  // personally caused, won, or secured. Broadened (#295 second
+  // independent-review correction, finding 3) beyond a fixed verb list to
+  // any causal-subject + causal-verb-ish phrase followed by
+  // "commission"/"award" — catches "his leadership led the client to
+  // commission..." (the review's exact counterexample), not just
+  // "won"/"secured"/"landed"/"caused"/"brought in".
   "xogito-client-account-recovery":
-    "\\b(?:he |marcos )?(?:personally )?(?:won|secured|landed|caused|brought in)\\b[^.]{0,40}\\b(?:follow-on|additional|further|another|next|new)\\b[^.]{0,20}\\b(?:project|contract|engagement|work)s?\\b",
+    "\\b(?:he |marcos )?(?:personally )?(?:won|secured|landed|caused|brought (?:in|about)|led|drove|resulted in|generated)\\b[^.]{0,60}\\b(?:commission(?:ed|ing)?|award(?:ed|ing)?|(?:follow-on|additional|further|another|next|new)\\b[^.]{0,20}\\b(?:project|contract|engagement|work)s?)\\b",
   // 004: the ~70% observed effective-triage outcome must never be called
-  // "LLM accuracy" or attributed to the model alone.
+  // "LLM accuracy", nor may the outcome be attributed to the model alone
+  // (#295 second independent-review correction, finding 3 — "achieved
+  // about 70% effective triage because the LLM handled it" never says
+  // "LLM accuracy" verbatim but makes the same forbidden claim).
   "house-numbers-communication-service-ownership":
-    "\\bLLM accuracy\\b|\\baccuracy of (?:the )?(?:model|LLM)\\b",
+    "\\bLLM accuracy\\b|\\baccuracy of (?:the )?(?:model|LLM)\\b|\\bbecause (?:the )?(?:the )?(?:llm|model|ai)\\b[^.]{0,30}\\bhandled\\b|\\bthe (?:llm|model)\\b[^.]{0,20}\\b(?:alone )?(?:achieved|was responsible for)\\b",
   // 008: "roughly two out of every three submissions" is an owner-provided
-  // estimate, never a formally measured rate or percentage.
+  // estimate, never a formally measured rate or percentage — and never a
+  // named regulatory-compliance regime the approved narrative doesn't
+  // claim (#295 second independent-review correction, finding 3 — "was
+  // fully HIPAA compliant" is an invented compliance claim, not a
+  // percentage/measured-rate framing the first guard already caught).
   "house-numbers-secure-public-document-upload":
-    "\\bformally measured\\b|\\bmeasured (?:failure|success) rate\\b|\\d+(?:\\.\\d+)?\\s*%",
+    "\\bformally measured\\b|\\bmeasured (?:failure|success) rate\\b|\\d+(?:\\.\\d+)?\\s*%|\\b(?:HIPAA|SOC\\s*2|GDPR|PCI[- ]?DSS|CCPA|FERPA)\\b",
   // 009: documents were reprocessed after historical reconciliation, never
   // permanently lost and recovered.
   "house-numbers-zod-production-incident":
@@ -119,8 +131,12 @@ const STORY_FACTUAL_GUARDS: Readonly<Record<string, string>> = {
     "\\bproduction\\b[^.]{0,20}\\b(?:data|environment|customers?)\\b|\\bcustomer data\\b[^.]{0,20}\\b(?:affected|impacted|deleted|lost)\\b",
   // 015: engineers improving a versioned debugging skill from incident
   // lessons, never autonomous learning or autonomous self-healing.
+  // Broadened (#295 second independent-review correction, finding 3) to
+  // also catch "learned from incidents and fixed itself" — the review's
+  // exact counterexample, which never says "autonomous" or "self-healing"
+  // but still claims the skill fixed/healed itself.
   "house-numbers-cross-service-debugging-skill":
-    "\\bself-healing\\b|\\bautonomous(?:ly)?\\b[^.]{0,20}\\b(?:learn(?:ing|s|ed)?|heal(?:ing|s|ed)?|fix(?:ing|es|ed)?)\\b",
+    "\\bself-healing\\b|\\bautonomous(?:ly)?\\b[^.]{0,20}\\b(?:learn(?:ing|s|ed)?|heal(?:ing|s|ed)?|fix(?:ing|es|ed)?)\\b|\\bfix(?:ed|es|ing)? itself\\b|\\bheal(?:ed|s|ing)? itself\\b",
   // 016: a self-described feeling during a personal/technical transition,
   // never a clinical diagnosis.
   "house-numbers-ai-pivot-after-paternity-leave": "\\bdiagnosed with\\b|\\bclinical(?:ly)?\\b",

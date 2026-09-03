@@ -18,6 +18,8 @@ import type { EvalCaseAnswerAssertions, EvalCaseCitationGroup } from "../dataset
 import type { ScoreResult } from "./types.js";
 import { clampScore } from "./types.js";
 
+type CitationRef = { entityType: string; entityId: string };
+
 function citationPresent(
   answerMarkers: readonly { entityType: string; entityId: string }[],
   ref: { entityType: string; entityId: string },
@@ -189,4 +191,62 @@ export function scoreAnswerAssertions(
       : `${passed}/${total} answer assertion(s) held; ${failures.join("; ")}.`;
 
   return { score: clampScore(total === 0 ? 1 : passed / total), reason };
+}
+
+/**
+ * Independent preferred-source compliance score (#295 second independent
+ * Codex review, agent package `34b28c5`, finding 4): a `citationGroups`
+ * preference failure MUST block the eval verdict on its own, not merely
+ * dilute the blended `scoreAnswerAssertions` fraction — that fraction can
+ * always be diluted by other passing assertions in the same case, or
+ * averaged away across other passing cases in the report's aggregate. This
+ * mirrors the retrieval package's own independent `preferredSourceCompliance`
+ * fix: `../report.ts` feeds this into its own aggregate, gated by a blocking
+ * (1.0) threshold in `../thresholds.ts`, separate from `answerAssertions`.
+ *
+ * Returns `null` when the case declares no `citationGroups` entry with a
+ * `preferredRef` at all — there is nothing to hold this case's report to,
+ * same optional-aggregate treatment as `toolRouting`/`answerAssertions`
+ * (`../thresholds.ts`). Otherwise scores the fraction of preference-
+ * declaring groups whose preference held: a group's preference holds unless
+ * the preferred source was returned by a tool THAT TURN
+ * (`toolReturnedRefs`) and the answer's single acceptable citation for that
+ * group is not it — a preferred source never returned was never available
+ * to cite, so citing an honest acceptable alternative instead cannot be a
+ * preference failure (the passing branch `checkCitationGroup` already
+ * preserves).
+ */
+export function scorePreferredSourceCompliance(
+  answer: string,
+  assertions: EvalCaseAnswerAssertions | undefined,
+  toolReturnedRefs: readonly CitationRef[],
+): ScoreResult | null {
+  const groups = (assertions?.citationGroups ?? []).filter(
+    (group): group is EvalCaseCitationGroup & { preferredRef: CitationRef } =>
+      group.preferredRef !== undefined,
+  );
+  if (groups.length === 0) return null;
+
+  const answerMarkers = parseCitations(answer);
+  const outcomes = groups.map((group) => {
+    const preferredLabel = `${group.preferredRef.entityType}:${group.preferredRef.entityId}`;
+    const preferredWasReturned = citationPresent(toolReturnedRefs, group.preferredRef);
+    const preferredWasCited = citationPresent(answerMarkers, group.preferredRef);
+    const failed = preferredWasReturned && !preferredWasCited;
+    return {
+      failed,
+      message: failed
+        ? `preferred source ${preferredLabel} was returned this turn but not cited`
+        : null,
+    };
+  });
+
+  const failures = outcomes.filter((outcome) => outcome.failed).map((outcome) => outcome.message);
+  const passed = outcomes.length - failures.length;
+  const reason =
+    failures.length === 0
+      ? `${passed}/${outcomes.length} preferred-source group(s) complied.`
+      : `${passed}/${outcomes.length} preferred-source group(s) complied; ${failures.join("; ")}.`;
+
+  return { score: clampScore(passed / outcomes.length), reason };
 }

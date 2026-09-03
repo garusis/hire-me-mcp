@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scoreAnswerAssertions } from "./answer-assertions.js";
+import { scoreAnswerAssertions, scorePreferredSourceCompliance } from "./answer-assertions.js";
 
 describe("scoreAnswerAssertions", () => {
   it("scores 1 when every mustMatch pattern is present and no mustNotMatch pattern appears", () => {
@@ -204,6 +204,85 @@ describe("scoreAnswerAssertions", () => {
       // mustMatch passes, the 'any' group passes (storyA cited), the 'all'
       // group fails (storyC never cited) — 2/3.
       expect(result.score).toBeCloseTo(2 / 3, 4);
+    });
+  });
+
+  /**
+   * #295 second independent-review correction (finding 4): "For X01, citing
+   * story 002 while tools returned 001 and 002 scores `answerAssertions:
+   * 0.8`; the committed threshold is also 0.8, so the overall verdict
+   * passes... Report preferred-source compliance independently and make any
+   * available-but-skipped preferred source fail the eval." A single blended
+   * `answerAssertions` fraction can never guarantee this — it can always be
+   * diluted by unrelated passing assertions in the SAME case, or averaged
+   * away across many OTHER passing cases in the aggregate. `../report.ts`
+   * wires this into its own `preferredSourceCompliance` aggregate, gated by
+   * a blocking (1.0) threshold in `../thresholds.ts`, mirroring the
+   * retrieval package's own independent `preferredSourceCompliance` fix.
+   */
+  describe("scorePreferredSourceCompliance (#295 second independent-review correction)", () => {
+    const storyA = { entityType: "story" as const, entityId: "xogito-client-account-recovery" };
+    const storyB = { entityType: "story" as const, entityId: "mutual-informal-leadership" };
+
+    it("returns null when no citationGroups entry declares a preferredRef", () => {
+      const result = scorePreferredSourceCompliance(
+        "[cite:story:mutual-informal-leadership]",
+        { citationGroups: [{ mode: "any", refs: [storyA, storyB] }] },
+        [storyA, storyB],
+      );
+      expect(result).toBeNull();
+    });
+
+    it("returns null when the case declares no answerAssertions at all", () => {
+      expect(scorePreferredSourceCompliance("anything", undefined, [])).toBeNull();
+    });
+
+    it("scores 0 (fails) when the preferred source was returned by a tool this turn but the answer cites an acceptable alternative instead — the exact X01 counterexample", () => {
+      const result = scorePreferredSourceCompliance(
+        "[cite:story:mutual-informal-leadership]",
+        { citationGroups: [{ mode: "any", refs: [storyA, storyB], preferredRef: storyA }] },
+        [storyA, storyB],
+      );
+      expect(result?.score).toBe(0);
+      expect(result?.reason).toMatch(/preferred/i);
+    });
+
+    it("scores 1 (passes) when the preferred source was returned this turn and the answer cites it", () => {
+      const result = scorePreferredSourceCompliance(
+        "[cite:story:xogito-client-account-recovery]",
+        { citationGroups: [{ mode: "any", refs: [storyA, storyB], preferredRef: storyA }] },
+        [storyA, storyB],
+      );
+      expect(result?.score).toBe(1);
+    });
+
+    it("scores 1 (passes, preserved branch) when the preferred source was NOT returned by any tool this turn, even though the answer cites the other acceptable alternative", () => {
+      const result = scorePreferredSourceCompliance(
+        "[cite:story:mutual-informal-leadership]",
+        { citationGroups: [{ mode: "any", refs: [storyA, storyB], preferredRef: storyA }] },
+        [storyB],
+      );
+      expect(result?.score).toBe(1);
+    });
+
+    it("averages compliance across multiple preference-declaring groups in the same case", () => {
+      const storyC = {
+        entityType: "story" as const,
+        entityId: "cross-team-onboarding-framework",
+      };
+      const result = scorePreferredSourceCompliance(
+        "[cite:story:mutual-informal-leadership] [cite:story:cross-team-onboarding-framework]",
+        {
+          citationGroups: [
+            { mode: "any", refs: [storyA, storyB], preferredRef: storyA },
+            { mode: "any", refs: [storyC], preferredRef: storyC },
+          ],
+        },
+        [storyA, storyB, storyC],
+      );
+      // First group fails (storyA returned, storyB cited instead); second
+      // group passes (storyC returned and cited) -> 0.5.
+      expect(result?.score).toBe(0.5);
     });
   });
 });

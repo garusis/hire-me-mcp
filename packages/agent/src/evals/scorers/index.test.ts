@@ -3,6 +3,7 @@ import {
   scoreAnswerAssertions,
   scoreGapHonesty,
   scoreGroundedness,
+  scorePreferredSourceCompliance,
   scoreRelevance,
   scoreStoryCompleteness,
   scoreToolRouting,
@@ -25,5 +26,9 @@ describe("scorers barrel", () => {
 
   it("re-exports the story-completeness scorer (#295 correction, finding 2)", () => {
     expect(typeof scoreStoryCompleteness).toBe("function");
+  });
+
+  it("re-exports the preferred-source compliance scorer (#295 second independent-review correction, finding 4)", () => {
+    expect(typeof scorePreferredSourceCompliance).toBe("function");
   });
 });

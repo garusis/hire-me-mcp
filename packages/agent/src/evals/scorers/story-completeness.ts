@@ -1,68 +1,203 @@
 /**
  * Story-completeness scorer (#295 correction, independent Codex review,
- * agent package `1dd7ac7`, finding 2): #295's agent-evals section requires
- * "answers include grounded situation, actions, and results rather than
- * only adjectives or testimonials," scored by "a story-completeness scorer
- * that is resilient to prose formatting: it should score factual coverage
- * of the returned situation/actions/results, not require literal STAR
- * headings."
+ * agent package `1dd7ac7`, finding 2 — then #295 second independent-review
+ * correction, finding 2): #295's agent-evals section requires "answers
+ * include grounded situation, actions, and results rather than only
+ * adjectives or testimonials," scored by "a story-completeness scorer that
+ * is resilient to prose formatting: it should score factual coverage of the
+ * returned situation/actions/results, not require literal STAR headings."
  *
- * This is a pure, deterministic heuristic — no model call — like every
- * other scorer in this package: it checks the answer text for three
- * independent linguistic signal classes (situation/context-setting,
- * concrete past-tense action, and a stated outcome), each scored as a
- * binary hit, so an answer that only strings adjectives together ("Marcos
- * is dedicated, thoughtful, and skilled") scores near zero — it names none
- * of the three — while a fluid-prose answer that actually narrates what
- * happened scores fully, with no STAR heading ("Situation:", "Action:",
- * "Result:") required anywhere.
+ * ## Grounded mode (the fix for finding 2's counterexample)
  *
- * This is a coarse, keyword-class heuristic, not a semantic understanding
- * of the answer — a genuinely well-written answer using phrasing outside
- * these signal classes could still under-score. That's the same accepted
- * tradeoff every other regex-based scorer in this package makes (see
- * `./answer-assertions.ts`'s and `./groundedness.ts`'s own doc comments)
- * for zero-model-call determinism.
+ * The first correction's generic 3-signal linguistic-cue heuristic (see
+ * `GENERIC_SIGNALS` below) had a real gap the second independent review
+ * reproduced directly: "When a difficult situation appeared, Marcos built a
+ * solution. As a result, it enabled success." scored 1.0 despite containing
+ * NO fact from any real story — it merely imitates STAR-shaped connective
+ * language. Generic cues alone cannot tell a genuinely grounded answer from
+ * a fluent template.
+ *
+ * When the caller supplies `storyIds` (the case's acceptable story
+ * candidates — see `../runner.ts`'s `storyIdsOf`), this scorer instead
+ * checks the answer against `STORY_FACT_ANCHORS`: a small, per-story table
+ * of concrete situation/action/result facts drawn directly from that
+ * story's own committed content (`packages/career-data/content/stories/`),
+ * one anchor pattern per signal class. Since a case may accept SEVERAL
+ * candidate stories (an `any`/`all` `citationGroups` case), the score is the
+ * BEST match across the supplied ids — the answer is expected to fully
+ * ground exactly one real story, not blend generic phrasing across several.
+ * Falls back to the generic heuristic only when none of the supplied
+ * `storyIds` has a known anchors entry (or none were supplied at all) —
+ * preserved for backward compatibility with the original correction's own
+ * tests, which pin that heuristic's exact behavior on non-story-specific
+ * input.
+ *
+ * Like every other scorer in this package, this remains pure, deterministic
+ * regex matching — no model call and no semantic understanding of the
+ * answer. That is still a coarse heuristic (a well-written answer using
+ * distinct phrasing for the same real fact could under-score, the same
+ * accepted tradeoff `./answer-assertions.ts` and `./groundedness.ts` make),
+ * but requiring a real per-story fact, not just a STAR-shaped connective
+ * word, closes the specific false-positive the review reproduced.
  */
 
 import type { ScoreResult } from "./types.js";
 import { clampScore } from "./types.js";
 
-const SITUATION_REGEX =
-  /\b(when|while|during|after|before|because|since|faced with|faced a|encountered|discovered|noticed|inherited|a (?:critical|production|legacy|complex|damaged|stalled|risky) )\b/i;
+interface SignalClass {
+  label: string;
+  regex: RegExp;
+}
 
-const ACTION_REGEX =
-  /\b(built|implemented|designed|led|introduced|decided|investigated|debugged|migrated|proposed|wrote|fixed|reviewed|owned|created|drove|coordinated|refactored|architected|resolved|diagnosed|negotiated|persuaded|mentored|onboarded|rebuilt|renegotiated|took over|reduced|prioritized)\b/i;
-
-const RESULT_REGEX =
-  /\b(result(?:ed|s)?\b|as a result|which (?:reduced|improved|prevented|caught|fixed|eliminated|restored|retained)|ultimately|since then|today,?\s|the outcome|led to|allowed|enabled|ended up|was retained|no longer)\b/i;
-
-const SIGNALS: readonly { label: string; regex: RegExp }[] = [
-  { label: "situation", regex: SITUATION_REGEX },
-  { label: "action", regex: ACTION_REGEX },
-  { label: "result", regex: RESULT_REGEX },
+const GENERIC_SIGNALS: readonly SignalClass[] = [
+  {
+    label: "situation",
+    regex:
+      /\b(when|while|during|after|before|because|since|faced with|faced a|encountered|discovered|noticed|inherited|a (?:critical|production|legacy|complex|damaged|stalled|risky) )\b/i,
+  },
+  {
+    label: "action",
+    regex:
+      /\b(built|implemented|designed|led|introduced|decided|investigated|debugged|migrated|proposed|wrote|fixed|reviewed|owned|created|drove|coordinated|refactored|architected|resolved|diagnosed|negotiated|persuaded|mentored|onboarded|rebuilt|renegotiated|took over|reduced|prioritized)\b/i,
+  },
+  {
+    label: "result",
+    regex:
+      /\b(result(?:ed|s)?\b|as a result|which (?:reduced|improved|prevented|caught|fixed|eliminated|restored|retained)|ultimately|since then|today,?\s|the outcome|led to|allowed|enabled|ended up|was retained|no longer)\b/i,
+  },
 ];
+
+/**
+ * Per-story fact anchors (#295 second independent-review correction, finding
+ * 2), one situation/action/result regex per authored story, each anchored to
+ * a specific fact from that story's own committed content — not a
+ * paraphrase-tolerant generic cue. Keyed by stable story id (the same ids
+ * `../dataset/story-manifest-cases.ts` cites).
+ */
+const STORY_FACT_ANCHORS: Readonly<Record<string, Readonly<Record<string, RegExp>>>> = {
+  "xogito-client-account-recovery": {
+    situation: /frustrat/i,
+    action: /quick wins|meeting cadence/i,
+    result: /trust returned|commissioned/i,
+  },
+  "mutual-informal-leadership": {
+    situation: /hackathon|stalled/i,
+    action: /renounced/i,
+    result: /launched|handed .{0,20}government/i,
+  },
+  "cross-team-onboarding-framework": {
+    situation: /no established onboarding|no clear person/i,
+    action: /first contact|onboarding buddies/i,
+    result: /15 people|adopted/i,
+  },
+  "house-numbers-communication-service-ownership": {
+    situation: /different inboxes|manually determine/i,
+    action: /webhook ingestion|llm.assisted extraction/i,
+    result: /70\s*%|effective.triage/i,
+  },
+  "house-numbers-deterministic-document-checks": {
+    situation: /nobody was using|hallucinat/i,
+    action: /removed the open-ended llm|deterministic (?:checks?|validation)/i,
+    result: /less than two weeks|stable,? reproducible/i,
+  },
+  "fullstack-labs-sap-migration": {
+    situation: /legacy sap|financial calculations/i,
+    action: /etl scripts?|rounding/i,
+    result: /without data loss|legacy.system experts/i,
+  },
+  "house-numbers-prompt-platform-migration": {
+    situation: /orq\.?ai|friction/i,
+    action: /incremental migration|version.controlled files/i,
+    result: /no significant interruption|eliminated .{0,20}platform cost/i,
+  },
+  "house-numbers-secure-public-document-upload": {
+    situation: /wordpress|two out of every three/i,
+    action: /captcha|rate limiting|hybrid routing/i,
+    result: /complaints? .{0,20}stopped|audit history/i,
+  },
+  "house-numbers-zod-production-incident": {
+    situation: /96 (?:times|restarts)|crash loop|zod/i,
+    action: /contain(?:ed)? the cascade|regression tests?/i,
+    result: /no permanent (?:data )?loss|reprocessed/i,
+  },
+  "house-numbers-vendor-extraction-contract": {
+    situation: /never appeared|structured extraction/i,
+    action: /inspected the payload|built the missing mocks/i,
+    result: /vendor confirmed|(?:capabilit\w* .{0,20})?disabled|remained in the provider/i,
+  },
+  "house-numbers-loan-analysis-pipeline-decomposition": {
+    situation: /monolith|one large orchestration/i,
+    action: /three independently testable units|message bus/i,
+    result: /reached production|easier to locate failures/i,
+  },
+  "mutual-sustainable-ownership-failure": {
+    situation: /hackathon|stalled/i,
+    action: /renounced/i,
+    result: /do not consider .{0,20}a success|never recovered shared ownership/i,
+  },
+  "rokk3r-sustainable-performance-feedback": {
+    situation: /rockstar developer|worked late into the night/i,
+    action: /took a week away|communicating capacity/i,
+    result: /quality and working rhythm restored|mvp successfully/i,
+  },
+  "belatrix-destructive-deployment-accountability": {
+    situation: /dynamodb|shared development environment/i,
+    action: /reported it|restricted the script/i,
+    result: /rebuilt trust|access was restored/i,
+  },
+  "house-numbers-cross-service-debugging-skill": {
+    situation: /on-call rotation|no shared investigation method/i,
+    action: /on-call reporting command|reusable (?:agent )?skill/i,
+    result: /versioned process|new relic|evidence.backed/i,
+  },
+  "house-numbers-ai-pivot-after-paternity-leave": {
+    situation: /paternity leave|b2c.{0,10}b2b|pivot/i,
+    action: /spoke openly with .{0,10}cto|impostor syndrome/i,
+    result: /i stayed|production llm and agentic systems/i,
+  },
+};
 
 /** One eval case's captured answer text — all this scorer needs. */
 export interface StoryCompletenessTranscript {
   answer: string;
 }
 
-/**
- * Score `transcript.answer`'s factual completeness: 1 when the answer
- * carries all three of situation, action, and result signals, proportionally
- * lower per missing one. See module docs for what each signal class checks
- * and why this is prose-format-resilient (no STAR headings required).
- */
-export function scoreStoryCompleteness(transcript: StoryCompletenessTranscript): ScoreResult {
-  const missing = SIGNALS.filter((signal) => !signal.regex.test(transcript.answer)).map(
-    (signal) => signal.label,
-  );
-  const passed = SIGNALS.length - missing.length;
+function scoreAgainstSignals(answer: string, signals: readonly SignalClass[]): ScoreResult {
+  const missing = signals.filter((signal) => !signal.regex.test(answer)).map((s) => s.label);
+  const passed = signals.length - missing.length;
   const reason =
     missing.length === 0
-      ? `${passed}/${SIGNALS.length} story-completeness signal(s) held.`
-      : `${passed}/${SIGNALS.length} story-completeness signal(s) held; missing: ${missing.join(", ")}.`;
+      ? `${passed}/${signals.length} story-completeness signal(s) held.`
+      : `${passed}/${signals.length} story-completeness signal(s) held; missing: ${missing.join(", ")}.`;
+  return { score: clampScore(passed / signals.length), reason };
+}
 
-  return { score: clampScore(passed / SIGNALS.length), reason };
+/** `scoreAgainstSignals` against one known story's real fact anchors, labeled with that story id in the reason. */
+function scoreAgainstStory(answer: string, storyId: string): ScoreResult {
+  const anchors = STORY_FACT_ANCHORS[storyId];
+  if (!anchors) throw new Error(`no fact anchors registered for story id "${storyId}"`);
+  const signals = Object.entries(anchors).map(([label, regex]) => ({ label, regex }));
+  const scored = scoreAgainstSignals(answer, signals);
+  return { score: scored.score, reason: `[${storyId}] ${scored.reason}` };
+}
+
+/**
+ * Score `transcript.answer`'s factual completeness. When `storyIds` names
+ * at least one story with a `STORY_FACT_ANCHORS` entry, scores the answer
+ * against the BEST-matching such story's real facts (grounded mode — see
+ * module docs). Otherwise falls back to the original generic 3-class
+ * linguistic-cue heuristic (situation/action/result), preserved for
+ * backward compatibility with cases that don't name a known story.
+ */
+export function scoreStoryCompleteness(
+  transcript: StoryCompletenessTranscript,
+  storyIds: readonly string[] = [],
+): ScoreResult {
+  const known = [...new Set(storyIds)].filter((id) => id in STORY_FACT_ANCHORS);
+  if (known.length === 0) {
+    return scoreAgainstSignals(transcript.answer, GENERIC_SIGNALS);
+  }
+
+  const scored = known.map((id) => scoreAgainstStory(transcript.answer, id));
+  return scored.reduce((best, current) => (current.score > best.score ? current : best));
 }

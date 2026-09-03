@@ -46,4 +46,66 @@ describe("scoreStoryCompleteness", () => {
     });
     expect(result.score).toBeCloseTo(1 / 3, 4);
   });
+
+  /**
+   * #295 second independent-review correction (finding 2): "Story
+   * completeness measures generic linguistic cues, not factual
+   * situation/action/result coverage. The scorer returns 1.0 for: 'When a
+   * difficult situation appeared, Marcos built a solution. As a result, it
+   * enabled success.' That contains no facts from the returned story."
+   * When `storyIds` names a known story, completeness must be scored
+   * against THAT story's real, concrete facts — not generic STAR-shaped
+   * connective language a model can produce with zero grounding.
+   */
+  describe("grounded mode (#295 second independent-review correction, finding 2)", () => {
+    it("scores near-zero for the exact generic-cue boilerplate the review reproduced, once a known story id is supplied", () => {
+      const result = scoreStoryCompleteness(
+        {
+          answer:
+            "When a difficult situation appeared, Marcos built a solution. As a result, it enabled success.",
+        },
+        ["xogito-client-account-recovery"],
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("scores 1 for a genuinely grounded answer naming real situation/action/result facts from the cited story", () => {
+      const result = scoreStoryCompleteness(
+        {
+          answer:
+            "After the project manager resigned, the client was deeply frustrated with progress. " +
+            "Marcos increased the meeting cadence and delivered quick wins alongside the core repairs. " +
+            "As a result, trust returned and the client later commissioned additional projects. " +
+            "[cite:story:xogito-client-account-recovery]",
+        },
+        ["xogito-client-account-recovery"],
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("falls back to the generic signal heuristic when no supplied story id is a known one", () => {
+      const result = scoreStoryCompleteness(
+        {
+          answer:
+            "When the client relationship soured after a missed deadline, Marcos rebuilt trust by " +
+            "personally taking over delivery. As a result, the account was retained.",
+        },
+        ["some-unknown-story-id"],
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("scores against the actually-cited story among several acceptable candidates, not an uncited one", () => {
+      const result = scoreStoryCompleteness(
+        {
+          answer:
+            "At Kubesoft, a hackathon-winning product stalled over a prize dispute. Marcos renounced " +
+            "his own share and began building the backend. As a result, the product launched and was " +
+            "handed over to the government. [cite:story:mutual-informal-leadership]",
+        },
+        ["xogito-client-account-recovery", "mutual-informal-leadership"],
+      );
+      expect(result.score).toBe(1);
+    });
+  });
 });

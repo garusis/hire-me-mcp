@@ -578,6 +578,53 @@ describe("runEvalSuite", () => {
   });
 
   /**
+   * #295 second independent-review correction (finding 4): `runEvalSuite`
+   * must score `preferredSourceCompliance` independently
+   * (`./scorers/answer-assertions.ts`'s `scorePreferredSourceCompliance`)
+   * for any case declaring a `citationGroups.preferredRef`, and leave it
+   * `null` for a case that declares no preference at all.
+   */
+  it("scores preferredSourceCompliance independently of answerAssertions, and leaves it null for a case with no declared preference", async () => {
+    const preferredCase = makeCase({
+      id: "preferred-2",
+      answerAssertions: {
+        citationGroups: [
+          {
+            mode: "any",
+            refs: [
+              { entityType: "story", entityId: "xogito-client-account-recovery" },
+              { entityType: "story", entityId: "mutual-informal-leadership" },
+            ],
+            preferredRef: { entityType: "story", entityId: "xogito-client-account-recovery" },
+          },
+        ],
+      },
+    });
+    const runCase = vi.fn().mockResolvedValue({
+      answer: "[cite:story:mutual-informal-leadership]",
+      toolCitations: [
+        { entityType: "story" as const, entityId: "xogito-client-account-recovery" },
+        { entityType: "story" as const, entityId: "mutual-informal-leadership" },
+      ],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [preferredCase, groundedCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    const preferredReport = report.cases.find((c) => c.id === "preferred-2");
+    const plainReport = report.cases.find((c) => c.id === groundedCase.id);
+    expect(preferredReport?.scores.preferredSourceCompliance?.score).toBe(0);
+    expect(plainReport?.scores.preferredSourceCompliance).toBeNull();
+  });
+
+  /**
    * #295 correction (independent Codex review, agent package `1dd7ac7`,
    * finding 2): `runEvalSuite` must score behavioral-story completeness
    * (`./scorers/story-completeness.ts`) for any case that declares a
@@ -588,8 +635,10 @@ describe("runEvalSuite", () => {
   it("scores storyCompleteness when a case declares citation-based answerAssertions, and leaves it null otherwise", async () => {
     const runCase = vi.fn().mockResolvedValue({
       answer:
-        "When the client relationship soured, Marcos rebuilt trust by taking over delivery. " +
-        "As a result, the account was retained. [cite:story:xogito-client-account-recovery]",
+        "After the project manager resigned, the client was deeply frustrated with progress. " +
+        "Marcos increased the meeting cadence and delivered quick wins alongside the core repairs. " +
+        "As a result, trust returned and the client later commissioned additional projects. " +
+        "[cite:story:xogito-client-account-recovery]",
       toolCitations: [{ entityType: "story" as const, entityId: "xogito-client-account-recovery" }],
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
     });

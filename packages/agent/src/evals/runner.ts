@@ -60,6 +60,7 @@ import {
   scoreAnswerAssertions,
   scoreGapHonesty,
   scoreGroundedness,
+  scorePreferredSourceCompliance,
   scoreRelevance,
   scoreStoryCompleteness,
   scoreToolRouting,
@@ -200,8 +201,13 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
     (evalCase.answerAssertions?.mustCiteEntity?.length ?? 0) > 0 ||
     (evalCase.answerAssertions?.citationGroups?.length ?? 0) > 0;
   const storyCompleteness = expectsStoryCitation
-    ? scoreStoryCompleteness({ answer: run.answer })
+    ? scoreStoryCompleteness({ answer: run.answer }, storyIdsOf(evalCase))
     : null;
+  const preferredSourceCompliance = scorePreferredSourceCompliance(
+    run.answer,
+    evalCase.answerAssertions,
+    run.toolCitations,
+  );
 
   return {
     id: evalCase.id,
@@ -215,8 +221,23 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
       toolRouting,
       answerAssertions,
       storyCompleteness,
+      preferredSourceCompliance,
     },
   };
+}
+
+/** Every distinct `story` entityId named in `evalCase.answerAssertions`'s `mustCiteEntity`/`citationGroups` (#295 second independent-review correction, finding 2) — the acceptable stories `scoreStoryCompleteness` may ground its completeness check against, since only a story the answer actually cites from this set is a real candidate (never an unrelated story). */
+function storyIdsOf(evalCase: EvalCase): string[] {
+  const assertions = evalCase.answerAssertions;
+  if (!assertions) return [];
+  const fromCite = (assertions.mustCiteEntity ?? [])
+    .filter((ref) => ref.entityType === "story")
+    .map((ref) => ref.entityId);
+  const fromGroups = (assertions.citationGroups ?? [])
+    .flatMap((group) => group.refs)
+    .filter((ref) => ref.entityType === "story")
+    .map((ref) => ref.entityId);
+  return [...new Set([...fromCite, ...fromGroups])];
 }
 
 /** Run the eval suite: execute up to `config.budget.maxCases` dataset cases against the real agent (via `deps.runCase`), score each, and assemble the final report. Throws `BudgetExceededError` (see `./budget.ts`) the instant the token or cost cap is crossed. */

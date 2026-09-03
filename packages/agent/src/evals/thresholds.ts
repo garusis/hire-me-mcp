@@ -42,6 +42,16 @@ export interface ScorerThresholds {
    * treatment as `toolRouting`/`answerAssertions` above.
    */
   storyCompleteness?: number;
+  /**
+   * Optional (#295 second independent-review correction, finding 4): only
+   * cases whose `answerAssertions.citationGroups` declares a `preferredRef`
+   * contribute — same zero-count-skips treatment as the other optional
+   * scorers above. UNLIKE those, this threshold is blocking (1.0, see
+   * {@link EVAL_THRESHOLDS}'s doc comment) rather than a statistical target:
+   * a declared preference is a locked per-case contract from the #295
+   * manifest, not something a fraction of cases may fail.
+   */
+  preferredSourceCompliance?: number;
 }
 
 /**
@@ -130,6 +140,18 @@ export const EVAL_THRESHOLDS: ScorerThresholds = {
   // fails. Recalibrate from the first real agent-evals run of the story
   // dataset, same procedure as the other provisional thresholds above.
   storyCompleteness: 0.7,
+  // preferredSourceCompliance (#295 second independent-review correction,
+  // finding 4): BLOCKING, not provisional-lenient like the scorers above —
+  // "For X01, citing story 002 while tools returned 001 and 002 scores
+  // answerAssertions: 0.8; the committed threshold is also 0.8, so the
+  // overall verdict passes... make any available-but-skipped preferred
+  // source fail the eval." A single failed preferred-source case must fail
+  // the run regardless of how many other cases (or other assertions in the
+  // SAME case) pass — mirrors the retrieval package's own
+  // `preferredSourceCompliance` fix, which raised that threshold from 0.7
+  // to 1.0 for the identical reason: this is a locked per-case contract,
+  // not a statistical target with acceptable slack.
+  preferredSourceCompliance: 1,
 };
 
 const SCORER_LABELS: Readonly<Record<keyof ScorerThresholds, string>> = {
@@ -139,6 +161,7 @@ const SCORER_LABELS: Readonly<Record<keyof ScorerThresholds, string>> = {
   toolRouting: "tool routing",
   answerAssertions: "answer assertions",
   storyCompleteness: "story completeness",
+  preferredSourceCompliance: "preferred-source compliance",
 };
 
 /** Verdict for one eval run: whether every scorer aggregate met its threshold, and a human-readable failure line per scorer that didn't. */

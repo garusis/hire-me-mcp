@@ -38,6 +38,14 @@ export interface CaseReport {
      * `./scorers/story-completeness.ts`).
      */
     storyCompleteness: ScoreResult | null;
+    /**
+     * `null` for any case whose `answerAssertions.citationGroups` declares
+     * no `preferredRef` (#295 second independent-review correction, finding
+     * 4 — `./scorers/answer-assertions.ts`'s `scorePreferredSourceCompliance`).
+     * Reported and thresholded independently of `answerAssertions` so a
+     * failed preference cannot be diluted by other passing assertions.
+     */
+    preferredSourceCompliance: ScoreResult | null;
   };
 }
 
@@ -68,6 +76,7 @@ export interface EvalReport {
     toolRouting: ScorerAggregate;
     answerAssertions: ScorerAggregate;
     storyCompleteness: ScorerAggregate;
+    preferredSourceCompliance: ScorerAggregate;
   };
   totals: EvalTotals & { cases: number };
   thresholds: ScorerThresholds;
@@ -101,6 +110,9 @@ export function buildReport(params: {
     toolRouting: aggregate(params.cases.map((c) => c.scores.toolRouting)),
     answerAssertions: aggregate(params.cases.map((c) => c.scores.answerAssertions)),
     storyCompleteness: aggregate(params.cases.map((c) => c.scores.storyCompleteness)),
+    preferredSourceCompliance: aggregate(
+      params.cases.map((c) => c.scores.preferredSourceCompliance),
+    ),
   };
 
   return {
@@ -130,6 +142,15 @@ export function buildReport(params: {
         // finding 2): only cases the runner scores for it contribute.
         ...(aggregates.storyCompleteness.count > 0
           ? { storyCompleteness: aggregates.storyCompleteness.mean }
+          : {}),
+        // Same optional treatment for preferred-source compliance (#295
+        // second independent-review correction, finding 4): only cases
+        // declaring a `preferredRef` contribute, and — unlike the other
+        // optional scorers — its committed threshold is blocking (1.0), so
+        // a single failed preference case fails the run regardless of how
+        // many others passed.
+        ...(aggregates.preferredSourceCompliance.count > 0
+          ? { preferredSourceCompliance: aggregates.preferredSourceCompliance.mean }
           : {}),
       },
       thresholds,

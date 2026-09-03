@@ -291,6 +291,106 @@ describe("STORY_MANIFEST_CASES (#295 locked behavioral manifest)", () => {
           "syndrome. [cite:story:house-numbers-ai-pivot-after-paternity-leave]",
       );
     });
+
+    /**
+     * #295 second independent-review correction (finding 3): "The
+     * factual-boundary suite remains incomplete and is easy to bypass"
+     * names four SPECIFIC violating answers that scored 1.0 against the
+     * first correction's guards — a paraphrase around each narrow forbidden
+     * phrase. Each case below reproduces the review's EXACT wording and
+     * proves it is now caught, alongside a companion test proving the
+     * honest, approved phrasing for that same story still passes (the
+     * guard must catch the violation without becoming so broad it forbids
+     * describing the story at all).
+     */
+    describe("paraphrase counterexamples from the second independent review", () => {
+      it("001 (xogito): 'his leadership led the client to commission three additional projects' — causation attributed to Marcos via a verb the first guard's list didn't cover ('led ... to commission')", () => {
+        expectBoundaryViolationCaught(
+          "story-manifest-f01",
+          "At Xogito, his leadership led the client to commission three additional projects. " +
+            "[cite:story:xogito-client-account-recovery]",
+        );
+      });
+
+      it("001 (xogito): the approved honest phrasing — the client, not Marcos, is the one who later commissioned further work — still passes", () => {
+        const evalCase = requireCase("story-manifest-f01");
+        const assertions = evalCase.answerAssertions;
+        if (!assertions) throw new Error("expected answerAssertions");
+        const result = scoreAnswerAssertions(
+          "He rebuilt trust with the frustrated Xogito client through increased meeting cadence " +
+            "and quick wins. The client later commissioned additional projects. " +
+            "[cite:story:xogito-client-account-recovery]",
+          assertions,
+          [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
+        );
+        expect(result.score).toBe(1);
+      });
+
+      it("004 (communication-service-ownership): 'achieved about 70% effective triage because the LLM handled it' — attributes the outcome to the model alone, without saying 'LLM accuracy' verbatim", () => {
+        expectBoundaryViolationCaught(
+          "story-manifest-f04",
+          "The communications workflow achieved about 70% effective triage because the LLM " +
+            "handled it. [cite:story:house-numbers-communication-service-ownership]",
+        );
+      });
+
+      it("004 (communication-service-ownership): the approved honest phrasing — the ~70% figure with its caveat, not attributed to the model alone — still passes", () => {
+        const evalCase = requireCase("story-manifest-f04");
+        const assertions = evalCase.answerAssertions;
+        if (!assertions) throw new Error("expected answerAssertions");
+        const result = scoreAnswerAssertions(
+          "A recent seven-month snapshot showed roughly 70% of communications reaching an " +
+            "observed effective-triage outcome; the rest includes spam, unsupported cases, and " +
+            "an observability gap. [cite:story:house-numbers-communication-service-ownership]",
+          assertions,
+          [{ entityType: "story", entityId: "house-numbers-communication-service-ownership" }],
+        );
+        expect(result.score).toBe(1);
+      });
+
+      it("008 (secure-public-document-upload): 'was fully HIPAA compliant' — an invented regulatory-compliance claim the first guard's percentage/measured-rate patterns never checked for", () => {
+        expectBoundaryViolationCaught(
+          "story-manifest-x06",
+          "The public upload workflow was fully HIPAA compliant. " +
+            "[cite:story:house-numbers-secure-public-document-upload]",
+        );
+      });
+
+      it("008 (secure-public-document-upload): the approved honest phrasing — security-by-design without any named regulatory regime — still passes", () => {
+        const evalCase = requireCase("story-manifest-x06");
+        const assertions = evalCase.answerAssertions;
+        if (!assertions) throw new Error("expected answerAssertions");
+        const result = scoreAnswerAssertions(
+          "He redesigned the public upload workflow with security-by-design: minimizing what " +
+            "crossed each boundary and retaining an audit trail. " +
+            "[cite:story:house-numbers-secure-public-document-upload]",
+          assertions,
+          [{ entityType: "story", entityId: "house-numbers-secure-public-document-upload" }],
+        );
+        expect(result.score).toBe(1);
+      });
+
+      it("015 (cross-service-debugging-skill): 'learned from incidents and fixed itself' — an autonomous-self-healing claim phrased without the word 'autonomous' or 'self-healing'", () => {
+        expectBoundaryViolationCaught(
+          "story-manifest-f15",
+          "The debugging skill learned from incidents and fixed itself. " +
+            "[cite:story:house-numbers-cross-service-debugging-skill]",
+        );
+      });
+
+      it("015 (cross-service-debugging-skill): the approved honest phrasing — engineers iterating a versioned skill from incident lessons — still passes", () => {
+        const evalCase = requireCase("story-manifest-f15");
+        const assertions = evalCase.answerAssertions;
+        if (!assertions) throw new Error("expected answerAssertions");
+        const result = scoreAnswerAssertions(
+          "He converted the on-call debugging process into a versioned skill that engineers " +
+            "improved after each incident. [cite:story:house-numbers-cross-service-debugging-skill]",
+          assertions,
+          [{ entityType: "story", entityId: "house-numbers-cross-service-debugging-skill" }],
+        );
+        expect(result.score).toBe(1);
+      });
+    });
   });
 
   it("carries no private personal data (no email addresses or phone-like digit runs)", () => {
