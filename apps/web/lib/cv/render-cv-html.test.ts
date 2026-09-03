@@ -333,6 +333,7 @@ const FULL_MODE_FIXTURE_VIEW: CvView = {
       startDate: "2020-01",
       endDate: undefined,
       highlights: ["Fixture highlight about shipping fixture things."],
+      tech: [],
       summary: "Fixture full-mode role summary paragraph.",
       stories: [
         {
