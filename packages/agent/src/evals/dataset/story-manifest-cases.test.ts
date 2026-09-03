@@ -189,25 +189,32 @@ describe("STORY_MANIFEST_CASES (#295 locked behavioral manifest)", () => {
   });
 
   /**
-   * #295 correction (independent Codex review, agent package `1dd7ac7`,
-   * finding 1): a real repro against the actual dataset — not a synthetic
-   * fixture — proving `story-manifest-*` coverage under CI's documented
-   * default cap. `CI_DEFAULT_MAX_CASES` mirrors
-   * `.github/workflows/agent-evals.yml`'s current `max_cases` input default
+   * #295 integration correction: `.github/workflows/agent-evals.yml`'s
+   * `max_cases` default was raised from 25 to 66 (`EVAL_CASES.length`) so
+   * the normal (PR/push-triggered, not `workflow_dispatch`-overridden)
+   * agent-evals route executes the whole dataset — including every one of
+   * the 38 locked behavioral-story manifest cases — in a single default
+   * run, closing the gap the prior 25-case cap left (that cap covered zero
+   * to a handful of `story-manifest-*` cases depending on round-robin
+   * placement; see `selectCasesForBudget`'s own doc comment in
+   * `../runner.ts`). `CI_DEFAULT_MAX_CASES` mirrors that YAML default
    * (`.github/**` is out of `packages/agent/**` scope, so this is a mirror
    * for regression purposes, not a link) — it must be kept in sync by hand
-   * if that CI-owned default ever changes. Covering every one of the 38
-   * manifest cases in a single default run still requires raising that
-   * CI-owned cap toward `EVAL_CASES.length`, reported as the still-open
-   * cross-package need on issue 295 rather than edited here.
+   * if that CI-owned default ever changes, and this test's exact-coverage
+   * assertion below is the durable guard: it fails the instant the mirrored
+   * default (or a future dataset-growing case addition) stops covering the
+   * entire manifest, rather than silently passing on partial coverage the
+   * way the prior `toBeGreaterThan(0)` assertion did.
    */
-  it("exercises real story-manifest-* coverage under CI's current default 25-case budget cap, not zero (#295 correction, finding 1)", () => {
-    const CI_DEFAULT_MAX_CASES = 25;
+  it("exercises every one of the 38 story-manifest-* cases under CI's current default 66-case budget cap (#295 integration correction)", () => {
+    const CI_DEFAULT_MAX_CASES = 66;
+    expect(CI_DEFAULT_MAX_CASES).toBeGreaterThanOrEqual(EVAL_CASES.length);
     const selected = selectCasesForBudget(EVAL_CASES, CI_DEFAULT_MAX_CASES);
     const coveredManifestIds = selected
       .filter((c) => c.id.startsWith("story-manifest-"))
       .map((c) => c.id);
-    expect(coveredManifestIds.length).toBeGreaterThan(0);
+    expect(coveredManifestIds.length).toBe(STORY_MANIFEST_CASES.length);
+    expect(new Set(coveredManifestIds)).toEqual(new Set(STORY_MANIFEST_CASES.map((c) => c.id)));
   });
 
   /**

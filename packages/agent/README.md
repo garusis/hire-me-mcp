@@ -345,8 +345,9 @@ The throttle now wraps the language model itself (the AI SDK's `wrapLanguageMode
 `wrapGenerate`/`wrapStream` await a slot before delegating), so it counts exactly what the provider
 counts — multi-step turns, retries, and anything a future change adds. It is a true **sliding
 window** over admitted-request timestamps, not a fixed inter-request delay, and acquisitions are
-serialized so concurrent callers cannot both slip through. A full 25-case run therefore paces
-itself over several minutes of deliberate waiting — that wait is the fix working, not a hang.
+serialized so concurrent callers cannot both slip through. A full run therefore paces itself over
+several minutes of deliberate waiting (roughly 15-20+ minutes for the current 66-case dataset,
+per #295) — that wait is the fix working, not a hang.
 
 **One source for the number.** `FREE_TIER_RPM_CEILING = 15` (the quota rationale table above) minus
 `RPM_SAFETY_MARGIN = 5` (headroom for the production chat traffic sharing this key) *is* the
@@ -603,7 +604,7 @@ pnpm eval:agent                          # root proxy — same as the filtered c
 pnpm --filter @hire-me-mcp/agent eval:agent
 
 # A full-dataset run, matching what CI runs (default local run is budget-capped to 8 cases):
-EVAL_MAX_CASES=25 EVAL_MAX_TOTAL_TOKENS=260000 EVAL_MAX_COST_USD=1 pnpm eval:agent
+EVAL_MAX_CASES=66 EVAL_MAX_TOTAL_TOKENS=690000 EVAL_MAX_COST_USD=3 pnpm eval:agent
 
 # Re-run a single case while debugging a specific failure (see #143's methodology above):
 EVAL_CASE_IDS=grounded-nodejs-experience pnpm eval:agent
@@ -632,9 +633,12 @@ allowance, shared with `retrieval-eval` and anyone running this suite locally ag
 key. The required `preview-e2e` job spends none of it: since #264 its chat assertions run against
 a scripted, model-free response path. A full 17-case run costs ~110K tokens (per the real run
 recorded in "Real-run results" above) and roughly one call per case (more for a multi-tool-call
-turn); the full 25-case dataset (post-#75) is expected to cost proportionally more but has not yet
-been measured against a real key (see "RAG-grounded cases and the tool-routing scorer" above) —
-budget accordingly if running locally the same day CI or another contributor might also run it.
+turn); the full 66-case dataset (post-#295, up from 25 cases) is expected to cost proportionally
+more — CI's budget caps (`.github/workflows/agent-evals.yml`) scale the measured 17-case number to
+66 cases with margin, per that workflow's own comments — but has not yet been measured against a
+real key (this package's local `.env` key is a known-invalid placeholder, see "Provider
+abstraction" above) — budget accordingly if running locally the same day CI or another contributor
+might also run it.
 `EVAL_RPM_LIMIT` (default 10) caps real provider requests per rolling minute — counted at the model
 boundary, so a multi-request case can no longer overshoot the 15 RPM ceiling (see "Request rate
 limiting" above).

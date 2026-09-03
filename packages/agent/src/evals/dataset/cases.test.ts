@@ -278,6 +278,28 @@ describe("EVAL_CASES", () => {
     expect(manifestIds.size).toBe(38);
   });
 
+  /**
+   * #295 integration correction: the normal agent-evals CI route
+   * (`.github/workflows/agent-evals.yml`'s `EVAL_MAX_CASES` default) was
+   * raised to `EVAL_CASES.length` specifically so a default run executes the
+   * whole dataset, not a budget-capped slice. That CI-owned default is a
+   * plain number in YAML this package can't import, so this test locks the
+   * dataset-side half of the invariant it depends on: the total case count
+   * (66 = 28 base + 38 locked story-manifest) this integration's budget
+   * figures (token/cost caps in the workflow file, and
+   * `packages/agent/README.md`'s "Running evals in CI" section) were sized
+   * against. A silent change to either count without updating the other two
+   * would make the CI budget or the durable-coverage guard in
+   * `story-manifest-cases.test.ts` false; this test is what forces that to
+   * be caught here instead.
+   */
+  it("has exactly 66 total cases (28 base + the 38 locked story-manifest cases) — the size the CI default cap and budget were set against (#295 integration)", () => {
+    expect(EVAL_CASES.length).toBe(66);
+    expect(STORY_MANIFEST_CASES.length).toBe(38);
+    const baseCaseCount = EVAL_CASES.length - STORY_MANIFEST_CASES.length;
+    expect(baseCaseCount).toBe(28);
+  });
+
   it("carries no private personal data (no email addresses or phone-like digit runs)", () => {
     for (const evalCase of EVAL_CASES) {
       const text = `${evalCase.question} ${evalCase.notes ?? ""}`;
