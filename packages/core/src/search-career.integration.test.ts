@@ -334,7 +334,18 @@ describe.runIf(neonConfig !== undefined)("searchCareer (real Neon branch)", () =
     const embedder = embedderReturning({ "json roundtrip query": queryVector });
     const searchCareer = createSearchCareer({ sql, embedder, modelId: MODEL_ID });
 
-    const result = await searchCareer("json roundtrip query", { topK: 3 });
+    // Scoped to "project" (as every other cross-type-unaware test in this
+    // suite is — see "returns seeded results..." and the ranking fixtures
+    // above): `runAnnQuery` deliberately has no LIMIT and scans the whole
+    // store when `sourceTypes` is omitted (see its doc comment), so an
+    // unfiltered query here would also hit the "skill"-typed
+    // `stale-model-chunk` fixture seeded above specifically for the
+    // dedicated stale-embedding-model test below, and fail on a concern
+    // this test isn't about — result shape, not filtering breadth.
+    const result = await searchCareer("json roundtrip query", {
+      topK: 3,
+      sourceTypes: ["project"],
+    });
 
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);
   }, 30_000);
