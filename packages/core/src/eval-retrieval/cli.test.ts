@@ -108,8 +108,8 @@ describe("formatCaseTable", () => {
         absentTopicAccuracy: 1,
         preferredSourceCompliance: 1,
         lanes: {
-          unscoped: { recallAtK: 1, precisionAtK: 1, mrr: 1 },
-          storyScoped: { recallAtK: 0, precisionAtK: 0, mrr: 0 },
+          unscoped: { recallAtK: 1, precisionAtK: 1, mrr: 1, scoredCases: 1 },
+          storyScoped: { recallAtK: 0, precisionAtK: 0, mrr: 0, scoredCases: 0 },
         },
       },
       thresholds: {
@@ -170,8 +170,8 @@ describe("formatCaseTable", () => {
         absentTopicAccuracy: 1,
         preferredSourceCompliance: 1,
         lanes: {
-          unscoped: { recallAtK: 0, precisionAtK: 0, mrr: 0 },
-          storyScoped: { recallAtK: 0, precisionAtK: 0, mrr: 0 },
+          unscoped: { recallAtK: 0, precisionAtK: 0, mrr: 0, scoredCases: 1 },
+          storyScoped: { recallAtK: 0, precisionAtK: 0, mrr: 0, scoredCases: 1 },
         },
       },
       thresholds: {

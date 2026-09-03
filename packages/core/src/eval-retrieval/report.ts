@@ -74,11 +74,22 @@ export interface RetrievalCaseReport {
   lanes: Record<RetrievalLane, RetrievalLaneResult>;
 }
 
-/** One lane's aggregate recall@k/precision@k/MRR, computed the same way as the top-level aggregates but restricted to that lane's cases (#307). */
+/**
+ * One lane's aggregate recall@k/precision@k/MRR, computed the same way as
+ * the top-level aggregates but restricted to that lane's SCORED cases
+ * (`lanes[lane].metrics !== null`) — for `storyScoped` that's only cases
+ * whose `expectedSources` contain a story (Codex review checkpoint
+ * correction, #307: without this restriction, cases with no possible story
+ * target score a guaranteed 0 in this lane and depress the aggregate
+ * independently of retrieval quality). `scoredCases` makes that denominator
+ * explicit in the report rather than leaving it implicit.
+ */
 export interface RetrievalLaneAggregates {
   recallAtK: number;
   precisionAtK: number;
   mrr: number;
+  /** Number of cases this lane actually scored (non-null `metrics`) — the denominator behind the three means above. */
+  scoredCases: number;
 }
 
 /** Aggregate metrics computed over the full case set. */
@@ -118,6 +129,7 @@ function computeLaneAggregates(
     recallAtK: mean(scored.map((c) => c.lanes[lane].metrics?.recallAtK ?? 0)),
     precisionAtK: mean(scored.map((c) => c.lanes[lane].metrics?.precisionAtK ?? 0)),
     mrr: mean(scored.map((c) => c.lanes[lane].metrics?.reciprocalRank ?? 0)),
+    scoredCases: scored.length,
   };
 }
 

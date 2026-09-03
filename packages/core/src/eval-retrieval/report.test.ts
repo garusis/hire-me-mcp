@@ -306,11 +306,13 @@ describe("buildRetrievalReport: lane aggregates (#307)", () => {
       recallAtK: 0.75,
       precisionAtK: 0.75,
       mrr: 0.75,
+      scoredCases: 2,
     });
     expect(report.aggregates.lanes.storyScoped).toEqual({
       recallAtK: 0.5,
       precisionAtK: 0.5,
       mrr: 0.5,
+      scoredCases: 2,
     });
   });
 
@@ -332,8 +334,18 @@ describe("buildRetrievalReport: lane aggregates (#307)", () => {
       absentTopicMinScore: 0.4,
     });
 
-    expect(report.aggregates.lanes.unscoped).toEqual({ recallAtK: 0, precisionAtK: 0, mrr: 0 });
-    expect(report.aggregates.lanes.storyScoped).toEqual({ recallAtK: 0, precisionAtK: 0, mrr: 0 });
+    expect(report.aggregates.lanes.unscoped).toEqual({
+      recallAtK: 0,
+      precisionAtK: 0,
+      mrr: 0,
+      scoredCases: 0,
+    });
+    expect(report.aggregates.lanes.storyScoped).toEqual({
+      recallAtK: 0,
+      precisionAtK: 0,
+      mrr: 0,
+      scoredCases: 0,
+    });
   });
 
   it("carries each case's lane identity and ordered, deduplicated result ids verbatim", () => {
@@ -343,5 +355,26 @@ describe("buildRetrievalReport: lane aggregates (#307)", () => {
     expect(report.cases[0]?.lanes.unscoped.lane).toBe("unscoped");
     expect(report.cases[0]?.lanes.storyScoped.lane).toBe("storyScoped");
     expect(report.cases[0]?.lanes.unscoped.retrievedIds).toEqual(["story:preferred", "story:alt"]);
+  });
+
+  it("exposes each lane aggregate's scored-case count as the explicit denominator (Codex checkpoint correction)", () => {
+    const report = buildRetrievalReport({
+      cases: [
+        caseReport({ id: "a" }),
+        caseReport({
+          id: "b",
+          lanes: {
+            unscoped: laneResult({ metrics: { recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 } }),
+            storyScoped: laneResult({ lane: "storyScoped", retrievedIds: [], metrics: null }),
+          },
+        }),
+        absentCaseReport(),
+      ],
+      topK: 5,
+      absentTopicMinScore: 0.4,
+    });
+
+    expect(report.aggregates.lanes.unscoped.scoredCases).toBe(2);
+    expect(report.aggregates.lanes.storyScoped.scoredCases).toBe(1);
   });
 });

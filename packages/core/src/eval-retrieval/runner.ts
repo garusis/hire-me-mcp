@@ -33,6 +33,7 @@ import {
   checkExpectEmpty,
   checkPreferredSource,
   dedupeRankedSources,
+  type ExpectedSource,
   precisionAtK,
   recallAtK,
   reciprocalRank,
@@ -42,8 +43,10 @@ import type { RetrievalCaseReport, RetrievalLane, RetrievalLaneResult } from "./
 import { buildRetrievalReport, type RetrievalReport } from "./report.js";
 import type { RetrievalThresholds } from "./thresholds.js";
 
+/** The `sourceType` value identifying a story source (#307). */
+const STORY_SOURCE_TYPE = "story";
 /** `sourceTypes` the story-scoped lane restricts to (#307) — mirrors the production chat's story-scoped `search-career` call. */
-const STORY_LANE_SOURCE_TYPES = ["story"] as const;
+const STORY_LANE_SOURCE_TYPES = [STORY_SOURCE_TYPE] as const;
 
 /** The minimal `searchCareer`-shaped function the runner needs. */
 export interface RetrievalSearcher {
@@ -64,14 +67,27 @@ export interface RunRetrievalEvalConfig {
   thresholds?: RetrievalThresholds;
 }
 
-/** Builds one lane's {@link RetrievalLaneResult}: its deduplicated ranked ids, and (for expected-source categories only) its own recall@k/precision@k/MRR against `query.expectedSources` — `null` for `absent-topic`, same convention as the top-level `metrics` field. */
+/**
+ * Builds one lane's {@link RetrievalLaneResult}: its deduplicated ranked
+ * ids (always populated, for observability), and — only when
+ * `scoringExpectedSources` is non-null — that lane's own recall@k/
+ * precision@k/MRR against exactly that expected-source set.
+ * `scoringExpectedSources` is `null` to skip scoring entirely (metrics
+ * stay `null`): the caller passes `null` for `absent-topic` cases (no
+ * lane has expected sources to score against) and, per the Codex review
+ * checkpoint correction (#307), for the `storyScoped` lane on any case
+ * whose `expectedSources` contain no story — scoring that lane against a
+ * story-less expected set would be a guaranteed 0 that depresses the
+ * aggregate independently of retrieval quality, not a real signal.
+ */
 function buildLaneResult(
   lane: RetrievalLane,
   retrieved: readonly ScoredSource[],
   query: GoldenQuery,
+  scoringExpectedSources: readonly ExpectedSource[] | null,
 ): RetrievalLaneResult {
   const retrievedIds = dedupeRankedSources(retrieved);
-  if (query.category === "absent-topic") {
+  if (scoringExpectedSources === null) {
     return { lane, retrievedIds, metrics: null };
   }
   const matchMode = query.matchMode ?? "all";
@@ -79,9 +95,9 @@ function buildLaneResult(
     lane,
     retrievedIds,
     metrics: {
-      recallAtK: recallAtK(retrieved, query.expectedSources, matchMode),
-      precisionAtK: precisionAtK(retrieved, query.expectedSources),
-      reciprocalRank: reciprocalRank(retrieved, query.expectedSources),
+      recallAtK: recallAtK(retrieved, scoringExpectedSources, matchMode),
+      precisionAtK: precisionAtK(retrieved, scoringExpectedSources),
+      reciprocalRank: reciprocalRank(retrieved, scoringExpectedSources),
     },
   };
 }
@@ -175,9 +191,24 @@ export async function runRetrievalEval(
       score: item.score,
     }));
 
+    const isAbsentTopic = query.category === "absent-topic";
+    const storyExpectedSources = query.expectedSources.filter(
+      (source) => source.sourceType === STORY_SOURCE_TYPE,
+    );
+
     const lanes: Record<RetrievalLane, RetrievalLaneResult> = {
-      unscoped: buildLaneResult("unscoped", retrieved, query),
-      storyScoped: buildLaneResult("storyScoped", storyScopedRetrieved, query),
+      unscoped: buildLaneResult(
+        "unscoped",
+        retrieved,
+        query,
+        isAbsentTopic ? null : query.expectedSources,
+      ),
+      storyScoped: buildLaneResult(
+        "storyScoped",
+        storyScopedRetrieved,
+        query,
+        isAbsentTopic || storyExpectedSources.length === 0 ? null : storyExpectedSources,
+      ),
     };
 
     cases.push(
