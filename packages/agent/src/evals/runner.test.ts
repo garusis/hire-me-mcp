@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { BudgetExceededError } from "./budget.js";
 import type { EvalCase } from "./dataset/schema.js";
@@ -93,9 +95,13 @@ describe("runEvalSuite", () => {
    * `story-manifest-*` case whenever the dataset appends them after the
    * base cases and the budget cap falls short of the combined total — the
    * exact real-world shape of `./dataset/cases.ts` (28 base cases then 38
-   * `story-manifest-*` cases) under CI's current 25-case default cap. A
-   * budget-capped run must proportionally cover every id-prefix group
-   * present in the dataset, not just whichever group happens to sort first.
+   * `story-manifest-*` cases) under CI's then-current 25-case default cap
+   * (raised to the full 66-case dataset size by a later #295 integration
+   * correction). A budget-capped run must proportionally cover every
+   * id-prefix group present in the dataset, not just whichever group
+   * happens to sort first — this still matters below any cap smaller than
+   * the dataset (e.g. a `workflow_dispatch` override), regardless of what
+   * CI's own current default is.
    */
   it("proportionally covers every case-id-prefix group under a budget cap, instead of a naive prefix slice that can silently drop an entire group", async () => {
     const runCase = stubRunCase();
@@ -754,5 +760,21 @@ describe("runEvalSuite", () => {
     // bare-cited with no facts (score 0) — "all" mode must take the WORST,
     // not the best, so the case-level score is 0, not 1.
     expect(crossCuttingReport?.scores.storyCompleteness?.score).toBe(0);
+  });
+
+  /**
+   * #295 integration correction (independent review, finding 3): this
+   * module's own doc comments described CI's default cap as 25 and the
+   * cross-package ask to raise it as still unresolved, even after
+   * `agent-evals.yml`/`release-readiness.yml` were raised to 66 elsewhere
+   * in the same correction. Regression, not just a one-time prose fix, so
+   * the doc comments can't silently drift stale again.
+   */
+  it("doesn't describe CI's default cap using the stale pre-#295 25-case figure (#295 integration correction, finding 3)", () => {
+    const runnerSource = readFileSync(
+      fileURLToPath(new URL("./runner.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(runnerSource).not.toMatch(/CI's current 25-case/);
   });
 });

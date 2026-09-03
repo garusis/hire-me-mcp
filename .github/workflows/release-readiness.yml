@@ -39,7 +39,25 @@ jobs:
   certify:
     name: certify
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # #295 integration correction: this single job runs the ENTIRE
+    # pyramid — unit, db-integration, e2e-smoke, mcp-protocol,
+    # retrieval-eval, agent-evals (the same full 66-case run
+    # agent-evals.yml itself budgets 60 minutes for, in isolation, per
+    # that workflow's own timeout comment), production-scripted-chat-
+    # refused, production-e2e, and production-chat-live/lighthouse — on
+    # top of its own up-front two-budget Gemini slot wait (up to 1800s /
+    # 30m below). 60 minutes total was already tight before #295 raised
+    # the eval dataset from 25 to 66 cases; it can no longer even fit the
+    # one step agent-evals.yml needs 60 minutes for on its own. 180
+    # minutes budgets: up to 30m slot wait + 60m for agent-evals (mirrored
+    # from agent-evals.yml) + 30m for retrieval-eval (mirrored from
+    # retrieval-eval.yml's own job timeout) + ~60m margin for
+    # build/unit/db-integration/e2e-smoke/mcp-protocol/the
+    # production-* steps combined — not a real full-pipeline measurement
+    # (this repo doesn't have a real production key locally to run one; see
+    # packages/agent/README.md), so it fails loud on a genuine hang rather
+    # than being tuned tight against an unmeasured number.
+    timeout-minutes: 180
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -117,13 +135,20 @@ jobs:
           # eval budget. The eval CLI's own defaults (60k tokens) predate
           # the #75 dataset extension and only fit a partial run: dispatch
           # run 32748181900 aborted at 63,585 tokens on the full 23-case
-          # dataset because these overrides weren't carried over. 260k is
-          # agent-evals.yml's value (~4x observed full-run usage), sized to
-          # catch runaways, not normal gemini-3.5-flash-lite
-          # dynamic-thinking jitter.
-          EVAL_MAX_CASES: "25"
-          EVAL_MAX_TOTAL_TOKENS: "260000"
-          EVAL_MAX_COST_USD: "1"
+          # dataset because these overrides weren't carried over. #295
+          # integration correction: these three values previously stayed
+          # at the pre-#295 25-case numbers even after agent-evals.yml
+          # raised its own default to the full 66-case dataset (28 base +
+          # 38 story-manifest cases, `EVAL_CASES.length` in
+          # `packages/agent/src/evals/dataset/cases.ts`) — a certification
+          # run claiming to certify the entire pyramid was silently
+          # exercising a 25-case subset of it. 690000/3 are
+          # agent-evals.yml's own values (verbatim); the guard in
+          # `scripts/ci/eval-budget-sync.test.mjs` fails loud if these two
+          # workflows ever drift apart again.
+          EVAL_MAX_CASES: "66"
+          EVAL_MAX_TOTAL_TOKENS: "690000"
+          EVAL_MAX_COST_USD: "3"
         run: pnpm certify:production
 
       - name: Upload Playwright preview-suite report

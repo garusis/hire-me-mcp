@@ -120,16 +120,16 @@ function groupKeyOf(evalCase: EvalCase): string {
  *
  * #295 correction (independent Codex review, agent package `1dd7ac7`,
  * finding 1): the real dataset appends `story-manifest-*` (38 cases) after
- * 28 base cases, so a prefix slice under CI's current 25-case default cap
- * ran zero of the new cases — CI stayed green while covering none of this
- * package's own new coverage. Round-robining across groups (in each
- * group's own original relative order) guarantees every group present gets
- * a fair share of any budget cap, however small, without this package
- * editing the CI-owned cap itself (`.github/workflows/agent-evals.yml`,
- * out of `packages/agent/**` scope — see the correction's issue-295 note
- * for the still-unavoidable cross-package ask: raising that cap toward the
- * dataset's full size is the only way to exercise every manifest case in
- * one default run).
+ * 28 base cases, so a prefix slice under CI's then-current 25-case default
+ * cap ran zero of the new cases — CI stayed green while covering none of
+ * this package's own new coverage. A later #295 integration correction
+ * raised `agent-evals.yml`'s (and `release-readiness.yml`'s) default cap to
+ * 66 — the full dataset size — so the normal run now covers every case
+ * regardless of ordering; round-robining across groups (in each group's own
+ * original relative order) still matters for any run under a smaller cap
+ * (a `workflow_dispatch` override, or the dataset growing past whatever cap
+ * is committed at the time), guaranteeing every group present gets a fair
+ * share instead of the group that sorts last being silently dropped.
  */
 function groupCasesById(cases: readonly EvalCase[]): EvalCase[][] {
   const groups = new Map<string, EvalCase[]>();
