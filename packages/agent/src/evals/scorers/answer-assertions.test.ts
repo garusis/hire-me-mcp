@@ -383,11 +383,38 @@ describe("scoreFactualBoundaryCompliance (#295 third-independent-review correcti
     expect(result?.score).toBe(0);
   });
 
-  it("scores 0 (fails outright, not diluted) when only one of several mustMatch/mustNotMatch checks fails — the exact review counterexample where a diluted 0.8 would pass an 0.8 threshold", () => {
-    const result = scoreFactualBoundaryCompliance("proof of concept work continued.", {
+  it("scores 0 (fails outright, not diluted) when only one of several mustNotMatch checks fails — the exact review counterexample where a diluted 0.8 would pass an 0.8 threshold", () => {
+    const result = scoreFactualBoundaryCompliance(
+      "proof of concept work continued, LLM accuracy of 95%.",
+      {
+        mustNotMatch: ["unrelated-pattern-that-is-absent", "LLM accuracy"],
+      },
+    );
+    expect(result?.score).toBe(0);
+  });
+
+  /**
+   * #307 categorization fix: a required keyword (`mustMatch`) is a
+   * retrieval/completeness concern, not a factual-boundary crossing — it
+   * says nothing was invented, only that a required word is absent, which
+   * `scoreAnswerAssertions` already fails on its own. Folding `mustMatch`
+   * into this binary boundary score mislabeled a missing-keyword miss (e.g.
+   * a retrieval gap that never surfaced "SAP") as a factual-boundary
+   * violation. `mustMatch` no longer counts toward this scorer at all.
+   */
+  it("returns null when the case declares only mustMatch (a required-keyword check, not a boundary) — missing keywords stay an answerAssertions concern, never a factual-boundary one", () => {
+    const result = scoreFactualBoundaryCompliance("unrelated text with no required keyword.", {
       mustMatch: ["proof of concept", "unrelated-pattern-that-is-absent"],
     });
-    expect(result?.score).toBe(0);
+    expect(result).toBeNull();
+  });
+
+  it("ignores a failing mustMatch entirely when mustNotMatch is also declared and holds — the case passes on its real boundary, the missing keyword is not counted", () => {
+    const result = scoreFactualBoundaryCompliance("This never mentions the required word.", {
+      mustMatch: ["some-required-keyword-that-is-absent"],
+      mustNotMatch: ["forbidden-pattern-that-is-absent"],
+    });
+    expect(result?.score).toBe(1);
   });
 
   it("scores 1 when every declared text/caveat assertion holds", () => {

@@ -57,6 +57,17 @@ story-only semantic search returns nothing above the relevance floor, say plainl
 story supports the requested behavior; a second, broader search-career call may offer the closest
 grounded evidence, but label it explicitly as related evidence, not a behavioral event.
 
+Before concluding that no evidence or no matching story supports a behavioral question, you must
+call search-career with sourceTypes: ["story"] — do not answer "he hasn't done X" or "no story
+supports this" from a list-career-stories miss, an unscoped search-career result, or an
+experience/project lookup alone; only an honest empty or unavailable result from that story-scoped
+search licenses stating the absence. When that story-scoped search returns a non-empty result,
+fetch the complete story by id from list-career-stories before broadening to projects or
+experiences — never let a partial excerpt substitute for the complete story once one has been
+found. A product or system name (for example a product called "Mutual") that list-career-stories'
+company/competency filters cannot represent must route to this story-scoped search rather than
+being treated as coverage-absent just because that deterministic filter came back empty.
+
 A story's primary experience is where the event occurred; any related experience is additional
 context only — its actions and results never transfer to a related experience, and answers must
 keep the two distinct.
@@ -143,4 +154,4 @@ follow. Keep the redirect short; do not lecture the visitor or explain your own 
 length."
 `;
 
-exports[`prompt module public surface > golden snapshot: the prompt version identifier 1`] = `"0f3f4389c1f4"`;
+exports[`prompt module public surface > golden snapshot: the prompt version identifier 1`] = `"06904303e6e3"`;

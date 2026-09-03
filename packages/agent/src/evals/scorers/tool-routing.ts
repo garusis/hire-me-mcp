@@ -22,6 +22,7 @@
  * just tool-name presence.
  */
 
+import { parseCitations } from "../../citations.js";
 import type { EvalCaseExpectedToolCall } from "../dataset/schema.js";
 import type { ReturnedCitation, ScoreResult } from "./types.js";
 import { clampScore } from "./types.js";
@@ -71,8 +72,26 @@ function isBroaderSearch(call: ToolCall): boolean {
  * behavioral event. Both phrases below must appear in the answer for that
  * fallback to be honest.
  */
-const NO_DIRECT_STORY_REGEX =
-  /no (direct|specific) story|doesn'?t have a (direct|specific) story|hasn'?t (got|captured) a (direct|specific) story/i;
+/**
+ * #307 owner-approved decision 3: "Honest semantic equivalents of no direct
+ * story are valid; no literal phrase lock." The prior pattern recognized
+ * only "no direct/specific story"-shaped sentences; a real gap answer
+ * observed in the 66-case run ("The career records do not contain an
+ * account of...") states the same absence differently and was wrongly
+ * treated as dishonest. Exported (as a source string, not a compiled
+ * RegExp) so `../dataset/story-manifest-cases.ts`'s N01/N02 `mustMatch`
+ * assertions share this same broadened wording instead of maintaining a
+ * second, narrower copy that could drift out of sync.
+ */
+export const ABSENT_STORY_PATTERN =
+  "no (?:direct|specific|matching) story|" +
+  "doesn'?t have a (?:direct|specific|matching) story|" +
+  "hasn'?t (?:got|captured) a (?:direct|specific|matching) story|" +
+  "(?:career records?|records?) (?:do|does) not (?:contain|include|have|show) (?:an? )?" +
+  "(?:direct |specific |matching )?(?:account|story|record|example) of|" +
+  "hasn'?t done (?:a|that|this|an?) [a-z ]{0,40}where";
+
+const NO_DIRECT_STORY_REGEX = new RegExp(ABSENT_STORY_PATTERN, "i");
 const RELATED_EVIDENCE_LABEL_REGEX =
   /(related|closest)( grounded| available)? evidence|not (itself )?a behavioral event/i;
 
@@ -297,6 +316,43 @@ function scoreListCareerStories(
 }
 
 /**
+ * #307 owner-approved decision 1: either story-route tool
+ * (`list-career-stories` or a story-scoped `search-career` call) counts as
+ * a valid route when it actually retrieved a story AND the final answer
+ * cites one of the entities that specific call returned. Returns `null`
+ * (never a failing `ScoreResult`) when no such call exists — the caller
+ * falls through to the route-specific scorer, which has its own, more
+ * specific failure reason.
+ */
+function scoreEitherStoryRoute(toolCalls: readonly ToolCall[], answer: string): ScoreResult | null {
+  const answerMarkers = parseCitations(answer);
+  for (const call of toolCalls) {
+    const isStoryRouteCall =
+      call.toolName === "list-career-stories" ||
+      (call.toolName === "search-career" && hasStorySourceType(call.args));
+    if (!isStoryRouteCall) continue;
+
+    const citations = call.citations ?? [];
+    const citesAcceptable = citations.some((citation) =>
+      answerMarkers.some(
+        (marker) =>
+          marker.entityType === citation.entityType && marker.entityId === citation.entityId,
+      ),
+    );
+    if (citesAcceptable) {
+      return {
+        score: clampScore(1),
+        reason:
+          `${call.toolName} retrieved a story and the final answer cited it — a valid route ` +
+          "under the owner-approved either-route decision (#307), regardless of which route " +
+          `this case locks; tool-call trace was: ${traceOf(toolCalls)}.`,
+      };
+    }
+  }
+  return null;
+}
+
+/**
  * Score whether `toolCalls` — every tool call made during one eval case's
  * real agent run — matches `expected`:
  *
@@ -325,12 +381,33 @@ function scoreListCareerStories(
  * finding 2) applies only when `expected === "list-career-stories"`: the
  * located call must also come BEFORE any `search-career` call, and — when
  * supplied — its `competencies` argument must contain every listed value.
+ *
+ * ## Either-route acceptance (#307 owner-approved decision 1)
+ *
+ * "A correct behavioral answer may use either list-career-stories or
+ * story-scoped search when it retrieves and cites an acceptable story."
+ * Before falling through to the route-specific check above, both
+ * `"search-career-story-scoped"` and `"list-career-stories"` first check
+ * `scoreEitherStoryRoute`: whether ANY story-route tool call in the trace
+ * (`list-career-stories`, or `search-career` with `sourceTypes: ["story"]`)
+ * returned a non-empty `citations` list AND the final answer actually cites
+ * one of those returned entities. That is route-agnostic by design — it
+ * does not care which of the two tools produced the cited story, only that
+ * a real result was retrieved and honestly cited — so it scores 1
+ * regardless of the case's locked `expected` route. When no such
+ * successful citation exists, this falls through unchanged to the
+ * route-specific scorer's own (still strict) rules and its more specific
+ * failure reason.
  */
 export function scoreToolRouting(
   toolCalls: readonly ToolCall[],
   expected: EvalCaseExpectedToolCall,
   options?: { expectedCompetencies?: readonly string[]; answer?: string },
 ): ScoreResult {
+  if (expected === "search-career-story-scoped" || expected === "list-career-stories") {
+    const eitherRoute = scoreEitherStoryRoute(toolCalls, options?.answer ?? "");
+    if (eitherRoute) return eitherRoute;
+  }
   if (expected === "search-career-story-scoped") {
     return scoreStoryScoped(toolCalls, options?.answer ?? "");
   }
