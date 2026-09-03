@@ -150,6 +150,23 @@ describe("scoreAnswerAssertions", () => {
       expect(result.score).toBe(1);
     });
 
+    it("passes a multi-clause caveat pattern (independent positive lookaheads) even when the required words are split across Markdown line breaks (fourth independent review, finding 1)", () => {
+      const result = scoreAnswerAssertions(
+        "The communications workflow reached roughly 70% effective triage. The remaining " +
+          "bucket includes spam,\nunsupported cases,\nand an observability gap. " +
+          "[cite:story:house-numbers-communication-service-ownership]",
+        {
+          conditionalMustMatch: [
+            {
+              ifCitedRef: story004,
+              pattern: "(?=.*\\bspam\\b)(?=.*\\bunsupported\\b)(?=.*\\b(?:observability|gap)\\b)",
+            },
+          ],
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
     it("does not apply the caveat at all when the referenced story is not cited (an `any` case truthfully answering with a different story)", () => {
       const result = scoreAnswerAssertions(
         "Engineers improved a versioned debugging skill from incident lessons. " +

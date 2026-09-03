@@ -1,5 +1,12 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { scoreStoryCompleteness } from "./story-completeness.js";
+
+const MODULE_SOURCE = readFileSync(
+  fileURLToPath(new URL("./story-completeness.ts", import.meta.url)),
+  "utf8",
+);
 
 /**
  * #295 correction (independent Codex review, agent package `1dd7ac7`,
@@ -178,6 +185,29 @@ describe("scoreStoryCompleteness", () => {
         );
         expect(result.score).toBe(1);
       });
+    });
+  });
+  /**
+   * #295 fourth independent-review correction, finding 3: the module doc
+   * comment above `scoreStoryCompleteness` must describe the CURRENT
+   * cited-story-intersection and any/all semantics, not the removed
+   * `runner.ts` helper name or the pre-third-review "best match across
+   * supplied ids, ground exactly one story" behavior. A stale doc comment
+   * is undetectable by any behavioral test, so this one instead reads the
+   * module's own source text and pins that the corrected prose is present
+   * and the retired references are gone.
+   */
+  describe("module doc comment stays in sync with the actual contract (#295 fourth independent-review correction, finding 3)", () => {
+    it("no longer references the removed runner.ts helper storyIdsOf", () => {
+      expect(MODULE_SOURCE).not.toMatch(/storyIdsOf/);
+    });
+
+    it("no longer claims completeness takes the best match across every supplied id regardless of citation", () => {
+      expect(MODULE_SOURCE).not.toMatch(/BEST match across the supplied ids/);
+    });
+
+    it("describes scoring against the intersection of supplied ids and the answer's actual citations", () => {
+      expect(MODULE_SOURCE).toMatch(/intersection/i);
     });
   });
 });

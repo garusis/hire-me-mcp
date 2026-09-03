@@ -18,14 +18,22 @@
  * a fluent template.
  *
  * When the caller supplies `storyIds` (the case's acceptable story
- * candidates — see `../runner.ts`'s `storyIdsOf`), this scorer instead
- * checks the answer against `STORY_FACT_ANCHORS`: a small, per-story table
- * of concrete situation/action/result facts drawn directly from that
- * story's own committed content (`packages/career-data/content/stories/`),
- * one anchor pattern per signal class. Since a case may accept SEVERAL
- * candidate stories (an `any`/`all` `citationGroups` case), the score is the
- * BEST match across the supplied ids — the answer is expected to fully
- * ground exactly one real story, not blend generic phrasing across several.
+ * candidates — see `../runner.ts`'s `storyCompletenessRequirementOf`), this
+ * scorer instead checks the answer against `STORY_FACT_ANCHORS`: a small,
+ * per-story table of concrete situation/action/result facts drawn directly
+ * from that story's own committed content
+ * (`packages/career-data/content/stories/`), one anchor pattern per signal
+ * class. Completeness is scored only against the INTERSECTION of `storyIds`
+ * and the stories the answer actually cites (`[cite:story:...]`) — an
+ * uncited candidate's facts can never substitute for the story actually
+ * cited (#295 third-independent-review correction, finding 2). `mode`
+ * (finding 3) then decides how that intersection is scored: `"any"` takes
+ * the best match among the cited-and-acceptable stories (the manifest's
+ * one-story-answer semantics); `"all"` (cross-cutting) requires the WORST
+ * of every required story's own completeness, scoring 0 for any required
+ * story the answer never cites — never a best-of-one, so a bare extra
+ * citation with no facts cannot ride on one well-narrated story. See
+ * `scoreStoryCompleteness`'s own doc comment below for the full contract.
  * Falls back to the generic heuristic only when none of the supplied
  * `storyIds` has a known anchors entry (or none were supplied at all) —
  * preserved for backward compatibility with the original correction's own

@@ -284,4 +284,72 @@ describe("buildReport", () => {
     expect(report.verdict.passed).toBe(false);
     expect(report.verdict.failures.some((line) => /preferred.source/i.test(line))).toBe(true);
   });
+
+  /**
+   * #295 fourth independent-review correction, finding 2: "The runner test
+   * titled 'blocking' only checks the per-case scorer value; it would
+   * remain green if the threshold were lowered/removed or the aggregate
+   * stopped gating the verdict." Same durable end-to-end pattern already
+   * used for `preferredSourceCompliance` above — a declared factual
+   * boundary is a locked per-case contract, not a statistical target.
+   */
+  it("aggregates factualBoundaryCompliance as 0-count/0-mean and never fails the verdict on it when no case scored it (#295)", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: baseCases,
+      totals,
+    });
+
+    expect(report.aggregates.factualBoundaryCompliance).toEqual({ mean: 0, count: 0 });
+    expect(report.verdict.failures.some((line) => /factual.boundary/i.test(line))).toBe(false);
+  });
+
+  it("blocks the verdict when even one case's factual-boundary check failed, despite four other passing cases averaging above a lenient threshold (#295)", () => {
+    const passingBoundary = { score: 1, reason: "held" };
+    const failingBoundary = { score: 0, reason: "missing required caveat" };
+    const emptyScores: CaseReport["scores"] = {
+      groundedness: { score: 1, reason: "n/a" },
+      gapHonesty: null,
+      relevance: { score: 1, reason: "n/a" },
+      toolRouting: null,
+      answerAssertions: null,
+      storyCompleteness: null,
+      preferredSourceCompliance: null,
+      factualBoundaryCompliance: null,
+    };
+    const casesWithBoundaries: CaseReport[] = [
+      "boundary-1",
+      "boundary-2",
+      "boundary-3",
+      "boundary-4",
+    ].map((id) => ({
+      id,
+      category: "grounded",
+      question: `question for ${id}`,
+      answer: "answer",
+      scores: { ...emptyScores, factualBoundaryCompliance: passingBoundary },
+    }));
+    casesWithBoundaries.push({
+      id: "boundary-5-failing",
+      category: "grounded",
+      question: "question for boundary-5-failing",
+      answer: "answer",
+      scores: { ...emptyScores, factualBoundaryCompliance: failingBoundary },
+    });
+
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: casesWithBoundaries,
+      totals,
+      thresholds: { groundedness: 0, gapHonesty: 0, relevance: 0, factualBoundaryCompliance: 1 },
+    });
+
+    // 4/5 compliant is 0.8 — well above a lenient 0.7 threshold, but the
+    // committed default is blocking (1.0): the report must fail.
+    expect(report.aggregates.factualBoundaryCompliance).toEqual({ mean: 0.8, count: 5 });
+    expect(report.verdict.passed).toBe(false);
+    expect(report.verdict.failures.some((line) => /factual.boundary/i.test(line))).toBe(true);
+  });
 });

@@ -348,6 +348,20 @@ describe("STORY_MANIFEST_CASES (#295 locked behavioral manifest)", () => {
         expect(result.score).toBe(1);
       });
 
+      it("004 (communication-service-ownership): the approved honest phrasing still passes when Markdown line breaks split the caveat's three required words across separate lines (fourth independent review, finding 1)", () => {
+        const evalCase = requireCase("story-manifest-f04");
+        const assertions = evalCase.answerAssertions;
+        if (!assertions) throw new Error("expected answerAssertions");
+        const result = scoreAnswerAssertions(
+          "A recent seven-month snapshot showed roughly 70% of communications reaching " +
+            "effective triage. The remaining bucket includes spam,\nunsupported cases,\nand an " +
+            "observability gap. [cite:story:house-numbers-communication-service-ownership]",
+          assertions,
+          [{ entityType: "story", entityId: "house-numbers-communication-service-ownership" }],
+        );
+        expect(result.score).toBe(1);
+      });
+
       it("008 (secure-public-document-upload): 'was fully HIPAA compliant' — an invented regulatory-compliance claim the first guard's percentage/measured-rate patterns never checked for", () => {
         expectBoundaryViolationCaught(
           "story-manifest-x06",

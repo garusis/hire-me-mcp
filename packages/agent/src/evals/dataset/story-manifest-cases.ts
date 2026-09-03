@@ -186,11 +186,22 @@ const S = {
  * — enforced ONLY when the answer actually cites story 004 — so an `any`
  * case (A08) that truthfully answers with 015 instead is never wrongly
  * forced to carry a caveat about a story it never cited.
+ *
+ * Three INDEPENDENT entries (#295 fourth independent-review correction,
+ * finding 1), not one combined three-lookahead pattern: the prior single
+ * pattern chained `(?=.*\bspam\b)(?=.*\bunsupported\b)(?=.*\b(?:observability|gap)\b)`
+ * with `.` spanning the whole remaining answer text, which — compiled
+ * without dot-all — cannot match across a Markdown line break between any
+ * two of the three required words. Splitting into three separately-checked
+ * `conditionalMustMatch` entries, each a plain word-boundary pattern with
+ * no `.` at all, makes the requirement immune to prose line-wrapping by
+ * construction rather than by a dot-all flag.
  */
-const COMM_SERVICE_CAVEAT = {
-  ifCitedRef: S.commService,
-  pattern: "(?=.*\\bspam\\b)(?=.*\\bunsupported\\b)(?=.*\\b(?:observability|gap)\\b)",
-};
+const COMM_SERVICE_CAVEATS = [
+  { ifCitedRef: S.commService, pattern: "\\bspam\\b" },
+  { ifCitedRef: S.commService, pattern: "\\bunsupported\\b" },
+  { ifCitedRef: S.commService, pattern: "\\b(?:observability|gap)\\b" },
+];
 
 /** A single required story citation, plus one distinguishing keyword, the shared factual-boundary guards, and that story's own audited-risk guard (if any). */
 function singleStoryAssertions(ref: StoryRef, keyword: string) {
@@ -390,7 +401,7 @@ export const STORY_MANIFEST_CASES: readonly EvalCase[] = [
     expectedToolCall: "search-career-story-scoped",
     answerAssertions: {
       ...singleStoryAssertions(S.commService, "communications"),
-      conditionalMustMatch: [COMM_SERVICE_CAVEAT],
+      conditionalMustMatch: COMM_SERVICE_CAVEATS,
     },
     notes:
       "stories/house-numbers-communication-service-ownership.json (story 004). Competencies: " +
@@ -623,7 +634,7 @@ export const STORY_MANIFEST_CASES: readonly EvalCase[] = [
     expectedToolCall: "search-career-story-scoped",
     answerAssertions: {
       ...groupAssertions("any", [S.commService, S.crossServiceDebugging]),
-      conditionalMustMatch: [COMM_SERVICE_CAVEAT],
+      conditionalMustMatch: COMM_SERVICE_CAVEATS,
     },
     notes: "any: 004, 015 (no preferred source).",
   },

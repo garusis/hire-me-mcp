@@ -96,6 +96,24 @@ describe("evaluateVerdict", () => {
     expect(verdict.failures.some((line) => /preferred.source/i.test(line))).toBe(true);
   });
 
+  /**
+   * #295 fourth independent-review correction, finding 2: "The new blocking
+   * verdict contract is not pinned end to end... it would remain green if
+   * the threshold were lowered/removed or the aggregate stopped gating the
+   * verdict." Same pinned-literal-plus-blocking-verdict pattern as
+   * `preferredSourceCompliance`'s own test above — a declared factual
+   * boundary is a locked per-case contract, not a statistical target.
+   */
+  it("carries a blocking (1.0) factualBoundaryCompliance threshold (#295), unlike the other optional scorers", () => {
+    expect(EVAL_THRESHOLDS.factualBoundaryCompliance).toBe(1);
+    const verdict = evaluateVerdict(
+      { groundedness: 0.9, gapHonesty: 0.95, relevance: 0.6, factualBoundaryCompliance: 0.8 },
+      { groundedness: 0.8, gapHonesty: 0.7, relevance: 0.5, factualBoundaryCompliance: 1 },
+    );
+    expect(verdict.passed).toBe(false);
+    expect(verdict.failures.some((line) => /factual.boundary/i.test(line))).toBe(true);
+  });
+
   it("carries a provisional toolRouting threshold (#75), flagged as uncalibrated pending a real CI run", () => {
     expect(EVAL_THRESHOLDS.toolRouting).toBe(0.6);
   });

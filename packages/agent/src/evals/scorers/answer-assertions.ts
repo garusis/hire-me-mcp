@@ -98,7 +98,15 @@ function checkConditionalMustMatch(
   for (const entry of entries) {
     if (!citationPresent(answerMarkers, entry.ifCitedRef)) continue;
     total += 1;
-    if (!new RegExp(entry.pattern, "i").test(answer)) {
+    // "s" (dot-all, #295 fourth independent-review correction, finding 1):
+    // a caveat pattern combining several required facts via chained
+    // positive lookaheads (`(?=.*a)(?=.*b)`) uses `.` to span the answer
+    // text between them — without dot-all that span cannot cross a
+    // Markdown line break the model inserted between two required words,
+    // failing an otherwise-complete honest answer. Case-insensitive `i` was
+    // already applied; this only widens what `.` matches, not what a
+    // literal word/character matches.
+    if (!new RegExp(entry.pattern, "is").test(answer)) {
       failures.push(
         `missing required caveat /${entry.pattern}/i for cited ` +
           `${entry.ifCitedRef.entityType}:${entry.ifCitedRef.entityId}`,
