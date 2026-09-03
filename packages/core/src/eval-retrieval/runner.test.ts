@@ -366,6 +366,58 @@ describe("runRetrievalEval: retrieval lanes (#307)", () => {
     });
   });
 
+  it("leaves storyScoped metrics null for a case whose expectedSources contain no story (Codex checkpoint correction)", async () => {
+    const { searchCareer } = fakeSearchCareer({
+      "does he know typescript": [
+        { sourceType: "skill", sourceId: "typescript", score: 0.9 },
+        { sourceType: "story", sourceId: "unrelated-story", score: 0.3 },
+      ],
+    });
+
+    const report = await runRetrievalEval(
+      { queries: [query()], topK: 5, absentTopicMinScore: 0.4 },
+      { searchCareer },
+    );
+
+    expect(report.cases[0]?.lanes.storyScoped.metrics).toBeNull();
+    expect(report.cases[0]?.lanes.storyScoped.retrievedIds).toEqual(["story:unrelated-story"]);
+    expect(report.cases[0]?.lanes.unscoped.metrics).not.toBeNull();
+  });
+
+  it("scores storyScoped only against the story-only subset of expectedSources for a mixed cross-cutting case (Codex checkpoint correction)", async () => {
+    const { searchCareer } = fakeSearchCareer({
+      "what has he built end to end": [{ sourceType: "story", sourceId: "the-story", score: 0.6 }],
+    });
+
+    const report = await runRetrievalEval(
+      {
+        queries: [
+          query({
+            id: "mixed-cross-cutting",
+            query: "what has he built end to end",
+            category: "cross-cutting",
+            expectedSources: [
+              { sourceType: "skill", sourceId: "typescript" },
+              { sourceType: "story", sourceId: "the-story" },
+            ],
+          }),
+        ],
+        topK: 5,
+        absentTopicMinScore: 0.4,
+      },
+      { searchCareer },
+    );
+
+    // unscoped recall is 1/2 (only the story half of the mixed expectedSources is retrievable in this lane's result set)
+    expect(report.cases[0]?.lanes.unscoped.metrics?.recallAtK).toBe(0.5);
+    // storyScoped recall is scored only against the story subset ({ story: the-story }), which IS retrieved -> 1, not 0.5
+    expect(report.cases[0]?.lanes.storyScoped.metrics).toEqual({
+      recallAtK: 1,
+      precisionAtK: 1,
+      reciprocalRank: 1,
+    });
+  });
+
   it("leaves both lanes' metrics null for an absent-topic case, but still records what each lane retrieved", async () => {
     const { searchCareer } = fakeSearchCareer({
       "blockchain experience": [{ sourceType: "story", sourceId: "unrelated-story", score: 0.2 }],
