@@ -544,16 +544,18 @@ describe("scoreToolRouting", () => {
       expect(result.score).toBe(0);
     });
 
-    it('expected "list-career-stories": scores 1 when a story-scoped search-career call (not list-career-stories) retrieves a story the final answer actually cites', () => {
+    it('expected "list-career-stories": scores 1 when a story-scoped search-career call (not list-career-stories) retrieves a story, a confirming list-career-stories fetch of that same story follows, and the final answer cites it', () => {
       const result = scoreToolRouting(
         [
           call("search-career", { query: "public upload", sourceTypes: ["story"] }, [
             { entityType: "story", entityId: "house-numbers-secure-public-document-upload" },
           ]),
+          call("list-career-stories", { id: "house-numbers-secure-public-document-upload" }, [
+            { entityType: "story", entityId: "house-numbers-secure-public-document-upload" },
+          ]),
         ],
         "list-career-stories",
         {
-          expectedCompetencies: ["risk-management"],
           answer:
             "He redesigned the public upload workflow with rate limiting. " +
             "[cite:story:house-numbers-secure-public-document-upload]",
@@ -658,7 +660,37 @@ describe("scoreToolRouting", () => {
       expect(result.score).toBe(1);
     });
 
-    it("valid alternate: expected list-career-stories, a story-scoped search (alternate tool) retrieves and cites an id present in the case's acceptable story ids", () => {
+    it("valid alternate: expected list-career-stories, a story-scoped search (alternate tool) retrieves an acceptable story, a confirming list-career-stories fetch of that same story follows, and the answer cites it", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, [
+            { entityType: "story", entityId: "expected-story" },
+          ]),
+          call("list-career-stories", { id: "expected-story" }, [
+            { entityType: "story", entityId: "expected-story" },
+          ]),
+        ],
+        "list-career-stories",
+        {
+          acceptableStoryIds: ["expected-story"],
+          answer: "He did that. [cite:story:expected-story]",
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+  });
+
+  /**
+   * #307 third independent-review rejection of the second correction
+   * (`1112e12`): the alternate-route path still granted success from the
+   * scoped search's own citations alone, without applying `scoreStoryScoped`
+   * or `scoreListCareerStories`'s full retrieval semantics (order, complete-
+   * story fetch, honest-absence gating) to whichever route the trace
+   * actually used. These four tests are the review's own direct
+   * counterexamples: all must score 0.
+   */
+  describe("alternate and list-only routes must satisfy the same retrieval semantics as the case's own route (#307 third independent review)", () => {
+    it("repro 1: an alternate story-scoped search returns and cites an acceptable story, but no list-career-stories fetch of the complete story follows", () => {
       const result = scoreToolRouting(
         [
           call("search-career", { query: "x", sourceTypes: ["story"] }, [
@@ -669,6 +701,63 @@ describe("scoreToolRouting", () => {
         {
           acceptableStoryIds: ["expected-story"],
           answer: "He did that. [cite:story:expected-story]",
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("repro 2: a story-scoped case reaches a no-evidence conclusion through list-career-stories alone, even though it cites an acceptable story", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["risk-management"] }, [
+            { entityType: "story", entityId: "expected-story" },
+          ]),
+        ],
+        "search-career-story-scoped",
+        {
+          acceptableStoryIds: ["expected-story"],
+          answer: "There is no matching story for that. [cite:story:expected-story]",
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("repro 3: list-career-stories' own citations are undefined (unconfirmed) even though the answer cites an acceptable story", () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["risk-management"] })],
+        "list-career-stories",
+        {
+          acceptableStoryIds: ["expected-story"],
+          answer: "He did that. [cite:story:expected-story]",
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("repro 4: a story-scoped search returns an acceptable story, but the following list-career-stories fetch of that same id confirms nothing (empty citations)", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, [
+            { entityType: "story", entityId: "expected-story" },
+          ]),
+          call("list-career-stories", { id: "expected-story" }, []),
+        ],
+        "search-career-story-scoped",
+        {
+          acceptableStoryIds: ["expected-story"],
+          answer: "He did that. [cite:story:expected-story]",
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("valid: an empty/unavailable story-scoped search honestly licenses an absence answer, with no fetch and no acceptable-story citation required", () => {
+      const result = scoreToolRouting(
+        [call("search-career", { query: "x", sourceTypes: ["story"] }, [])],
+        "search-career-story-scoped",
+        {
+          acceptableStoryIds: ["expected-story"],
+          answer: "There is no matching story for that.",
         },
       );
       expect(result.score).toBe(1);
