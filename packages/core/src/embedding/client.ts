@@ -67,6 +67,69 @@ function isRetryable(error: unknown): boolean {
   return status !== undefined && status >= 500 && status < 600;
 }
 
+/** Parses a protobuf duration string (`"47s"`, `"1.5s"`) into milliseconds; `undefined` if malformed. */
+function parseProtobufDurationMs(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const match = /^(\d+(?:\.\d+)?)s$/.exec(value.trim());
+  if (!match?.[1]) return undefined;
+  const seconds = Number(match[1]);
+  if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+  return Math.round(seconds * 1000);
+}
+
+/** Reads a `retry-after` response header (numeric seconds) as milliseconds; `undefined` if absent or malformed. */
+function retryDelayFromHeaders(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const headers = (error as { responseHeaders?: unknown }).responseHeaders;
+  if (typeof headers !== "object" || headers === null) return undefined;
+  const raw =
+    (headers as Record<string, unknown>)["retry-after"] ??
+    (headers as Record<string, unknown>)["Retry-After"];
+  if (typeof raw !== "string") return undefined;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+  return Math.round(seconds * 1000);
+}
+
+/**
+ * Reads Google's `RetryInfo.retryDelay` out of a 429 response body — the
+ * real AI SDK / Gemini error shape:
+ * `{ error: { details: [{ "@type": ".../google.rpc.RetryInfo", retryDelay: "47s" }] } }`.
+ * Tolerant by design: an unparseable or differently-shaped body yields
+ * `undefined` rather than throwing, so the caller falls back to backoff.
+ */
+function retryDelayFromBody(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const body = (error as { responseBody?: unknown }).responseBody;
+  if (typeof body !== "string") return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  const details = (parsed as { error?: { details?: unknown } } | null)?.error?.details;
+  if (!Array.isArray(details)) return undefined;
+  for (const detail of details) {
+    const delayMs = parseProtobufDurationMs(
+      (detail as { retryDelay?: unknown } | null)?.retryDelay,
+    );
+    if (delayMs !== undefined) return delayMs;
+  }
+  return undefined;
+}
+
+/**
+ * The provider's own "come back in N ms" hint for a 429 — a `retry-after`
+ * response header first, then Gemini's `RetryInfo.retryDelay` body detail.
+ * `undefined` when the error isn't a 429 or carries no parseable hint;
+ * callers fall back to exponential backoff in that case.
+ */
+function providerRetryDelayMs(error: unknown): number | undefined {
+  if (statusCodeOf(error) !== 429) return undefined;
+  return retryDelayFromHeaders(error) ?? retryDelayFromBody(error);
+}
+
 function chunk<T>(items: readonly T[], size: number): T[][] {
   const batches: T[][] = [];
   for (let index = 0; index < items.length; index += size) {
@@ -123,7 +186,10 @@ async function embedBatchWithRetry(
       if (!isRetryable(error) || exhausted) {
         throw toEmbeddingFailure(error, attempt, exhausted);
       }
-      await sleep(delay);
+      const providerDelayMs = providerRetryDelayMs(error);
+      await sleep(
+        providerDelayMs !== undefined && providerDelayMs > delay ? providerDelayMs : delay,
+      );
       delay *= 2;
     }
   }
