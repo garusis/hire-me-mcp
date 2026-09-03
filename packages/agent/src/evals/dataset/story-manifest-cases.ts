@@ -77,11 +77,19 @@ const FACTUAL_BOUNDARY_GUARDS: readonly string[] = [
   // openly with my CTO" — which every honest paraphrase ("his CTO", "her
   // CTO") also relays. The guard must catch Marcos being CAST as the CTO
   // (a claimed title), never a third-party CTO he reported to or spoke
-  // with. A possessive determiner referring to someone else (his/my/her/
-  // their/the) immediately before "CTO" is exactly that safe, non-claiming
-  // case, so it is excluded via negative lookbehind; every other "CTO"
-  // occurrence (a bare claim, "became CTO", "as CTO of...") still matches.
-  "\\bChief Technology Officer\\b|\\b(?:VP of Engineering|Engineering Manager|founder|co-founder)\\b|(?<!\\b(?:his|my|her|their|the)\\s)\\bCTO\\b",
+  // with.
+  //
+  // #307 second independent-review correction: excluding ANY possessive
+  // determiner right before "CTO" was too broad — "the" is exactly how a
+  // self-attributing claim reads ("Marcos was **the** CTO"), and even "his"
+  // doesn't guarantee safety when the surrounding verb attributes the role
+  // to Marcos himself ("Marcos served as **his** CTO" — "served as" is not
+  // a relaying verb the way "spoke with"/"reported to" is). Narrowed the
+  // exclusion to the specific "(with|to|from|under) + possessive + CTO"
+  // shape that genuinely relays a third party's CTO; every other "CTO"
+  // occurrence (a bare claim, "was the CTO", "served as his CTO", "became
+  // CTO") still matches.
+  "\\bChief Technology Officer\\b|\\b(?:VP of Engineering|Engineering Manager|founder|co-founder)\\b|(?<!\\b(?:with|to|from|under)\\s(?:his|my|her|their)\\s)\\bCTO\\b",
   // No invented confidential identifiers: no story content contains a real
   // SSN, borrower name, or salary figure to relay.
   "\\bSSN\\b|social security number|\\$\\d{2,3},\\d{3}\\s*(?:salary|per year|annually)",

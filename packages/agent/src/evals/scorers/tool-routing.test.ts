@@ -571,4 +571,107 @@ describe("scoreToolRouting", () => {
       expect(result.score).toBe(0);
     });
   });
+
+  /**
+   * #307 second independent-review rejection of the original either-route
+   * implementation: it accepted ANY story-route call's citation the answer
+   * cited, regardless of whether that story was actually acceptable for the
+   * case, and it applied to the SAME tool the case's own route-specific
+   * scorer already validates — bypassing that scorer's fetch/order/honesty
+   * checks entirely. These four tests are the review's own direct
+   * counterexamples: all must score 0.
+   */
+  describe("either-route acceptance is scoped to the case's acceptable story ids and to the alternate tool only (#307 second independent review)", () => {
+    it("repro 1: the tool returns and the answer cites a story that is NOT in the case's acceptable story ids", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["risk-management"] }, [
+            { entityType: "story", entityId: "wrong-story" },
+          ]),
+        ],
+        "search-career-story-scoped",
+        {
+          acceptableStoryIds: ["expected-story"],
+          answer: "He did that. [cite:story:wrong-story]",
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("repro 2: the answer cites expected-story, but the list-career-stories call's own confirmed (empty) citations don't include it", () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["risk-management"] }, [])],
+        "list-career-stories",
+        {
+          acceptableStoryIds: ["expected-story"],
+          answer: "He did that. [cite:story:expected-story]",
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("repro 3: a story-scoped search itself (the case's OWN route, not the alternate) returns and cites expected-story, but no list-career-stories fetch follows — the alternate-route shortcut must not bypass scoreStoryScoped's own fetch requirement", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, [
+            { entityType: "story", entityId: "expected-story" },
+          ]),
+        ],
+        "search-career-story-scoped",
+        {
+          acceptableStoryIds: ["expected-story"],
+          answer: "He did that. [cite:story:expected-story]",
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("repro 4: a story-scoped case uses only list-career-stories (never the required scoped search), cites an unacceptable story, and states there is no matching story", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["risk-management"] }, [
+            { entityType: "story", entityId: "some-other-story" },
+          ]),
+        ],
+        "search-career-story-scoped",
+        {
+          acceptableStoryIds: ["expected-story"],
+          answer: "There is no matching story for that. [cite:story:some-other-story]",
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("valid alternate: expected story-scoped, list-career-stories (alternate tool) retrieves and cites an id present in the case's acceptable story ids", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["risk-management"] }, [
+            { entityType: "story", entityId: "expected-story" },
+          ]),
+        ],
+        "search-career-story-scoped",
+        {
+          acceptableStoryIds: ["expected-story"],
+          answer: "He did that. [cite:story:expected-story]",
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("valid alternate: expected list-career-stories, a story-scoped search (alternate tool) retrieves and cites an id present in the case's acceptable story ids", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, [
+            { entityType: "story", entityId: "expected-story" },
+          ]),
+        ],
+        "list-career-stories",
+        {
+          acceptableStoryIds: ["expected-story"],
+          answer: "He did that. [cite:story:expected-story]",
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+  });
 });

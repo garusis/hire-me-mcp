@@ -272,9 +272,33 @@ function hasAllCompetencies(args: unknown, expected: readonly string[]): boolean
   return expected.every((value) => competencies.includes(value));
 }
 
+/**
+ * #307 second independent-review correction (finding 1, repro 2): a
+ * `list-career-stories` call's own CONFIRMED citations (`call.citations !==
+ * undefined` — see `ToolCall`'s doc: `undefined` is "unavailable/unknown"
+ * and stays unchecked, the same leniency `scoreStoryScoped` already applies)
+ * must actually contain every story the final answer cites — otherwise
+ * `scoreListCareerStories` passed a run purely on tool presence/arguments
+ * while the answer cited a story the tool never returned (including a
+ * confirmed-empty `[]` result). Returns `true` (a violation) only when
+ * `answer` and confirmed `citations` are both present and a cited story id
+ * is missing from them.
+ */
+function citesUnreturnedStory(
+  answer: string | undefined,
+  citations: readonly ReturnedCitation[] | undefined,
+): boolean {
+  if (answer === undefined || citations === undefined) return false;
+  const returnedIds = new Set(citations.map((citation) => citation.entityId));
+  return parseCitations(answer).some(
+    (marker) => marker.entityType === "story" && !returnedIds.has(marker.entityId),
+  );
+}
+
 function scoreListCareerStories(
   toolCalls: readonly ToolCall[],
   expectedCompetencies: readonly string[] | undefined,
+  answer?: string,
 ): ScoreResult {
   const trace = traceOf(toolCalls);
   const listCareerStoriesIndex = toolCalls.findIndex(
@@ -297,9 +321,10 @@ function scoreListCareerStories(
     };
   }
 
+  const located = toolCalls[listCareerStoriesIndex];
+
   if (expectedCompetencies !== undefined && expectedCompetencies.length > 0) {
-    const call = toolCalls[listCareerStoriesIndex];
-    if (call === undefined || !hasAllCompetencies(call.args, expectedCompetencies)) {
+    if (located === undefined || !hasAllCompetencies(located.args, expectedCompetencies)) {
       return {
         score: clampScore(0),
         reason:
@@ -309,43 +334,76 @@ function scoreListCareerStories(
     }
   }
 
+  if (citesUnreturnedStory(answer, located?.citations)) {
+    return {
+      score: clampScore(0),
+      reason:
+        "The final answer cites a story that the list-career-stories call's own returned " +
+        `citations do not include; tool-call trace was: ${trace}.`,
+    };
+  }
+
   return {
     score: clampScore(1),
     reason: `list-career-stories was called first, ahead of search-career; tool-call trace was: ${trace}.`,
   };
 }
 
+/** Whether `call` is the story-scoped `search-career` route (as opposed to `list-career-stories`) — see `scoreEitherStoryRoute`'s doc. */
+function isStoryScopedSearchCall(call: ToolCall): boolean {
+  return call.toolName === "search-career" && hasStorySourceType(call.args);
+}
+
 /**
- * #307 owner-approved decision 1: either story-route tool
- * (`list-career-stories` or a story-scoped `search-career` call) counts as
- * a valid route when it actually retrieved a story AND the final answer
- * cites one of the entities that specific call returned. Returns `null`
- * (never a failing `ScoreResult`) when no such call exists — the caller
- * falls through to the route-specific scorer, which has its own, more
- * specific failure reason.
+ * #307 owner-approved decision 1, corrected under the second independent
+ * review: the ALTERNATE story-route tool to `expected` — never the same
+ * tool `expected` already names — counts as a valid route when it actually
+ * retrieved a story that is BOTH one of `acceptableStoryIds` (the case's own
+ * `mustCiteEntity`/`citationGroups` ids, undefined meaning "no restriction
+ * known") AND cited by the final answer. Returns `null` (never a failing
+ * `ScoreResult`) when no such call exists — the caller falls through to the
+ * route-specific scorer, which has its own, more specific failure reason.
+ *
+ * Restricting to the ALTERNATE tool only (never `expected`'s own tool) is
+ * the fix for the review's repro 3: previously this ran BEFORE
+ * `scoreStoryScoped`/`scoreListCareerStories` for either tool, so a case's
+ * OWN locked route could short-circuit past that scorer's fetch/order/
+ * fallback-honesty validation the instant its call happened to cite
+ * something. Now that validation always runs for `expected`'s own tool;
+ * this function only ever supplies the "used the other, still-honest tool"
+ * exception #307 decision 1 actually describes.
  */
-function scoreEitherStoryRoute(toolCalls: readonly ToolCall[], answer: string): ScoreResult | null {
+function scoreEitherStoryRoute(
+  toolCalls: readonly ToolCall[],
+  answer: string,
+  acceptableStoryIds: readonly string[] | undefined,
+  expected: EvalCaseExpectedToolCall,
+): ScoreResult | null {
+  const isAlternateCall =
+    expected === "search-career-story-scoped"
+      ? (call: ToolCall) => call.toolName === "list-career-stories"
+      : (call: ToolCall) => isStoryScopedSearchCall(call);
+
   const answerMarkers = parseCitations(answer);
   for (const call of toolCalls) {
-    const isStoryRouteCall =
-      call.toolName === "list-career-stories" ||
-      (call.toolName === "search-career" && hasStorySourceType(call.args));
-    if (!isStoryRouteCall) continue;
+    if (!isAlternateCall(call)) continue;
 
     const citations = call.citations ?? [];
-    const citesAcceptable = citations.some((citation) =>
-      answerMarkers.some(
-        (marker) =>
-          marker.entityType === citation.entityType && marker.entityId === citation.entityId,
-      ),
+    const citesAcceptable = citations.some(
+      (citation) =>
+        (acceptableStoryIds === undefined || acceptableStoryIds.includes(citation.entityId)) &&
+        answerMarkers.some(
+          (marker) =>
+            marker.entityType === citation.entityType && marker.entityId === citation.entityId,
+        ),
     );
     if (citesAcceptable) {
       return {
         score: clampScore(1),
         reason:
-          `${call.toolName} retrieved a story and the final answer cited it — a valid route ` +
-          "under the owner-approved either-route decision (#307), regardless of which route " +
-          `this case locks; tool-call trace was: ${traceOf(toolCalls)}.`,
+          `${call.toolName} retrieved an acceptable story and the final answer cited it — a ` +
+          "valid alternate route under the owner-approved either-route decision (#307), even " +
+          `though this case locks the other tool; tool-call trace was: ${traceOf(toolCalls)}.`,
       };
     }
   }
@@ -402,17 +460,26 @@ function scoreEitherStoryRoute(toolCalls: readonly ToolCall[], answer: string): 
 export function scoreToolRouting(
   toolCalls: readonly ToolCall[],
   expected: EvalCaseExpectedToolCall,
-  options?: { expectedCompetencies?: readonly string[]; answer?: string },
+  options?: {
+    expectedCompetencies?: readonly string[];
+    answer?: string;
+    acceptableStoryIds?: readonly string[];
+  },
 ): ScoreResult {
   if (expected === "search-career-story-scoped" || expected === "list-career-stories") {
-    const eitherRoute = scoreEitherStoryRoute(toolCalls, options?.answer ?? "");
+    const eitherRoute = scoreEitherStoryRoute(
+      toolCalls,
+      options?.answer ?? "",
+      options?.acceptableStoryIds,
+      expected,
+    );
     if (eitherRoute) return eitherRoute;
   }
   if (expected === "search-career-story-scoped") {
     return scoreStoryScoped(toolCalls, options?.answer ?? "");
   }
   if (expected === "list-career-stories") {
-    return scoreListCareerStories(toolCalls, options?.expectedCompetencies);
+    return scoreListCareerStories(toolCalls, options?.expectedCompetencies, options?.answer);
   }
 
   const calledSearchCareer = toolCalls.some((call) => call.toolName === "search-career");

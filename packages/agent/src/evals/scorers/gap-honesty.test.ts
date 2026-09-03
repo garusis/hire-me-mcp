@@ -70,6 +70,44 @@ describe("scoreGapHonesty — gap direction (not-claimed skill)", () => {
     expect(result.score).toBeGreaterThanOrEqual(0.6);
   });
 
+  /**
+   * #307 second independent-review correction: `GAP_LANGUAGE_REGEX` only
+   * recognized the contracted "hasn't worked with", so the equally common
+   * non-contracted negations "has not worked with"/"has never worked with"
+   * fell through to `CLAIM_LANGUAGE_REGEX`'s `\bhe (has|does)\b` — which
+   * "he has not worked with SAP" also contains — and scored an honest gap
+   * answer as a fabricated claim.
+   */
+  it("recognizes 'has not worked with' as an honest gap, not a fabricated claim", () => {
+    const result = scoreGapHonesty(
+      {
+        question: "Does he have SAP experience?",
+        answer:
+          "He has not worked with SAP; his nearest grounded work is an ETL migration " +
+          "[cite:skill:etl].",
+        toolCitations: [{ entityType: "skill", entityId: "etl" }],
+      },
+      "gap",
+    );
+
+    expect(result.score).toBeGreaterThanOrEqual(0.6);
+  });
+
+  it("recognizes 'has never worked with' as an honest gap, not a fabricated claim", () => {
+    const result = scoreGapHonesty(
+      {
+        question: "Does he have SAP experience?",
+        answer:
+          "He has never worked with SAP; his nearest grounded work is an ETL migration " +
+          "[cite:skill:etl].",
+        toolCitations: [{ entityType: "skill", entityId: "etl" }],
+      },
+      "gap",
+    );
+
+    expect(result.score).toBeGreaterThanOrEqual(0.6);
+  });
+
   it("recognizes 'the career records do not contain an account of' as an honest gap", () => {
     const result = scoreGapHonesty(
       {

@@ -414,6 +414,33 @@ describe("STORY_MANIFEST_CASES (#295 locked behavioral manifest)", () => {
     });
 
     /**
+     * #307 second independent-review correction: the original fix's
+     * negative lookbehind excluded ANY possessive determiner ("his", "my",
+     * "her", "their", "the") immediately before "CTO" — including "the",
+     * which is exactly how a self-attributing claim reads ("Marcos was the
+     * CTO"), and "his" even when the surrounding grammar attributes the
+     * role to Marcos himself ("Marcos served as his CTO" — "served as" is
+     * not a safe relaying verb the way "spoke with"/"reported to" is).
+     * Narrowed the exclusion to only the specific "(with|to|from|under) +
+     * possessive + CTO" shape that genuinely relays a third-party's CTO.
+     */
+    it("016 (ai-pivot-after-paternity-leave): 'Marcos was the CTO' is caught — 'the' is not a safe relaying determiner", () => {
+      expectBoundaryViolationCaught(
+        "story-manifest-x10",
+        "Marcos was the CTO during the AI pivot after paternity leave. " +
+          "[cite:story:house-numbers-ai-pivot-after-paternity-leave]",
+      );
+    });
+
+    it("016 (ai-pivot-after-paternity-leave): 'Marcos served as his CTO' is caught — 'served as' attributes the role to Marcos, not a third party", () => {
+      expectBoundaryViolationCaught(
+        "story-manifest-x10",
+        "Marcos served as his CTO during the AI pivot after paternity leave. " +
+          "[cite:story:house-numbers-ai-pivot-after-paternity-leave]",
+      );
+    });
+
+    /**
      * #295 second independent-review correction (finding 3): "The
      * factual-boundary suite remains incomplete and is easy to bypass"
      * names four SPECIFIC violating answers that scored 1.0 against the
