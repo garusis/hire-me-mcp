@@ -663,11 +663,22 @@ describe.skipIf(!SEARCH_CAREER_DB_CONFIGURED)(
       expect(results.length).toBeGreaterThan(0);
       expectWellFormedCitations(structuredContent.citations);
 
-      // The top-level envelope citations must stay `entityType: "story"` for
-      // every hit (never downgraded to "experience") and each must carry a
-      // real story id, resolving to its EXACT primary parent anchor.
-      expect(structuredContent.citations.length).toBeGreaterThan(0);
-      for (const citation of structuredContent.citations) {
+      // The handler builds `data.results` and the envelope's top-level
+      // `citations` via the same `.map` over one source array
+      // (`lib/mcp/tools/search-career.ts`), so they must stay index-aligned
+      // 1:1 — citation i really describes hit i, not just "some real
+      // citation" paired with "some real hit" (Codex review on #296:
+      // validating the two arrays independently let hit A's sourceId/url
+      // pass alongside an unrelated-but-also-valid citation B).
+      expect(structuredContent.citations.length).toBe(results.length);
+      for (const [index, citation] of structuredContent.citations.entries()) {
+        const hit = results[index];
+        expect(hit, `no result at index ${index} to bind citation to`).toBeTruthy();
+        // Mutation-sensitive: entityId/url are exactly the fields a swapped
+        // or mismatched citation would get wrong while still passing every
+        // per-array check below on its own.
+        expect(citation.entityId).toBe(hit?.sourceId);
+        expect(citation.url).toBe(hit?.citationUrl);
         expect(citation.entityType).toBe("story");
         expectExactPrimaryParentUrl(citation.url, citation.entityId, storyParents);
       }
