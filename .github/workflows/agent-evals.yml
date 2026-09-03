@@ -152,7 +152,16 @@ jobs:
     # genuinely exceeds either cap, so an underestimate here fails loud
     # rather than silently truncating — the first real CI run of the full
     # dataset is what calibrates these numbers for real, same as #75/#143
-    # already did for the smaller dataset sizes. EVAL_RPM_LIMIT stays at
+    # already did for the smaller dataset sizes.
+    #
+    # #296 production-completion pass: that first real 66-case CI run
+    # confirmed the underestimate — it aborted via BudgetExceededError at
+    # 700,980 tokens (already over the 690,000 cap) with cases still left
+    # to run. EVAL_MAX_TOTAL_TOKENS is temporarily raised well above any
+    # plausible full-run total so this run can complete and report its
+    # REAL total token usage, which will replace this placeholder with a
+    # properly margined number using the same methodology as #75/#143
+    # (measured total × ~1.6). EVAL_RPM_LIMIT stays at
     # the package default (10) — since #282 that means 10 real PROVIDER
     # REQUESTS per rolling minute, throttled at the model boundary
     # (`packages/agent/src/evals/rate-limit.ts`), not 10 cases per minute;
@@ -173,7 +182,10 @@ jobs:
     # (summary render, artifact upload) reference.
     env:
       EVAL_MAX_CASES: ${{ github.event.inputs.max_cases || '66' }}
-      EVAL_MAX_TOTAL_TOKENS: "690000"
+      # Temporary calibration ceiling — see the comment above. Will be
+      # replaced with measured-total × ~1.6 once this run reports its real
+      # total token usage.
+      EVAL_MAX_TOTAL_TOKENS: "1500000"
       EVAL_MAX_COST_USD: "3"
     steps:
       - name: Checkout

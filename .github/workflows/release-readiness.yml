@@ -142,12 +142,15 @@ jobs:
           # 38 story-manifest cases, `EVAL_CASES.length` in
           # `packages/agent/src/evals/dataset/cases.ts`) — a certification
           # run claiming to certify the entire pyramid was silently
-          # exercising a 25-case subset of it. 690000/3 are
-          # agent-evals.yml's own values (verbatim); the guard in
+          # exercising a 25-case subset of it. These stay verbatim equal to
+          # agent-evals.yml's own values; the guard in
           # `scripts/ci/eval-budget-sync.test.mjs` fails loud if these two
-          # workflows ever drift apart again.
+          # workflows ever drift apart again. #296 production-completion
+          # pass: EVAL_MAX_TOTAL_TOKENS is temporarily raised in lockstep
+          # with agent-evals.yml's own calibration probe — see that
+          # workflow's comment for why.
           EVAL_MAX_CASES: "66"
-          EVAL_MAX_TOTAL_TOKENS: "690000"
+          EVAL_MAX_TOTAL_TOKENS: "1500000"
           EVAL_MAX_COST_USD: "3"
         run: pnpm certify:production
 
