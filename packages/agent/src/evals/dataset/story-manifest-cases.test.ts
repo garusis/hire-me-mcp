@@ -137,6 +137,39 @@ describe("STORY_MANIFEST_CASES (#295 locked behavioral manifest)", () => {
     }
   });
 
+  /**
+   * #307 owner-approved decision 3: "Honest semantic equivalents of no
+   * direct story are valid; no literal phrase lock." N01/N02's `mustMatch`
+   * previously pinned one exact phrasing ("no direct/specific story"); a
+   * real honest-gap answer phrased differently ("the career records do not
+   * contain an account of...") failed it even though it says the same
+   * thing.
+   */
+  describe("N01/N02 accept honest semantic equivalents of 'no direct story', not just the literal phrase (#307 decision 3)", () => {
+    it("N01 accepts 'the career records do not contain an account of' as an honest absence statement", () => {
+      const evalCase = requireCase("story-manifest-n01");
+      const assertions = evalCase.answerAssertions;
+      if (!assertions) throw new Error("expected answerAssertions");
+      const result = scoreAnswerAssertions(
+        "The career records do not contain an account of managing two equally urgent client " +
+          "projects at once.",
+        assertions,
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("N02 accepts 'he hasn't done a project where' as an honest absence statement", () => {
+      const evalCase = requireCase("story-manifest-n02");
+      const assertions = evalCase.answerAssertions;
+      if (!assertions) throw new Error("expected answerAssertions");
+      const result = scoreAnswerAssertions(
+        "He hasn't done a project where an immovable deadline forced him to cut scope.",
+        assertions,
+      );
+      expect(result.score).toBe(1);
+    });
+  });
+
   it("marks both absent-topic cases as honest gaps expecting no story citation", () => {
     const absentCases = STORY_MANIFEST_CASES.filter((c) => c.id.startsWith("story-manifest-n0"));
     expect(absentCases.length).toBe(2);
@@ -226,6 +259,58 @@ describe("STORY_MANIFEST_CASES (#295 locked behavioral manifest)", () => {
    * the case's citation requirement but crosses that one specific audited
    * boundary, and proves the case's own `answerAssertions` catches it.
    */
+  /**
+   * #307 confirmed defect: `COMM_SERVICE_CAVEATS` required the spam /
+   * unsupported / observability-gap caveat whenever story 004 was cited AT
+   * ALL — even when the answer never states the ~70% effective-triage
+   * figure that caveat qualifies. An honest F04 answer that describes the
+   * ownership story without citing that specific figure had nothing to
+   * caveat, yet scored a factual-boundary failure. The caveat must instead
+   * be conditioned on the answer actually stating the figure.
+   */
+  describe("story 004's communication-service caveat is conditioned on the figure actually being stated (#307)", () => {
+    it("F04: an honest answer that cites story 004 but never states the ~70%/effective-triage figure needs no caveat", () => {
+      const evalCase = requireCase("story-manifest-f04");
+      const assertions = evalCase.answerAssertions;
+      if (!assertions) throw new Error("expected answerAssertions");
+      const result = scoreAnswerAssertions(
+        "He continued owning the communications service after launch, consolidating several " +
+          "inboxes into one triage workflow. [cite:story:house-numbers-communication-service-ownership]",
+        assertions,
+        [{ entityType: "story", entityId: "house-numbers-communication-service-ownership" }],
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("F04: an answer that states the ~70%/effective-triage figure without its caveat is still caught", () => {
+      const evalCase = requireCase("story-manifest-f04");
+      const assertions = evalCase.answerAssertions;
+      if (!assertions) throw new Error("expected answerAssertions");
+      const result = scoreAnswerAssertions(
+        "He continued owning the communications service, reaching roughly 70% effective triage. " +
+          "[cite:story:house-numbers-communication-service-ownership]",
+        assertions,
+        [{ entityType: "story", entityId: "house-numbers-communication-service-ownership" }],
+      );
+      expect(result.score).toBeLessThan(1);
+      expect(result.reason).toMatch(/forbidden pattern matched/i);
+    });
+
+    it("F04: the approved honest phrasing with the figure AND its full caveat still passes", () => {
+      const evalCase = requireCase("story-manifest-f04");
+      const assertions = evalCase.answerAssertions;
+      if (!assertions) throw new Error("expected answerAssertions");
+      const result = scoreAnswerAssertions(
+        "He continued owning the communications service, reaching roughly 70% effective triage; " +
+          "the rest includes spam, unsupported cases, and an observability gap. " +
+          "[cite:story:house-numbers-communication-service-ownership]",
+        assertions,
+        [{ entityType: "story", entityId: "house-numbers-communication-service-ownership" }],
+      );
+      expect(result.score).toBe(1);
+    });
+  });
+
   describe("story-specific factual-boundary guards (#295 correction, finding 3)", () => {
     it("001 (xogito): the answer must not claim Marcos personally caused, won, or secured the client's later follow-on projects", () => {
       expectBoundaryViolationCaught(
@@ -296,6 +381,35 @@ describe("STORY_MANIFEST_CASES (#295 locked behavioral manifest)", () => {
         "story-manifest-x10",
         "He adapted after paternity leave despite being clinically diagnosed with impostor " +
           "syndrome. [cite:story:house-numbers-ai-pivot-after-paternity-leave]",
+      );
+    });
+
+    /**
+     * #307 confirmed defect: `FACTUAL_BOUNDARY_GUARDS` forbade the bare
+     * token `CTO` anywhere in an answer, but story 016's own content says
+     * "I spoke openly with my CTO" — so the guard rejected an honest answer
+     * relaying the story's own text ("his CTO", "her CTO") that never
+     * claims Marcos held that title, alongside catching an answer that
+     * actually does invent that authority for him.
+     */
+    it("016 (ai-pivot-after-paternity-leave): the honest story text — 'his CTO' relaying the story's own attribution, never claiming Marcos held that title — still passes", () => {
+      const evalCase = requireCase("story-manifest-x10");
+      const assertions = evalCase.answerAssertions;
+      if (!assertions) throw new Error("expected answerAssertions");
+      const result = scoreAnswerAssertions(
+        "During the pivot after his paternity leave, he spoke openly with his CTO about the " +
+          "shift to AI-assisted work. [cite:story:house-numbers-ai-pivot-after-paternity-leave]",
+        assertions,
+        [{ entityType: "story", entityId: "house-numbers-ai-pivot-after-paternity-leave" }],
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("016 (ai-pivot-after-paternity-leave): an answer that actually claims Marcos served as CTO is still caught", () => {
+      expectBoundaryViolationCaught(
+        "story-manifest-x10",
+        "He became CTO during the AI pivot after paternity leave. " +
+          "[cite:story:house-numbers-ai-pivot-after-paternity-leave]",
       );
     });
 

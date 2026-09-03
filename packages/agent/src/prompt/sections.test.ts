@@ -149,6 +149,44 @@ describe("PROMPT_SECTIONS", () => {
     expect(retrievalPolicy?.body).toMatch(/honestly|gap/i);
   });
 
+  /**
+   * #307 owner-approved decision 2: "Before claiming no evidence or no
+   * matching story, the chat must run search-career with sourceTypes
+   * including story. A non-empty scoped result must be followed by fetching
+   * the full story before broadening to projects or experiences." The prior
+   * prompt only told the model to try the story-scoped search when the
+   * behavioral wording was "fuzzy" — it never said this applies even to a
+   * confident-competency question once list-career-stories comes back
+   * empty, nor did it say the model must not conclude absence from an
+   * unscoped search-career call or a projects/experience lookup alone.
+   */
+  it("requires a story-scoped search-career call before concluding no evidence or no matching story supports a behavioral question (#307 decision 2)", () => {
+    const retrievalPolicy = PROMPT_SECTIONS.find((section) => section.id === "retrievalPolicy");
+    expect(retrievalPolicy?.body).toMatch(/before (?:concluding|claiming)/i);
+    expect(retrievalPolicy?.body).toMatch(/no evidence|no (?:direct|matching) story/i);
+    expect(retrievalPolicy?.body).toMatch(/sourceTypes.*story|story.*sourceTypes/is);
+  });
+
+  it("requires fetching the complete story before broadening to projects or experiences once a story-scoped search returns a non-empty result (#307 decision 2)", () => {
+    const retrievalPolicy = PROMPT_SECTIONS.find((section) => section.id === "retrievalPolicy");
+    expect(retrievalPolicy?.body).toMatch(/non-empty|returns? (a|any) result/i);
+    expect(retrievalPolicy?.body).toMatch(/before broadening/i);
+  });
+
+  /**
+   * #307 owner-approved decision 5: "Product-name questions such as Mutual
+   * must route to story-scoped search when deterministic company filtering
+   * cannot represent the product name." list-career-stories filters by
+   * company/competency, not product name, so a question naming a product
+   * (not a company) must not be treated as coverage-absent just because
+   * that deterministic filter came back empty.
+   */
+  it("routes a product-name question to story-scoped search when list-career-stories' company/competency filter cannot represent it (#307 decision 5)", () => {
+    const retrievalPolicy = PROMPT_SECTIONS.find((section) => section.id === "retrievalPolicy");
+    expect(retrievalPolicy?.body).toMatch(/product/i);
+    expect(retrievalPolicy?.body).toMatch(/company/i);
+  });
+
   it("states an off-topic/adversarial redirect policy", () => {
     const redirectPolicy = PROMPT_SECTIONS.find((section) => section.id === "redirectPolicy");
     expect(redirectPolicy?.body).toMatch(/redirect|decline/i);

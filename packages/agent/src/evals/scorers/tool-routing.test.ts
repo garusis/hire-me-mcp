@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ToolCall } from "./tool-routing.js";
-import { scoreToolRouting } from "./tool-routing.js";
+import { ABSENT_STORY_PATTERN, scoreToolRouting } from "./tool-routing.js";
 import type { ReturnedCitation } from "./types.js";
 
 /**
@@ -451,6 +451,122 @@ describe("scoreToolRouting", () => {
           call("search-career", { query: "x" }),
         ],
         "search-career-story-scoped",
+      );
+      expect(result.score).toBe(0);
+    });
+  });
+
+  /**
+   * #307 owner-approved decision 3: "Honest semantic equivalents of no
+   * direct story are valid; no literal phrase lock." The prior
+   * `NO_DIRECT_STORY_REGEX` recognized only "no direct/specific story"
+   * shaped sentences, so an equally honest absence statement phrased
+   * differently ("the career records do not contain an account of...")
+   * failed the honest-fallback-labeling check even though it says the same
+   * thing. `ABSENT_STORY_PATTERN` is exported so the dataset's own N01/N02
+   * `mustMatch` assertions (`../dataset/story-manifest-cases.ts`) share the
+   * same broadened wording instead of duplicating a narrower one.
+   */
+  describe("honest absence wording accepts semantic equivalents, not just the literal phrase (#307 decision 3)", () => {
+    it("accepts 'the career records do not contain an account of' as an honest no-direct-story statement", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, []),
+          call("search-career", { query: "x" }),
+        ],
+        "search-career-story-scoped",
+        {
+          answer:
+            "The career records do not contain an account of that. The closest related " +
+            "evidence, not itself a behavioral event, is [cite:experience:acme].",
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("accepts 'he hasn't done a project where' as an honest no-direct-story statement", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "x", sourceTypes: ["story"] }, []),
+          call("search-career", { query: "x" }),
+        ],
+        "search-career-story-scoped",
+        {
+          answer:
+            "He hasn't done a project where that happened. The closest related evidence, not " +
+            "itself a behavioral event, is [cite:experience:acme].",
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("still exposes ABSENT_STORY_PATTERN as a usable regex source string", () => {
+      expect(typeof ABSENT_STORY_PATTERN).toBe("string");
+      expect(() => new RegExp(ABSENT_STORY_PATTERN, "i")).not.toThrow();
+    });
+  });
+
+  /**
+   * #307 owner-approved decision 1: "A correct behavioral answer may use
+   * either list-career-stories or story-scoped search when it retrieves and
+   * cites an acceptable story." The prior scorer locked ONE route per case,
+   * so a run that used the other tool but still retrieved and correctly
+   * cited an acceptable story scored 0 purely on route disagreement.
+   */
+  describe("either route (list-career-stories or story-scoped search) is accepted when it retrieves and cites an acceptable story (#307 decision 1)", () => {
+    it('expected "search-career-story-scoped": scores 1 when list-career-stories alone (no search-career at all) retrieves a story the final answer actually cites', () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["risk-management"] }, [
+            { entityType: "story", entityId: "house-numbers-secure-public-document-upload" },
+          ]),
+        ],
+        "search-career-story-scoped",
+        {
+          answer:
+            "He redesigned the public upload workflow with rate limiting. " +
+            "[cite:story:house-numbers-secure-public-document-upload]",
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it('expected "search-career-story-scoped": still scores 0 when list-career-stories retrieves a story but the answer never actually cites it', () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["risk-management"] }, [
+            { entityType: "story", entityId: "house-numbers-secure-public-document-upload" },
+          ]),
+        ],
+        "search-career-story-scoped",
+        { answer: "He has worked on secure uploads before." },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it('expected "list-career-stories": scores 1 when a story-scoped search-career call (not list-career-stories) retrieves a story the final answer actually cites', () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "public upload", sourceTypes: ["story"] }, [
+            { entityType: "story", entityId: "house-numbers-secure-public-document-upload" },
+          ]),
+        ],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          answer:
+            "He redesigned the public upload workflow with rate limiting. " +
+            "[cite:story:house-numbers-secure-public-document-upload]",
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it('expected "list-career-stories": still scores 0 (the original competency-argument check) when neither route retrieved a cited story', () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["ownership"] })],
+        "list-career-stories",
+        { expectedCompetencies: ["leadership"] },
       );
       expect(result.score).toBe(0);
     });
