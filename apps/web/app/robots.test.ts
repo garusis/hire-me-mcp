@@ -68,4 +68,19 @@ describe("robots", () => {
     expect(disallowed).not.toContain("/llms.txt");
     expect(disallowed).not.toContain("/llms-full.txt");
   });
+
+  // #296 — a story/stories rule of either polarity would itself be evidence
+  // that a passive /stories route exists to allow or disallow; robots.ts has
+  // no reason to ever mention one.
+  it("never mentions a story/stories path, on an indexable or non-indexable deploy (#296)", async () => {
+    for (const indexable of [true, false]) {
+      getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
+      getRobotsIndexable.mockReturnValue(indexable);
+      const { default: robots } = await import("./robots.js");
+
+      const serialized = JSON.stringify(robots()).toLowerCase();
+      expect(serialized).not.toContain("stories");
+      expect(serialized).not.toContain("story");
+    }
+  });
 });

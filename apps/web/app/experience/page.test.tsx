@@ -1,3 +1,4 @@
+import { createContentCareerDataRepository } from "@hire-me-mcp/core";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -338,5 +339,83 @@ describe("Experience page metadata", () => {
       title: metadata.title,
       description: metadata.description,
     });
+  });
+});
+
+// #296 — the locked visibility boundary (#288): every sentence (>= 8
+// words, same normalisation as the career-data `no-story-detail-in-
+// experience` lint rule) of every real authored story's situation/task/
+// actions/results/reflection, plus every story's title. The stubs above
+// are replaced with the real content layer's own return values for this
+// one test (via `vi.importActual`), so the page renders exactly what
+// production renders.
+const MIN_STORY_SENTENCE_WORDS = 8;
+
+function normalizeStoryProse(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function storySentencesOf(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/u)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+function realStorySentences(): string[] {
+  const dataset = createContentCareerDataRepository().getDataset();
+  const sentences: string[] = [];
+  for (const story of dataset.stories) {
+    const units = [
+      story.situation,
+      story.task,
+      ...story.actions,
+      ...story.results,
+      ...(story.reflection === undefined ? [] : [story.reflection]),
+    ];
+    for (const unit of units) {
+      for (const sentence of storySentencesOf(unit)) {
+        const normalized = normalizeStoryProse(sentence);
+        if (normalized.split(" ").length >= MIN_STORY_SENTENCE_WORDS) {
+          sentences.push(normalized);
+        }
+      }
+    }
+  }
+  return sentences;
+}
+
+function realStoryTitles(): string[] {
+  return createContentCareerDataRepository()
+    .getDataset()
+    .stories.map((story) => normalizeStoryProse(story.title));
+}
+
+describe("Experience page never leaks real story content (#296)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("the real experience page contains no story sentence or title from the real dataset", async () => {
+    const real =
+      await vi.importActual<typeof import("../../src/lib/content")>("../../src/lib/content");
+    getExperienceListView.mockReturnValue(real.getExperienceListView());
+    getProjectsListView.mockReturnValue(real.getProjectsListView());
+    getEducationListView.mockReturnValue(real.getEducationListView());
+    const { default: ExperiencePage } = await import("./page.js");
+
+    render(await ExperiencePage());
+
+    const normalized = ` ${normalizeStoryProse(document.body.innerHTML)} `;
+    const needles = [...realStorySentences(), ...realStoryTitles()];
+    expect(needles.length).toBeGreaterThan(0);
+
+    for (const needle of needles) {
+      expect(normalized).not.toContain(` ${needle} `);
+    }
   });
 });

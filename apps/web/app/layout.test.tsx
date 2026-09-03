@@ -1,11 +1,12 @@
+import { createContentCareerDataRepository } from "@hire-me-mcp/core";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ProfileView } from "../src/lib/content";
+import type { ProfileView, WritingListView } from "../src/lib/content";
 import RootLayout from "./layout.js";
 
 const { getProfileView, getWritingListView, getCvView, listStoryParents } = vi.hoisted(() => ({
   getProfileView: vi.fn(),
-  getWritingListView: vi.fn(() => ({ items: [], citations: [] })),
+  getWritingListView: vi.fn<() => WritingListView>(() => ({ items: [], citations: [] })),
   // Stubbed with a fixed default so every existing test (which only sets
   // up `getProfileView`) doesn't need touching — `SiteHeader`'s "Download
   // CV" link (#35) reads this the same way it reads the profile.
@@ -251,5 +252,94 @@ describe("RootLayout", () => {
 
     vi.doUnmock("next/script");
     vi.resetModules();
+  });
+});
+
+// #296 — the locked visibility boundary (#288): every sentence (>= 8
+// words, same normalisation as the career-data `no-story-detail-in-
+// experience` lint rule) of every real authored story's situation/task/
+// actions/results/reflection, plus every story's title. The stubs above
+// are replaced with the real content layer's own return values for this
+// one test (via `vi.importActual`), so RootLayout renders exactly what
+// production renders.
+const MIN_STORY_SENTENCE_WORDS = 8;
+
+function normalizeStoryProse(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function storySentencesOf(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/u)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+function realStorySentences(): string[] {
+  const dataset = createContentCareerDataRepository().getDataset();
+  const sentences: string[] = [];
+  for (const story of dataset.stories) {
+    const units = [
+      story.situation,
+      story.task,
+      ...story.actions,
+      ...story.results,
+      ...(story.reflection === undefined ? [] : [story.reflection]),
+    ];
+    for (const unit of units) {
+      for (const sentence of storySentencesOf(unit)) {
+        const normalized = normalizeStoryProse(sentence);
+        if (normalized.split(" ").length >= MIN_STORY_SENTENCE_WORDS) {
+          sentences.push(normalized);
+        }
+      }
+    }
+  }
+  return sentences;
+}
+
+function realStoryTitles(): string[] {
+  return createContentCareerDataRepository()
+    .getDataset()
+    .stories.map((story) => normalizeStoryProse(story.title));
+}
+
+describe("RootLayout never leaks real story content (#296)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("the real layout contains no story sentence or title from the real dataset", async () => {
+    const real = await vi.importActual<typeof import("../src/lib/content")>("../src/lib/content");
+    getProfileView.mockReturnValue(real.getProfileView());
+    getWritingListView.mockReturnValue(real.getWritingListView());
+    getCvView.mockReturnValue(real.getCvView());
+    listStoryParents.mockReturnValue(real.listStoryParents());
+    getSiteUrl.mockReturnValue("https://stub-deploy.example.com");
+    getRobotsIndexable.mockReturnValue(true);
+
+    render(await RootLayout({ children: <p>page content</p> }));
+
+    const normalized = ` ${normalizeStoryProse(document.body.innerHTML)} `;
+    const needles = [...realStorySentences(), ...realStoryTitles()];
+    expect(needles.length).toBeGreaterThan(0);
+
+    for (const needle of needles) {
+      expect(normalized).not.toContain(` ${needle} `);
+    }
+  });
+
+  it("every real story's parent lookup exposes only {storyId, experienceId} — never a title, narrative, competency or tag", async () => {
+    const real = await vi.importActual<typeof import("../src/lib/content")>("../src/lib/content");
+    const parents = real.listStoryParents();
+
+    expect(parents.length).toBeGreaterThan(0);
+    for (const parent of parents) {
+      expect(Object.keys(parent).sort()).toEqual(["experienceId", "storyId"]);
+    }
   });
 });
