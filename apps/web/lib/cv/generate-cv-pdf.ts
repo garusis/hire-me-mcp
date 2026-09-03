@@ -11,7 +11,7 @@
 
 import { chromium } from "@playwright/test";
 
-/** A4 in millimeters — matches the `@page` rule in `render-cv-html.ts`'s print CSS. */
+/** Zero margin on every side — page size (Letter) and margin (0.7in) are owned entirely by the `@page` rule in `render-cv-html.ts`'s print CSS. */
 const PDF_MARGIN = { top: "0mm", bottom: "0mm", left: "0mm", right: "0mm" };
 
 /**
