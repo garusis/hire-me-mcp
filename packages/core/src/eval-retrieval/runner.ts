@@ -32,19 +32,24 @@ import type { GoldenQuery } from "./dataset/schema.js";
 import {
   checkExpectEmpty,
   checkPreferredSource,
+  dedupeRankedSources,
   precisionAtK,
   recallAtK,
   reciprocalRank,
+  type ScoredSource,
 } from "./metrics.js";
-import type { RetrievalCaseReport } from "./report.js";
+import type { RetrievalCaseReport, RetrievalLane, RetrievalLaneResult } from "./report.js";
 import { buildRetrievalReport, type RetrievalReport } from "./report.js";
 import type { RetrievalThresholds } from "./thresholds.js";
+
+/** `sourceTypes` the story-scoped lane restricts to (#307) — mirrors the production chat's story-scoped `search-career` call. */
+const STORY_LANE_SOURCE_TYPES = ["story"] as const;
 
 /** The minimal `searchCareer`-shaped function the runner needs. */
 export interface RetrievalSearcher {
   searchCareer: (
     query: string,
-    options?: { topK?: number; minScore?: number },
+    options?: { topK?: number; minScore?: number; sourceTypes?: readonly string[] },
   ) => Promise<{
     results: Array<{ sourceType: string; sourceId: string; score: number }>;
   }>;
@@ -59,9 +64,32 @@ export interface RunRetrievalEvalConfig {
   thresholds?: RetrievalThresholds;
 }
 
+/** Builds one lane's {@link RetrievalLaneResult}: its deduplicated ranked ids, and (for expected-source categories only) its own recall@k/precision@k/MRR against `query.expectedSources` — `null` for `absent-topic`, same convention as the top-level `metrics` field. */
+function buildLaneResult(
+  lane: RetrievalLane,
+  retrieved: readonly ScoredSource[],
+  query: GoldenQuery,
+): RetrievalLaneResult {
+  const retrievedIds = dedupeRankedSources(retrieved);
+  if (query.category === "absent-topic") {
+    return { lane, retrievedIds, metrics: null };
+  }
+  const matchMode = query.matchMode ?? "all";
+  return {
+    lane,
+    retrievedIds,
+    metrics: {
+      recallAtK: recallAtK(retrieved, query.expectedSources, matchMode),
+      precisionAtK: precisionAtK(retrieved, query.expectedSources),
+      reciprocalRank: reciprocalRank(retrieved, query.expectedSources),
+    },
+  };
+}
+
 function baseCaseReport(
   query: GoldenQuery,
   retrieved: RetrievalCaseReport["retrieved"],
+  lanes: Record<RetrievalLane, RetrievalLaneResult>,
 ): RetrievalCaseReport {
   return {
     id: query.id,
@@ -77,12 +105,14 @@ function baseCaseReport(
     preferencePassed: null,
     preferredSourceReciprocalRank: null,
     passed: false,
+    lanes,
   };
 }
 
 function scoreExpectedCase(
   query: GoldenQuery,
   retrieved: RetrievalCaseReport["retrieved"],
+  lanes: Record<RetrievalLane, RetrievalLaneResult>,
 ): RetrievalCaseReport {
   const matchMode = query.matchMode ?? "all";
   const metrics = {
@@ -98,7 +128,7 @@ function scoreExpectedCase(
       : checkPreferredSource(retrieved, query.expectedSources, query.preferredSource);
 
   return {
-    ...baseCaseReport(query, retrieved),
+    ...baseCaseReport(query, retrieved, lanes),
     metrics,
     matchModePassed,
     preferencePassed: preferenceCheck?.passed ?? null,
@@ -111,10 +141,11 @@ function scoreAbsentTopicCase(
   query: GoldenQuery,
   retrieved: RetrievalCaseReport["retrieved"],
   absentTopicMinScore: number,
+  lanes: Record<RetrievalLane, RetrievalLaneResult>,
 ): RetrievalCaseReport {
   const check = checkExpectEmpty(retrieved, absentTopicMinScore);
   return {
-    ...baseCaseReport(query, retrieved),
+    ...baseCaseReport(query, retrieved, lanes),
     expectEmptyCheck: check,
     matchModePassed: true,
     passed: check.passed,
@@ -129,17 +160,30 @@ export async function runRetrievalEval(
   const cases: RetrievalCaseReport[] = [];
 
   for (const query of config.queries) {
-    const result = await deps.searchCareer(query.query, { topK: config.topK });
-    const retrieved = result.results.map((item) => ({
+    const [unscopedResult, storyScopedResult] = await Promise.all([
+      deps.searchCareer(query.query, { topK: config.topK }),
+      deps.searchCareer(query.query, { topK: config.topK, sourceTypes: STORY_LANE_SOURCE_TYPES }),
+    ]);
+    const retrieved = unscopedResult.results.map((item) => ({
+      sourceType: item.sourceType,
+      sourceId: item.sourceId,
+      score: item.score,
+    }));
+    const storyScopedRetrieved = storyScopedResult.results.map((item) => ({
       sourceType: item.sourceType,
       sourceId: item.sourceId,
       score: item.score,
     }));
 
+    const lanes: Record<RetrievalLane, RetrievalLaneResult> = {
+      unscoped: buildLaneResult("unscoped", retrieved, query),
+      storyScoped: buildLaneResult("storyScoped", storyScopedRetrieved, query),
+    };
+
     cases.push(
       query.category === "absent-topic"
-        ? scoreAbsentTopicCase(query, retrieved, config.absentTopicMinScore)
-        : scoreExpectedCase(query, retrieved),
+        ? scoreAbsentTopicCase(query, retrieved, config.absentTopicMinScore, lanes)
+        : scoreExpectedCase(query, retrieved, lanes),
     );
   }
 

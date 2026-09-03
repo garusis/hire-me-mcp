@@ -23,9 +23,14 @@ function fakeSearchCareer(
 ) {
   return async (
     text: string,
-    _options?: { topK?: number; minScore?: number },
+    options?: { topK?: number; minScore?: number; sourceTypes?: readonly string[] },
   ): Promise<{ results: Array<{ sourceType: string; sourceId: string; score: number }> }> => {
-    return { results: resultsByQuery[text] ?? [] };
+    const results = resultsByQuery[text] ?? [];
+    const scoped =
+      options?.sourceTypes === undefined
+        ? results
+        : results.filter((r) => options.sourceTypes?.includes(r.sourceType));
+    return { results: scoped };
   };
 }
 
@@ -82,6 +87,18 @@ describe("formatCaseTable", () => {
           preferencePassed: null,
           preferredSourceReciprocalRank: null,
           passed: true,
+          lanes: {
+            unscoped: {
+              lane: "unscoped",
+              retrievedIds: ["skill:typescript"],
+              metrics: { recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 },
+            },
+            storyScoped: {
+              lane: "storyScoped",
+              retrievedIds: [],
+              metrics: { recallAtK: 0, precisionAtK: 0, reciprocalRank: 0 },
+            },
+          },
         },
       ],
       aggregates: {
@@ -90,6 +107,10 @@ describe("formatCaseTable", () => {
         mrr: 1,
         absentTopicAccuracy: 1,
         preferredSourceCompliance: 1,
+        lanes: {
+          unscoped: { recallAtK: 1, precisionAtK: 1, mrr: 1 },
+          storyScoped: { recallAtK: 0, precisionAtK: 0, mrr: 0 },
+        },
       },
       thresholds: {
         recallAtK: 0.5,
@@ -128,6 +149,18 @@ describe("formatCaseTable", () => {
           preferencePassed: null,
           preferredSourceReciprocalRank: null,
           passed: false,
+          lanes: {
+            unscoped: {
+              lane: "unscoped",
+              retrievedIds: [],
+              metrics: { recallAtK: 0, precisionAtK: 0, reciprocalRank: 0 },
+            },
+            storyScoped: {
+              lane: "storyScoped",
+              retrievedIds: [],
+              metrics: { recallAtK: 0, precisionAtK: 0, reciprocalRank: 0 },
+            },
+          },
         },
       ],
       aggregates: {
@@ -136,6 +169,10 @@ describe("formatCaseTable", () => {
         mrr: 0,
         absentTopicAccuracy: 1,
         preferredSourceCompliance: 1,
+        lanes: {
+          unscoped: { recallAtK: 0, precisionAtK: 0, mrr: 0 },
+          storyScoped: { recallAtK: 0, precisionAtK: 0, mrr: 0 },
+        },
       },
       thresholds: {
         recallAtK: 0.5,
@@ -154,6 +191,31 @@ describe("formatCaseTable", () => {
 
     expect(table).toContain("FAIL");
     expect(table).not.toContain("PASS");
+  });
+});
+
+describe("runRetrievalEvalCli: retrieval lanes (#307)", () => {
+  it("logs the unscoped and story-scoped lane aggregates alongside the top-level recall/precision/MRR", async () => {
+    const writeFile = vi.fn(async () => undefined);
+    const log = vi.fn();
+
+    await runRetrievalEvalCli(
+      {
+        queries: [PASSING_QUERY],
+        envConfig: { topK: 5, absentTopicMinScore: 0.4, reportPath: "out.json" },
+      },
+      {
+        searchCareer: fakeSearchCareer({
+          "does he know typescript": [{ sourceType: "skill", sourceId: "typescript", score: 0.9 }],
+        }),
+        writeFile,
+        log,
+      },
+    );
+
+    const logged = log.mock.calls.map((call) => call[0] as string).join("\n");
+    expect(logged).toContain("unscoped");
+    expect(logged).toContain("storyScoped");
   });
 });
 

@@ -115,13 +115,22 @@ export function resolveRetrievalEvalEnvConfig(env: CliEnv = process.env): Retrie
   };
 }
 
+function formatLanePart(lane: RetrievalCaseReport["lanes"]["unscoped"]): string {
+  const metricsPart =
+    lane.metrics !== null
+      ? `recall=${lane.metrics.recallAtK.toFixed(2)} precision=${lane.metrics.precisionAtK.toFixed(2)} rr=${lane.metrics.reciprocalRank.toFixed(2)}`
+      : "n/a";
+  return `${lane.lane}[${metricsPart} ids=${lane.retrievedIds.join(",") || "-"}]`;
+}
+
 function formatCaseLine(caseReport: RetrievalCaseReport): string {
   const status = caseReport.passed ? "PASS" : "FAIL";
   const metricsPart =
     caseReport.metrics !== null
       ? `recall=${caseReport.metrics.recallAtK.toFixed(2)} precision=${caseReport.metrics.precisionAtK.toFixed(2)} rr=${caseReport.metrics.reciprocalRank.toFixed(2)}`
       : `expectEmpty=${caseReport.expectEmptyCheck?.passed ?? "?"}`;
-  return `[${status}] ${caseReport.id} (${caseReport.category}) — ${metricsPart}`;
+  const lanesPart = `${formatLanePart(caseReport.lanes.unscoped)} ${formatLanePart(caseReport.lanes.storyScoped)}`;
+  return `[${status}] ${caseReport.id} (${caseReport.category}) — ${metricsPart} — ${lanesPart}`;
 }
 
 /** Render a human-readable per-query pass/fail table for console output. */

@@ -21,6 +21,31 @@ export interface RetrievalCaseMetrics {
 }
 
 /**
+ * The two retrieval "lanes" a golden query is run against (#307, diagnosing
+ * the story-retrieval false negatives from #296's real eval): `"unscoped"`
+ * is the plain `searchCareer` call every case has always used (no
+ * `sourceTypes` filter — this is what the top-level `metrics`/aggregates
+ * above measure, unchanged); `"storyScoped"` re-runs the same query with
+ * `sourceTypes: ["story"]`, mirroring the production chat's story-scoped
+ * search path so this eval can catch a retrieval gap in that specific lane
+ * rather than only the unscoped average.
+ */
+export type RetrievalLane = "unscoped" | "storyScoped";
+
+/**
+ * One lane's result for one golden query: which lane, the deduplicated
+ * ranked `"sourceType:sourceId"` ids that lane actually returned (compact —
+ * no scores or chunk text, just enough to see what was retrieved and in
+ * what order), and that lane's own recall@k/precision@k/MRR — `null` for
+ * `absent-topic` cases, same convention as {@link RetrievalCaseMetrics}.
+ */
+export interface RetrievalLaneResult {
+  lane: RetrievalLane;
+  retrievedIds: string[];
+  metrics: RetrievalCaseMetrics | null;
+}
+
+/**
  * One golden query's full result: what was retrieved, how it scored, and
  * whether it passed. `preferencePassed`/`preferredSourceReciprocalRank` are
  * `null` when the case declares no `preferredSource` (#295) — a distinct
@@ -45,6 +70,15 @@ export interface RetrievalCaseReport {
   preferredSourceReciprocalRank: number | null;
   /** The combined pass/fail: `matchModePassed` (or `expectEmptyCheck.passed` for absent-topic) AND `preferencePassed` when declared. */
   passed: boolean;
+  /** This case's result in each retrieval lane (#307) — `unscoped` mirrors the fields above; `storyScoped` is the same query re-run with `sourceTypes: ["story"]`. */
+  lanes: Record<RetrievalLane, RetrievalLaneResult>;
+}
+
+/** One lane's aggregate recall@k/precision@k/MRR, computed the same way as the top-level aggregates but restricted to that lane's cases (#307). */
+export interface RetrievalLaneAggregates {
+  recallAtK: number;
+  precisionAtK: number;
+  mrr: number;
 }
 
 /** Aggregate metrics computed over the full case set. */
@@ -55,6 +89,8 @@ export interface RetrievalAggregates {
   absentTopicAccuracy: number;
   /** Fraction of preference-declaring cases whose preference passed — `1` (vacuous) when no case declares a `preferredSource`. */
   preferredSourceCompliance: number;
+  /** Per-lane recall@k/precision@k/MRR (#307) — `unscoped` duplicates the top-level fields above; `storyScoped` is the new diagnostic. */
+  lanes: Record<RetrievalLane, RetrievalLaneAggregates>;
 }
 
 /** The full machine-readable retrieval eval report. */
@@ -71,6 +107,18 @@ export interface RetrievalReport {
 function mean(values: readonly number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function computeLaneAggregates(
+  cases: readonly RetrievalCaseReport[],
+  lane: RetrievalLane,
+): RetrievalLaneAggregates {
+  const scored = cases.filter((c) => c.lanes[lane].metrics !== null);
+  return {
+    recallAtK: mean(scored.map((c) => c.lanes[lane].metrics?.recallAtK ?? 0)),
+    precisionAtK: mean(scored.map((c) => c.lanes[lane].metrics?.precisionAtK ?? 0)),
+    mrr: mean(scored.map((c) => c.lanes[lane].metrics?.reciprocalRank ?? 0)),
+  };
 }
 
 function computeAggregates(cases: readonly RetrievalCaseReport[]): RetrievalAggregates {
@@ -91,6 +139,10 @@ function computeAggregates(cases: readonly RetrievalCaseReport[]): RetrievalAggr
         ? 1
         : preferenceDeclaring.filter((c) => c.preferencePassed === true).length /
           preferenceDeclaring.length,
+    lanes: {
+      unscoped: computeLaneAggregates(cases, "unscoped"),
+      storyScoped: computeLaneAggregates(cases, "storyScoped"),
+    },
   };
 }
 
