@@ -108,6 +108,17 @@ than asserting it from nowhere. Behavioral stories from `list-career-stories` ar
 which verifies the employment context — the story body itself is only returned in the tool
 response.
 
+**Behavioral stories are an explicit-query surface, not passive rendering.** A story's full
+narrative (situation, task, actions, results, reflection) exists only as the response to a
+deliberate `list-career-stories` or `search-career` tool call — it is never embedded in a page an
+unauthenticated crawler or browser could load. There is no `/stories` route, no story link in
+navigation, the sitemap, `llms.txt`/`llms-full.txt`, the CV, or any page's metadata/OG/JSON-LD; a
+story reaches an agent only because that agent's caller asked for it, and that call is
+rate-limited the same way every other tool on this server is (see [Rate limits](#rate-limits)
+below) — there is no separate, unthrottled story endpoint. Treat a returned story as public only
+in the narrow sense that the caller explicitly requested it through this public server, not as
+content that is otherwise discoverable.
+
 <!-- BEGIN GENERATED: mcp-tool-table -->
 | Tool | What it answers | Example question |
 | --- | --- | --- |

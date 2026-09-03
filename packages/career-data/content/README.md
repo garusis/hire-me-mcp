@@ -70,3 +70,34 @@ eight words or more; compared case-, punctuation- and whitespace-insensitively)
 from reappearing verbatim in its primary or related experience's `summary` or
 `highlights` — a highlight may name an event, never retell it. Semantic
 near-duplication still needs human review; the rule is an exact-string guard.
+
+### Why three skills still cite an experience highlight, not a story (#296)
+
+The #297 integration note asked #296 to re-evaluate, once story citations were exhaustive across
+every consumer (#293, #294), whether `skills.json`'s citations for `requirements-gathering`,
+`regulated-data-handling`, and `event-driven-architecture` should move from their current
+`experience` `highlights` fragment to the more detailed canonical story covering the same event.
+The re-evaluation (#296) kept all three as-is:
+
+- **`requirements-gathering`** (Xogito `highlights.1`) and **`regulated-data-handling`** (House
+  Numbers `highlights.1`) each state the skill-relevant fact directly and concisely; the
+  corresponding story (`xogito-client-account-recovery`, `house-numbers-secure-public-document-
+  upload`) adds narrative around the same event rather than a more precise skill claim, so the
+  existing highlight remains the better citation for evidencing that specific skill.
+- **`event-driven-architecture`** (House Numbers `highlights.1`) is the harder case: its story,
+  `house-numbers-loan-analysis-pipeline-decomposition`, is genuinely the deeper EDA evidence —
+  message-bus decomposition, idempotent stage writes, independent per-stage retries — reachable
+  today through `search-career` or `list-career-stories`. It was **not** migrated because
+  `apps/web/app/skills/page.tsx` renders a citation's `label` (the story's title) directly into
+  pre-rendered, publicly-crawlable `/skills` HTML, and the same story text would surface through
+  `get-skill-evidence`'s output — exactly the passive-surface leak the story visibility boundary
+  (#288, enforced by #296) exists to prevent. Citing the story from a skill would put the first
+  story text on a page nothing else reveals it through.
+
+This decision is reversible, not permanent: if the owner later decides a story title may appear on
+`/skills`, migrating `event-driven-architecture`'s citation would additionally require wiring
+`storyParents` into that page first (done for other purposes in #296's P2 package) so the citation
+resolves to the story's real anchor rather than the unresolved-parent fallback. Until that product
+decision is made, the highlight stays the citation and the story remains reachable only through the
+explicit-query MCP/chat surface described in
+[`docs/mcp.md`](../../../docs/mcp.md#available-tools).

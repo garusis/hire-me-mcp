@@ -173,6 +173,42 @@ weakest matches first; an oversized single chunk is trimmed to the
 remaining budget rather than dropped whole. Covered by
 `search-career.test.ts` with a synthetically oversized result set.
 
+## Behavioral stories: deterministic lookup vs. semantic discovery (#294, #296)
+
+`list-career-stories` (`src/tools/list-career-stories.ts`) is a sixth tool, added alongside
+`search-career` for behavioral "tell me about a time" questions. The two never duplicate each
+other's job — the routing policy is stated in the tool's own `description`, restated in the
+`retrievalPolicy` prompt section (`src/prompt/sections.ts`), and exercised by the eval suite
+below:
+
+- **`list-career-stories` is the deterministic path.** It wraps `@hire-me-mcp/core`'s
+  `listCareerStories(repository, filter?)` — the same domain service the MCP server's tool of the
+  same name wraps — filtering by exact story id, exact experience id, exact company, and/or a
+  controlled competency vocabulary. Given any of those, it returns the complete story (situation,
+  task, actions, results, reflection), never a fragment. Prefer this whenever the competency,
+  company, or experience id is already known.
+- **`search-career` scoped to `sourceTypes: ["story"]` is the semantic discovery path.** For fuzzy
+  behavioral phrasing that doesn't map cleanly onto a listed competency (e.g. "a time things went
+  sideways" rather than "failure"), the model calls `search-career` first, scoped to stories, to
+  find the matching story by relevance rather than exact filter.
+- **Fallback order, story-scoped first.** If a story-scoped `search-career` call comes back empty
+  (nothing clears the relevance floor), the model may fall back to a broader, unscoped
+  `search-career` call — but must present that broader result explicitly as "closest evidence,"
+  never re-presented as if it were a behavioral story. There is deliberately no dedicated
+  story-search tool: `list-career-stories` never takes a free-text query, and `search-career` is
+  the only fuzzy entry point into story content.
+
+A story fetched either way carries its own citation whose URL resolves to its primary
+experience's anchor on the experience page (`/experience#<experience-id>`) — never a dedicated
+story page, since none is ever rendered on the site (#288's visibility boundary). Both paths are
+covered end to end by the 38-case story manifest in `src/evals/dataset/story-manifest-cases.ts`
+(#295): `expectedToolCall: "list-career-stories"` asserts the deterministic path fires for a
+competency-naming question, `"search-career-story-scoped"` asserts a story-scoped `search-career`
+call (and, when a `list-career-stories` fetch follows, that it precedes it) for fuzzy or
+genuinely-absent-topic questions, all checked by `src/evals/scorers/tool-routing.ts`'s
+`scoreToolRouting` — pure, zero model calls, same as the other scorers. `groundedness`/
+`gap-honesty` then verify the returned story content is what actually backs the answer.
+
 ## Public API
 
 ```ts

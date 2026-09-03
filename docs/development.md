@@ -132,6 +132,36 @@ model id doesn't match the currently configured one is treated as stale — the 
 brand-new column default (`''`, never a real model id) uses to make every pre-#24 row look stale
 on its first run.
 
+### Ingesting a career-story change (#296)
+
+Editing `packages/career-data/content/stories/*.json` re-chunks and re-embeds like any other
+content change, but a story's chunk count is large enough (each of its situation/task/action/
+result/reflection sections and per-competency/tag facets becomes its own `sourceType: "story"`
+chunk — see `packages/core/src/chunking/index.ts`) that it's worth previewing before committing:
+
+```bash
+pnpm --filter @hire-me-mcp/core db:migrate && pnpm ingest -- --dry-run   # against your own DATABASE_URL
+```
+
+The dry-run diff should show `toUpdate`/`toInsert` limited to the edited story's own chunk ids —
+`packages/core/src/ingest/diff.test.ts` (#296) locks that isolation: touching one story never
+marks another story's or an experience's chunks as changed. Adding a brand-new story shows up as
+inserts only, with every unrelated chunk in `unchanged`; deleting a story shows up as deletes
+only, scoped to that story's chunk ids.
+
+**Expected total, today:** the real content directory's 16 authored stories chunk to **90**
+`sourceType: "story"` chunks in total (`packages/core/src/chunking/index.test.ts` (#296) locks
+this exact count against the real dataset — the number changes only when a story is added,
+removed, or restructured into a different number of sections). After merging a story change to
+`main`, `.github/workflows/reindex-production.yml` runs the real incremental `pnpm ingest`
+automatically (see "How re-indexing works" below) — its job summary's one-line `inserted: N,
+updated: N, deleted: N, unchanged: N` should match what the local dry-run predicted: for the
+first run that ever indexes the story corpus, `inserted` should equal 90 (plus whatever
+non-story chunks changed in the same push); for a later edit to one existing story, `updated`
+should equal only that story's chunk count with `inserted`/`deleted` at 0 unless the edit added
+or removed a section. A count that doesn't match the dry-run's prediction is a real signal to
+stop and investigate before trusting the index, not something to wave through.
+
 ## Retrieval evals (`pnpm eval:retrieval`)
 
 `pnpm eval:retrieval` (#41, epic #6) scores `searchCareer` (#34) — recall@k, precision@k, mean

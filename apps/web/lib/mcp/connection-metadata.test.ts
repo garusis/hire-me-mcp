@@ -39,4 +39,10 @@ describe("apps/web connection metadata (#17)", () => {
     expect(metadata.examplePrompts.length).toBeGreaterThanOrEqual(3);
     expect(metadata.examplePrompts.length).toBeLessThanOrEqual(5);
   });
+
+  it("mentions behavioral stories as returned only on explicit request, not passively rendered (#296)", () => {
+    const metadata = buildProductionConnectionMetadata(PRODUCTION_MCP_ENDPOINT_URL);
+    expect(metadata.description).toMatch(/behavioral (career )?stories/i);
+    expect(metadata.description).toMatch(/explicit request/i);
+  });
 });

@@ -57,3 +57,43 @@ The field-to-story mapping #297 consumed lives in
 each story is the only place its full narrative lives: the
 `no-story-detail-in-experience` rule fails the lint if any story sentence is
 copied verbatim into the parent experience's summary or highlights.
+
+## Authoring a new story: truth and confidentiality checklist (#296)
+
+Before adding a new `CareerStory` file, work through this list — it distills the review discipline
+the 16 stories above were already held to (see the result-claim table and #305's review points),
+stated forward for the next story rather than backward as a review record:
+
+1. **Source every claim to an owner-approved record.** A story's situation/task/actions/results/
+   reflection must trace to an owner-approved comment (an interview record, written approval, or
+   equivalent) — never invented, inferred, or "plausible" detail. If a result isn't in the
+   approved source, it doesn't go in the story.
+2. **Never invent a number.** No metric, count, percentage, or duration appears unless the
+   approved source states it. An estimate stays phrased as an estimate ("we estimated", "roughly")
+   rather than presented as a measured fact (see story 008's "roughly two out of every three").
+3. **State outcomes as observed, not as caused or won**, unless the source explicitly claims
+   causation. Later positive developments (repeat business, promotions, trust earned) are reported
+   as subsequent events, not as guaranteed consequences of the story's actions (#305 point 9).
+4. **Never claim authority, title, or scope you didn't have.** Distinguish leading a team from
+   contributing to one, a formal role from an informal one, and a personal decision from a team or
+   org-wide one — the existing stories are explicit about this (e.g. story 001's "no formal
+   authority claimed", story 014's "org-wide protections explicitly not Marcos's implementation").
+5. **Protect third-party and client confidentiality.** No client, employer-external vendor, or
+   named individual's identity is disclosed unless it is already public elsewhere in the career
+   data; a vendor stays "a vendor," a client stays "a client" (see stories 001 and 010).
+6. **Distinguish two similar events rather than merging them.** If a new story shares an
+   underlying event with an existing one (as 002 and 012 deliberately do, told from different
+   frames), keep the facts identical between them and state the relationship in the new story
+   rather than quietly diverging.
+7. **Scope the primary vs. related experience correctly.** The primary `experienceId` is where the
+   event occurred; a related experience is context only — never let its actions or results appear
+   to transfer (see the `cross-team-onboarding-framework` note above).
+8. **Assign one primary and up to five supporting competencies** from `../../src/schemas/
+   competency.ts`, and retrieval tags that never restate a competency (see "Authoring rules
+   applied" above).
+9. **Run `pnpm lint:content` before opening a PR.** `no-story-detail-in-experience`,
+   `story-preservation-map-resolves`, and `story-preservation-map-complete` all fail the build on
+   a violation — a new story does not, by itself, require a `story-preservation-map.json` entry
+   unless it also changes what an experience's `summary`/`highlights` may say.
+10. **Do not add a public route, link, or page reference for the new story.** Stories remain an
+    explicit-query MCP/chat surface only (see [`docs/mcp.md`](../../../../docs/mcp.md#available-tools)) — the boundary this checklist protects is the same one #296 verifies mechanically.
