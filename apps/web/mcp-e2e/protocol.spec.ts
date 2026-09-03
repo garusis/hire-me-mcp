@@ -584,6 +584,84 @@ describe("tools/call — list tools (#211-#215)", () => {
   });
 });
 
+/**
+ * `search-career` filtered to `sourceTypes: ["story"]` (#296) needs a real
+ * embedding + a real, already-indexed corpus to distinguish a hit from an
+ * honest empty — this job's OWN case just above documents that
+ * `mcp-integration` deliberately runs with neither `DATABASE_URL` nor
+ * `GOOGLE_GENERATIVE_AI_API_KEY` set, so every `search-career` call here
+ * today hits that graceful-degradation path regardless of query. Gating on
+ * both env vars keeps these assertions honest about what they need, rather
+ * than either skipping the real acceptance criteria (a bare "no crash"
+ * check) or asserting a "hit" that this job can never actually produce.
+ * They run for real once this lane — or a future Neon-branch-backed one —
+ * carries that config; see `apps/web/e2e-preview/specs/mcp.spec.ts`'s
+ * `search-career` case for the same pattern already run against a real
+ * deployed origin with the config present.
+ */
+const SEARCH_CAREER_DB_CONFIGURED =
+  Boolean(process.env.DATABASE_URL) && Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY);
+
+describe.skipIf(!SEARCH_CAREER_DB_CONFIGURED)(
+  "tools/call — search-career filtered to behavioral stories (#296)",
+  () => {
+    it("a natural leadership question filtered to sourceTypes: ['story'] returns at least one story hit with an anchored, non-/stories citationUrl", async () => {
+      const { client, transport } = connectClient();
+      await client.connect(transport);
+
+      const result = await client.callTool({
+        name: "search-career",
+        arguments: {
+          query: "Tell me about a time Marcos showed leadership",
+          sourceTypes: ["story"],
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      const structuredContent = result.structuredContent as {
+        data: { found: boolean; results?: Array<{ sourceType: string; citationUrl: string }> };
+        citations: unknown;
+      };
+      expect(structuredContent.data.found).toBe(true);
+      const results = structuredContent.data.results ?? [];
+      expect(results.length).toBeGreaterThan(0);
+      expectWellFormedCitations(structuredContent.citations);
+
+      // The filter is honored (every hit really is a story) and each
+      // citation lands on its PRIMARY parent's /experience anchor — there
+      // is no public /stories route on the site (#288, #293).
+      for (const hit of results) {
+        expect(hit.sourceType).toBe("story");
+        expect(hit.citationUrl).toContain("/experience#");
+        expect(hit.citationUrl).not.toContain("/stories");
+      }
+
+      await client.close();
+    });
+
+    it("an off-topic query filtered to sourceTypes: ['story'] returns the honest empty result, not an error", async () => {
+      const { client, transport } = connectClient();
+      await client.connect(transport);
+
+      const result = await client.callTool({
+        name: "search-career",
+        arguments: { query: "favorite pizza toppings", sourceTypes: ["story"] },
+      });
+
+      expect(result.isError).not.toBe(true);
+      const structuredContent = result.structuredContent as {
+        data: { found: boolean; message?: string };
+        citations: unknown[];
+      };
+      expect(structuredContent.data.found).toBe(false);
+      expect(structuredContent.data.message).toBeTruthy();
+      expect(structuredContent.citations).toEqual([]);
+
+      await client.close();
+    });
+  },
+);
+
 describe("error paths — documented MCP errors, not transport failures", () => {
   it("calling an unregistered tool name fails with a documented JSON-RPC error, not a transport crash", async () => {
     const { client, transport } = connectClient();
