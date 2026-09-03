@@ -100,6 +100,33 @@ const EDUCATION = [
   },
 ];
 
+const STORIES = [
+  {
+    id: "fixture-story-new-role",
+    experienceId: "fixture-role-new",
+    title: "Fixture Story Title",
+    primaryCompetency: "leadership" as const,
+    supportingCompetencies: [],
+    situation: "Fixture situation prose.",
+    task: "Fixture task prose.",
+    actions: ["Fixture action one.", "Fixture action two."],
+    results: ["Fixture result one."],
+    retrievalTags: ["fixture-tag"],
+  },
+  {
+    id: "fixture-story-old-role",
+    experienceId: "fixture-role-old",
+    title: "Fixture Other Story Title",
+    primaryCompetency: "problem-solving" as const,
+    supportingCompetencies: [],
+    situation: "Fixture other situation prose.",
+    task: "Fixture other task prose.",
+    actions: ["Fixture other action."],
+    results: ["Fixture other result."],
+    retrievalTags: ["fixture-tag"],
+  },
+];
+
 describe("getCvView", () => {
   it("throws when no profile has been authored — a CV with no subject is not a renderable state", () => {
     const repository = createInMemoryCareerDataRepository(datasetWith({}));
@@ -222,6 +249,78 @@ describe("getCvView", () => {
     );
     const view = getCvView(repository);
     expect(view.education).toEqual(EDUCATION);
+  });
+
+  it("omits per-role summary and stories by default (#309 stage 1 — web mode unchanged)", () => {
+    const repository = createInMemoryCareerDataRepository(
+      datasetWith({ profile: PROFILE, experience: EXPERIENCE, stories: STORIES }),
+    );
+    const view = getCvView(repository);
+    for (const item of view.experience) {
+      expect(item.summary).toBeUndefined();
+      expect(item.stories).toBeUndefined();
+    }
+  });
+
+  it("includes each role's full summary when includeSummary is true (#309 stage 1)", () => {
+    const repository = createInMemoryCareerDataRepository(
+      datasetWith({ profile: PROFILE, experience: EXPERIENCE }),
+    );
+    const view = getCvView(repository, { includeSummary: true });
+    const newRole = view.experience.find((item) => item.company === "New Fixture Co");
+    const oldRole = view.experience.find((item) => item.company === "Old Fixture Co");
+    expect(newRole?.summary).toBe("New summary");
+    expect(oldRole?.summary).toBe("Old summary");
+  });
+
+  it("keeps every highlight, uncapped, when maxHighlightsPerRole is Infinity (#309 stage 1)", () => {
+    const repository = createInMemoryCareerDataRepository(
+      datasetWith({ profile: PROFILE, experience: EXPERIENCE }),
+    );
+    const view = getCvView(repository, { maxHighlightsPerRole: Number.POSITIVE_INFINITY });
+    const oldRole = view.experience.find((item) => item.company === "Old Fixture Co");
+    expect(oldRole?.highlights).toEqual([
+      "Old highlight one",
+      "Old highlight two",
+      "Old highlight three",
+    ]);
+  });
+
+  it("attaches every story whose primary experienceId matches the role, complete, when includeStories is true (#309 stage 1)", () => {
+    const repository = createInMemoryCareerDataRepository(
+      datasetWith({ profile: PROFILE, experience: EXPERIENCE, stories: STORIES }),
+    );
+    const view = getCvView(repository, { includeStories: true });
+    const newRole = view.experience.find((item) => item.company === "New Fixture Co");
+    const oldRole = view.experience.find((item) => item.company === "Old Fixture Co");
+    expect(newRole?.stories).toEqual([
+      {
+        title: "Fixture Story Title",
+        situation: "Fixture situation prose.",
+        task: "Fixture task prose.",
+        actions: ["Fixture action one.", "Fixture action two."],
+        results: ["Fixture result one."],
+      },
+    ]);
+    expect(oldRole?.stories).toEqual([
+      {
+        title: "Fixture Other Story Title",
+        situation: "Fixture other situation prose.",
+        task: "Fixture other task prose.",
+        actions: ["Fixture other action."],
+        results: ["Fixture other result."],
+      },
+    ]);
+  });
+
+  it("attaches an empty stories array to a role with no matching story when includeStories is true (#309 stage 1)", () => {
+    const repository = createInMemoryCareerDataRepository(
+      datasetWith({ profile: PROFILE, experience: EXPERIENCE, stories: [] }),
+    );
+    const view = getCvView(repository, { includeStories: true });
+    for (const item of view.experience) {
+      expect(item.stories).toEqual([]);
+    }
   });
 });
 

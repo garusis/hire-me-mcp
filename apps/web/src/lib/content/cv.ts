@@ -19,12 +19,33 @@ import { slugify } from "@hire-me-mcp/core/slugify";
 import { sortFeaturedFirst } from "./projects";
 import { getCareerDataRepository } from "./repository";
 
-/** One experience entry trimmed for the CV: authored company/role/dates plus a capped highlight list. */
+/**
+ * One behavioral story attached to a role (#309 stage 1): the same
+ * situation/task/actions/results shape as `CareerStory`, minus the
+ * competency/retrieval metadata that has no place on a printed CV.
+ */
+export interface CvStoryView {
+  title: string;
+  situation: string;
+  task: string;
+  actions: string[];
+  results: string[];
+}
+
+/**
+ * One experience entry trimmed for the CV: authored company/role/dates plus
+ * a capped highlight list. `summary` and `stories` are only populated when
+ * {@link GetCvViewOptions.includeSummary}/`includeStories` are set (#309
+ * stage 1's "full" projection) — the default (web) projection omits both,
+ * exactly as before.
+ */
 export interface CvExperienceItemView {
   company: string;
   role: string;
   startDate: string;
   endDate: string | undefined;
+  /** The role's full authored summary. Present only when `includeSummary` is set. */
+  summary?: string;
   highlights: string[];
   /**
    * The entry's `tech` tags (#299), each resolved to a display name: a
@@ -33,6 +54,8 @@ export interface CvExperienceItemView {
    * CV's italic "Tech: …" line under each role.
    */
   tech: string[];
+  /** Every story whose primary `experienceId` is this role. Present only when `includeStories` is set. */
+  stories?: CvStoryView[];
 }
 
 /** One proficiency tier's skill names, most-claimed tier first. */
@@ -65,8 +88,22 @@ export interface CvView {
 }
 
 export interface GetCvViewOptions {
-  /** Highlights kept per role, most-recent-authored-first. Defaults to 2 to keep the CV within its 1–2 page bound. */
+  /**
+   * Highlights kept per role, most-recent-authored-first. Defaults to 2 to
+   * keep the CV within its 1–2 page bound. Pass `Number.POSITIVE_INFINITY`
+   * (#309 stage 1's "full" projection) to keep every authored highlight.
+   */
   maxHighlightsPerRole?: number;
+  /** Includes each role's full authored summary. Defaults to false — the web CV doesn't show it today. */
+  includeSummary?: boolean;
+  /**
+   * Includes every behavioral story whose primary `experienceId` is the
+   * role, complete (title/situation/task/actions/results). Defaults to
+   * false: the default projection is exactly what it was before #309 —
+   * `render-cv-html.test.ts`'s story-leakage guard (#296) still exercises
+   * this default and stays green unchanged.
+   */
+  includeStories?: boolean;
 }
 
 /** Thrown when no profile has been authored — a CV with no subject is not a renderable state. */
@@ -145,6 +182,8 @@ export function getCvView(
     throw new CvProfileNotFoundError();
   }
   const maxHighlightsPerRole = options.maxHighlightsPerRole ?? DEFAULT_MAX_HIGHLIGHTS_PER_ROLE;
+  const includeSummary = options.includeSummary ?? false;
+  const includeStories = options.includeStories ?? false;
 
   const experience = dataset.experience
     .map((entry) => ({
@@ -154,6 +193,20 @@ export function getCvView(
       endDate: entry.endDate,
       highlights: entry.highlights.slice(0, maxHighlightsPerRole),
       tech: entry.tech.map((tag) => resolveTechName(tag, dataset.skills)),
+      ...(includeSummary ? { summary: entry.summary } : {}),
+      ...(includeStories
+        ? {
+            stories: dataset.stories
+              .filter((story) => story.experienceId === entry.id)
+              .map((story) => ({
+                title: story.title,
+                situation: story.situation,
+                task: story.task,
+                actions: story.actions,
+                results: story.results,
+              })),
+          }
+        : {}),
     }))
     .sort(compareExperienceMostRecentFirst);
 
