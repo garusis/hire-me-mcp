@@ -508,6 +508,81 @@ describe("runEvalSuite", () => {
     expect(report.cases[0]?.scores.toolRouting?.score).toBe(1);
   });
 
+  /**
+   * #307 second independent-review correction (finding 1): `scoreToolRouting`
+   * needs the case's own acceptable story ids — derived from
+   * `answerAssertions.mustCiteEntity`/`citationGroups`, the same derivation
+   * `storyCompletenessRequirementOf` already computes for
+   * `scoreStoryCompleteness` — to know whether an alternate-tool citation is
+   * actually acceptable, not just cited. Without this wired through, the
+   * either-route shortcut accepted ANY story a run happened to cite.
+   */
+  it("scores toolRouting 0 when the run's alternate-tool (list-career-stories) call cites a story that is NOT in the case's mustCiteEntity acceptable ids", async () => {
+    const runCase = vi.fn().mockResolvedValue({
+      answer: "He did that. [cite:story:wrong-story]",
+      toolCitations: [{ entityType: "story" as const, entityId: "wrong-story" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      toolCalls: [
+        {
+          toolName: "list-career-stories",
+          args: { competencies: ["leadership"] },
+          citations: [{ entityType: "story", entityId: "wrong-story" }],
+        },
+      ],
+    });
+    const acceptableStoryCase = makeCase({
+      id: "acceptable-story-1",
+      expectedToolCall: "search-career-story-scoped",
+      answerAssertions: {
+        mustCiteEntity: [{ entityType: "story", entityId: "expected-story" }],
+      },
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [acceptableStoryCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    expect(report.cases[0]?.scores.toolRouting?.score).toBe(0);
+  });
+
+  it("scores toolRouting 1 when the run's alternate-tool (list-career-stories) call cites a story that IS in the case's mustCiteEntity acceptable ids", async () => {
+    const runCase = vi.fn().mockResolvedValue({
+      answer: "He did that. [cite:story:expected-story]",
+      toolCitations: [{ entityType: "story" as const, entityId: "expected-story" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      toolCalls: [
+        {
+          toolName: "list-career-stories",
+          args: { competencies: ["leadership"] },
+          citations: [{ entityType: "story", entityId: "expected-story" }],
+        },
+      ],
+    });
+    const acceptableStoryCase = makeCase({
+      id: "acceptable-story-2",
+      expectedToolCall: "search-career-story-scoped",
+      answerAssertions: {
+        mustCiteEntity: [{ entityType: "story", entityId: "expected-story" }],
+      },
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [acceptableStoryCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    expect(report.cases[0]?.scores.toolRouting?.score).toBe(1);
+  });
+
   it("treats a missing toolCalls field on the run result as an empty trace, not a crash (backward compatible with pre-#75 runCase stubs)", async () => {
     const runCase = stubRunCase(); // no toolCalls field at all
     const report = await runEvalSuite(

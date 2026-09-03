@@ -37,9 +37,17 @@ export type GapHonestyDirection = "gap" | "claimed";
  * scored the honest gap answer as a fabricated claim. Widened to cover
  * "no/not any [qualifier] experience (with|in)", "hasn't/doesn't
  * (worked|done work) (with|on)", and "do(es) not (contain|have|include)".
+ *
+ * #307 second independent-review correction: "hasn't (worked|done work)"
+ * only matched the contracted form, so the equally common non-contracted
+ * negations "has not worked with"/"has never worked with" fell through the
+ * same way — `\bhe (has|does)\b` in `CLAIM_LANGUAGE_REGEX` matches "he
+ * **has** not worked with SAP" too. Widened `hasn'?t` to
+ * `has(?:n'?t|\s+(?:not|never))` so both non-contracted negations are
+ * recognized before `CLAIM_LANGUAGE_REGEX` ever runs.
  */
 const GAP_LANGUAGE_REGEX =
-  /hasn'?t done|no production|closest evidence|hasn'?t touched|doesn'?t have (production )?experience|no (?:[a-z]+ )?experience (?:with|in)|hasn'?t (?:worked|done work) (?:with|on)|doesn'?t (?:have )?work(?:ed)? (?:with|on)|do(?:es)? not (?:contain|have|include)/i;
+  /hasn'?t done|no production|closest evidence|hasn'?t touched|doesn'?t have (production )?experience|no (?:[a-z]+ )?experience (?:with|in)|has(?:n'?t|\s+(?:not|never)) (?:worked|done work) (?:with|on)|doesn'?t (?:have )?work(?:ed)? (?:with|on)|do(?:es)? not (?:contain|have|include)/i;
 
 const CLAIM_LANGUAGE_REGEX =
   /\b(yes,? he|he (has|does)|built|led|used|worked|implemented|shipped|delivered|developed)\b/i;
