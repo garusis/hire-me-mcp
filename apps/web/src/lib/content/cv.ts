@@ -26,6 +26,13 @@ export interface CvExperienceItemView {
   startDate: string;
   endDate: string | undefined;
   highlights: string[];
+  /**
+   * The entry's `tech` tags (#299), each resolved to a display name: a
+   * matching `dataset.skills` entry's `id` first, then its `aliases`,
+   * falling back to the raw tag when no skill claims it. Rendered as the
+   * CV's italic "Tech: …" line under each role.
+   */
+  tech: string[];
 }
 
 /** One proficiency tier's skill names, most-claimed tier first. */
@@ -96,6 +103,23 @@ const PROFICIENCY_RANK: Record<Skill["proficiency"], number> = {
   familiar: 2,
 };
 
+/**
+ * Resolves one `tech` tag (#299) to a display name: a `dataset.skills`
+ * entry whose `id` matches the tag first, then one whose `aliases`
+ * includes it, falling back to the raw tag when no skill claims it.
+ */
+function resolveTechName(tag: string, skills: readonly Skill[]): string {
+  const byId = skills.find((skill) => skill.id === tag);
+  if (byId !== undefined) {
+    return byId.name;
+  }
+  const byAlias = skills.find((skill) => skill.aliases.includes(tag));
+  if (byAlias !== undefined) {
+    return byAlias.name;
+  }
+  return tag;
+}
+
 function buildSkillGroups(skills: readonly Skill[]): CvSkillGroupView[] {
   const namesByProficiency = new Map<Skill["proficiency"], string[]>();
   for (const skill of skills) {
@@ -129,6 +153,7 @@ export function getCvView(
       startDate: entry.startDate,
       endDate: entry.endDate,
       highlights: entry.highlights.slice(0, maxHighlightsPerRole),
+      tech: entry.tech.map((tag) => resolveTechName(tag, dataset.skills)),
     }))
     .sort(compareExperienceMostRecentFirst);
 
