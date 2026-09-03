@@ -15,6 +15,7 @@ const baseCases = [
       answerAssertions: null,
       storyCompleteness: null,
       preferredSourceCompliance: null,
+      factualBoundaryCompliance: null,
     },
   },
   {
@@ -31,6 +32,7 @@ const baseCases = [
       answerAssertions: null,
       storyCompleteness: null,
       preferredSourceCompliance: null,
+      factualBoundaryCompliance: null,
     },
   },
   {
@@ -46,6 +48,7 @@ const baseCases = [
       answerAssertions: null,
       storyCompleteness: null,
       preferredSourceCompliance: null,
+      factualBoundaryCompliance: null,
     },
   },
 ];
@@ -245,6 +248,7 @@ describe("buildReport", () => {
       answerAssertions: null,
       storyCompleteness: null,
       preferredSourceCompliance: null,
+      factualBoundaryCompliance: null,
     };
     const casesWithPreferences: CaseReport[] = [
       "preference-1",

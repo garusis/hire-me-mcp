@@ -41,6 +41,7 @@
  * word, closes the specific false-positive the review reproduced.
  */
 
+import { parseCitations } from "../../citations.js";
 import type { ScoreResult } from "./types.js";
 import { clampScore } from "./types.js";
 
@@ -181,23 +182,71 @@ function scoreAgainstStory(answer: string, storyId: string): ScoreResult {
   return { score: scored.score, reason: `[${storyId}] ${scored.reason}` };
 }
 
+/** Every `story` entityId actually cited (`[cite:story:...]`) in `answer`, per the shared `parseCitations`. */
+function citedStoryIds(answer: string): Set<string> {
+  return new Set(
+    parseCitations(answer)
+      .filter((marker) => marker.entityType === "story")
+      .map((marker) => marker.entityId),
+  );
+}
+
 /**
- * Score `transcript.answer`'s factual completeness. When `storyIds` names
- * at least one story with a `STORY_FACT_ANCHORS` entry, scores the answer
- * against the BEST-matching such story's real facts (grounded mode — see
- * module docs). Otherwise falls back to the original generic 3-class
+ * Score `transcript.answer`'s factual completeness against `storyIds` (the
+ * case's acceptable story candidates). When `storyIds` names at least one
+ * story with a `STORY_FACT_ANCHORS` entry, scores in grounded mode (see
+ * module docs); otherwise falls back to the original generic 3-class
  * linguistic-cue heuristic (situation/action/result), preserved for
  * backward compatibility with cases that don't name a known story.
+ *
+ * Grounded mode is bound to the story the answer ACTUALLY CITES (#295
+ * third-independent-review correction, finding 2): "The scorer receives
+ * every acceptable story id and takes the best factual match. An answer
+ * containing a complete Mutual narrative while citing only Xogito scores
+ * storyCompleteness: 1.0 because the Mutual anchors match." Completeness is
+ * scored only against the intersection of `storyIds` and the answer's own
+ * parsed `story` citations — an uncited candidate's facts, however
+ * complete, can never substitute for the story actually cited. An answer
+ * that cites none of the known acceptable candidates scores 0.
+ *
+ * `mode` (#295 third-independent-review correction, finding 3) distinguishes
+ * a single-source/`any` case ("best of the cited-and-acceptable stories" —
+ * the manifest's one-story-answer semantics) from a cross-cutting `all`
+ * case, which instead requires FULL situation/action/result coverage for
+ * EVERY required story: the score is the WORST of the required stories'
+ * individual completeness (a story required but not cited scores 0 for
+ * that story), never a best-of-one — a bare extra citation with no facts
+ * must fail the case, not be diluted away by one well-narrated story.
  */
 export function scoreStoryCompleteness(
   transcript: StoryCompletenessTranscript,
   storyIds: readonly string[] = [],
+  mode: "any" | "all" = "any",
 ): ScoreResult {
   const known = [...new Set(storyIds)].filter((id) => id in STORY_FACT_ANCHORS);
   if (known.length === 0) {
     return scoreAgainstSignals(transcript.answer, GENERIC_SIGNALS);
   }
 
-  const scored = known.map((id) => scoreAgainstStory(transcript.answer, id));
+  const cited = citedStoryIds(transcript.answer);
+
+  if (mode === "all") {
+    const scored = known.map((id) =>
+      cited.has(id)
+        ? scoreAgainstStory(transcript.answer, id)
+        : { score: 0, reason: `[${id}] required but not cited` },
+    );
+    const worst = scored.reduce((min, current) => (current.score < min.score ? current : min));
+    return { score: clampScore(worst.score), reason: scored.map((s) => s.reason).join(" | ") };
+  }
+
+  const citedKnown = known.filter((id) => cited.has(id));
+  if (citedKnown.length === 0) {
+    return {
+      score: 0,
+      reason: `answer did not cite any of the acceptable stories with known facts [${known.join(", ")}]`,
+    };
+  }
+  const scored = citedKnown.map((id) => scoreAgainstStory(transcript.answer, id));
   return scored.reduce((best, current) => (current.score > best.score ? current : best));
 }

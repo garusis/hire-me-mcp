@@ -134,6 +134,72 @@ describe("evalCaseSchema", () => {
     });
   });
 
+  /**
+   * #295 third-independent-review correction, finding 1: a `mustMatch`
+   * requirement scoped to "only when the answer actually cites this
+   * entity" — story 004's mandatory positive caveat (spam/unsupported/
+   * observability-gap) must not be forced on an `any` case that truthfully
+   * answers with a different acceptable story (e.g. 015).
+   */
+  describe("conditionalMustMatch (#295 third-independent-review correction, finding 1)", () => {
+    it("accepts a conditionalMustMatch entry", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: {
+          conditionalMustMatch: [
+            {
+              ifCitedRef: {
+                entityType: "story",
+                entityId: "house-numbers-communication-service-ownership",
+              },
+              pattern: "spam",
+            },
+          ],
+        },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects a conditionalMustMatch entry with an invalid pattern", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: {
+          conditionalMustMatch: [
+            {
+              ifCitedRef: { entityType: "story", entityId: "x" },
+              pattern: "(unclosed",
+            },
+          ],
+        },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects a conditionalMustMatch entry with an unknown entityType in ifCitedRef", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: {
+          conditionalMustMatch: [
+            { ifCitedRef: { entityType: "not-a-real-type", entityId: "x" }, pattern: "spam" },
+          ],
+        },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("counts a conditionalMustMatch entry toward the 'must assert something' minimum, alone", () => {
+      const result = evalCaseSchema.safeParse({
+        ...validCase,
+        answerAssertions: {
+          conditionalMustMatch: [
+            { ifCitedRef: { entityType: "story", entityId: "x" }, pattern: "spam" },
+          ],
+        },
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe("citationGroups (#295 any/all/preferredSource semantics)", () => {
     it("accepts an 'all' group (cross-cutting: every ref required)", () => {
       const result = evalCaseSchema.safeParse({

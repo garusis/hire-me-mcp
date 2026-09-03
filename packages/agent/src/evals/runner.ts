@@ -58,6 +58,7 @@ import type { EvalCase } from "./dataset/schema.js";
 import { buildReport, type CaseReport, type EvalReport } from "./report.js";
 import {
   scoreAnswerAssertions,
+  scoreFactualBoundaryCompliance,
   scoreGapHonesty,
   scoreGroundedness,
   scorePreferredSourceCompliance,
@@ -200,13 +201,22 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
   const expectsStoryCitation =
     (evalCase.answerAssertions?.mustCiteEntity?.length ?? 0) > 0 ||
     (evalCase.answerAssertions?.citationGroups?.length ?? 0) > 0;
+  const storyCompletenessRequirement = storyCompletenessRequirementOf(evalCase);
   const storyCompleteness = expectsStoryCitation
-    ? scoreStoryCompleteness({ answer: run.answer }, storyIdsOf(evalCase))
+    ? scoreStoryCompleteness(
+        { answer: run.answer },
+        storyCompletenessRequirement.storyIds,
+        storyCompletenessRequirement.mode,
+      )
     : null;
   const preferredSourceCompliance = scorePreferredSourceCompliance(
     run.answer,
     evalCase.answerAssertions,
     run.toolCitations,
+  );
+  const factualBoundaryCompliance = scoreFactualBoundaryCompliance(
+    run.answer,
+    evalCase.answerAssertions,
   );
 
   return {
@@ -222,22 +232,39 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
       answerAssertions,
       storyCompleteness,
       preferredSourceCompliance,
+      factualBoundaryCompliance,
     },
   };
 }
 
-/** Every distinct `story` entityId named in `evalCase.answerAssertions`'s `mustCiteEntity`/`citationGroups` (#295 second independent-review correction, finding 2) — the acceptable stories `scoreStoryCompleteness` may ground its completeness check against, since only a story the answer actually cites from this set is a real candidate (never an unrelated story). */
-function storyIdsOf(evalCase: EvalCase): string[] {
+/**
+ * `scoreStoryCompleteness`'s acceptable/required story ids plus the `any`/
+ * `all` mode to score them under (#295 third-independent-review correction,
+ * finding 3), derived from `evalCase.answerAssertions`'s `mustCiteEntity`
+ * (single required story, scored with best-of-one `"any"` semantics) or
+ * `citationGroups` (an eval case declares at most one group — see
+ * `../dataset/story-manifest-cases.ts` — so its own `mode` carries directly:
+ * `"all"` for a cross-cutting case requires full coverage of EVERY listed
+ * story, `"any"` keeps best-of-cited-and-acceptable semantics).
+ */
+function storyCompletenessRequirementOf(evalCase: EvalCase): {
+  storyIds: string[];
+  mode: "any" | "all";
+} {
   const assertions = evalCase.answerAssertions;
-  if (!assertions) return [];
+  if (!assertions) return { storyIds: [], mode: "any" };
   const fromCite = (assertions.mustCiteEntity ?? [])
     .filter((ref) => ref.entityType === "story")
     .map((ref) => ref.entityId);
-  const fromGroups = (assertions.citationGroups ?? [])
-    .flatMap((group) => group.refs)
-    .filter((ref) => ref.entityType === "story")
-    .map((ref) => ref.entityId);
-  return [...new Set([...fromCite, ...fromGroups])];
+  if (fromCite.length > 0) {
+    return { storyIds: [...new Set(fromCite)], mode: "any" };
+  }
+  const group = assertions.citationGroups?.[0];
+  if (!group) return { storyIds: [], mode: "any" };
+  const storyIds = [
+    ...new Set(group.refs.filter((ref) => ref.entityType === "story").map((ref) => ref.entityId)),
+  ];
+  return { storyIds, mode: group.mode };
 }
 
 /** Run the eval suite: execute up to `config.budget.maxCases` dataset cases against the real agent (via `deps.runCase`), score each, and assemble the final report. Throws `BudgetExceededError` (see `./budget.ts`) the instant the token or cost cap is crossed. */

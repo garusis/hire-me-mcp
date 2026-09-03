@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   scoreAnswerAssertions,
+  scoreFactualBoundaryCompliance,
   scoreGapHonesty,
   scoreGroundedness,
   scorePreferredSourceCompliance,
@@ -30,5 +31,9 @@ describe("scorers barrel", () => {
 
   it("re-exports the preferred-source compliance scorer (#295 second independent-review correction, finding 4)", () => {
     expect(typeof scorePreferredSourceCompliance).toBe("function");
+  });
+
+  it("re-exports the factual-boundary compliance scorer (#295 third-independent-review correction, finding 1)", () => {
+    expect(typeof scoreFactualBoundaryCompliance).toBe("function");
   });
 });

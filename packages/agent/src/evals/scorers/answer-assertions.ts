@@ -78,6 +78,37 @@ function checkCitationRefs(
   return { failures, total };
 }
 
+/**
+ * Failure messages for every `conditionalMustMatch` entry that APPLIES this
+ * turn (#295 third-independent-review correction, finding 1) — a required
+ * caveat pattern is only checked, and only counted toward `total`, when the
+ * answer actually cites `ifCitedRef`; an entry whose ref was never cited
+ * (an `any` case truthfully answering with a different acceptable story)
+ * contributes nothing, neither a pass nor a failure.
+ */
+function checkConditionalMustMatch(
+  answer: string,
+  assertions: EvalCaseAnswerAssertions,
+): { failures: string[]; total: number } {
+  const entries = assertions.conditionalMustMatch ?? [];
+  const answerMarkers = parseCitations(answer);
+  const failures: string[] = [];
+  let total = 0;
+
+  for (const entry of entries) {
+    if (!citationPresent(answerMarkers, entry.ifCitedRef)) continue;
+    total += 1;
+    if (!new RegExp(entry.pattern, "i").test(answer)) {
+      failures.push(
+        `missing required caveat /${entry.pattern}/i for cited ` +
+          `${entry.ifCitedRef.entityType}:${entry.ifCitedRef.entityId}`,
+      );
+    }
+  }
+
+  return { failures, total };
+}
+
 /** Which of `group.refs` are actually cited in `answerMarkers`, as `"entityType:entityId"` labels — used both to check the group and to report which ones matched. */
 function citedRefLabels(
   answerMarkers: readonly { entityType: string; entityId: string }[],
@@ -181,8 +212,14 @@ export function scoreAnswerAssertions(
   const text = checkTextPatterns(answer, assertions);
   const citations = checkCitationRefs(answer, assertions);
   const groups = checkCitationGroups(answer, assertions, toolCitations);
-  const failures = [...text.failures, ...citations.failures, ...groups.failures];
-  const total = text.total + citations.total + groups.total;
+  const conditional = checkConditionalMustMatch(answer, assertions);
+  const failures = [
+    ...text.failures,
+    ...citations.failures,
+    ...groups.failures,
+    ...conditional.failures,
+  ];
+  const total = text.total + citations.total + groups.total + conditional.total;
 
   const passed = total - failures.length;
   const reason =
@@ -249,4 +286,52 @@ export function scorePreferredSourceCompliance(
       : `${passed}/${outcomes.length} preferred-source group(s) complied; ${failures.join("; ")}.`;
 
   return { score: clampScore(passed / outcomes.length), reason };
+}
+
+/**
+ * Independent factual-boundary compliance score (#295 third-independent-
+ * review correction, finding 1): "Factual-boundary violations are detected
+ * but still do not fail the eval... a run containing one such case
+ * therefore still passes." `scoreAnswerAssertions`'s blended fraction can
+ * always be diluted by other passing assertions in the SAME case, or
+ * averaged away across other passing cases in the report's aggregate — the
+ * exact review counterexample scores a diluted `0.8`, equal to the
+ * committed threshold, so it still passes. This scorer re-checks the same
+ * `mustMatch`/`mustNotMatch`/`conditionalMustMatch` text-and-caveat
+ * assertions (never `mustCiteEntity`/`citationGroups`, which are grounding/
+ * routing checks with their own dedicated treatment) as one BINARY
+ * pass/fail per case: any single violation fails the case outright,
+ * mirroring `scorePreferredSourceCompliance`'s blocking treatment and fed
+ * into its own blocking (1.0) `../thresholds.ts` aggregate by `../report.ts`
+ * so a factual-boundary regression cannot hide behind an otherwise-healthy
+ * average.
+ *
+ * Returns `null` when the case declares no `mustMatch`/`mustNotMatch`/
+ * `conditionalMustMatch` entry at all (e.g. a case whose `answerAssertions`
+ * is purely `mustCiteEntity`/`citationGroups`) — there is no factual
+ * boundary declared for this case to hold, same optional-aggregate
+ * treatment the other scorers in this module use.
+ */
+export function scoreFactualBoundaryCompliance(
+  answer: string,
+  assertions: EvalCaseAnswerAssertions | undefined,
+): ScoreResult | null {
+  if (!assertions) return null;
+  const hasBoundaryAssertions =
+    (assertions.mustMatch?.length ?? 0) > 0 ||
+    (assertions.mustNotMatch?.length ?? 0) > 0 ||
+    (assertions.conditionalMustMatch?.length ?? 0) > 0;
+  if (!hasBoundaryAssertions) return null;
+
+  const text = checkTextPatterns(answer, assertions);
+  const conditional = checkConditionalMustMatch(answer, assertions);
+  const failures = [...text.failures, ...conditional.failures];
+  const total = text.total + conditional.total;
+  const passed = total - failures.length;
+  const reason =
+    failures.length === 0
+      ? `${passed}/${total} factual-boundary assertion(s) held.`
+      : `${passed}/${total} factual-boundary assertion(s) held; ${failures.join("; ")}.`;
+
+  return { score: failures.length === 0 ? 1 : 0, reason };
 }

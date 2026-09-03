@@ -107,5 +107,77 @@ describe("scoreStoryCompleteness", () => {
       );
       expect(result.score).toBe(1);
     });
+
+    /**
+     * #295 third-independent-review correction, finding 2: "The scorer
+     * receives every acceptable story id and takes the best factual match.
+     * An answer containing a complete Mutual narrative while citing only
+     * Xogito scores storyCompleteness: 1.0 because the Mutual anchors
+     * match." Completeness must be scored against the story the answer
+     * ACTUALLY CITES, intersected with the case's acceptable candidates —
+     * never an uncited alternative, no matter how complete its facts are.
+     */
+    it("scores low when the answer's complete facts belong to an uncited acceptable story, and it only cites a different (factually unsupported) one — the reproduced fact/citation mismatch", () => {
+      const result = scoreStoryCompleteness(
+        {
+          answer:
+            "At Kubesoft, a hackathon-winning product stalled over a prize dispute. Marcos renounced " +
+            "his own share and began building the backend. As a result, the product launched and was " +
+            "handed over to the government. [cite:story:xogito-client-account-recovery]",
+        },
+        ["xogito-client-account-recovery", "mutual-informal-leadership"],
+      );
+      expect(result.score).toBe(0);
+    });
+
+    /**
+     * #295 third-independent-review correction, finding 3: "Cross-cutting
+     * `all` cases require citations but not complete factual coverage for
+     * every required story... require situation/action/result coverage for
+     * each required cited story; best-of-one semantics are valid only for a
+     * single-source or `any` case." Passing `mode: "all"` must score the
+     * WORST of the required stories, not the best.
+     */
+    describe("mode: 'all' — cross-cutting full coverage (#295 third-independent-review correction, finding 3)", () => {
+      const sapComplete =
+        "The legacy SAP financial calculations needed migrating. Marcos wrote ETL scripts to " +
+        "handle rounding differences. The migration completed without data loss, drawing on legacy-" +
+        "system experts. [cite:story:fullstack-labs-sap-migration]";
+      const publicUploadComplete =
+        "The WordPress upload flow had roughly two out of every three submissions fail silently. " +
+        "Marcos added CAPTCHA, rate limiting, and hybrid routing. Complaints stopped and an audit " +
+        "history was preserved. [cite:story:house-numbers-secure-public-document-upload]";
+      const pipelineComplete =
+        "The loan analysis pipeline was one large monolith orchestration. Marcos split it into " +
+        "three independently testable units connected by a message bus. It reached production and " +
+        "made failures easier to locate. [cite:story:house-numbers-loan-analysis-pipeline-decomposition]";
+      const requiredIds = [
+        "fullstack-labs-sap-migration",
+        "house-numbers-secure-public-document-upload",
+        "house-numbers-loan-analysis-pipeline-decomposition",
+      ];
+
+      it("scores low (the review's C01 counterexample) when the answer narrates only one required story fully and bare-cites the others with no facts", () => {
+        const result = scoreStoryCompleteness(
+          {
+            answer:
+              `${sapComplete} [cite:story:house-numbers-secure-public-document-upload] ` +
+              "[cite:story:house-numbers-loan-analysis-pipeline-decomposition]",
+          },
+          requiredIds,
+          "all",
+        );
+        expect(result.score).toBeLessThanOrEqual(1 / 3);
+      });
+
+      it("scores 1 when the answer narrates complete situation/action/result facts for every required story", () => {
+        const result = scoreStoryCompleteness(
+          { answer: `${sapComplete} ${publicUploadComplete} ${pipelineComplete}` },
+          requiredIds,
+          "all",
+        );
+        expect(result.score).toBe(1);
+      });
+    });
   });
 });

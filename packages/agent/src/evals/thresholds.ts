@@ -52,6 +52,21 @@ export interface ScorerThresholds {
    * manifest, not something a fraction of cases may fail.
    */
   preferredSourceCompliance?: number;
+  /**
+   * Optional (#295 third-independent-review correction, finding 1): only
+   * cases that get scored by `./scorers/answer-assertions.ts`'s
+   * `scoreFactualBoundaryCompliance` (i.e. declare `mustMatch`/
+   * `mustNotMatch`/`conditionalMustMatch`) contribute — same zero-count-
+   * skips treatment as the other optional scorers above. UNLIKE the
+   * provisional-lenient scorers (`answerAssertions`, `storyCompleteness`),
+   * this threshold is BLOCKING (1.0, see {@link EVAL_THRESHOLDS}'s doc
+   * comment) for the identical reason `preferredSourceCompliance` is: a
+   * factual boundary (no invented metrics, no LLM-accuracy framing, a
+   * required positive caveat) is a locked per-case contract, not a
+   * statistical target with acceptable slack — one violated case must fail
+   * the run regardless of how many others pass.
+   */
+  factualBoundaryCompliance?: number;
 }
 
 /**
@@ -152,6 +167,14 @@ export const EVAL_THRESHOLDS: ScorerThresholds = {
   // to 1.0 for the identical reason: this is a locked per-case contract,
   // not a statistical target with acceptable slack.
   preferredSourceCompliance: 1,
+  // factualBoundaryCompliance (#295 third-independent-review correction,
+  // finding 1): BLOCKING like preferredSourceCompliance, for the same
+  // reason — "Make factual-boundary compliance blocking per applicable
+  // case." A run where any case's answer crosses a declared factual
+  // boundary (an invented metric, an "LLM accuracy" framing, a missing
+  // mandatory caveat) fails outright, never diluted by the case's other
+  // passing assertions or averaged away across the rest of the suite.
+  factualBoundaryCompliance: 1,
 };
 
 const SCORER_LABELS: Readonly<Record<keyof ScorerThresholds, string>> = {
@@ -162,6 +185,7 @@ const SCORER_LABELS: Readonly<Record<keyof ScorerThresholds, string>> = {
   answerAssertions: "answer assertions",
   storyCompleteness: "story completeness",
   preferredSourceCompliance: "preferred-source compliance",
+  factualBoundaryCompliance: "factual-boundary compliance",
 };
 
 /** Verdict for one eval run: whether every scorer aggregate met its threshold, and a human-readable failure line per scorer that didn't. */

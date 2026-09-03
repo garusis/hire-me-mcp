@@ -1,6 +1,10 @@
 /** Public surface of the eval suite's scorers (#72) — see each module for its scoring rules. */
 
-export { scoreAnswerAssertions, scorePreferredSourceCompliance } from "./answer-assertions.js";
+export {
+  scoreAnswerAssertions,
+  scoreFactualBoundaryCompliance,
+  scorePreferredSourceCompliance,
+} from "./answer-assertions.js";
 export type { GapHonestyDirection } from "./gap-honesty.js";
 export { scoreGapHonesty } from "./gap-honesty.js";
 export { scoreGroundedness } from "./groundedness.js";

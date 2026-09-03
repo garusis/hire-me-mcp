@@ -46,6 +46,16 @@ export interface CaseReport {
      * failed preference cannot be diluted by other passing assertions.
      */
     preferredSourceCompliance: ScoreResult | null;
+    /**
+     * `null` for any case that declares no `mustMatch`/`mustNotMatch`/
+     * `conditionalMustMatch` entry (#295 third-independent-review
+     * correction, finding 1 —
+     * `./scorers/answer-assertions.ts`'s `scoreFactualBoundaryCompliance`).
+     * Reported and thresholded independently of `answerAssertions` — a
+     * BINARY pass/fail per case — so a single factual-boundary violation
+     * cannot be diluted by other passing assertions in the same case.
+     */
+    factualBoundaryCompliance: ScoreResult | null;
   };
 }
 
@@ -77,6 +87,7 @@ export interface EvalReport {
     answerAssertions: ScorerAggregate;
     storyCompleteness: ScorerAggregate;
     preferredSourceCompliance: ScorerAggregate;
+    factualBoundaryCompliance: ScorerAggregate;
   };
   totals: EvalTotals & { cases: number };
   thresholds: ScorerThresholds;
@@ -112,6 +123,9 @@ export function buildReport(params: {
     storyCompleteness: aggregate(params.cases.map((c) => c.scores.storyCompleteness)),
     preferredSourceCompliance: aggregate(
       params.cases.map((c) => c.scores.preferredSourceCompliance),
+    ),
+    factualBoundaryCompliance: aggregate(
+      params.cases.map((c) => c.scores.factualBoundaryCompliance),
     ),
   };
 
@@ -151,6 +165,15 @@ export function buildReport(params: {
         // many others passed.
         ...(aggregates.preferredSourceCompliance.count > 0
           ? { preferredSourceCompliance: aggregates.preferredSourceCompliance.mean }
+          : {}),
+        // Same optional treatment for factual-boundary compliance (#295
+        // third-independent-review correction, finding 1): only cases
+        // declaring mustMatch/mustNotMatch/conditionalMustMatch contribute,
+        // and — like preferredSourceCompliance — its committed threshold is
+        // blocking (1.0): a single violated boundary in ANY case fails the
+        // run, regardless of how many other assertions or cases passed.
+        ...(aggregates.factualBoundaryCompliance.count > 0
+          ? { factualBoundaryCompliance: aggregates.factualBoundaryCompliance.mean }
           : {}),
       },
       thresholds,

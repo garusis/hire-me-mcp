@@ -139,6 +139,25 @@ export const citationGroupSchema = z
 export type EvalCaseCitationGroup = z.infer<typeof citationGroupSchema>;
 
 /**
+ * One #295 third-independent-review correction (finding 1) conditional
+ * positive-caveat requirement: `pattern` (case-insensitive) must appear in
+ * the answer TEXT, but only when the answer actually cites `ifCitedRef` —
+ * unlike a plain `mustMatch`, which is unconditional. This is how a
+ * required caveat tied to ONE specific acceptable story (e.g. story 004's
+ * mandatory spam/unsupported-case/observability-gap caveat, #295's
+ * "Story-specific factual-boundary assertions" section) is enforced without
+ * also forcing it on an `any` case that truthfully answers with a
+ * different acceptable story that carries no such caveat (e.g. 015).
+ */
+const conditionalMustMatchSchema = z
+  .object({
+    ifCitedRef: citationRefSchema,
+    pattern: regexSourceSchema,
+  })
+  .strict();
+export type EvalCaseConditionalMustMatch = z.infer<typeof conditionalMustMatchSchema>;
+
+/**
  * Content assertions on the answer (#300, #295's factual boundaries; #294
  * independent-review correction extends this beyond text). `mustMatch` /
  * `mustNotMatch` are case-insensitive regular-expression sources checked
@@ -148,9 +167,12 @@ export type EvalCaseCitationGroup = z.infer<typeof citationGroupSchema>;
  * instead — the required (or forbidden) evidence a behavioral answer must
  * (or must not) actually be grounded in, not just wording. `citationGroups`
  * (#295) is for a case with SEVERAL honest candidate citations rather than
- * one fixed required/forbidden pair — see `citationGroupSchema` above. Scored
- * by `../scorers/answer-assertions.ts`; a block must assert at least one
- * thing across all five lists.
+ * one fixed required/forbidden pair — see `citationGroupSchema` above.
+ * `conditionalMustMatch` (#295 third-independent-review correction, finding
+ * 1) is a `mustMatch` scoped to only apply when a specific story is
+ * actually cited — see `conditionalMustMatchSchema` above. Scored by
+ * `../scorers/answer-assertions.ts`; a block must assert at least one thing
+ * across all six lists.
  */
 export const answerAssertionsSchema = z
   .object({
@@ -159,6 +181,7 @@ export const answerAssertionsSchema = z
     mustCiteEntity: z.array(citationRefSchema).optional(),
     mustNotCiteEntity: z.array(citationRefSchema).optional(),
     citationGroups: z.array(citationGroupSchema).optional(),
+    conditionalMustMatch: z.array(conditionalMustMatchSchema).optional(),
   })
   .strict()
   .refine(
@@ -167,11 +190,12 @@ export const answerAssertionsSchema = z
         (value.mustNotMatch?.length ?? 0) +
         (value.mustCiteEntity?.length ?? 0) +
         (value.mustNotCiteEntity?.length ?? 0) +
-        (value.citationGroups?.length ?? 0) >
+        (value.citationGroups?.length ?? 0) +
+        (value.conditionalMustMatch?.length ?? 0) >
       0,
     {
       message:
-        "answerAssertions must declare at least one mustMatch/mustNotMatch/mustCiteEntity/mustNotCiteEntity/citationGroups entry",
+        "answerAssertions must declare at least one mustMatch/mustNotMatch/mustCiteEntity/mustNotCiteEntity/citationGroups/conditionalMustMatch entry",
     },
   );
 export type EvalCaseAnswerAssertions = z.infer<typeof answerAssertionsSchema>;

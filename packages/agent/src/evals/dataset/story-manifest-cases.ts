@@ -178,6 +178,20 @@ const S = {
   aiPivot: story("house-numbers-ai-pivot-after-paternity-leave"),
 } as const;
 
+/**
+ * Story 004's mandatory positive caveat (#295 third-independent-review
+ * correction, finding 1): "must preserve that the remaining bucket includes
+ * spam, unsupported cases, and an observability gap, and must not attribute
+ * the full outcome to the model alone." Checked via `conditionalMustMatch`
+ * — enforced ONLY when the answer actually cites story 004 — so an `any`
+ * case (A08) that truthfully answers with 015 instead is never wrongly
+ * forced to carry a caveat about a story it never cited.
+ */
+const COMM_SERVICE_CAVEAT = {
+  ifCitedRef: S.commService,
+  pattern: "(?=.*\\bspam\\b)(?=.*\\bunsupported\\b)(?=.*\\b(?:observability|gap)\\b)",
+};
+
 /** A single required story citation, plus one distinguishing keyword, the shared factual-boundary guards, and that story's own audited-risk guard (if any). */
 function singleStoryAssertions(ref: StoryRef, keyword: string) {
   return {
@@ -374,7 +388,10 @@ export const STORY_MANIFEST_CASES: readonly EvalCase[] = [
     question: "Tell me about a critical operational system Marcos continued owning after launch.",
     gapHonestyDirection: "claimed",
     expectedToolCall: "search-career-story-scoped",
-    answerAssertions: singleStoryAssertions(S.commService, "communications"),
+    answerAssertions: {
+      ...singleStoryAssertions(S.commService, "communications"),
+      conditionalMustMatch: [COMM_SERVICE_CAVEAT],
+    },
     notes:
       "stories/house-numbers-communication-service-ownership.json (story 004). Competencies: " +
       "customer-focus, ownership.",
@@ -604,7 +621,10 @@ export const STORY_MANIFEST_CASES: readonly EvalCase[] = [
     question: "How has Marcos made production workflows easier to observe and debug?",
     gapHonestyDirection: "claimed",
     expectedToolCall: "search-career-story-scoped",
-    answerAssertions: groupAssertions("any", [S.commService, S.crossServiceDebugging]),
+    answerAssertions: {
+      ...groupAssertions("any", [S.commService, S.crossServiceDebugging]),
+      conditionalMustMatch: [COMM_SERVICE_CAVEAT],
+    },
     notes: "any: 004, 015 (no preferred source).",
   },
 

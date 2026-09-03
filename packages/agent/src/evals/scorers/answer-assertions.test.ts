@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { scoreAnswerAssertions, scorePreferredSourceCompliance } from "./answer-assertions.js";
+import {
+  scoreAnswerAssertions,
+  scoreFactualBoundaryCompliance,
+  scorePreferredSourceCompliance,
+} from "./answer-assertions.js";
 
 describe("scoreAnswerAssertions", () => {
   it("scores 1 when every mustMatch pattern is present and no mustNotMatch pattern appears", () => {
@@ -113,6 +117,50 @@ describe("scoreAnswerAssertions", () => {
    * semantics: exactly one of the group's refs must be cited, not zero and
    * not several blended together.
    */
+  /**
+   * #295 third-independent-review correction, finding 1: a positive caveat
+   * tied to ONE specific cited story must be enforced only when that story
+   * is actually cited — not unconditionally (which would wrongly demand it
+   * from an `any` case that truthfully answers with a different acceptable
+   * story), and not silently skipped either.
+   */
+  describe("conditionalMustMatch (#295 third-independent-review correction, finding 1)", () => {
+    const story004 = {
+      entityType: "story" as const,
+      entityId: "house-numbers-communication-service-ownership",
+    };
+
+    it("fails when the referenced story is cited but the required caveat text is absent", () => {
+      const result = scoreAnswerAssertions(
+        "The communications workflow reached approximately 70% effective triage. " +
+          "[cite:story:house-numbers-communication-service-ownership]",
+        { conditionalMustMatch: [{ ifCitedRef: story004, pattern: "spam" }] },
+      );
+      expect(result.score).toBeLessThan(1);
+      expect(result.reason).toMatch(/caveat/i);
+    });
+
+    it("passes when the referenced story is cited and the required caveat text is present", () => {
+      const result = scoreAnswerAssertions(
+        "The communications workflow reached approximately 70% effective triage, though the " +
+          "remaining bucket includes spam, unsupported cases, and an observability gap. " +
+          "[cite:story:house-numbers-communication-service-ownership]",
+        { conditionalMustMatch: [{ ifCitedRef: story004, pattern: "spam" }] },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("does not apply the caveat at all when the referenced story is not cited (an `any` case truthfully answering with a different story)", () => {
+      const result = scoreAnswerAssertions(
+        "Engineers improved a versioned debugging skill from incident lessons. " +
+          "[cite:story:house-numbers-cross-service-debugging-skill]",
+        { conditionalMustMatch: [{ ifCitedRef: story004, pattern: "spam" }] },
+      );
+      expect(result.score).toBe(1);
+      expect(result.reason).toMatch(/^0\/0/);
+    });
+  });
+
   describe("citationGroups (#295)", () => {
     const storyA = { entityType: "story" as const, entityId: "xogito-client-account-recovery" };
     const storyB = { entityType: "story" as const, entityId: "mutual-informal-leadership" };
@@ -284,5 +332,65 @@ describe("scoreAnswerAssertions", () => {
       // group passes (storyC returned and cited) -> 0.5.
       expect(result?.score).toBe(0.5);
     });
+  });
+});
+
+/**
+ * #295 third-independent-review correction, finding 1: "Factual-boundary
+ * violations are detected but still do not fail the eval... a run
+ * containing one such case therefore still passes." A blended
+ * `scoreAnswerAssertions` fraction can always be diluted by other passing
+ * assertions in the same case (or averaged away across other passing cases
+ * in the report aggregate). `scoreFactualBoundaryCompliance` reports the
+ * SAME mustMatch/mustNotMatch/conditionalMustMatch checks as an independent,
+ * binary pass/fail per case — any single violation fails the case outright,
+ * mirroring `scorePreferredSourceCompliance`'s blocking treatment.
+ */
+describe("scoreFactualBoundaryCompliance (#295 third-independent-review correction, finding 1)", () => {
+  it("returns null when the case declares no answerAssertions at all", () => {
+    expect(scoreFactualBoundaryCompliance("anything", undefined)).toBeNull();
+  });
+
+  it("returns null when the case declares only citation-based assertions (no text/caveat boundary to check)", () => {
+    const result = scoreFactualBoundaryCompliance("[cite:story:x]", {
+      mustCiteEntity: [{ entityType: "story", entityId: "x" }],
+    });
+    expect(result).toBeNull();
+  });
+
+  it("scores 0 (fails outright) on a single mustNotMatch violation, even though it is the only assertion the case declares", () => {
+    const result = scoreFactualBoundaryCompliance(
+      "The team achieved LLM accuracy of 95% on this workflow.",
+      { mustNotMatch: ["LLM accuracy"] },
+    );
+    expect(result?.score).toBe(0);
+  });
+
+  it("scores 0 (fails outright, not diluted) when only one of several mustMatch/mustNotMatch checks fails — the exact review counterexample where a diluted 0.8 would pass an 0.8 threshold", () => {
+    const result = scoreFactualBoundaryCompliance("proof of concept work continued.", {
+      mustMatch: ["proof of concept", "unrelated-pattern-that-is-absent"],
+    });
+    expect(result?.score).toBe(0);
+  });
+
+  it("scores 1 when every declared text/caveat assertion holds", () => {
+    const result = scoreFactualBoundaryCompliance("This was a proof of concept, never shipped.", {
+      mustMatch: ["proof of concept"],
+      mustNotMatch: ["shipped to production"],
+    });
+    expect(result?.score).toBe(1);
+  });
+
+  it("enforces story 004's mandatory caveat as blocking: the exact review counterexample scores 0, not a diluted 0.8+", () => {
+    const story004 = {
+      entityType: "story" as const,
+      entityId: "house-numbers-communication-service-ownership",
+    };
+    const result = scoreFactualBoundaryCompliance(
+      "The communications workflow reached approximately 70% effective triage. " +
+        "[cite:story:house-numbers-communication-service-ownership]",
+      { conditionalMustMatch: [{ ifCitedRef: story004, pattern: "spam" }] },
+    );
+    expect(result?.score).toBe(0);
   });
 });

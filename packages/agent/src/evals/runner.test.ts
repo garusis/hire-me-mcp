@@ -625,6 +625,47 @@ describe("runEvalSuite", () => {
   });
 
   /**
+   * #295 third-independent-review correction (finding 1): `runEvalSuite`
+   * must score `factualBoundaryCompliance` independently
+   * (`./scorers/answer-assertions.ts`'s `scoreFactualBoundaryCompliance`)
+   * for any case declaring `mustMatch`/`mustNotMatch`/`conditionalMustMatch`,
+   * as a BINARY pass/fail — not diluted by other passing assertions in the
+   * same case — and leave it `null` for a case that declares none of those.
+   */
+  it("scores factualBoundaryCompliance independently and blocking, and leaves it null for a case with no text/caveat boundary declared", async () => {
+    const boundaryCase = makeCase({
+      id: "boundary-1",
+      answerAssertions: {
+        mustMatch: ["proof of concept"],
+        mustNotMatch: ["shipped to production"],
+      },
+    });
+    const runCase = vi.fn().mockResolvedValue({
+      answer: "This was shipped to production, not a proof of concept.",
+      toolCitations: [],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [boundaryCase, groundedCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    const boundaryReport = report.cases.find((c) => c.id === "boundary-1");
+    const plainReport = report.cases.find((c) => c.id === groundedCase.id);
+    // mustMatch holds (the answer does mention "proof of concept"), but
+    // mustNotMatch is violated ("shipped to production") — one violation
+    // out of two assertions must still fail this BINARY score outright
+    // (0), not the diluted 0.5 scoreAnswerAssertions would report.
+    expect(boundaryReport?.scores.factualBoundaryCompliance?.score).toBe(0);
+    expect(plainReport?.scores.factualBoundaryCompliance).toBeNull();
+  });
+
+  /**
    * #295 correction (independent Codex review, agent package `1dd7ac7`,
    * finding 2): `runEvalSuite` must score behavioral-story completeness
    * (`./scorers/story-completeness.ts`) for any case that declares a
@@ -662,5 +703,56 @@ describe("runEvalSuite", () => {
     const plainReport = report.cases.find((c) => c.id === groundedCase.id);
     expect(storyReport?.scores.storyCompleteness?.score).toBe(1);
     expect(plainReport?.scores.storyCompleteness).toBeNull();
+  });
+
+  /**
+   * #295 third-independent-review correction, finding 3: a `citationGroups`
+   * entry with `mode: "all"` (cross-cutting) must score story completeness
+   * with `"all"` semantics — full coverage required for EVERY listed
+   * story, not a best-of-one match — while an `"any"` group (or a plain
+   * `mustCiteEntity`) still uses best-of-cited-and-acceptable semantics.
+   */
+  it("scores storyCompleteness with 'all' semantics for a cross-cutting citationGroups entry — a bare extra citation with no facts fails the case", async () => {
+    const crossCuttingCase = makeCase({
+      id: "cross-cutting-1",
+      answerAssertions: {
+        citationGroups: [
+          {
+            mode: "all",
+            refs: [
+              { entityType: "story", entityId: "fullstack-labs-sap-migration" },
+              { entityType: "story", entityId: "house-numbers-secure-public-document-upload" },
+            ],
+          },
+        ],
+      },
+    });
+    const runCase = vi.fn().mockResolvedValue({
+      answer:
+        "The legacy SAP financial calculations needed migrating. Marcos wrote ETL scripts to " +
+        "handle rounding differences. The migration completed without data loss, drawing on " +
+        "legacy-system experts. [cite:story:fullstack-labs-sap-migration] " +
+        "[cite:story:house-numbers-secure-public-document-upload]",
+      toolCitations: [
+        { entityType: "story" as const, entityId: "fullstack-labs-sap-migration" },
+        { entityType: "story" as const, entityId: "house-numbers-secure-public-document-upload" },
+      ],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+    });
+    const report = await runEvalSuite(
+      {
+        cases: [crossCuttingCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    const crossCuttingReport = report.cases.find((c) => c.id === "cross-cutting-1");
+    // SAP is fully narrated (score 1); the public-upload story is only
+    // bare-cited with no facts (score 0) — "all" mode must take the WORST,
+    // not the best, so the case-level score is 0, not 1.
+    expect(crossCuttingReport?.scores.storyCompleteness?.score).toBe(0);
   });
 });
