@@ -1,5 +1,7 @@
+import { fileURLToPath } from "node:url";
 import type { CareerDataset } from "@hire-me-mcp/career-data";
 import { describe, expect, it } from "vitest";
+import { createContentCareerDataRepository } from "../repository.js";
 import {
   chunkCareerData,
   chunkEducation,
@@ -11,6 +13,8 @@ import {
   chunkStory,
   chunkWriting,
 } from "./index.js";
+
+const realContentDir = fileURLToPath(new URL("../../../career-data/content/", import.meta.url));
 
 function buildDataset(overrides: Partial<CareerDataset> = {}): CareerDataset {
   const base: CareerDataset = {
@@ -372,6 +376,44 @@ describe("chunkCareerData — story coverage", () => {
         (chunk) => chunk.sourceType === "story" && chunk.sourceId === "acme-quick-fix-story",
       ),
     );
+  });
+});
+
+describe("chunkCareerData — real dataset story coverage (#296)", () => {
+  const repository = createContentCareerDataRepository({ contentDir: realContentDir });
+  const dataset = repository.getDataset();
+  const chunks = chunkCareerData(dataset);
+  const storyChunks = chunks.filter((chunk) => chunk.sourceType === "story");
+
+  it("has all 16 authored stories in the real content directory", () => {
+    expect(dataset.stories).toHaveLength(16);
+  });
+
+  it("produces at least one chunk for every authored story, with a matching sourceId", () => {
+    const storyIds = new Set(dataset.stories.map((story) => story.id));
+    const chunkedStoryIds = new Set(storyChunks.map((chunk) => chunk.sourceId));
+
+    expect(chunkedStoryIds).toEqual(storyIds);
+    for (const storyId of storyIds) {
+      const chunksForStory = storyChunks.filter((chunk) => chunk.sourceId === storyId);
+      expect(chunksForStory.length).toBeGreaterThanOrEqual(1);
+      for (const chunk of chunksForStory) {
+        expect(chunk.sourceType).toBe("story");
+        expect(chunk.citation.entityType).toBe("story");
+        expect(chunk.citation.entityId).toBe(storyId);
+      }
+    }
+  });
+
+  // Locked total: the exact number of story chunks the real content directory
+  // produces today. This is the number the production `reindex-production`
+  // summary must report as inserts the first time stories are ingested
+  // (#296 P5 -> P4 handoff). If authoring a new story or editing an existing
+  // one's length changes this count, update it deliberately here alongside
+  // `docs/development.md`'s recorded expectation — never loosen this into a
+  // range to make a failure go away.
+  it("records the exact total story-chunk count for the production reindex handoff", () => {
+    expect(storyChunks.length).toBe(90);
   });
 });
 
