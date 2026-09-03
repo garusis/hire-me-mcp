@@ -352,4 +352,38 @@ describe("buildReport", () => {
     expect(report.verdict.passed).toBe(false);
     expect(report.verdict.failures.some((line) => /factual.boundary/i.test(line))).toBe(true);
   });
+
+  /**
+   * #307 track 2 (agent-eval observability): a case's `toolTrace` (name,
+   * args, returned citations, in call order — the compact per-case trace
+   * that distinguishes a retrieval failure from the model ignoring a
+   * returned result) must survive assembly into the final report unmodified
+   * when present, and default to an empty array (never `undefined`) when a
+   * case carries none — the same default `runEvalSuite` applies for a run
+   * result with no `toolCalls` field (`./runner.ts`), so every case in a
+   * report has a consistently-typed `toolTrace: ToolCall[]`.
+   */
+  it("carries each case's toolTrace through to the report, defaulting to [] when a case declares none", () => {
+    const caseWithTrace: CaseReport = {
+      ...(baseCases[0] as CaseReport),
+      toolTrace: [
+        { toolName: "list-career-stories", args: { competencies: ["ownership"] } },
+        {
+          toolName: "search-career",
+          args: { query: "ownership", sourceTypes: ["story"] },
+          citations: [{ entityType: "story", entityId: "sap-incident" }],
+        },
+      ],
+    };
+
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: [caseWithTrace, baseCases[1] as CaseReport],
+      totals,
+    });
+
+    expect(report.cases[0]?.toolTrace).toEqual(caseWithTrace.toolTrace);
+    expect(report.cases[1]?.toolTrace).toEqual([]);
+  });
 });

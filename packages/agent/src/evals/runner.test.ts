@@ -525,6 +525,73 @@ describe("runEvalSuite", () => {
   });
 
   /**
+   * #307 track 2 (agent-eval observability): the diagnosis on #307 found
+   * that `eval-report.json` kept only the final answer + scores, so a case
+   * like `story-manifest-x08` (answered "no evidence" with an uncited
+   * search) could not be told apart from "the story chunk was never in the
+   * top results" versus "it was returned and the model ignored it" without
+   * re-running against real state. `CaseReport.toolTrace` closes that gap by
+   * carrying the run's own `toolCalls` (name, model-supplied args, and that
+   * call's own returned citations, in call order — order IS the result
+   * rank) straight onto the report, unmodified.
+   */
+  it("persists the run's tool-call trace (name, args, returned citations, in call order) onto CaseReport.toolTrace", async () => {
+    const runCase = vi.fn().mockResolvedValue({
+      answer: "He led the incident response [cite:story:sap-incident].",
+      toolCitations: [{ entityType: "story" as const, entityId: "sap-incident" }],
+      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      toolCalls: [
+        { toolName: "list-career-stories", args: { competencies: ["leadership"] } },
+        {
+          toolName: "search-career",
+          args: { query: "incident response", sourceTypes: ["story"] },
+          citations: [
+            { entityType: "story" as const, entityId: "sap-incident" },
+            { entityType: "story" as const, entityId: "other-story" },
+          ],
+        },
+      ],
+    });
+
+    const report = await runEvalSuite(
+      {
+        cases: [groundedCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    expect(report.cases[0]?.toolTrace).toEqual([
+      { toolName: "list-career-stories", args: { competencies: ["leadership"] } },
+      {
+        toolName: "search-career",
+        args: { query: "incident response", sourceTypes: ["story"] },
+        citations: [
+          { entityType: "story", entityId: "sap-incident" },
+          { entityType: "story", entityId: "other-story" },
+        ],
+      },
+    ]);
+  });
+
+  it("defaults CaseReport.toolTrace to an empty array when the run result carries no toolCalls field", async () => {
+    const runCase = stubRunCase(); // no toolCalls field at all
+    const report = await runEvalSuite(
+      {
+        cases: [groundedCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    expect(report.cases[0]?.toolTrace).toEqual([]);
+  });
+
+  /**
    * #295 correction (independent Codex review, agent package `1dd7ac7`,
    * finding 4): `runEvalSuite` must thread the run's actual `toolCitations`
    * into `scoreAnswerAssertions` so a `citationGroups` `preferredRef` check

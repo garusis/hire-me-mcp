@@ -10,6 +10,7 @@
  */
 
 import type { EvalCaseCategory } from "./dataset/schema.js";
+import type { ToolCall } from "./scorers/tool-routing.js";
 import type { ScoreResult } from "./scorers/types.js";
 import type { ScorerThresholds, Verdict } from "./thresholds.js";
 import { EVAL_THRESHOLDS, evaluateVerdict } from "./thresholds.js";
@@ -57,6 +58,19 @@ export interface CaseReport {
      */
     factualBoundaryCompliance: ScoreResult | null;
   };
+  /**
+   * The run's own tool-call trace (#307 track 2): every tool call made
+   * while producing this case's answer, in call order — order IS the
+   * returned-result rank — carrying only the tool name, the arguments the
+   * model supplied, and that call's own returned citation/source ids
+   * (`./scorers/tool-routing.js`'s `ToolCall`). Deliberately compact: no
+   * full result bodies, no secrets, nothing beyond what distinguishes "the
+   * story was never retrieved" from "it was returned and the model ignored
+   * it". Optional on input (a case built before this field existed, or a
+   * run whose `toolCalls` was omitted) and always normalized to `[]` — never
+   * `undefined` — in the assembled report.
+   */
+  toolTrace?: ToolCall[];
 }
 
 /** A per-scorer aggregate: the mean score over every case the scorer applied to, and how many cases that was. */
@@ -133,7 +147,7 @@ export function buildReport(params: {
     promptVersion: params.promptVersion,
     modelId: params.modelId,
     generatedAt: params.generatedAt ?? new Date().toISOString(),
-    cases: params.cases,
+    cases: params.cases.map((c) => ({ ...c, toolTrace: c.toolTrace ?? [] })),
     aggregates,
     totals: { cases: params.cases.length, ...params.totals },
     thresholds,

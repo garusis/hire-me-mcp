@@ -234,6 +234,11 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
       preferredSourceCompliance,
       factualBoundaryCompliance,
     },
+    // #307 track 2: persist the run's own tool-call trace (name, args,
+    // returned citations, in call order) alongside the scores, so a report
+    // can distinguish a retrieval failure from the model ignoring a
+    // returned result — see ./report.ts's CaseReport.toolTrace doc comment.
+    toolTrace: run.toolCalls ?? [],
   };
 }
 
