@@ -3,7 +3,7 @@
  * (`app/opengraph-image.tsx`, `app/projects/[slug]/opengraph-image.tsx`,
  * `app/writing/[slug]/opengraph-image.tsx`). Colors and type pairing match
  * the design system's tokens (`app/globals.css`'s `--color-*` and
- * `--font-*`, `app/fonts.ts`'s Fraunces/IBM Plex Sans pairing) — satori
+ * `--font-*`, `app/fonts.ts`'s Space Grotesk/Inter pairing) — satori
  * (which `ImageResponse` renders through) only understands inline styles,
  * not CSS custom properties, so the token values are duplicated here as
  * literals rather than consumed from `globals.css`.
@@ -22,8 +22,8 @@ const COLOR_BG = COLOR_BG_LIGHT;
 // muted foreground on the card's light background), not reused by any
 // app/* file the hardcoded-hex rule scans — so no import-indirection is
 // needed for them the way the shared brand colors above need one.
-const COLOR_FG = "#1c1a17";
-const COLOR_FG_MUTED = "#5c584f";
+const COLOR_FG = "#14181d";
+const COLOR_FG_MUTED = "#5a6470";
 
 export function OgCard({ kicker, title, description }: OgCardProps) {
   return (
@@ -37,7 +37,7 @@ export function OgCard({ kicker, title, description }: OgCardProps) {
         padding: 80,
         background: COLOR_BG,
         color: COLOR_FG,
-        fontFamily: "IBM Plex Sans",
+        fontFamily: "Inter",
       }}
     >
       <div
@@ -62,7 +62,7 @@ export function OgCard({ kicker, title, description }: OgCardProps) {
             color: COLOR_ACCENT_FG,
             alignItems: "center",
             justifyContent: "center",
-            fontFamily: "Fraunces",
+            fontFamily: "Space Grotesk",
             fontSize: 22,
           }}
         >
@@ -74,7 +74,7 @@ export function OgCard({ kicker, title, description }: OgCardProps) {
         <div
           style={{
             display: "flex",
-            fontFamily: "Fraunces",
+            fontFamily: "Space Grotesk",
             fontSize: 64,
             fontWeight: 600,
             lineHeight: 1.1,

@@ -5,7 +5,7 @@
  * Fonts at request time (a network dependency this build path shouldn't
  * have), the same two weights `app/fonts.ts` loads are checked into
  * `apps/web/assets/fonts/` and read from disk here, matching the site's
- * actual typefaces (Fraunces display / IBM Plex Sans body — see
+ * actual typefaces (Space Grotesk display / Inter body — see
  * `app/globals.css`'s `--font-display`/`--font-body` tokens).
  */
 
@@ -38,13 +38,13 @@ export async function loadOgFonts(): Promise<OgFont[]> {
   }
 
   const [displayData, bodyData] = await Promise.all([
-    readFile(join(FONTS_DIR, "Fraunces-SemiBold.ttf")),
-    readFile(join(FONTS_DIR, "IBMPlexSans-SemiBold.ttf")),
+    readFile(join(FONTS_DIR, "SpaceGrotesk-SemiBold.woff")),
+    readFile(join(FONTS_DIR, "Inter-SemiBold.woff")),
   ]);
 
   cachedFonts = [
-    { name: "Fraunces", data: displayData, weight: 600, style: "normal" },
-    { name: "IBM Plex Sans", data: bodyData, weight: 600, style: "normal" },
+    { name: "Space Grotesk", data: displayData, weight: 600, style: "normal" },
+    { name: "Inter", data: bodyData, weight: 600, style: "normal" },
   ];
   return cachedFonts;
 }

@@ -1,13 +1,14 @@
 .wrapper {
   text-align: center;
-  padding-block: var(--space-3xl, 4rem);
+  padding-block: var(--space-8);
 }
 
 .eyebrow {
-  font-family: var(--font-mono-plex-mono, monospace);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  opacity: 0.6;
+  color: var(--color-fg-muted);
 }
 
 .actions {

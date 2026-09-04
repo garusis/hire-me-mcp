@@ -10,44 +10,50 @@
 :root {
   color-scheme: light;
 
-  /* Color — warm, restrained neutrals with one confident accent. */
-  --color-bg: #f7f5f0;
-  --color-bg-subtle: #eeebe2;
+  /* Color — "Ink & Verdigris" (#308): cooler, sharper neutrals with a
+     restrained verdigris accent and a rare amber highlight for status. */
+  --color-bg: #f6f7f4;
+  --color-bg-subtle: #ecefea;
   --color-surface: #ffffff;
-  --color-fg: #1c1a17;
-  --color-fg-muted: #5c584f;
-  --color-border: #ddd8cc;
-  --color-accent: #b5541f;
-  --color-accent-fg: #fff8f0;
-  --color-focus-ring: #b5541f;
+  --color-fg: #14181d;
+  --color-fg-muted: #5a6470;
+  --color-border: #d9dee3;
+  --color-accent: #0f766e;
+  --color-accent-hover: #115e59;
+  --color-accent-fg: #f0fdfa;
+  --color-accent-soft: #ccfbf1;
+  --color-highlight: #b45309;
+  --color-highlight-soft: #fef3c7;
+  --color-focus-ring: #0f766e;
 
-  /* Elevation — warm-tinted, not pure black. */
-  --shadow-sm: 0 1px 2px rgba(28, 26, 23, 0.08);
-  --shadow-md: 0 8px 24px rgba(28, 26, 23, 0.12);
+  /* Elevation. */
+  --shadow-sm: 0 1px 2px rgba(20, 24, 29, 0.08);
+  --shadow-md: 0 8px 24px rgba(20, 24, 29, 0.12);
 
-  /* Typography */
-  --font-display: var(--font-display-fraunces), Georgia, "Times New Roman", serif;
-  --font-body: var(--font-body-plex-sans), system-ui, -apple-system, sans-serif;
-  --font-mono: var(--font-mono-plex-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
+  /* Typography — Space Grotesk (display) / Inter (body) / JetBrains Mono. */
+  --font-display: var(--font-display-space-grotesk), Georgia, "Times New Roman", serif;
+  --font-body: var(--font-body-inter), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-mono-jetbrains-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
 
   --text-xs: 0.75rem;
-  --leading-xs: 1rem;
+  --leading-xs: 1.4rem;
   --text-sm: 0.875rem;
-  --leading-sm: 1.4rem;
+  --leading-sm: 1.3125rem;
   --text-base: 1rem;
   --leading-base: 1.6rem;
-  --text-lg: 1.125rem;
-  --leading-lg: 1.75rem;
-  --text-xl: 1.375rem;
-  --leading-xl: 1.85rem;
-  --text-2xl: 1.75rem;
-  --leading-2xl: 2.1rem;
-  --text-3xl: 2.25rem;
-  --leading-3xl: 2.5rem;
-  --text-4xl: 3rem;
-  --leading-4xl: 3.2rem;
-  --text-5xl: 3.75rem;
-  --leading-5xl: 3.9rem;
+  --text-xl: 1.125rem;
+  --leading-xl: 1.6875rem;
+  --text-2xl: 1.25rem;
+  --leading-2xl: 1.625rem;
+  --text-3xl: 1.5rem;
+  --leading-3xl: 1.875rem;
+  --text-4xl: 2rem;
+  --leading-4xl: 2.3rem;
+  --text-5xl: clamp(2.5rem, 5vw, 3.25rem);
+  --leading-5xl: 1.05;
+
+  /* Body measure — prose and long-form entry bodies never exceed this. */
+  --measure: 68ch;
 
   /* Space (4px base) */
   --space-1: 0.25rem;
@@ -59,10 +65,11 @@
   --space-7: 3rem;
   --space-8: 4.5rem;
 
-  /* Radii */
+  /* Radii — unified on --radius-md; sm/lg/full kept for the few places
+     that still need a smaller or fully-round shape. */
   --radius-sm: 0.25rem;
   --radius-md: 0.5rem;
-  --radius-lg: 1rem;
+  --radius-lg: 0.5rem;
   --radius-full: 999px;
 
   /* Motion — no-op under prefers-reduced-motion (see media query below). */
@@ -75,18 +82,23 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --color-bg: #16140f;
-  --color-bg-subtle: #1f1c16;
-  --color-surface: #221f19;
-  --color-fg: #f2ede2;
-  --color-fg-muted: #b3ac9c;
-  --color-border: #3a352b;
-  --color-accent: #e08a4f;
-  --color-accent-fg: #1a1208;
-  --color-focus-ring: #e08a4f;
+  --color-bg: #0f1418;
+  --color-bg-subtle: #151b21;
+  --color-surface: #1a222a;
+  --color-fg: #e8ecef;
+  --color-fg-muted: #9aa5b1;
+  --color-border: #2a343e;
+  --color-accent: #2dd4bf;
+  --color-accent-hover: #5eead4;
+  --color-accent-fg: #062a26;
+  --color-accent-soft: #134e4a;
+  --color-highlight: #fbbf24;
+  --color-highlight-soft: #3f2a0a;
+  --color-focus-ring: #2dd4bf;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+  /* Dark mode trades soft shadows for a 1px border line (see #308). */
+  --shadow-sm: 0 0 0 1px var(--color-border);
+  --shadow-md: 0 0 0 1px var(--color-border);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -152,6 +164,18 @@ a {
   outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
+}
+
+/*
+ * Reserves room for the fixed chat FAB (app/chat/chat-widget.module.css)
+ * below 30rem, where its own bottom-inset shrinks to --space-3 — otherwise
+ * it can sit on top of the last on-screen interactive content, e.g. the
+ * hero CTAs at 375px (issue 308).
+ */
+@media (max-width: 30rem) {
+  #main-content {
+    padding-bottom: calc(var(--space-8) + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 .visually-hidden {

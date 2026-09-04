@@ -61,6 +61,20 @@ describe("ThemeToggle", () => {
     expect(toggle).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("renders the theme label in a dedicated element the CSS can hide on small screens (issue 308)", () => {
+    render(<ThemeToggle />);
+    const toggle = screen.getByRole("button", { name: /theme/i });
+    const label = toggle.querySelector("[data-toggle-label]");
+    expect(label).not.toBeNull();
+    expect(label?.textContent).toMatch(/theme/i);
+  });
+
+  it("keeps an accessible name via aria-label so the button stays labeled once the visible label is hidden below 768px", () => {
+    render(<ThemeToggle />);
+    const toggle = screen.getByRole("button", { name: /theme/i });
+    expect(toggle).toHaveAttribute("aria-label");
+  });
+
   it("applies a previously persisted choice on mount", () => {
     localStorage.setItem(THEME_STORAGE_KEY, "dark");
     render(<ThemeToggle />);

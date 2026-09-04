@@ -6,6 +6,13 @@ import styles from "./link.module.css";
 export interface LinkProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
   href: string;
   children: ReactNode;
+  /**
+   * `default` — underlined, accent-colored prose link. `quiet` — no default
+   * underline, `fg-muted` at rest and `fg` on hover; used by nav links,
+   * which show the active route with an underline of their own instead
+   * (issue 308).
+   */
+  variant?: "default" | "quiet";
 }
 
 function isExternal(href: string): boolean {
@@ -28,9 +35,9 @@ function isStaticFile(href: string): boolean {
  * client-side navigation) and external (plain `<a>`, opened in a new tab
  * with `rel="noopener noreferrer"` and a screen-reader-only hint) hrefs.
  */
-export function Link({ href, className, children, ...rest }: LinkProps) {
+export function Link({ href, className, children, variant = "default", ...rest }: LinkProps) {
   const external = isExternal(href);
-  const classes = cx(styles.link, className);
+  const classes = cx(styles.link, variant === "quiet" && styles.quiet, className);
 
   if (external) {
     return (

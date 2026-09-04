@@ -9,7 +9,9 @@ import type {
   ProfileView,
   ProjectListItemView,
   Skill,
+  SkillEvidenceView,
 } from "../src/lib/content";
+import { DEMO_SKILL_TERM } from "./mcp/demo-transcript-data";
 import Home from "./page.js";
 import { resolveCitationHref } from "./skills/citation-href";
 
@@ -22,19 +24,29 @@ import { resolveCitationHref } from "./skills/citation-href";
  * declarations, so the mock functions themselves must be created inside a
  * hoisted block to be safely referenced from the factory below.
  */
-const { getProfileView, getExperienceListView, getProjectsListView, getSkillsListView } =
-  vi.hoisted(() => ({
-    getProfileView: vi.fn<() => ProfileView>(),
-    getExperienceListView: vi.fn<() => { items: ExperienceListItemView[] }>(),
-    getProjectsListView: vi.fn<() => { items: ProjectListItemView[] }>(),
-    getSkillsListView: vi.fn<() => { items: Skill[] }>(),
-  }));
+const {
+  getProfileView,
+  getExperienceListView,
+  getProjectsListView,
+  getSkillsListView,
+  getSkillEvidenceView,
+} = vi.hoisted(() => ({
+  getProfileView: vi.fn<() => ProfileView>(),
+  getExperienceListView: vi.fn<() => { items: ExperienceListItemView[] }>(),
+  getProjectsListView: vi.fn<() => { items: ProjectListItemView[] }>(),
+  getSkillsListView: vi.fn<() => { items: Skill[] }>(),
+  // Backs the hero's HeroMcpPanel (issue 308), which reuses /mcp's real
+  // demo-transcript-data.ts build rather than inventing sample content —
+  // see that module's own test for the real, non-stubbed lookup.
+  getSkillEvidenceView: vi.fn<(term: string) => SkillEvidenceView>(),
+}));
 
 vi.mock("../src/lib/content", () => ({
   getProfileView,
   getExperienceListView,
   getProjectsListView,
   getSkillsListView,
+  getSkillEvidenceView,
 }));
 
 const { getRequestNonce } = vi.hoisted(() => ({
@@ -137,6 +149,20 @@ function stubBaseContent(): void {
       buildSkill("skill-three", "proficient"),
     ],
   });
+  getSkillEvidenceView.mockReturnValue({
+    outcome: {
+      kind: "claimed",
+      skill: {
+        id: "demo-skill",
+        name: DEMO_SKILL_TERM,
+        aliases: [],
+        category: "practice",
+        proficiency: "expert",
+      },
+      evidence: [{ entityType: "experience", entityId: "some-role", label: "some-role" }],
+    },
+    citations: [],
+  });
 }
 
 describe("Home", () => {
@@ -177,6 +203,14 @@ describe("Home", () => {
 
       const cta = screen.getByRole("link", { name: /email/i });
       expect(cta.getAttribute("href")).toBe("mailto:ada@example.com");
+    });
+
+    it("renders the MCP query panel in the hero, with the get-skill-evidence call (issue 308)", async () => {
+      render(await Home());
+
+      const heroRegion = screen.getByRole("region", { name: "Ada Stubwell" });
+      expect(within(heroRegion).getByText(/get-skill-evidence/)).toBeDefined();
+      expect(within(heroRegion).getByTestId("hero-mcp-answer")).toBeDefined();
     });
 
     it("changes the rendered hero when the stubbed profile changes", async () => {

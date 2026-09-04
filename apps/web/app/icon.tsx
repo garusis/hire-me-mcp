@@ -15,9 +15,9 @@ function monogram(name: string): string {
 export default async function Icon() {
   const { profile } = getProfileView();
   const fonts = await loadOgFonts();
-  const displayFont = fonts.find((font) => font.name === "Fraunces");
+  const displayFont = fonts.find((font) => font.name === "Space Grotesk");
   if (!displayFont) {
-    throw new Error("Fraunces OG font failed to load");
+    throw new Error("Space Grotesk OG font failed to load");
   }
 
   return new ImageResponse(
@@ -30,7 +30,7 @@ export default async function Icon() {
         justifyContent: "center",
         background: COLOR_ACCENT,
         color: COLOR_ACCENT_FG,
-        fontFamily: "Fraunces",
+        fontFamily: "Space Grotesk",
         fontSize: 22,
         fontWeight: 600,
       }}

@@ -8,3 +8,14 @@
 .link:hover {
   text-decoration-thickness: 2px;
 }
+
+/* Quiet — nav links: no underline at rest, fg-muted -> fg on hover. The
+   active route is marked separately (see site-header.module.css). */
+.quiet {
+  color: var(--color-fg-muted);
+  text-decoration: none;
+}
+
+.quiet:hover {
+  color: var(--color-fg);
+}

@@ -34,11 +34,11 @@
 }
 
 .button.solid:hover {
-  filter: brightness(1.08);
+  background: var(--color-accent-hover);
 }
 
 .button.outline {
-  background: transparent;
+  background: var(--color-surface);
   color: var(--color-fg);
   border-color: var(--color-border);
 }
@@ -46,4 +46,23 @@
 .button.outline:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
+}
+
+/* Ghost — an arrow-suffixed text link for "See all …", no border/fill so it
+   never competes with the page's one primary (solid) button. */
+.button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-accent);
+  padding-inline: 0;
+  text-decoration: none;
+}
+
+.button.ghost::after {
+  content: "→";
+  transition: transform var(--motion-duration-fast) var(--motion-ease);
+}
+
+.button.ghost:hover::after {
+  transform: translateX(0.15em);
 }

@@ -1,31 +1,32 @@
-import { Fraunces, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 
 /**
  * Self-hosted, build-time font loading via `next/font/google` — no runtime
  * requests to Google Fonts, `display: swap` so first paint never blocks on
  * font download. See apps/web/README.md ("Design system — typography") for
- * the pairing rationale: Fraunces (characterful display serif) over IBM
- * Plex Sans (quiet, engineered body face) and IBM Plex Mono for tabular /
- * code content, all three sharing the same technical-but-warm register.
+ * the pairing rationale ("Ink & Verdigris", issue 308): Space Grotesk
+ * (geometric, technical display face) over Inter (a quiet, engineered body
+ * face with `cv11`/`ss01` feature settings for single-storey a's and open
+ * forms) and JetBrains Mono for the endpoint URL, code snippets and
+ * location/date metadata.
  */
-export const displayFont = Fraunces({
+export const displayFont = Space_Grotesk({
   subsets: ["latin"],
-  weight: ["500", "600"],
-  style: ["normal", "italic"],
+  weight: ["600", "700"],
   display: "swap",
-  variable: "--font-display-fraunces",
+  variable: "--font-display-space-grotesk",
 });
 
-export const bodyFont = IBM_Plex_Sans({
+export const bodyFont = Inter({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
   display: "swap",
-  variable: "--font-body-plex-sans",
+  variable: "--font-body-inter",
 });
 
-export const monoFont = IBM_Plex_Mono({
+export const monoFont = JetBrains_Mono({
   subsets: ["latin"],
   weight: ["400", "500"],
   display: "swap",
-  variable: "--font-mono-plex-mono",
+  variable: "--font-mono-jetbrains-mono",
 });

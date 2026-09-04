@@ -3,7 +3,7 @@ import { cx } from "../lib/cx";
 import styles from "./button.module.css";
 import { Link } from "./link";
 
-type Variant = "solid" | "outline";
+type Variant = "solid" | "outline" | "ghost";
 
 interface SharedProps {
   variant?: Variant;
@@ -22,7 +22,7 @@ export type ButtonProps =
 export function Button({ variant = "solid", className, children, ...rest }: ButtonProps) {
   const classes = cx(
     styles.button,
-    variant === "outline" ? styles.outline : styles.solid,
+    variant === "outline" ? styles.outline : variant === "ghost" ? styles.ghost : styles.solid,
     className,
   );
 

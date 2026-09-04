@@ -11,26 +11,30 @@ motion layer. This ships no career content — the home page below is styled sca
 
 ### Identity
 
-The angle is "senior engineer whose portfolio is an API" — technical, not decorative. The palette
-and type pairing commit to that instead of a generic SaaS template:
+The angle is "senior engineer whose portfolio is an API" — technical, not decorative. The current
+palette and type pairing, "Ink & Verdigris" (issue #308), commit to that:
 
 - **Typefaces** (`app/fonts.ts`, self-hosted via `next/font/google`, `display: swap`, zero
   runtime network requests):
-  - **Fraunces** — a characterful, slightly idiosyncratic display serif — for headings. It reads
-    as considered rather than corporate, and contrasts deliberately with the quiet body face.
-  - **IBM Plex Sans** — a quiet, engineered sans — for body copy. Plex was designed by/for IBM's
-    own products; it reinforces the technical register without competing with Fraunces for
-    attention.
-  - **IBM Plex Mono** — for badges, code-adjacent and tabular content (`.tabular-nums` uses
-    `font-variant-numeric: tabular-nums` so dates/durations/metrics align).
-- **Accent** — a single confident color, not a gradient: a burnt-copper/amber
-  (`#b5541f` light / `#e08a4f` dark) used sparingly (accent badge, links, focus ring, primary
-  button). One accent, consistently applied, reads more deliberate than a multi-color palette.
-- **Neutrals** — warm paper tones (`#f7f5f0` … `#1c1a17`) rather than pure white/black, so the
-  page doesn't read as a stock design-system demo.
-- **Whitespace** — generous section padding (`--space-7`) and a capped content measure
-  (`Container` at `72rem`, `Prose` at `65ch`) instead of a dense dashboard layout.
-- Explicitly avoided: Inter-by-default, gradient hero sections, and a blue "tech" accent.
+  - **Space Grotesk** (600/700) — a geometric, technical display face with tight tracking — for
+    h1–h3 and card/entry titles.
+  - **Inter** (400/500/600, `font-feature-settings: "cv11", "ss01"` for single-storey a's and
+    open forms) — a quiet, engineered sans — for body copy.
+  - **JetBrains Mono** (400/500) — for the MCP endpoint URL, code snippets and
+    location/date metadata only (not for badges/chips — see Primitives below), with
+    `.tabular-nums` (`font-variant-numeric: tabular-nums`) so dates/durations/metrics align.
+- **Accent** — a restrained verdigris (`#0f766e` light / `#2dd4bf` dark), used for interactive
+  things only: links in prose, the primary button, and the active nav route.
+- **Highlight** — a separate amber (`#b45309` light / `#fbbf24` dark), reserved for status (the
+  "open to new roles" chip) and the flagship-project badge/left rule, so it stays rare.
+- **Neutrals** — cooler, sharper tones (`#f6f7f4` … `#14181d` light, `#0f1418` … `#e8ecef` dark)
+  than a warm-paper palette, matching the "query this CV like an API" positioning.
+- **Whitespace** — generous section rhythm (`--space-8` between top-level sections) and a capped
+  content measure (`Container` at `72rem`, `Prose`/entry bodies at `--measure` = `68ch`) instead
+  of a dense dashboard layout.
+- Every text/background token pair is checked against WCAG AA (4.5:1) in both themes by
+  `app/design-system/lib/contrast.test.ts`, which reads the hex values straight out of
+  `globals.css`.
 
 ### Tokens
 
@@ -43,11 +47,11 @@ raw hex literal and fails the suite if it finds one.
 
 | Group      | Tokens                                                                                          |
 | ---------- | ------------------------------------------------------------------------------------------------ |
-| Color      | `--color-bg`, `--color-bg-subtle`, `--color-surface`, `--color-fg`, `--color-fg-muted`, `--color-border`, `--color-accent`, `--color-accent-fg`, `--color-focus-ring` |
-| Elevation  | `--shadow-sm`, `--shadow-md`                                                                     |
-| Typography | `--font-display`, `--font-body`, `--font-mono`, `--text-{xs,sm,base,lg,xl,2xl,3xl,4xl,5xl}`, `--leading-{xs,sm,base,lg,xl,2xl,3xl,4xl,5xl}` |
+| Color      | `--color-bg`, `--color-bg-subtle`, `--color-surface`, `--color-fg`, `--color-fg-muted`, `--color-border`, `--color-accent`, `--color-accent-hover`, `--color-accent-fg`, `--color-accent-soft`, `--color-highlight`, `--color-highlight-soft`, `--color-focus-ring` |
+| Elevation  | `--shadow-sm`, `--shadow-md` (become 1px `--color-border` outlines in dark mode instead of a soft shadow) |
+| Typography | `--font-display`, `--font-body`, `--font-mono`, `--text-{xs,sm,base,xl,2xl,3xl,4xl,5xl}`, `--leading-{xs,sm,base,xl,2xl,3xl,4xl,5xl}`, `--measure` (68ch, prose/entry-body max width) |
 | Space      | `--space-{1..8}` (4px base scale)                                                                 |
-| Radii      | `--radius-{sm,md,lg,full}`                                                                        |
+| Radii      | `--radius-{sm,md,lg,full}` — `md` (0.5rem) is the one every primitive uses now; `lg` is kept equal to `md` for callers that haven't migrated |
 | Motion     | `--motion-duration-{fast,base,slow}`, `--motion-ease` — forced to `0ms` under `prefers-reduced-motion: reduce` |
 
 ### Theming
@@ -83,11 +87,11 @@ declare `"use client"` themselves.
 | `Container`        | Centers + caps content width; `as` prop for the rendered element.                        |
 | `Section`          | `<section>` landmark with vertical rhythm.                                               |
 | `Heading`           | Polymorphic `h1`-`h6`, `level` prop maps to the display type scale.                      |
-| `Prose`            | Long-form copy wrapper — `65ch` measure, spaced children.                                |
-| `Card`              | Bordered/elevated surface; `as` prop (`div`/`article`/…).                                |
-| `Badge`             | Inline label, `neutral`/`accent` variants.                                               |
-| `Link`              | `next/link` for internal hrefs; external hrefs get `target="_blank"`, `rel="noopener noreferrer"` and a screen-reader-only "(opens in a new tab)" hint. |
-| `Button`            | Presentational; renders `<button>` or, given `href`, delegates to `Link`.                |
+| `Prose`            | Long-form copy wrapper — `--measure` (68ch), spaced children.                            |
+| `Card`              | Surface + `shadow-sm`; border appears on hover only. `compact` prop for dense entries (e.g. Skills). `as` prop (`div`/`article`/…). |
+| `Badge`             | Inline label, `neutral` (muted, sentence-case tag) / `status` (amber, for status and the flagship badge) variants. |
+| `Link`              | `next/link` for internal hrefs; external hrefs get `target="_blank"`, `rel="noopener noreferrer"` and a screen-reader-only "(opens in a new tab)" hint. `variant="quiet"` drops the default underline (nav links; active route shown separately). |
+| `Button`            | Presentational; renders `<button>` or, given `href`, delegates to `Link`. `solid`/`outline`/`ghost` (arrow-suffixed text link, for "See all …") variants. |
 | `CopyToClipboard`   | Client component — writes to the clipboard, shows an `aria-live` "Copied!" success state that reverts after 2s. |
 
 Layout primitives (`app/design-system/layout/`): `SkipLink` (visually hidden until focused, jumps
