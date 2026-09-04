@@ -53,7 +53,29 @@ const cvExperienceOverrideSchema = z.object({
   id: idSchema,
   bullets: variantBulletsSchema.optional(),
   techAdditions: z.array(z.string().min(1)).optional(),
-  /** When set, the CV renders this role as one dated line under "Earlier experience" instead of a full entry. */
+  /**
+   * CV-only tag ids (#309 stage 3 second review, item 5) dropped from the
+   * rendered "Tech:" line — the canonical `ExperienceEntry.tech` array is
+   * unchanged, so the MCP and the web still see every tag. Used to collapse
+   * a redundant canonical tag (e.g. a bare `aws` tag next to `ecs`, whose
+   * skill name already reads "AWS ECS") without touching canonical data.
+   */
+  techExcludeIds: z.array(z.string().min(1)).optional(),
+  /**
+   * When set, the CV renders this role's `.entry` block with
+   * `break-inside: avoid` (#309 stage 3 second review, item 5/4.3) so a
+   * short entry never splits across the page boundary. Left unset for
+   * longer entries that are allowed to flow across the page break.
+   */
+  keepTogether: z.boolean().optional(),
+  /**
+   * When set, the CV renders this role as one dated line under "Earlier
+   * experience" instead of a full entry — the value is a short CV-only
+   * description clause only; company, role and dates are still the
+   * canonical `ExperienceEntry` fields, rendered in the same structured
+   * shape as a full entry (#309 stage 3 second review, item 7) so ATS
+   * parsers count it as a real position.
+   */
   compactLine: z.string().min(1).optional(),
 });
 
@@ -61,6 +83,19 @@ const cvExperienceOverrideSchema = z.object({
 const cvProjectOverrideSchema = z.object({
   id: idSchema,
   showOnCv: z.boolean(),
+  /**
+   * CV-only replacement for this project's canonical `summary` (#309
+   * stage 3 second review, item 14) — the canonical `Project.summary` the
+   * MCP and the web serve is unchanged.
+   */
+  summary: z.string().min(1).optional(),
+  /**
+   * Link labels (matching `Project.links[].label`) omitted from the CV's
+   * rendered project line (#309 stage 3 second review, item 17) — e.g.
+   * dropping a duplicated "MCP endpoint" link already called out in the
+   * header. The canonical `links` array is unchanged.
+   */
+  excludeLinkLabels: z.array(z.string().min(1)).optional(),
 });
 
 /**
@@ -93,6 +128,14 @@ const cvSkillsOverrideSchema = z.object({
   }),
   excludeIds: z.array(idSchema),
   displayNames: z.record(idSchema, z.string().min(1)),
+  /**
+   * CV-only per-skill category reassignment (#309 stage 3 second review,
+   * item 15) — e.g. splitting `react`/`nextjs` out of the canonical
+   * `framework` category into a CV-only `frontend` group so a frontend
+   * recruiter's keyword scan finds a "Frontend" label. The canonical
+   * `Skill.category` the MCP and the web read is unchanged.
+   */
+  categoryOverrides: z.record(idSchema, z.string().min(1)).optional(),
 });
 
 /**
