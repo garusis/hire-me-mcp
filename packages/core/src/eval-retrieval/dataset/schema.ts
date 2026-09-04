@@ -64,6 +64,7 @@ interface RawGoldenQuery {
   expectEmpty?: true;
   matchMode?: MatchMode;
   preferredSource?: ExpectedGoldenSource;
+  distinguishingTerms?: string[];
 }
 
 /** `expectEmpty`/`expectedSources` <-> `absent-topic` consistency (this module's docstring's "forbidden for every other category"). */
@@ -96,6 +97,24 @@ function checkAbsentTopicShape(value: RawGoldenQuery, ctx: z.RefinementCtx): voi
       code: "custom",
       path: ["expectedSources"],
       message: `category "${value.category}" requires at least one expected source`,
+    });
+  }
+  if (
+    isAbsentTopic &&
+    (value.distinguishingTerms === undefined || value.distinguishingTerms.length === 0)
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["distinguishingTerms"],
+      message:
+        'category "absent-topic" requires a non-empty distinguishingTerms array (#307 corpus-drift guard)',
+    });
+  }
+  if (!isAbsentTopic && value.distinguishingTerms !== undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["distinguishingTerms"],
+      message: `category "${value.category}" must not set distinguishingTerms`,
     });
   }
 }
@@ -170,6 +189,13 @@ export const goldenQuerySchema = z
     matchMode: matchModeSchema.optional(),
     preferredSource: expectedSourceSchema.optional(),
     notes: z.string().min(1).optional(),
+    /**
+     * Terms whose appearance anywhere in the rendered corpus would falsify
+     * this `absent-topic` query's absence assumption (#307's corpus-drift
+     * guard, `./absent-topic-guard.ts`). Required for `absent-topic`,
+     * forbidden otherwise.
+     */
+    distinguishingTerms: z.array(z.string().min(1)).min(1).optional(),
   })
   .strict()
   .superRefine((value, ctx) => {

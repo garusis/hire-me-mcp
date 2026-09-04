@@ -412,6 +412,11 @@ describe("chunkCareerData — real dataset story coverage (#296)", () => {
   // one's length changes this count, update it deliberately here alongside
   // `docs/development.md`'s recorded expectation — never loosen this into a
   // range to make a failure go away.
+  //
+  // Unaffected by #307's retrieval-tag sharpening on mutual-informal-leadership and
+  // house-numbers-deterministic-document-checks: each replaced one existing tag with one
+  // new tag (net tag count per story unchanged), keeping every story's header text under
+  // the same chunk-size boundary — count stays 90.
   it("records the exact total story-chunk count for the production reindex handoff", () => {
     expect(storyChunks.length).toBe(90);
   });
