@@ -5,71 +5,79 @@
       "ai": "Senior Full-Stack Engineer · LLM and agentic systems in production · TypeScript, Node.js, React, AWS"
     },
     "summary": {
-      "general": "Senior full-stack engineer with 13 years shipping TypeScript/Node.js, React and AWS products, the last four as one of the first non-founder engineers at House Numbers, helping grow a mortgage-lending platform from a handful of services to a 15-service event-driven monorepo. I own critical production systems end to end: a communications service that triaged 57,000+ emails, SMS and calls in a recent seven-month window (~70% reaching an automated triage outcome), a hardened public document-upload boundary, and the on-call investigation workflow the whole rotation uses. Since 2023 that has included putting LLM features into production with evaluation harnesses, cost tracing and deterministic safeguards, so they are measured like any other system. Earlier: multi-tenant SaaS backend lead, legacy-SAP data migrations, monolith-to-Kubernetes migrations, and client-facing delivery.",
-      "ai": "Senior full-stack engineer (TypeScript, Node.js, React, AWS) who has spent the last three years putting LLM and agentic features into production on a mortgage-lending platform and making them accountable: evaluation harnesses with human-graded ground truth and LLM-as-judge scoring, per-call cost tracing, version-controlled prompts, provider failover, and deterministic rules wherever a model was the wrong tool. I built and maintain the platform's communications service (57,000+ emails, SMS and calls triaged in a recent seven-month window, ~70% reaching an automated triage outcome) and led the migration off a prompt-management vendor to repository-native LLM infrastructure across four services with no production regression. Thirteen years of full-stack, DevOps and client-facing delivery underneath, plus two open-source AI projects (an MCP server and an agent-orchestration CLI)."
+      "general": "Senior full-stack engineer with 13 years shipping TypeScript/Node.js, React and AWS products, the last four as one of the first two non-founder engineers at House Numbers, helping take a mortgage-lending platform through a B2C-to-B2B pivot and from a handful of services to a 15-service event-driven monorepo. I own critical production systems end to end: a communications service that triaged 57,000+ emails, SMS and calls in a recent seven-month window (~70% automated), a hardened public document-upload boundary, and the on-call investigation workflow the whole rotation uses. For the last three years that has included putting LLM features into production with evaluation harnesses, cost tracing and deterministic safeguards. Earlier: main backend engineer on a multi-tenant SaaS, two legacy-SAP data migrations, monolith-to-Kubernetes migrations, client-facing delivery.",
+      "ai": "Senior full-stack engineer (TypeScript, Node.js, React, AWS) who has spent the last three years putting LLM and agentic features into production on a mortgage-lending platform: evaluation harnesses with human-graded ground truth and LLM-as-judge scoring, per-call cost tracing, version-controlled prompts and provider failover. I built and maintain the platform's communications service (57,000+ emails, SMS and calls triaged in a recent seven-month window, ~70% reaching an automated triage outcome) and led the migration off a prompt-management vendor to repository-native LLM infrastructure across four services with no significant regression. Thirteen years of full-stack, DevOps and client-facing delivery underneath, plus two open-source AI projects (an MCP server and an agent-orchestration CLI)."
     },
     "timezoneLine": "UTC-5, full US-hours overlap"
   },
   "experience": [
     {
       "id": "house-numbers-2022-senior-full-stack-engineer",
+      "techExcludeIds": ["aws"],
       "bullets": {
         "general": [
-          "Built and maintain the platform's communications service end to end: webhook-driven email, SMS and call intake, LLM-assisted extraction and classification kept separate from deterministic routing, and loan matching over field-level-encrypted data. 57,000+ communications in a recent seven-month window, ~70% reaching an automated triage outcome; operations retired its manual-triage shifts.",
-          "Eliminated failed-upload complaints on a public document-upload flow where roughly two in three submissions had ended in a complaint or escalation: designed and built the replacement boundary (opaque sessions, CAPTCHA, rate limiting, replay protection, encrypted audit trail) and a hybrid deterministic/LLM routing model that kept ambiguous matches with a human.",
-          "Owned incident response on the document-processing path: contained a crash loop (96 restarts in 24 hours against a 0-4 baseline), made the failing path observable and retryable, and reprocessed the affected window with no permanent data loss. Authored the shared on-call investigation workflow the whole rotation adopted.",
-          "Replaced hallucination-prone LLM-generated loan-document checks with deterministic, tested validation in under two weeks, after decomposing the analysis pipeline into idempotent, retryable stages; processors adopted the checks and the LLM runtime cost was removed.",
-          "Led the multi-month migration off a prompt-management vendor (Orq.ai) to repository-native LLM infrastructure: version-controlled prompts, provider failover, shared per-call cost tracing and automated evaluations, rolled out across four services with no significant regression; retired the platform cost and enabled cheaper model swaps under measured quality."
+          "Built and maintain the communications service that triaged 57,000+ emails, SMS and calls in a recent seven-month window, ~70% to an automated outcome, letting operations retire its manual-triage shifts: webhook intake, LLM-assisted extraction and classification kept separate from deterministic routing, loan matching over field-level-encrypted data, hardened with alerts, durable retries and webhook reconciliation.",
+          "Eliminated failed-upload complaints on a public document-upload flow where an estimated two in three submissions had ended in a complaint or escalation: designed and built the replacement boundary (opaque sessions, CAPTCHA, rate limiting, replay protection, encrypted audit trail) and a hybrid deterministic/LLM routing model that kept ambiguous matches with a human.",
+          "Owned incident response on the document-processing path: contained a crash loop (96 restarts in 24 hours against a 0-4 baseline), made the failing path observable and retryable, and reprocessed the affected window with no permanent data loss.",
+          "Replaced hallucination-prone LLM-generated loan-document checks with deterministic, tested validation (plus capped, evaluated AI observations) in under two weeks, after decomposing the monolithic analysis pipeline into three idempotent, retryable stages; processors adopted the checks and the open-ended LLM runtime cost for them was removed.",
+          "Retired a prompt-management vendor (Orq.ai) and its recurring cost by leading a multi-month, service-by-service migration to repository-native LLM infrastructure across four services with no significant regression: version-controlled prompts, provider failover, shared per-call cost tracing and automated evaluations that let the team swap in cheaper models under measured quality.",
+          "Platform tooling: authored the shared on-call investigation workflow the whole rotation adopted (a New Relic alert can now trigger an agent that gathers evidence and drafts a fix for engineer review); designed the CI-gated, agent-consumable monorepo documentation system; built the loan-application product's filter UI in React and the reusable TypeScript query library behind it, tenant-scoped for sensitive loan data."
         ],
         "ai": [
-          "Built and maintain the platform's communications service end to end: webhook-driven email, SMS and call intake, LLM-assisted extraction and classification kept separate from deterministic routing, and loan matching over field-level-encrypted data. 57,000+ communications in a recent seven-month window, ~70% reaching an automated triage outcome; operations retired its manual-triage shifts.",
-          "Led the multi-month migration off a prompt-management vendor (Orq.ai) to repository-native LLM infrastructure: version-controlled prompts, provider failover, shared per-call cost tracing and automated evaluations, rolled out across four services with no significant regression; retired the platform cost and enabled cheaper model swaps under measured quality.",
-          "Replaced hallucination-prone LLM-generated loan-document checks with deterministic, tested validation in under two weeks, after decomposing the analysis pipeline into idempotent, retryable stages; processors adopted the checks and the LLM runtime cost was removed.",
-          "Eliminated failed-upload complaints on a public document-upload flow where roughly two in three submissions had ended in a complaint or escalation: designed and built the replacement boundary (opaque sessions, CAPTCHA, rate limiting, replay protection, encrypted audit trail) and a hybrid deterministic/LLM routing model that kept ambiguous matches with a human.",
-          "Owned incident response on the document-processing path: contained a crash loop (96 restarts in 24 hours against a 0-4 baseline), made the failing path observable and retryable, and reprocessed the affected window with no permanent data loss. Authored the shared on-call investigation workflow the whole rotation adopted.",
-          "Led a multi-round vision-LLM document extraction proof of concept: built and reviewed the ground-truth corpus, evaluation and per-run cost tracing, and found and corrected measurement bugs in the scoring; the result supported \"worth pursuing\" and productionization was left to the team."
+          "Built and maintain the communications service that triaged 57,000+ emails, SMS and calls in a recent seven-month window, ~70% to an automated outcome, letting operations retire its manual-triage shifts: webhook intake, LLM-assisted extraction and classification kept separate from deterministic routing, loan matching over field-level-encrypted data, hardened with alerts, durable retries and webhook reconciliation.",
+          "Retired a prompt-management vendor (Orq.ai) and its recurring cost by leading a multi-month, service-by-service migration to repository-native LLM infrastructure across four services with no significant regression: version-controlled prompts, provider failover, shared per-call cost tracing and automated evaluations that let the team swap in cheaper models under measured quality.",
+          "Replaced hallucination-prone LLM-generated loan-document checks with deterministic, tested validation (plus capped, evaluated AI observations) in under two weeks, after decomposing the monolithic analysis pipeline into three idempotent, retryable stages; processors adopted the checks and the open-ended LLM runtime cost for them was removed.",
+          "Eliminated failed-upload complaints on a public document-upload flow where an estimated two in three submissions had ended in a complaint or escalation: designed and built the replacement boundary (opaque sessions, CAPTCHA, rate limiting, replay protection, encrypted audit trail) and a hybrid deterministic/LLM routing model that kept ambiguous matches with a human.",
+          "Owned incident response on the document-processing path: contained a crash loop (96 restarts in 24 hours against a 0-4 baseline), made the failing path observable and retryable, and reprocessed the affected window with no permanent data loss.",
+          "Authored the shared on-call investigation workflow the whole rotation adopted, and proposed the alert-to-PR automation built on top of it: today a human report or a New Relic alert can trigger an agent that reviews the available evidence and develops likely causes, and prepares a pull request when the issue maps to a code change, for an engineer to validate and merge."
         ]
       }
     },
     {
       "id": "xogito-group-2020-senior-software-development-engineer",
+      "keepTogether": true,
       "bullets": {
         "general": [
           "Main backend engineer (NestJS, TypeScript, PostgreSQL, AWS, GitLab CI) on a multi-tenant SaaS for real-time quality-control inspections; owned backend architecture and delivery end to end.",
-          "Recovered a frustrated enterprise client's account after the project manager resigned: became the team's spokesperson, paired quick wins with core-workflow repairs, and rebuilt trust within a few sprints; the client went on to commission additional projects.",
+          "Recovered a frustrated client's account after the project manager resigned: became the team's spokesperson, paired quick wins with core-workflow repairs, rebuilt trust within a few sprints and led the client product conversations for about six months; the client went on to commission additional projects.",
           "Onboarded and mentored new engineers with an approach later adopted at House Numbers as a rotating buddy program; 15+ people onboarded across the two companies.",
-          "Led a second, larger legacy-SAP data migration: evaluated ETL tooling, built custom scripts where existing tools fell short, and validated rounding compatibility early — no post-migration reconciliation was required."
+          "Led a legacy-SAP data migration more complex than the FullStack Labs one below: evaluated ETL tooling, built custom scripts where existing tools could not represent the models, validated rounding compatibility early, and needed no post-migration reconciliation."
         ]
       }
     },
     {
       "id": "fullstack-labs-2018-senior-software-engineer",
+      "keepTogether": true,
       "bullets": {
         "general": [
-          "Full-stack engineer (Node.js, React, PostgreSQL, AWS, Docker) on a procurement platform for a US fiduciary purchasing agent (FF&E/OS&E).",
           "Owned the migration of historical quote data out of a legacy SAP system with zero data loss: custom ETL, traced a financial-total discrepancy to SAP/JavaScript rounding differences, and ran a frozen cutover with snapshot-backed reconciliation; users retired the legacy system after MVP launch."
         ]
       }
     },
     {
       "id": "belatrix-software-2018-senior-nodejs-software-developer",
-      "compactLine": "Belatrix Software, Senior Node.js Developer (acting technical lead), Jul–Nov 2018 — serverless architecture (Lambda, CloudFormation, DynamoDB) for a dynamic-document platform; led a four-person team delivering it."
+      "compactLine": "Acting technical lead: serverless architecture (Lambda, CloudFormation, DynamoDB) for a dynamic-document platform; led a four-person team delivering it."
     },
     {
       "id": "rokk3r-2016-senior-full-stack-developer-and-devops",
-      "compactLine": "Rokk3r (via Kubesoft SAS), Senior Full Stack Developer and DevOps, Feb 2016 – Jun 2018 — migrated a real-time telecom monolith to an AWS Kubernetes microservices cluster; migrated a mobile backend off Parse ahead of its shutdown deadline."
+      "compactLine": "Via Kubesoft SAS: migrated a real-time telecom monolith to an AWS Kubernetes microservices cluster; migrated a mobile backend off Parse ahead of its shutdown deadline."
     },
     {
       "id": "kubesoft-2015-senior-full-stack-and-mobile-developer",
-      "compactLine": "Kubesoft SAS, Senior Full Stack and Mobile Developer, Jan 2015 – Jun 2018 (assigned to Rokk3r from Feb 2016) — web/hybrid-mobile products for Colombian and international clients; built the first backend of Mutual, a hackathon-winning parenting app."
+      "compactLine": "Web/hybrid-mobile products for Colombian and international clients; built the first backend of Mutual, a hackathon-winning parenting app."
     },
     {
       "id": "jarvi-games-2013-full-stack-developer-and-devops",
-      "compactLine": "Jarvi Games, Full Stack Developer and DevOps, Feb 2013 – Jun 2015 — real-time game backend with micropayments (Node.js, MongoDB, PostgreSQL, PHP) and its infrastructure."
+      "compactLine": "Real-time game backend with micropayments (Node.js, MongoDB, PostgreSQL, PHP) and its infrastructure."
     }
   ],
   "projects": [
-    { "id": "hire-me-mcp", "showOnCv": true },
+    {
+      "id": "hire-me-mcp",
+      "showOnCv": true,
+      "summary": "Public MCP server, RAG-backed interview agent (Neon pgvector, Gemini embeddings) and Next.js site over one typed career dataset; Vitest, Playwright e2e against real Vercel previews, and retrieval/agent evals as required CI gates.",
+      "excludeLinkLabels": ["MCP endpoint"]
+    },
     { "id": "cowork", "showOnCv": true },
     { "id": "document-extraction-pipeline", "showOnCv": false },
     { "id": "llm-evaluation-infrastructure", "showOnCv": false },
@@ -89,6 +97,7 @@
     "categoryLabels": {
       "language": "Languages",
       "runtime": "Backend",
+      "frontend": "Frontend",
       "framework": "Frameworks",
       "database": "Data",
       "cloud-infra": "Cloud & Infrastructure",
@@ -98,14 +107,14 @@
     "groupOrder": {
       "general": [
         "language",
+        "frontend",
         "runtime",
-        "framework",
         "database",
         "cloud-infra",
         "ai-ml",
         "practice"
       ],
-      "ai": ["ai-ml", "language", "runtime", "framework", "database", "cloud-infra", "practice"]
+      "ai": ["ai-ml", "language", "frontend", "runtime", "database", "cloud-infra", "practice"]
     },
     "excludeIds": [
       "angularjs",
@@ -113,23 +122,22 @@
       "php",
       "mobile-hybrid",
       "requirements-gathering",
-      "playwright",
-      "ci-cd",
-      "observability",
       "gemini",
-      "event-driven-architecture",
       "dynamodb"
     ],
     "displayNames": {
-      "regulated-data-handling": "PII / field-level encryption",
+      "regulated-data-handling": "PII handling and field-level encryption",
       "vision-document-processing": "Document AI (OCR/vision-LLM)",
       "turborepo": "Turborepo/pnpm monorepos",
       "pnpm": "Turborepo/pnpm monorepos",
       "mcp": "MCP (Model Context Protocol)",
-      "rag": "RAG (retrieval-augmented gen.)",
       "llms": "LLM evaluation (human-graded, LLM-as-judge)",
-      "serverless": "Serverless (Lambda/CloudFormation)",
-      "ecs": "ECS"
+      "serverless": "Serverless (Lambda/CloudFormation)"
+    },
+    "categoryOverrides": {
+      "react": "frontend",
+      "nextjs": "frontend",
+      "nestjs": "runtime"
     }
   }
 }
