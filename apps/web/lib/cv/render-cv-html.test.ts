@@ -46,8 +46,7 @@ const FIXTURE_VIEW: CvView = {
       endDate: "2015-01",
       highlights: [],
       tech: [],
-      compactLine:
-        "Fixture Earliest Employer, Fixture Earliest Role, Feb 2013 – Jan 2015 — fixture compact-line summary.",
+      compactLine: "fixture compact-line summary.",
     },
   ],
   projects: [
@@ -302,16 +301,48 @@ describe("renderCvHtml", () => {
     expect(aiHtml.slice(0, headerEndAi)).toContain(FIXTURE_OPTIONS.mcpUrl);
   });
 
-  it("renders a role with compactLine as one line under an Earlier Experience heading, not a full entry with bullets (#309 stage 3, action 11)", () => {
+  it("renders a role with compactLine as a structured entry under an Earlier Experience heading — bold company, role, full date range, one description line (#309 stage 3 second review, item 7)", () => {
     const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
     expect(html).toContain("Earlier Experience");
-    expect(html).toContain(
-      "Fixture Earliest Employer, Fixture Earliest Role, Feb 2013 – Jan 2015 — fixture compact-line summary.",
-    );
+    // Same DOM shape as a full entry: bold company, role, formatted period, a single description bullet.
+    expect(html).toContain("<strong>Fixture Earliest Employer</strong>");
+    expect(html).toContain("Fixture Earliest Role");
+    expect(html).toContain("Feb 2013 – Jan 2015");
+    expect(html).toContain("<li>fixture compact-line summary.</li>");
     // The compact entry appears after the "Earlier Experience" heading, not mixed into the main Experience list.
     const earlierIndex = html.indexOf("Earlier Experience");
     const compactIndex = html.indexOf("Fixture Earliest Employer");
     expect(compactIndex).toBeGreaterThan(earlierIndex);
+  });
+
+  it("renders each Earlier Experience entry with the same .entry/.role/<ul><li> DOM shape as a full Experience entry, so ATS parsers count it as a position (#309 stage 3 second review, item 7)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    const earlierIndex = html.indexOf("<h2>Earlier Experience</h2>");
+    expect(earlierIndex).toBeGreaterThan(-1);
+    const earlierSection = html.slice(earlierIndex);
+    expect(earlierSection).toMatch(/<div class="entry">\s*<p class="role"><strong>/);
+    expect(earlierSection).toContain("<ul><li>");
+  });
+
+  it("does not force a compact entry's .entry block onto one page unless the view sets keepTogether (#309 stage 3 second review, item 5)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    const earlierIndex = html.indexOf("<h2>Earlier Experience</h2>");
+    const earlierSection = html.slice(earlierIndex);
+    expect(earlierSection).not.toContain('class="entry keep-together"');
+    const keepTogetherView: CvView = {
+      ...FIXTURE_VIEW,
+      experience: FIXTURE_VIEW.experience.map((item) =>
+        item.company === "Fixture Older Employer" ? { ...item, keepTogether: true } : item,
+      ),
+    };
+    const keepTogetherHtml = renderCvHtml(keepTogetherView, FIXTURE_OPTIONS);
+    expect(keepTogetherHtml).toContain('class="entry keep-together"');
+    expect(keepTogetherHtml).toMatch(/\.entry\.keep-together\s*\{[^}]*break-inside:\s*avoid/);
+  });
+
+  it("keeps a Tech: line from starting a new page (#309 stage 3 second review, item 5)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).toMatch(/\.tech\s*\{[^}]*break-before:\s*avoid/);
   });
 
   it("renders each skill group under its own label, from skillGroups rather than proficiency tiers (#309 stage 3, action 5)", () => {

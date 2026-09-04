@@ -224,13 +224,34 @@ function renderExperienceEntry(item: CvView["experience"][number]): string {
       : `\n    <p class="tech">Tech: ${escapeHtml(item.tech.join(", "))}.</p>`;
   const summary = renderRoleSummary(item.summary);
   const stories = renderRoleStories(item.stories);
+  const entryClass = item.keepTogether === true ? "entry keep-together" : "entry";
   return `
-  <div class="entry">
+  <div class="${entryClass}">
     <p class="role"><strong>${escapeHtml(item.company)}</strong> &mdash; ${escapeHtml(
       item.role,
     )} &middot; ${escapeHtml(formatPeriod(item.startDate, item.endDate))}</p>
 ${summary}
     <ul>${highlights}</ul>${tech}${stories}
+  </div>`;
+}
+
+/**
+ * One "Earlier Experience" role (#309 stage 3 second review, item 7): the
+ * same `.entry`/`.role`/`<ul><li>` DOM shape as a full `renderExperienceEntry`
+ * — bold company, role, the full "Mon YYYY – Mon YYYY" period from the
+ * canonical dates, one description bullet from the overlay's `compactLine`
+ * — so an ATS parser counts it as a real position instead of prose it can't
+ * recognize. No tech line, no summary, no stories: an earlier role is
+ * compacted precisely because it doesn't carry that much detail on the CV.
+ */
+function renderEarlierExperienceEntry(item: CvView["experience"][number]): string {
+  const entryClass = item.keepTogether === true ? "entry keep-together" : "entry";
+  return `
+  <div class="${entryClass}">
+    <p class="role"><strong>${escapeHtml(item.company)}</strong> &mdash; ${escapeHtml(
+      item.role,
+    )} &middot; ${escapeHtml(formatPeriod(item.startDate, item.endDate))}</p>
+    <ul><li>${escapeHtml(item.compactLine ?? "")}</li></ul>
   </div>`;
 }
 
@@ -257,16 +278,13 @@ function renderExperience(experience: CvView["experience"]): string {
  * projection, which carries no overlay-driven compaction).
  */
 function renderEarlierExperience(experience: CvView["experience"]): string {
-  const compactItems = experience
-    .map((item) => item.compactLine)
-    .filter((compactLine): compactLine is string => compactLine !== undefined);
-  if (compactItems.length === 0) {
+  const compactEntries = experience.filter((item) => item.compactLine !== undefined);
+  if (compactEntries.length === 0) {
     return "";
   }
-  const items = compactItems.map((line) => `<li>${escapeHtml(line)}</li>`).join("");
+  const items = compactEntries.map(renderEarlierExperienceEntry).join("");
   return `
-  <h2>Earlier Experience</h2>
-  <ul>${items}</ul>`;
+  <h2>Earlier Experience</h2>${items}`;
 }
 
 /**
@@ -337,29 +355,34 @@ function renderEducation(education: CvView["education"]): string {
 }
 
 const STYLE = `
-  @page { size: Letter; margin: 0.5in; }
+  @page { size: Letter; margin: 0.45in; }
   html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0; color: #000; background: #fff;
     font-family: Arial, "Helvetica Neue", Helvetica, "Liberation Sans", sans-serif;
-    font-size: 10pt; line-height: 1.35;
+    font-size: 9.6pt; line-height: 1.28;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
   .sheet { max-width: 6.5in; margin: 0 auto; padding: 1in 0; }
-  p { margin: 0 0 8pt; orphans: 3; widows: 3; }
+  p { margin: 0 0 6pt; orphans: 3; widows: 3; }
   a { color: inherit; text-decoration: none; }
   h1 { font-size: 19pt; line-height: 1.2; font-weight: bold; margin: 0 0 4pt; }
-  h2 { font-size: 12.5pt; line-height: 1.3; font-weight: bold; margin: 11pt 0 6pt; page-break-after: avoid; break-after: avoid; }
+  h2 { font-size: 12.5pt; line-height: 1.3; font-weight: bold; margin: 8pt 0 4pt; page-break-after: avoid; break-after: avoid; }
   .contact { margin: 0 0 3pt; }
-  .contact-line { margin: 0 0 8pt; }
-  .role { margin: 0 0 4pt; page-break-after: avoid; break-after: avoid; }
+  .contact-line { margin: 0 0 5pt; }
+  .role { margin: 0 0 3pt; page-break-after: avoid; break-after: avoid; }
   /* Entries deliberately are NOT break-inside: avoid (#309 stage 3): the two-page budget needs
      a long role's bullets to flow across a page boundary — only the role header (.role, above)
      and a single bullet line (li, below) stay atomic. */
-  .entry { margin: 0 0 10pt; }
-  ul { margin: 0 0 5pt; padding-left: 16pt; }
-  li { margin: 0 0 3pt; orphans: 2; widows: 2; }
-  .tech { font-style: italic; margin: 0; }
+  .entry { margin: 0 0 6pt; }
+  /* Short entries the overlay flags keepTogether (#309 stage 3 second review, item 5) stay
+     atomic across the page break — unlike the general rule above, which lets a long role's
+     bullets flow across a page boundary. */
+  .entry.keep-together { break-inside: avoid; }
+  ul { margin: 0 0 3pt; padding-left: 16pt; }
+  li { margin: 0 0 1pt; orphans: 2; widows: 2; }
+  /* A "Tech: …" line can never open a page on its own (#309 stage 3 second review, item 5). */
+  .tech { font-style: italic; margin: 0; break-before: avoid; page-break-before: avoid; }
   .role-summary { margin: 2pt 0 0; }
   .role-stories { margin: 4pt 0 0; }
   .role-story { break-inside: avoid; margin: 0 0 4pt; padding-left: 6pt; border-left: 2px solid #ccc; }
