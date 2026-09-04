@@ -230,6 +230,121 @@ describe("createEmbeddingClient", () => {
     expect(sleep).toHaveBeenCalledWith(500);
   });
 
+  it("unwraps a nested AI_RetryError's lastError to find status and RetryInfo delay", async () => {
+    let attempt = 0;
+    const embedBatch = vi.fn(async (batch: readonly string[]) => {
+      attempt += 1;
+      if (attempt === 1) {
+        const apiCallError = Object.assign(new Error("Too Many Requests"), {
+          name: "AI_APICallError",
+          statusCode: 429,
+          responseBody: JSON.stringify({
+            error: {
+              details: [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "11s" }],
+            },
+          }),
+        });
+        const retryError = Object.assign(new Error("Failed after 3 attempts."), {
+          name: "AI_RetryError",
+          reason: "maxRetriesExceeded",
+          lastError: apiCallError,
+          errors: [apiCallError],
+        });
+        throw retryError;
+      }
+      return batch.map((_, index) => fakeVector(index));
+    });
+    const sleep = vi.fn(async () => {});
+
+    const client = createEmbeddingClient({
+      embedBatch,
+      maxRetries: 3,
+      initialDelayMs: 500,
+      sleep,
+    });
+    const result = await client.embed(["x"]);
+
+    expect(result).toHaveLength(1);
+    expect(embedBatch).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(11_000);
+  });
+
+  it("unwraps a nested AI_RetryError's errors array when lastError is absent", async () => {
+    let attempt = 0;
+    const embedBatch = vi.fn(async (batch: readonly string[]) => {
+      attempt += 1;
+      if (attempt === 1) {
+        const apiCallError = Object.assign(new Error("Too Many Requests"), {
+          name: "AI_APICallError",
+          statusCode: 429,
+        });
+        const retryError = Object.assign(new Error("Failed after 3 attempts."), {
+          name: "AI_RetryError",
+          errors: [apiCallError],
+        });
+        throw retryError;
+      }
+      return batch.map((_, index) => fakeVector(index));
+    });
+    const sleep = vi.fn(async () => {});
+
+    const client = createEmbeddingClient({
+      embedBatch,
+      maxRetries: 3,
+      initialDelayMs: 500,
+      sleep,
+    });
+    const result = await client.embed(["x"]);
+
+    expect(result).toHaveLength(1);
+    expect(embedBatch).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not hang on a cyclic nested error shape and treats it as non-retryable", async () => {
+    const embedBatch = vi.fn(async () => {
+      const cyclic = Object.assign(new Error("cyclic"), {
+        name: "AI_RetryError",
+        lastError: undefined as unknown,
+      });
+      cyclic.lastError = cyclic;
+      throw cyclic;
+    });
+
+    const client = createEmbeddingClient({
+      embedBatch,
+      maxRetries: 3,
+      initialDelayMs: 1,
+      sleep: async () => {},
+    });
+
+    await expect(client.embed(["x"])).rejects.toThrow(EmbeddingFailureError);
+    expect(embedBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores malformed nested error shapes (non-object lastError, non-array errors) and falls back to non-retryable", async () => {
+    const malformedNestedCases: Array<() => unknown> = [
+      () => Object.assign(new Error("bad"), { name: "AI_RetryError", lastError: "not an object" }),
+      () => Object.assign(new Error("bad"), { name: "AI_RetryError", errors: "not an array" }),
+      () => Object.assign(new Error("bad"), { name: "AI_RetryError", errors: [null, 42, "x"] }),
+    ];
+
+    for (const makeError of malformedNestedCases) {
+      const embedBatch = vi.fn(async () => {
+        throw makeError();
+      });
+
+      const client = createEmbeddingClient({
+        embedBatch,
+        maxRetries: 3,
+        initialDelayMs: 1,
+        sleep: async () => {},
+      });
+
+      await expect(client.embed(["x"])).rejects.toThrow(EmbeddingFailureError);
+      expect(embedBatch).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it("ignores a malformed RetryInfo delay (negative, non-numeric, or unparseable body) and falls back to backoff", async () => {
     const malformedCases: Array<() => unknown> = [
       () =>

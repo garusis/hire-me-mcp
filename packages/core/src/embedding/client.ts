@@ -60,9 +60,44 @@ function statusCodeOf(error: unknown): number | undefined {
   return typeof candidate === "number" ? candidate : undefined;
 }
 
+const MAX_UNWRAP_DEPTH = 5;
+
+/**
+ * The AI SDK retries a batch of requests internally and, once exhausted,
+ * throws an outer `AI_RetryError` that carries no status code or response
+ * body of its own — the real `APICallError` (with `statusCode`,
+ * `responseBody`, etc.) lives on its `lastError` and/or `errors[]`
+ * properties. This walks those nested properties to find the first error
+ * object exposing a status code, so retryability and provider-delay
+ * inspection see through the wrapper. Bounded by depth and a `seen` set so a
+ * cyclic or malformed nested shape can't cause unbounded recursion.
+ */
+function unwrapProviderError(error: unknown, seen: Set<unknown> = new Set(), depth = 0): unknown {
+  if (typeof error !== "object" || error === null) return error;
+  if (statusCodeOf(error) !== undefined) return error;
+  if (seen.has(error) || depth >= MAX_UNWRAP_DEPTH) return error;
+  seen.add(error);
+
+  const lastError = (error as { lastError?: unknown }).lastError;
+  if (typeof lastError === "object" && lastError !== null) {
+    const resolved = unwrapProviderError(lastError, seen, depth + 1);
+    if (statusCodeOf(resolved) !== undefined) return resolved;
+  }
+
+  const errors = (error as { errors?: unknown }).errors;
+  if (Array.isArray(errors)) {
+    for (const nested of errors) {
+      const resolved = unwrapProviderError(nested, seen, depth + 1);
+      if (statusCodeOf(resolved) !== undefined) return resolved;
+    }
+  }
+
+  return error;
+}
+
 /** Rate limits (429) and server-side transient errors (5xx) are worth retrying; anything else isn't. */
 function isRetryable(error: unknown): boolean {
-  const status = statusCodeOf(error);
+  const status = statusCodeOf(unwrapProviderError(error));
   if (status === 429) return true;
   return status !== undefined && status >= 500 && status < 600;
 }
@@ -126,8 +161,9 @@ function retryDelayFromBody(error: unknown): number | undefined {
  * callers fall back to exponential backoff in that case.
  */
 function providerRetryDelayMs(error: unknown): number | undefined {
-  if (statusCodeOf(error) !== 429) return undefined;
-  return retryDelayFromHeaders(error) ?? retryDelayFromBody(error);
+  const resolved = unwrapProviderError(error);
+  if (statusCodeOf(resolved) !== 429) return undefined;
+  return retryDelayFromHeaders(resolved) ?? retryDelayFromBody(resolved);
 }
 
 function chunk<T>(items: readonly T[], size: number): T[][] {
