@@ -47,17 +47,21 @@ test("copying the endpoint URL on the home Connect panel puts exactly that URL o
   page,
 }) => {
   await page.goto("/");
-  const endpointCode = page.locator("code").first();
+  // Scoped to the Connect section (#mcp): since #308 the hero also renders a
+  // mono <code> sample call above it, so the first <code> on the page is no
+  // longer the endpoint URL.
+  const connectSection = page.locator("#mcp");
+  const endpointCode = connectSection.locator("code").first();
   const endpointUrl = await endpointCode.textContent();
   if (endpointUrl === null) {
     throw new Error("expected an endpoint URL to be rendered");
   }
 
-  await page
+  await connectSection
     .getByRole("button", { name: /copy.*endpoint|copy.*url/i })
     .first()
     .click();
-  await expect(page.getByRole("button", { name: /copied/i }).first()).toBeVisible();
+  await expect(connectSection.getByRole("button", { name: /copied/i }).first()).toBeVisible();
 
   const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
   expect(clipboardText).toBe(endpointUrl);
