@@ -69,7 +69,7 @@
     "classification": "detailed-story",
     "storyIds": ["xogito-client-account-recovery"],
     "action": "correct-inconsistency",
-    "note": "Client-account recovery after the PM left. Must be shortened AND corrected: the highlight's closing clause 'the recovered account won the company further work' asserts causation and personal credit that the approved story does not support; audit #305 point 9 allows the later commissioned work only as a later observed outcome. The highlight also says 'reorganized roadmap' and 'renegotiated scope and deadlines' where the approved narrative says quick wins, a capacity split, client-approved sprint plans, and eased deadline pressure. Resolve against the story, never strengthen the claim. Done in #297: shortened and corrected — the causal closing clause and the 'reorganized roadmap' / 'renegotiated scope and deadlines' wording are gone; the highlight now names the quick wins, the client-approved sprint plans, and trust rebuilt over a few sprints. The original 'brought the lead frontend engineer and lead QA into the client meetings' also contradicted the approved story ('I joined a senior frontend developer and QA in product meetings') and was resolved against the story."
+    "note": "Client-account recovery after the PM left. Must be shortened AND corrected: the highlight's closing clause 'the recovered account won the company further work' asserts causation and personal credit that the approved story does not support; audit #305 point 9 allows the later commissioned work only as a later observed outcome. The highlight also says 'reorganized roadmap' and 'renegotiated scope and deadlines' where the approved narrative says quick wins, a capacity split, client-approved sprint plans, and eased deadline pressure. Resolve against the story, never strengthen the claim. Done in #297: shortened and corrected \u2014 the causal closing clause and the 'reorganized roadmap' / 'renegotiated scope and deadlines' wording are gone; the highlight now names the quick wins, the client-approved sprint plans, and trust rebuilt over a few sprints. The original 'brought the lead frontend engineer and lead QA into the client meetings' also contradicted the approved story ('I joined a senior frontend developer and QA in product meetings') and was resolved against the story."
   },
   {
     "experienceId": "xogito-group-2020-senior-software-development-engineer",
@@ -181,5 +181,19 @@
     "classification": "concise-outcome",
     "action": "keep",
     "note": "No story by owner decision (#305 point 1)."
+  },
+  {
+    "experienceId": "house-numbers-2022-senior-full-stack-engineer",
+    "field": "highlights.5",
+    "classification": "concise-outcome",
+    "action": "keep",
+    "note": "2022 pricing engine and 2023 conversational service, added in #309 stage 3 from Andr\u00e9 Treib's public LinkedIn recommendation (recommendation-andre-treib-2026). No dedicated story exists; the recommendation is the only source. Marcos to confirm the specifics before treating this as settled."
+  },
+  {
+    "experienceId": "xogito-group-2020-senior-software-development-engineer",
+    "field": "highlights.3",
+    "classification": "concise-outcome",
+    "action": "keep",
+    "note": "Second, larger SAP migration, added in #309 stage 3 (open question 9). Sourced from the FullStack Labs story's `reflection` field (fullstack-labs-sap-migration), not from a Xogito-specific story \u2014 reflection is not preservable narrative under #290's classification, so no storyIds is attached here; the reflection field remains the fuller account."
   }
 ]

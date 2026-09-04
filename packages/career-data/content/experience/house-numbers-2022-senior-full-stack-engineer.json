@@ -3,13 +3,14 @@
   "company": "House Numbers",
   "role": "Senior Full Stack Engineer",
   "startDate": "2022-05",
-  "summary": "Core engineer on a 15-service TypeScript monorepo for an AI-powered mortgage-lending platform, working across backend services, frontend, and infrastructure.",
+  "summary": "Core engineer on a 15-service TypeScript monorepo for an AI-powered mortgage-lending platform, working across backend services, frontend, and infrastructure. One of the first two non-founder engineering hires; the engineering team was three people at the pivot into the platform's current product.",
   "highlights": [
     "Led a multi-round proof of concept evaluating vision-LLM document splitting, classification, and extraction as a candidate replacement for the incumbent OCR vendor, including the human-reviewed corpus, evaluation and cost tracing, and fixes to measurement bugs in the scoring. The PoC stayed experimental: production kept the vendor plus the existing LLM fallback, and productionization was left as a later team decision.",
     "Built and still owns the platform's communication service end to end: asynchronous, webhook-driven email and SMS/call intake, LLM-assisted message classification kept separate from the deterministic rules that route each message, and loan matching over field-level-encrypted data.",
     "Turned agentic AI features into engineered systems: evaluation harnesses with LLM-as-judge scoring and human-graded ground truth, per-call cost tracing, version-controlled prompts, and an AI cost-reduction workstream.",
     "Built and evolved flexible query filtering for the loan-application product end to end: the frontend filter flows and a reusable TypeScript filter library and query parser that compose MongoDB queries from them — multi-value, related-entity, date-range, set/unset, and regex-escaped text-search operators — with tenant-scoped access for sensitive loan data.",
-    "Designed and delivered a monorepo-wide, agent-consumable documentation system with deterministic integrity gates in CI, alongside broad ownership of shared packages, public upload flows, user offboarding, observability, and production incident response."
+    "Designed and delivered a monorepo-wide, agent-consumable documentation system with deterministic integrity gates in CI, alongside broad ownership of shared packages, public upload flows, user offboarding, observability, and production incident response.",
+    "Built the platform's mortgage eligibility and pricing engine (2022), a declarative matcher scoring HECM, HELOC and HELOAN products with parallel, type-validated eligibility checks, and its conversational service (2023): stateful intents, persisted chat history, and retro-filling of context — both ahead of the platform's LLM-agent work."
   ],
   "tech": [
     "typescript",
@@ -17,9 +18,12 @@
     "react",
     "mongodb",
     "aws",
+    "ecs",
     "redis",
     "kubernetes",
     "openai-api",
-    "anthropic-api"
+    "anthropic-api",
+    "new-relic",
+    "zod"
   ]
 }
