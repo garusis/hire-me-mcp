@@ -208,11 +208,6 @@
     "evidence": [
       {
         "entityType": "experience",
-        "entityId": "house-numbers-2022-senior-full-stack-engineer",
-        "label": "Senior Full Stack Engineer, House Numbers"
-      },
-      {
-        "entityType": "experience",
         "entityId": "rokk3r-2016-senior-full-stack-developer-and-devops",
         "label": "Senior Full Stack Developer and DevOps, Rokk3r",
         "fragment": "highlights.0"

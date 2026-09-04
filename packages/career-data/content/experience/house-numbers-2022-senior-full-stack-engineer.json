@@ -20,7 +20,6 @@
     "aws",
     "ecs",
     "redis",
-    "kubernetes",
     "openai-api",
     "anthropic-api",
     "new-relic",
