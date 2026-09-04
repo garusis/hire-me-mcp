@@ -138,6 +138,49 @@ describe("getCvView", () => {
     expect(oldRole?.highlights).toEqual(["Old highlight one", "Old highlight two"]);
   });
 
+  it("resolves each entry's tech tags to display names (#299): skill id first, then alias, else the raw tag", () => {
+    const repository = createInMemoryCareerDataRepository(
+      datasetWith({
+        profile: PROFILE,
+        experience: [
+          {
+            id: "fixture-role-tech",
+            company: "Tech Fixture Co",
+            role: "Tech Role",
+            startDate: "2021-01",
+            summary: "Tech summary",
+            highlights: ["Tech highlight"],
+            tech: ["fixture-skill-by-id", "fixture-skill-by-alias", "unclaimed-tag"],
+          },
+        ],
+        skills: [
+          {
+            id: "fixture-skill-by-id",
+            name: "Fixture Skill By Id",
+            aliases: [],
+            category: "language",
+            proficiency: "expert",
+            evidence: [],
+          },
+          {
+            id: "fixture-skill-with-alias",
+            name: "Fixture Skill With Alias",
+            aliases: ["fixture-skill-by-alias"],
+            category: "tool",
+            proficiency: "proficient",
+            evidence: [],
+          },
+        ],
+      }),
+    );
+    const view = getCvView(repository);
+    expect(view.experience[0]?.tech).toEqual([
+      "Fixture Skill By Id",
+      "Fixture Skill With Alias",
+      "unclaimed-tag",
+    ]);
+  });
+
   it("groups skills by proficiency, expert first, each group's names in authored order", () => {
     const repository = createInMemoryCareerDataRepository(
       datasetWith({ profile: PROFILE, skills: SKILLS }),

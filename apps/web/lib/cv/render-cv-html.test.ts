@@ -15,6 +15,7 @@ const FIXTURE_VIEW: CvView = {
     contacts: [
       { label: "Email", url: "mailto:fixture@example.com" },
       { label: "GitHub", url: "https://github.com/fixture-person" },
+      { label: "LinkedIn", url: "https://www.linkedin.example/in/fixture-person/" },
     ],
   },
   experience: [
@@ -24,6 +25,15 @@ const FIXTURE_VIEW: CvView = {
       startDate: "2020-01",
       endDate: undefined,
       highlights: ["Fixture highlight about shipping fixture things."],
+      tech: ["Fixture TypeScript", "Fixture React"],
+    },
+    {
+      company: "Fixture Older Employer",
+      role: "Fixture Older Role",
+      startDate: "2015-06",
+      endDate: "2016-06",
+      highlights: ["Fixture highlight about the older fixture role."],
+      tech: [],
     },
   ],
   projects: [
@@ -82,9 +92,10 @@ describe("renderCvHtml", () => {
     expect(html).toContain("</html>");
   });
 
-  it("includes print CSS: @page, page-break control and print-color-adjust", () => {
+  it("includes print CSS: @page at Letter size, page-break control and print-color-adjust", () => {
     const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
     expect(html).toContain("@page");
+    expect(html).toMatch(/@page\s*\{[^}]*size:\s*Letter/);
     expect(html).toMatch(/break-inside:\s*avoid/);
     expect(html).toMatch(/print-color-adjust:\s*exact/);
   });
@@ -119,7 +130,7 @@ describe("renderCvHtml", () => {
     }
   });
 
-  it("renders a Selected Projects section from the view — name, role, summary, and links as visible URLs (#232)", () => {
+  it("renders a Selected Projects section from the view — name, role, summary, and links as bare-domain text with the full href (#232, #299)", () => {
     const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
     expect(html).toContain("Selected Projects");
     expect(html).toContain("Fixture Flagship Project");
@@ -127,9 +138,13 @@ describe("renderCvHtml", () => {
     expect(html).toContain("Fixture flagship summary describing the fixture project.");
     expect(html).toContain("Fixture Side Project");
     expect(html).toContain("Fixture Maintainer");
-    expect(html).toContain('href="https://github.com/fixture-person/fixture-flagship"');
-    // The link URL is the visible text too, so it survives PDF text extraction.
-    expect(html).toContain(">https://fixture-flagship.example.test/api/mcp</a>");
+    expect(html).toContain(
+      'href="https://github.com/fixture-person/fixture-flagship">github.com/fixture-person/fixture-flagship</a>',
+    );
+    // The href keeps the full URL even though the visible text is the bare domain.
+    expect(html).toContain(
+      'href="https://fixture-flagship.example.test/api/mcp">fixture-flagship.example.test/api/mcp</a>',
+    );
   });
 
   it("omits the Selected Projects section entirely when the view has no projects", () => {
@@ -137,10 +152,18 @@ describe("renderCvHtml", () => {
     expect(html).not.toContain("Selected Projects");
   });
 
-  it("footer calls out the MCP endpoint URL passed in options (#232)", () => {
+  it("the header (not a footer) calls out the MCP endpoint URL passed in options (#232) — no footer is emitted", () => {
     const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
     expect(html).toContain("https://example.test/api/mcp");
     expect(html).toMatch(/MCP client/);
+    expect(html).not.toContain("<footer");
+    expect(html).not.toContain("</footer>");
+    // The callout lives in the header's contact block, before any section heading.
+    const headerEnd = html.indexOf("<h2>");
+    const mcpIndex = html.indexOf("https://example.test/api/mcp");
+    expect(headerEnd).toBeGreaterThan(-1);
+    expect(mcpIndex).toBeGreaterThan(-1);
+    expect(mcpIndex).toBeLessThan(headerEnd);
   });
 
   it("does not force whole sections onto one page — no section-level avoid-page rule (#230)", () => {
@@ -173,6 +196,60 @@ describe("renderCvHtml", () => {
       '<meta name="viewport" content="width=device-width, initial-scale=1" />',
     );
     expect(html).toContain('<link rel="icon" href="/icon" />');
+  });
+
+  it("formats YYYY-MM dates as month names, collapses a same-month start/end, and keeps Present for an open end (#299)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    // Open-ended role: "Jan 2020" onward, rendered "Jan 2020 – Present".
+    expect(html).toContain("Jan 2020 – Present");
+    // Closed role spanning two different months.
+    expect(html).toContain("Jun 2015 – Jun 2016");
+    // Education entry whose start and end fall in the same month collapses
+    // to a single "Mon YYYY", not "Jan 2010 – Jan 2010".
+    const sameMonthView: CvView = {
+      ...FIXTURE_VIEW,
+      education: [
+        {
+          id: "fixture-education-same-month",
+          institution: "Fixture Institute",
+          credential: "Fixture Certificate",
+          startDate: "2020-01",
+          endDate: "2020-01",
+        },
+      ],
+    };
+    const sameMonthHtml = renderCvHtml(sameMonthView, FIXTURE_OPTIONS);
+    expect(sameMonthHtml).toContain("(Jan 2020)");
+    expect(sameMonthHtml).not.toContain("Jan 2020 – Jan 2020");
+  });
+
+  it("renders contact and portfolio links as a bare domain while keeping the full URL as the href (#299)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    // mailto: shows the bare address.
+    expect(html).toContain('href="mailto:fixture@example.com">fixture@example.com</a>');
+    // https:// without www shows scheme-stripped text.
+    expect(html).toContain(
+      'href="https://github.com/fixture-person">github.com/fixture-person</a>',
+    );
+    // https:// with a leading www. and a trailing slash strips both.
+    expect(html).toContain(
+      'href="https://www.linkedin.example/in/fixture-person/">linkedin.example/in/fixture-person</a>',
+    );
+    // The portfolio siteUrl link is shown the same way; the MCP endpoint
+    // is kept in full so it survives copy/paste.
+    expect(html).toContain('href="https://example.test">example.test</a>');
+    expect(html).toContain('href="https://example.test/api/mcp">https://example.test/api/mcp</a>');
+  });
+
+  it("renders a Tech line under a role from the view's tech field, omitted when it is empty (#299)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).toContain('<p class="tech">Tech: Fixture TypeScript, Fixture React.</p>');
+    // The second fixture role has an empty tech array — no stray "Tech:" line for it.
+    const html2 = renderCvHtml(
+      { ...FIXTURE_VIEW, experience: [FIXTURE_VIEW.experience[1] as CvView["experience"][0]] },
+      FIXTURE_OPTIONS,
+    );
+    expect(html2).not.toContain('class="tech"');
   });
 });
 
