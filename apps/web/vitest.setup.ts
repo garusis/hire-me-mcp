@@ -28,9 +28,9 @@ vi.mock("next/font/google", () => {
     });
 
   return {
-    Fraunces: makeFont("fraunces"),
-    IBM_Plex_Sans: makeFont("ibm-plex-sans"),
-    IBM_Plex_Mono: makeFont("ibm-plex-mono"),
+    Space_Grotesk: makeFont("space-grotesk"),
+    Inter: makeFont("inter"),
+    JetBrains_Mono: makeFont("jetbrains-mono"),
   };
 });
 

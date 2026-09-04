@@ -3,11 +3,14 @@ import { Container } from "../primitives/container";
 import { Link } from "../primitives/link";
 import { ThemeToggle } from "../theme/theme-toggle";
 import styles from "./site-header.module.css";
+import { SiteNavLink } from "./site-nav-link";
 
 /**
  * Site-wide header landmark: brand link, primary navigation and the theme
- * toggle. Real navigation entries (project/case-study pages) land with the
- * page tasks in this epic — this scaffolds the structure only.
+ * toggle. Compact (<=64px), single row at every width — nav becomes a
+ * horizontally scrollable row on narrow viewports rather than wrapping
+ * (issue 308) — with a quiet nav that marks the active route via
+ * `SiteNavLink`.
  *
  * The "Download CV" link (#35) points at `/cv/<filename>.pdf` where
  * `<filename>` is `getCvView()`'s own deterministic, profile-name-derived
@@ -24,17 +27,19 @@ export function SiteHeader() {
   return (
     <header className={styles.header}>
       <Container as="div" className={styles.inner}>
-        <Link href="/" className={styles.brand}>
+        <Link href="/" className={styles.brand} variant="quiet">
           hire-me-mcp
         </Link>
         <nav aria-label="Primary" className={styles.nav}>
-          <Link href="/">Home</Link>
-          <Link href="/experience">Experience</Link>
-          <Link href="/projects">Projects</Link>
-          <Link href="/skills">Skills</Link>
-          {hasWriting ? <Link href="/writing">Writing</Link> : null}
-          <Link href="/recommendations">Recommendations</Link>
-          <Link href={`/cv/${filename}`}>Download CV</Link>
+          <SiteNavLink href="/">Home</SiteNavLink>
+          <SiteNavLink href="/experience">Experience</SiteNavLink>
+          <SiteNavLink href="/projects">Projects</SiteNavLink>
+          <SiteNavLink href="/skills">Skills</SiteNavLink>
+          {hasWriting ? <SiteNavLink href="/writing">Writing</SiteNavLink> : null}
+          <SiteNavLink href="/recommendations">Recommendations</SiteNavLink>
+          <Link href={`/cv/${filename}`} variant="quiet" className={styles.navLink}>
+            Download CV
+          </Link>
         </nav>
         <ThemeToggle />
       </Container>

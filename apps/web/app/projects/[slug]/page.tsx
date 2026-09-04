@@ -82,7 +82,7 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
         />
         {project.featured === true && (
           <p className={styles.flagshipBadge}>
-            <Badge variant="accent">Flagship project of this portfolio</Badge>
+            <Badge variant="status">Flagship project of this portfolio</Badge>
           </p>
         )}
         {project.stage === "proof-of-concept" && (

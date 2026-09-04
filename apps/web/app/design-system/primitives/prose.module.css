@@ -1,5 +1,5 @@
 .prose {
-  max-width: 65ch;
+  max-width: var(--measure);
   font-size: var(--text-base);
   line-height: var(--leading-base);
   color: var(--color-fg);

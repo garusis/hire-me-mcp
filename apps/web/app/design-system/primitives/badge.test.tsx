@@ -15,11 +15,11 @@ describe("Badge", () => {
 
   it("defaults to the neutral variant", () => {
     render(<Badge>MCP</Badge>);
-    expect(screen.getByText("MCP")).not.toHaveClass("accent");
+    expect(screen.getByText("MCP")).not.toHaveClass("status");
   });
 
-  it("applies the accent variant when requested", () => {
-    render(<Badge variant="accent">MCP</Badge>);
-    expect(screen.getByText("MCP").className).toMatch(/accent/);
+  it("applies the status variant when requested", () => {
+    render(<Badge variant="status">MCP</Badge>);
+    expect(screen.getByText("MCP").className).toMatch(/status/);
   });
 });

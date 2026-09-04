@@ -1,11 +1,26 @@
+/*
+ * Surface + shadow instead of a border (issue 308): the border only appears on
+ * hover, as a cue that the card is interactive. Dark mode has no shadow
+ * (see globals.css — --shadow-sm/--shadow-md become 1px border lines
+ * there), so the border-on-hover is the only affordance in that theme too.
+ */
 .card {
   min-width: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   background: var(--color-surface);
   box-shadow: var(--shadow-sm);
   padding: var(--space-5);
   transition:
     box-shadow var(--motion-duration-base) var(--motion-ease),
     border-color var(--motion-duration-base) var(--motion-ease);
+}
+
+.card:hover {
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-md);
+}
+
+.compact {
+  padding: var(--space-3) var(--space-4);
 }

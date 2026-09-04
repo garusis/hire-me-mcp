@@ -3,7 +3,12 @@ import { cx } from "../lib/cx";
 import styles from "./badge.module.css";
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
-  variant?: "neutral" | "accent";
+  /**
+   * `neutral` — muted, sentence-case tag for metadata/filters (skills,
+   * project tags, location). `status` — amber, reserved for status and the
+   * flagship badge so it stays rare (issue 308).
+   */
+  variant?: "neutral" | "status";
   children: ReactNode;
 }
 
@@ -11,7 +16,7 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 export function Badge({ variant = "neutral", className, children, ...rest }: BadgeProps) {
   return (
     <span
-      className={cx(styles.badge, variant === "accent" ? styles.accent : styles.neutral, className)}
+      className={cx(styles.badge, variant === "status" ? styles.status : styles.neutral, className)}
       {...rest}
     >
       {children}

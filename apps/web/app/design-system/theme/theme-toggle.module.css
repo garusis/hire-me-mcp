@@ -19,3 +19,14 @@
 .toggle:hover {
   border-color: var(--color-accent);
 }
+
+/* Icon-only below 768px (issue 308's mobile-header criterion). */
+@media (width < 768px) {
+  .label {
+    display: none;
+  }
+
+  .toggle {
+    padding: var(--space-2);
+  }
+}

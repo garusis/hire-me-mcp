@@ -3,25 +3,47 @@
   background: var(--color-bg);
 }
 
+/* Single row at every width, capped at 64px tall (issue 308's mobile-header
+   acceptance criterion) — the nav scrolls horizontally instead of wrapping. */
 .inner {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  padding-block: var(--space-4);
+  padding-block: var(--space-2);
+  min-height: calc(64px - 1px); /* + the header's 1px bottom border = 64px */
 }
 
 .brand {
+  flex: none;
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--text-lg);
-  text-decoration: none;
+  font-weight: 700;
+  font-size: var(--text-xl);
 }
 
 .nav {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-4);
+  overflow-x: auto;
+  scrollbar-width: none;
+  min-width: 0;
+}
+
+.nav::-webkit-scrollbar {
+  display: none;
+}
+
+.navLink {
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  padding-block: var(--space-1);
+  border-bottom: 2px solid transparent;
+}
+
+.navLink[aria-current="page"] {
+  color: var(--color-fg);
+  border-bottom-color: var(--color-accent);
 }
