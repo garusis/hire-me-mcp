@@ -146,6 +146,17 @@ describe("MCP endpoint (app/api/mcp/route.ts)", () => {
     await client.close();
   });
 
+  it("instructions route CV-presentation questions to get-cv-presentation (#315)", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const instructions = client.getInstructions() ?? "";
+    expect(instructions).toContain("`get-cv-presentation`");
+
+    await client.close();
+  });
+
   it("instructions do not advertise a nonexistent 'role' filter for list-career-stories (independent review, #293)", async () => {
     const client = new Client({ name: "test-client", version: "0.0.0" });
     const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
@@ -217,6 +228,69 @@ describe("MCP endpoint (app/api/mcp/route.ts)", () => {
     const structuredContent = result.structuredContent as { data: unknown[]; citations: unknown[] };
     expect(Array.isArray(structuredContent.data)).toBe(true);
     expect(Array.isArray(structuredContent.citations)).toBe(true);
+
+    await client.close();
+  });
+
+  it("calls get-cv-presentation over streamable HTTP and gets the general variant by default, with ids and citations (#315)", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const result = await client.callTool({ name: "get-cv-presentation", arguments: {} });
+
+    expect(result.isError).not.toBe(true);
+    const structuredContent = result.structuredContent as {
+      data: {
+        variant: string;
+        headline: string;
+        experience: Array<{ id: string; bullets: string[] }>;
+      };
+      citations: Array<{ entityType: string; entityId: string; url: string }>;
+    };
+    expect(structuredContent.data.variant).toBe("general");
+    expect(structuredContent.data.headline.length).toBeGreaterThan(0);
+    expect(structuredContent.data.experience.length).toBeGreaterThan(0);
+    expect(structuredContent.data.experience[0]?.id.length).toBeGreaterThan(0);
+    expect(structuredContent.citations.length).toBeGreaterThan(0);
+    for (const citation of structuredContent.citations) {
+      expect(citation.url.length).toBeGreaterThan(0);
+    }
+
+    await client.close();
+  });
+
+  it("calls get-cv-presentation with variant: 'ai' over streamable HTTP and gets the ai variant back (#315)", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "get-cv-presentation",
+      arguments: { variant: "ai" },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const structuredContent = result.structuredContent as { data: { variant: string } };
+    expect(structuredContent.data.variant).toBe("ai");
+
+    await client.close();
+  });
+
+  it("rejects get-cv-presentation called with an unknown variant over streamable HTTP as a documented validation failure (#315)", async () => {
+    const client = new Client({ name: "test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
+    await client.connect(transport);
+
+    const result = await client.callTool({
+      name: "get-cv-presentation",
+      arguments: { variant: "spanish" },
+    });
+
+    expect(result.isError).toBe(true);
+    const [firstBlock] = result.content as Array<{ type: string; text?: string }>;
+    expect(firstBlock?.text).toContain('"general"');
+    expect(firstBlock?.text).toContain('"ai"');
 
     await client.close();
   });

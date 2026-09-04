@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { ToolDefinition } from "./define-tool.js";
 import { EXPECTED_TOOL_NAMES } from "./tool-names.js";
+import { getCvPresentationTool } from "./tools/get-cv-presentation.js";
 import { getExperienceTool } from "./tools/get-experience.js";
 import { getProfileTool } from "./tools/get-profile.js";
 import { getSkillEvidenceTool } from "./tools/get-skill-evidence.js";
@@ -42,6 +43,7 @@ const toolsUnderTest: ToolDefinition<z.ZodTypeAny, any>[] = [
   listWritingTool,
   listRecommendationsTool,
   listCareerStoriesTool,
+  getCvPresentationTool,
 ];
 
 function schemaProperties(schema: z.ZodTypeAny): Record<string, z.ZodTypeAny> {

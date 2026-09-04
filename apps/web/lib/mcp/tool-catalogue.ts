@@ -18,6 +18,7 @@
  * same order, and that every description matches its real tool verbatim.
  */
 
+import { getCvPresentationTool } from "./tools/get-cv-presentation";
 import { getExperienceTool } from "./tools/get-experience";
 import { getProfileTool } from "./tools/get-profile";
 import { getSkillEvidenceTool } from "./tools/get-skill-evidence";
@@ -53,6 +54,7 @@ const REGISTERED_TOOLS = [
   listWritingTool,
   listRecommendationsTool,
   listCareerStoriesTool,
+  getCvPresentationTool,
 ];
 
 const EXAMPLE_PROMPTS_BY_NAME: Record<string, string> = {
@@ -71,6 +73,8 @@ const EXAMPLE_PROMPTS_BY_NAME: Record<string, string> = {
     "What do Marcos's managers and colleagues say about working with him? Show me his LinkedIn recommendations.",
   "list-career-stories":
     "Tell me about a time Marcos demonstrated leadership — what was the situation, what did he do, and how did it turn out?",
+  "get-cv-presentation":
+    "Give me Marcos's CV-style summary — headline, top highlights per role, and key skills.",
 };
 
 function examplePromptFor(toolName: string): string {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MCP_TOOL_CATALOGUE } from "./tool-catalogue";
 import { EXPECTED_TOOL_NAMES } from "./tool-names";
+import { getCvPresentationTool } from "./tools/get-cv-presentation";
 import { getExperienceTool } from "./tools/get-experience";
 import { getProfileTool } from "./tools/get-profile";
 import { getSkillEvidenceTool } from "./tools/get-skill-evidence";
@@ -30,6 +31,7 @@ const REAL_TOOLS_BY_NAME = new Map(
     listWritingTool,
     listRecommendationsTool,
     listCareerStoriesTool,
+    getCvPresentationTool,
   ].map((tool) => [tool.name, tool]),
 );
 
