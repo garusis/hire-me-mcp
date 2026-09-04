@@ -11,5 +11,5 @@
     "Onboarded and mentored new team members on the business domain and technical stack.",
     "Led a more complex legacy-SAP data migration: evaluated ETL tooling, built custom scripts where the source and target models could not be represented by existing tools, checked rounding compatibility early, and iterated with platform users ahead of the bulk migration — it did not require post-migration reconciliation."
   ],
-  "tech": ["nestjs", "typescript", "postgresql", "docker", "gitlab-ci", "aws"]
+  "tech": ["nestjs", "typescript", "postgresql", "docker", "gitlab-ci", "aws", "redux"]
 }

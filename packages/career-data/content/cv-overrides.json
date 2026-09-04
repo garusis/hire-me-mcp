@@ -38,6 +38,7 @@
     },
     {
       "id": "xogito-group-2020-senior-software-development-engineer",
+      "techExcludeIds": ["redux"],
       "bullets": {
         "general": [
           "First engineer assigned to, then main backend engineer of, a multi-tenant SaaS for real-time quality-control inspections (NestJS, TypeScript, PostgreSQL, AWS, GitLab CI); owned backend architecture and delivery end to end.",
@@ -50,6 +51,7 @@
     {
       "id": "fullstack-labs-2018-senior-software-engineer",
       "keepTogether": true,
+      "techExcludeIds": ["redux"],
       "bullets": {
         "general": [
           "Full-stack engineer (Node.js, React, PostgreSQL) on a procurement platform rebuilt for a US fiduciary purchasing agent (FF&E/OS&E).",
@@ -139,7 +141,9 @@
       "requirements-gathering",
       "gemini",
       "dynamodb",
-      "python"
+      "python",
+      "redux",
+      "ruby-on-rails"
     ],
     "displayNames": {
       "regulated-data-handling": "PII handling and field-level encryption",

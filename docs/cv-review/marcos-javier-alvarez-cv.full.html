@@ -181,7 +181,7 @@
     <p class="role"><strong>Xogito Group</strong> &mdash; Senior Software Development Engineer &middot; Dec 2020 – Mar 2022</p>
 <p class="role-summary">Main backend engineer on a cloud-based, multi-tenant SaaS for real-time quality-control inspections across factories, product lots, and distribution points.</p>
     <ul><li>First engineer assigned to the multi-tenant inspection platform; owned backend architecture and delivery end to end.</li><li>After the project manager left, became the team's voice with a frustrated client and recovered the account: joined the frontend developer and QA in client meetings to realign requirements, paired quick wins with the core workflow repairs, and rebuilt trust over a few sprints of approved plans.</li><li>Onboarded and mentored new team members on the business domain and technical stack.</li><li>Led a more complex legacy-SAP data migration: evaluated ETL tooling, built custom scripts where the source and target models could not be represented by existing tools, checked rounding compatibility early, and iterated with platform users ahead of the bulk migration — it did not require post-migration reconciliation.</li></ul>
-    <p class="tech">Tech: NestJS, TypeScript, PostgreSQL, Docker, GitLab CI, AWS.</p><div class="role-stories">
+    <p class="tech">Tech: NestJS, TypeScript, PostgreSQL, Docker, GitLab CI, AWS, Redux.</p><div class="role-stories">
         <div class="role-story">
           <p class="story-title"><strong>Turning a poor onboarding experience into a repeatable framework</strong></p>
           <p class="story-field"><strong>Situation:</strong> When I joined Xogito as the first engineer assigned to a new project team, there was no established onboarding support. I received a Confluence page and some general company information, but no clear person to guide me. I had to discover the environment myself and find people on Slack who could answer different questions.</p>
@@ -213,7 +213,7 @@
     <p class="role"><strong>FullStack Labs</strong> &mdash; Senior Software Engineer &middot; Dec 2018 – Dec 2020</p>
 <p class="role-summary">Full-stack development of a platform supporting a fiduciary purchasing agent for FF&amp;E/OS&amp;E procurement, for a US client.</p>
     <ul><li>Built and maintained full-stack features across the procurement platform.</li><li>Migrated the client's historical quote data from their legacy system into the rebuilt platform with custom ETL scripts, expert verification, and financial totals aligned to the legacy calculations — number continuity was an explicit client requirement.</li></ul>
-    <p class="tech">Tech: Node.js, React, PostgreSQL, AWS, Docker.</p><div class="role-stories">
+    <p class="tech">Tech: Node.js, React, PostgreSQL, AWS, Docker, Redux.</p><div class="role-stories">
         <div class="role-story">
           <p class="story-title"><strong>Preserving financial continuity during a legacy SAP migration</strong></p>
           <p class="story-field"><strong>Situation:</strong> I was the backend engineer on a project rebuilding a procurement platform whose historical quote and operational data lived in a legacy SAP system. The migration needed to preserve more than individual field values: users expected financial calculations in the new platform to remain consistent with the system they already trusted.</p>
@@ -232,7 +232,7 @@
     <p class="role"><strong>Belatrix Software</strong> &mdash; Senior NodeJS Software Developer &middot; Jul 2018 – Nov 2018</p>
 <p class="role-summary">Led architecture design and the development team for a serverless dynamic-document platform for a major supply-chain provider.</p>
     <ul><li>Designed the serverless architecture and led the development team delivering it.</li><li>Orchestrated automated deployments via CloudFormation.</li></ul>
-    <p class="tech">Tech: AWS, Node.js, React, Docker, Serverless (AWS Lambda / CloudFormation), DynamoDB.</p><div class="role-stories">
+    <p class="tech">Tech: AWS, Node.js, React, Docker, Serverless (AWS Lambda / CloudFormation), DynamoDB, Redux.</p><div class="role-stories">
         <div class="role-story">
           <p class="story-title"><strong>Owning a destructive deployment mistake and rebuilding trust</strong></p>
           <p class="story-field"><strong>Situation:</strong> At Belatrix, I held the title of Senior Node.js Developer while acting as the technical lead for a small team of two junior full-stack developers and two QA engineers. I guided the developers, reviewed their work, gathered requirements with the client, and represented the team internally. For local development, we used a script that cleared DynamoDB data so we could begin testing from a clean state. While building our deployment pipeline for a shared development environment, that script was included in the deployment process. I reviewed the change but failed to notice that the script was not restricted to our project's tables. When the pipeline ran, it cleared data across every DynamoDB table in the shared development environment, including tables belonging to other teams. The environment had no backups, so the deleted information could not be restored and those teams had to reconstruct their development data. No production or customer data was affected, but the incident caused substantial disruption inside the company.</p>
@@ -302,7 +302,7 @@
     <p class="role"><strong>Jarvi Games</strong> &mdash; Full Stack Developer and DevOps &middot; Feb 2013 – Jun 2015</p>
 <p class="role-summary">Full-stack and DevOps developer building a real-time game backend with micropayments.</p>
     <ul><li>Built a real-time game backend with micropayments, including the underlying full-stack infrastructure and DevOps.</li></ul>
-    <p class="tech">Tech: Node.js, MongoDB, PostgreSQL, PHP.</p>
+    <p class="tech">Tech: Node.js, MongoDB, PostgreSQL, PHP, Ruby on Rails.</p>
   </div>
 
 
@@ -329,7 +329,7 @@
   </div>
 
   <h2>Skills</h2>
-  <ul><li><strong>ai-ml:</strong> OpenAI API, Anthropic API, LLMs (Large Language Models), LLM Evaluation (human-graded, LLM-as-judge), AI Agents, Prompt Engineering, Vision-based Document Processing, MCP (Model Context Protocol), RAG (Retrieval-Augmented Generation), Gemini API.</li><li><strong>cloud-infra:</strong> AWS, AWS ECS, Docker, Kubernetes, Serverless (AWS Lambda / CloudFormation), GitLab CI, GitHub Actions, Vercel, New Relic.</li><li><strong>database:</strong> MongoDB, PostgreSQL, Redis, pgvector, DynamoDB.</li><li><strong>framework:</strong> React, NestJS, AngularJS, Socket.IO, Next.js.</li><li><strong>language:</strong> TypeScript, JavaScript, PHP, Python, SQL.</li><li><strong>practice:</strong> CI/CD, Observability, Turborepo, pnpm, Mentoring &amp; Onboarding, Requirements Gathering, Regulated / Encrypted Data Handling, Hybrid Mobile Development, Playwright, Vitest, Zod, ETL / Data Migration.</li><li><strong>runtime:</strong> Node.js, Microservices, Event-Driven Architecture, REST APIs, Webhooks.</li></ul>
+  <ul><li><strong>ai-ml:</strong> OpenAI API, Anthropic API, LLMs (Large Language Models), LLM Evaluation (human-graded, LLM-as-judge), AI Agents, Prompt Engineering, Vision-based Document Processing, MCP (Model Context Protocol), RAG (Retrieval-Augmented Generation), Gemini API.</li><li><strong>cloud-infra:</strong> AWS, AWS ECS, Docker, Kubernetes, Serverless (AWS Lambda / CloudFormation), GitLab CI, GitHub Actions, Vercel, New Relic.</li><li><strong>database:</strong> MongoDB, PostgreSQL, Redis, pgvector, DynamoDB.</li><li><strong>framework:</strong> React, NestJS, AngularJS, Socket.IO, Next.js, Redux, Ruby on Rails.</li><li><strong>language:</strong> TypeScript, JavaScript, PHP, Python, SQL.</li><li><strong>practice:</strong> CI/CD, Observability, Turborepo, pnpm, Mentoring &amp; Onboarding, Requirements Gathering, Regulated / Encrypted Data Handling, Hybrid Mobile Development, Playwright, Vitest, Zod, ETL / Data Migration.</li><li><strong>runtime:</strong> Node.js, Microservices, Event-Driven Architecture, REST APIs, Webhooks.</li></ul>
 
   <h2>Education</h2>
   <ul><li>Universidad Nacional Abierta y a Distancia (UNAD) &mdash; B.S. Systems Engineering (in progress)</li><li>International Scrum Institute &mdash; Scrum Master &amp; Product Owner (Jan 2020)</li></ul>
