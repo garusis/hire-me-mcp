@@ -176,6 +176,20 @@
     ]
   },
   {
+    "id": "ecs",
+    "name": "AWS ECS",
+    "aliases": ["elastic container service"],
+    "category": "cloud-infra",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      }
+    ]
+  },
+  {
     "id": "docker",
     "name": "Docker",
     "aliases": [],
@@ -785,20 +799,6 @@
     "id": "new-relic",
     "name": "New Relic",
     "aliases": [],
-    "category": "cloud-infra",
-    "proficiency": "proficient",
-    "evidence": [
-      {
-        "entityType": "experience",
-        "entityId": "house-numbers-2022-senior-full-stack-engineer",
-        "label": "Senior Full Stack Engineer, House Numbers"
-      }
-    ]
-  },
-  {
-    "id": "ecs",
-    "name": "AWS ECS",
-    "aliases": ["elastic container service"],
     "category": "cloud-infra",
     "proficiency": "proficient",
     "evidence": [
