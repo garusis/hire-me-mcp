@@ -89,6 +89,22 @@ describe("checkAbsentTopicDrift", () => {
     expect(checkAbsentTopicDrift(queries, chunks)).toEqual({ valid: true, violations: [] });
   });
 
+  it("a slash-joined term like 'ics/ot' normalizes to a concatenated form ('icsot') that fails to catch a standalone 'ICS' or 'operational technology' mention — the dishonesty the ./cases.ts absent-industrial-control-systems entry now avoids by using the full phrase 'operational technology' instead (Codex review checkpoint correction, #307)", () => {
+    const chunks = [
+      {
+        sourceType: "story",
+        sourceId: "s1",
+        text: "Modernized operational technology monitoring for a manufacturing plant's ICS network.",
+      },
+    ];
+
+    const dishonestTerm = [absentQuery({ distinguishingTerms: ["ics/ot"] })];
+    expect(checkAbsentTopicDrift(dishonestTerm, chunks)).toEqual({ valid: true, violations: [] });
+
+    const honestTerm = [absentQuery({ distinguishingTerms: ["operational technology"] })];
+    expect(checkAbsentTopicDrift(honestTerm, chunks).valid).toBe(false);
+  });
+
   it("the real committed corpus has zero corpus-drift violations for ./cases.ts's absent-topic entries", async () => {
     const { GOLDEN_QUERIES } = await import("./cases.js");
     const repository = createContentCareerDataRepository();

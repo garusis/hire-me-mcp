@@ -106,6 +106,7 @@ function baseCaseReport(
   query: GoldenQuery,
   retrieved: RetrievalCaseReport["retrieved"],
   lanes: Record<RetrievalLane, RetrievalLaneResult>,
+  scoringLane: RetrievalLane,
 ): RetrievalCaseReport {
   return {
     id: query.id,
@@ -121,6 +122,7 @@ function baseCaseReport(
     preferencePassed: null,
     preferredSourceReciprocalRank: null,
     passed: false,
+    scoringLane,
     lanes,
   };
 }
@@ -179,8 +181,10 @@ function scoreExpectedCase(
       ? null
       : checkPreferredSource(scoringRetrieved, query.expectedSources, query.preferredSource);
 
+  const scoringLane: RetrievalLane = isStoryOnlyCase(query) ? "storyScoped" : "unscoped";
+
   return {
-    ...baseCaseReport(query, scoringRetrieved, lanes),
+    ...baseCaseReport(query, scoringRetrieved, lanes, scoringLane),
     metrics,
     matchModePassed,
     preferencePassed: preferenceCheck?.passed ?? null,
@@ -197,7 +201,7 @@ function scoreAbsentTopicCase(
 ): RetrievalCaseReport {
   const check = checkExpectEmpty(retrieved, absentTopicMinScore);
   return {
-    ...baseCaseReport(query, retrieved, lanes),
+    ...baseCaseReport(query, retrieved, lanes, "unscoped"),
     expectEmptyCheck: check,
     matchModePassed: true,
     passed: check.passed,

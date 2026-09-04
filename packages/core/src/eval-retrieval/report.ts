@@ -24,11 +24,13 @@ export interface RetrievalCaseMetrics {
  * The two retrieval "lanes" a golden query is run against (#307, diagnosing
  * the story-retrieval false negatives from #296's real eval): `"unscoped"`
  * is the plain `searchCareer` call every case has always used (no
- * `sourceTypes` filter — this is what the top-level `metrics`/aggregates
- * above measure, unchanged); `"storyScoped"` re-runs the same query with
+ * `sourceTypes` filter); `"storyScoped"` re-runs the same query with
  * `sourceTypes: ["story"]`, mirroring the production chat's story-scoped
  * search path so this eval can catch a retrieval gap in that specific lane
- * rather than only the unscoped average.
+ * rather than only the unscoped average. Which lane actually feeds a given
+ * case's TOP-LEVEL `metrics`/`passed`/preference fields is NOT always
+ * `"unscoped"` — see {@link RetrievalCaseReport.scoringLane} for the field
+ * that records that choice explicitly, per case.
  */
 export type RetrievalLane = "unscoped" | "storyScoped";
 
@@ -70,7 +72,20 @@ export interface RetrievalCaseReport {
   preferredSourceReciprocalRank: number | null;
   /** The combined pass/fail: `matchModePassed` (or `expectEmptyCheck.passed` for absent-topic) AND `preferencePassed` when declared. */
   passed: boolean;
-  /** This case's result in each retrieval lane (#307) — `unscoped` mirrors the fields above; `storyScoped` is the same query re-run with `sourceTypes: ["story"]`. */
+  /**
+   * Which lane's raw retrieved list actually fed this case's TOP-LEVEL
+   * `retrieved`/`metrics`/`matchModePassed`/`preferencePassed`/
+   * `preferredSourceReciprocalRank`/`passed` fields above (Codex review
+   * checkpoint correction, #307): `"unscoped"` for every `absent-topic`
+   * case and every expected-source case whose `expectedSources` are not
+   * exclusively story sources; `"storyScoped"` for a story-only
+   * expected-source case (see `./runner.ts`'s `isStoryOnlyCase`). Making
+   * this explicit, rather than leaving readers to infer it from
+   * `expectedSources`, is what makes the report self-explanatory about
+   * which lane's numbers the top-level fields actually are.
+   */
+  scoringLane: RetrievalLane;
+  /** This case's result in each retrieval lane (#307) — `unscoped` mirrors the top-level fields when `scoringLane` is `"unscoped"`; `storyScoped` is the same query re-run with `sourceTypes: ["story"]`. */
   lanes: Record<RetrievalLane, RetrievalLaneResult>;
 }
 
