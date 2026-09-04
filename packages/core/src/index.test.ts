@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAliasIndex,
   buildCitation,
+  buildCvPresentation,
   COMPETENCIES,
   chunkCareerData,
   citableEntityTypeSchema,
@@ -10,6 +11,7 @@ import {
   createInMemoryCareerDataRepository,
   emptyCareerDataset,
   evaluateContactSubmission,
+  getCvPresentation,
   getExperience,
   getProfile,
   getSkillEvidence,
@@ -257,5 +259,39 @@ describe("public entry point", () => {
     expect(citableEntityTypeSchema).toBe(careerData.citableEntityTypeSchema);
     expect(citableEntityTypeSchema.safeParse("story").success).toBe(true);
     expect(citableEntityTypeSchema.safeParse("not-a-real-source-type").success).toBe(false);
+  });
+
+  it("re-exports buildCvPresentation and getCvPresentation (#315), both usable against an in-memory repository with a hermetic overlay", () => {
+    const repository = createInMemoryCareerDataRepository({
+      ...emptyCareerDataset(),
+      profile: {
+        id: "profile-fixture",
+        name: "Fixture Person",
+        headline: "Fixture Engineer",
+        location: "Fixtureville",
+        availability: "open",
+        summary: "Fixture summary.",
+        contacts: [{ label: "Website", url: "https://example.test" }],
+      },
+    });
+    const emptyOverrides = {
+      profile: {},
+      experience: [],
+      projects: [],
+      education: [],
+      skills: {
+        categoryLabels: {},
+        groupOrder: { general: [], ai: [] },
+        excludeIds: [],
+        displayNames: {},
+      },
+    };
+
+    const presentation = buildCvPresentation(repository, { overrides: emptyOverrides });
+    expect(presentation.headline).toBe("Fixture Engineer");
+
+    const result = getCvPresentation(repository, { overrides: emptyOverrides });
+    expect(result.data.headline).toBe("Fixture Engineer");
+    expect(result.citations.length).toBeGreaterThan(0);
   });
 });
