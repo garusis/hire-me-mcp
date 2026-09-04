@@ -303,14 +303,19 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
     category: "absent-topic",
     expectedSources: [],
     expectEmpty: true,
-    distinguishingTerms: ["scada", "industrial control system", "ics/ot"],
+    distinguishingTerms: ["scada", "industrial control system", "operational technology"],
     notes:
       "No mention of SCADA, industrial control systems, or operational technology anywhere " +
       "in the corpus. Replaces the former absent-penetration-testing case (#307): that case's " +
       "top violator in the real 66-case artifact (33848493625) was " +
       "story:house-numbers-secure-public-document-upload (0.6525) — a security-adjacent story " +
       "added after #295, the same corpus-drift failure mode SAP had. Industrial automation " +
-      "shares no vocabulary with any story, including the security ones.",
+      "shares no vocabulary with any story, including the security ones. Uses the full phrase " +
+      "'operational technology', not the slash-form 'ics/ot' (Codex review checkpoint " +
+      "correction, #307): `normalizeForDriftCheck` (./absent-topic-guard.ts) strips " +
+      "punctuation, so 'ics/ot' silently collapses to the literal substring 'icsot', which " +
+      "cannot detect a later standalone 'ICS' or 'operational technology' mention — see " +
+      "absent-topic-guard.test.ts for the pinned failure case this replaces.",
   },
   {
     id: "absent-salesforce-admin",

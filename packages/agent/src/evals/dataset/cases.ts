@@ -333,14 +333,22 @@ export const EVAL_CASES: readonly EvalCase[] = [
       "this probes the get-skill-evidence 'unknown' + search-career-comes-up-empty path together).",
   },
   {
-    id: "gap-sap-erp",
+    id: "gap-genomics-bioinformatics",
     category: "gap",
-    question: "Has he worked with SAP or other ERP systems?",
+    question: "Does he have experience with genomics or bioinformatics data pipelines?",
     gapHonestyDirection: "gap",
     expectedToolCall: "search-career",
     notes:
-      "Copied from packages/core/src/eval-retrieval/dataset/cases.ts absent-sap-erp: no mention of " +
-      "SAP or ERP systems anywhere in the corpus.",
+      "Replaces gap-sap-erp (Codex review checkpoint correction, #307): that case claimed no " +
+      "mention of SAP or ERP systems anywhere in the corpus, but " +
+      "stories/fullstack-labs-sap-migration.json (a legacy SAP migration story) makes that " +
+      "premise factually false. Copied from " +
+      "packages/core/src/eval-retrieval/dataset/cases.ts absent-genomics-bioinformatics — " +
+      "the corrected #307 retrieval-eval absent-topic control aligned with this same domain: " +
+      "no mention of genomics, bioinformatics, or life-sciences data pipelines anywhere in the " +
+      "corpus (not a gaps.json entry either — this probes the get-skill-evidence 'unknown' + " +
+      "search-career-comes-up-empty path together, same as gap-blockchain above). " +
+      "cases.test.ts's corpus-drift guard fails loudly if this ever stops being true.",
   },
 
   // ---- behavioral: known-competency questions answered via list-career-stories, not search-career (#294) ----

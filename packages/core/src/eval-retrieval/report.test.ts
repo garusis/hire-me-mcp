@@ -30,6 +30,7 @@ function caseReport(overrides: Partial<RetrievalCaseReport> = {}): RetrievalCase
     preferencePassed: null,
     preferredSourceReciprocalRank: null,
     passed: true,
+    scoringLane: "unscoped",
     lanes: {
       unscoped: laneResult(),
       storyScoped: laneResult({
@@ -57,6 +58,7 @@ function absentCaseReport(overrides: Partial<RetrievalCaseReport> = {}): Retriev
     preferencePassed: null,
     preferredSourceReciprocalRank: null,
     passed: true,
+    scoringLane: "unscoped",
     lanes: {
       unscoped: laneResult({ retrievedIds: [], metrics: null }),
       storyScoped: laneResult({ lane: "storyScoped", retrievedIds: [], metrics: null }),
@@ -86,6 +88,7 @@ function preferenceCaseReport(overrides: Partial<RetrievalCaseReport> = {}): Ret
     preferencePassed: true,
     preferredSourceReciprocalRank: 1,
     passed: true,
+    scoringLane: "storyScoped",
     lanes: {
       unscoped: laneResult({
         retrievedIds: ["story:preferred", "story:alt"],
@@ -376,5 +379,27 @@ describe("buildRetrievalReport: lane aggregates (#307)", () => {
 
     expect(report.aggregates.lanes.unscoped.scoredCases).toBe(2);
     expect(report.aggregates.lanes.storyScoped.scoredCases).toBe(1);
+  });
+});
+
+describe("buildRetrievalReport: scoringLane (Codex review checkpoint correction, #307)", () => {
+  it("carries each case's declared scoringLane verbatim, distinct per case (mutation-sensitive: unscoped vs storyScoped are not interchangeable)", () => {
+    const cases = [
+      caseReport({ id: "unscoped-case", scoringLane: "unscoped" }),
+      preferenceCaseReport({ id: "story-case", scoringLane: "storyScoped" }),
+      absentCaseReport({ id: "absent-case", scoringLane: "unscoped" }),
+    ];
+    const report = buildRetrievalReport({ cases, topK: 5, absentTopicMinScore: 0.4 });
+
+    expect(report.cases.find((c) => c.id === "unscoped-case")?.scoringLane).toBe("unscoped");
+    expect(report.cases.find((c) => c.id === "story-case")?.scoringLane).toBe("storyScoped");
+    expect(report.cases.find((c) => c.id === "absent-case")?.scoringLane).toBe("unscoped");
+  });
+
+  it("round-trips scoringLane through JSON.stringify/parse untouched", () => {
+    const cases = [preferenceCaseReport({ scoringLane: "storyScoped" })];
+    const report = buildRetrievalReport({ cases, topK: 5, absentTopicMinScore: 0.4 });
+    const parsed = JSON.parse(JSON.stringify(report)) as typeof report;
+    expect(parsed.cases[0]?.scoringLane).toBe("storyScoped");
   });
 });

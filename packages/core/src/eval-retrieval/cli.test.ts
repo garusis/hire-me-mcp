@@ -14,8 +14,8 @@ const PASSING_QUERY: GoldenQuery = {
 };
 
 const ABSENT_QUERY: GoldenQuery = {
-  id: "absent-blockchain",
-  query: "blockchain experience",
+  id: "absent-fixture-topic",
+  query: "some genuinely absent fixture topic",
   category: "absent-topic",
   expectedSources: [],
   expectEmpty: true,
@@ -90,6 +90,7 @@ describe("formatCaseTable", () => {
           preferencePassed: null,
           preferredSourceReciprocalRank: null,
           passed: true,
+          scoringLane: "unscoped",
           lanes: {
             unscoped: {
               lane: "unscoped",
@@ -152,6 +153,7 @@ describe("formatCaseTable", () => {
           preferencePassed: null,
           preferredSourceReciprocalRank: null,
           passed: false,
+          scoringLane: "unscoped",
           lanes: {
             unscoped: {
               lane: "unscoped",
@@ -194,6 +196,67 @@ describe("formatCaseTable", () => {
 
     expect(table).toContain("FAIL");
     expect(table).not.toContain("PASS");
+  });
+
+  it("names which lane fed a case's top-level fields (Codex review checkpoint correction, #307: scoringLane must be visible, not just inferable from the lanes list)", () => {
+    const report: RetrievalReport = {
+      generatedAt: "2026-01-01T00:00:00.000Z",
+      topK: 5,
+      absentTopicMinScore: 0.4,
+      cases: [
+        {
+          id: "story-only-case",
+          category: "fuzzy",
+          query: "tell me about a time he led without formal authority",
+          expectedSources: [{ sourceType: "story", sourceId: "leadership-story" }],
+          retrieved: [{ sourceType: "story", sourceId: "leadership-story", score: 0.7 }],
+          metrics: { recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 },
+          expectEmptyCheck: null,
+          matchMode: "all",
+          preferredSource: null,
+          matchModePassed: true,
+          preferencePassed: null,
+          preferredSourceReciprocalRank: null,
+          passed: true,
+          scoringLane: "storyScoped",
+          lanes: {
+            unscoped: {
+              lane: "unscoped",
+              retrievedIds: ["story:leadership-story"],
+              metrics: { recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 },
+            },
+            storyScoped: {
+              lane: "storyScoped",
+              retrievedIds: ["story:leadership-story"],
+              metrics: { recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 },
+            },
+          },
+        },
+      ],
+      aggregates: {
+        recallAtK: 1,
+        precisionAtK: 1,
+        mrr: 1,
+        absentTopicAccuracy: 1,
+        preferredSourceCompliance: 1,
+        lanes: {
+          unscoped: { recallAtK: 1, precisionAtK: 1, mrr: 1, scoredCases: 1 },
+          storyScoped: { recallAtK: 1, precisionAtK: 1, mrr: 1, scoredCases: 1 },
+        },
+      },
+      thresholds: {
+        recallAtK: 0.5,
+        precisionAtK: 0.2,
+        mrr: 0.4,
+        absentTopicAccuracy: 0.8,
+        preferredSourceCompliance: 0.7,
+      },
+      verdict: { passed: true, failures: [] },
+    };
+
+    const table = formatCaseTable(report);
+
+    expect(table).toContain("scoringLane=storyScoped");
   });
 });
 
@@ -266,7 +329,7 @@ describe("runRetrievalEvalCli", () => {
       {
         searchCareer: fakeSearchCareer({
           "does he know typescript": [{ sourceType: "skill", sourceId: "typescript", score: 0.9 }],
-          "blockchain experience": [],
+          "some genuinely absent fixture topic": [],
         }),
         writeFile,
         log,

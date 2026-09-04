@@ -465,6 +465,7 @@ describe("runRetrievalEval: retrieval lanes (#307)", () => {
     expect(c?.metrics).toEqual({ recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 });
     expect(c?.matchModePassed).toBe(true);
     expect(c?.passed).toBe(true);
+    expect(c?.scoringLane).toBe("storyScoped");
   });
 
   it("routes a story-only case's preferredSource check from the storyScoped lane, not unscoped — lanes genuinely disagree", async () => {
@@ -563,6 +564,20 @@ describe("runRetrievalEval: retrieval lanes (#307)", () => {
     const c = report.cases[0];
     expect(c?.metrics).toEqual(c?.lanes.unscoped.metrics);
     expect(c?.metrics?.recallAtK).toBe(0.5);
+    expect(c?.scoringLane).toBe("unscoped");
+  });
+
+  it("sets scoringLane to unscoped for an absent-topic case (Codex review checkpoint correction, #307: top-level fields are always unscoped for absent-topic)", async () => {
+    const { searchCareer } = fakeSearchCareer({
+      "blockchain experience": [{ sourceType: "story", sourceId: "unrelated-story", score: 0.2 }],
+    });
+
+    const report = await runRetrievalEval(
+      { queries: [absentQuery()], topK: 5, absentTopicMinScore: 0.4 },
+      { searchCareer },
+    );
+
+    expect(report.cases[0]?.scoringLane).toBe("unscoped");
   });
 
   it("passes the configured topK to both the unscoped and story-scoped searchCareer calls", async () => {

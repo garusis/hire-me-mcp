@@ -119,6 +119,14 @@ describe("GOLDEN_QUERIES", () => {
         ].sort(),
       );
     });
+
+    it("uses 'operational technology' as the ICS/OT distinguishing term, not 'ics/ot' (Codex review checkpoint correction, #307): normalizeForDriftCheck (./absent-topic-guard.ts) strips the '/', so 'ics/ot' silently degrades to matching only the literal substring 'icsot' — a phrase that never actually appears in prose — and so could never catch a later standalone 'ICS' or 'operational technology' mention", () => {
+      const ics = GOLDEN_QUERIES.find(
+        (candidate) => candidate.id === "absent-industrial-control-systems",
+      );
+      expect(ics?.distinguishingTerms).toContain("operational technology");
+      expect(ics?.distinguishingTerms).not.toContain("ics/ot");
+    });
   });
 
   describe("locked behavioral-story eval manifest (#295, 36 cases in retrieval per #307)", () => {
