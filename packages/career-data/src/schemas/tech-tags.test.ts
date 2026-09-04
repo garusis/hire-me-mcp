@@ -65,3 +65,11 @@ describe("TECH_TAGS coverage for #309 stage 3 evidenced-but-missing skills", () 
     expect(TECH_TAGS).toContain("llm-evaluation");
   });
 });
+
+describe("TECH_TAGS coverage for #315/#316 past, non-CV skills", () => {
+  it("includes redux and ruby-on-rails, added as confirmed-but-off-CV skills", () => {
+    for (const tag of ["redux", "ruby-on-rails"]) {
+      expect(TECH_TAGS).toContain(tag);
+    }
+  });
+});

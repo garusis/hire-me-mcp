@@ -8,5 +8,5 @@
   "highlights": [
     "Built a real-time game backend with micropayments, including the underlying full-stack infrastructure and DevOps."
   ],
-  "tech": ["nodejs", "mongodb", "postgresql", "php"]
+  "tech": ["nodejs", "mongodb", "postgresql", "php", "ruby-on-rails"]
 }

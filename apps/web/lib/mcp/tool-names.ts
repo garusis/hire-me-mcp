@@ -22,4 +22,5 @@ export const EXPECTED_TOOL_NAMES = [
   "list-writing",
   "list-recommendations",
   "list-career-stories",
+  "get-cv-presentation",
 ] as const;

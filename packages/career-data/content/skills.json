@@ -858,5 +858,43 @@
         "fragment": "highlights.3"
       }
     ]
+  },
+  {
+    "id": "redux",
+    "name": "Redux",
+    "aliases": [],
+    "category": "framework",
+    "proficiency": "familiar",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "xogito-group-2020-senior-software-development-engineer",
+        "label": "Senior Software Development Engineer, Xogito Group"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "belatrix-software-2018-senior-nodejs-software-developer",
+        "label": "Senior NodeJS Software Developer, Belatrix Software"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "fullstack-labs-2018-senior-software-engineer",
+        "label": "Senior Software Engineer, FullStack Labs"
+      }
+    ]
+  },
+  {
+    "id": "ruby-on-rails",
+    "name": "Ruby on Rails",
+    "aliases": ["rails", "ror"],
+    "category": "framework",
+    "proficiency": "familiar",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "jarvi-games-2013-full-stack-developer-and-devops",
+        "label": "Full Stack Developer and DevOps, Jarvi Games"
+      }
+    ]
   }
 ]

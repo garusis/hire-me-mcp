@@ -62,8 +62,29 @@ export {
   evaluateContactSubmission,
   normalizeContactSubmission,
 } from "./contact/index.js";
+export type {
+  BuildCvPresentationOptions,
+  CvPresentation,
+  CvPresentationEducationItem,
+  CvPresentationExperienceItem,
+  CvPresentationProjectItem,
+  CvPresentationSkillEntry,
+  CvPresentationSkillGroup,
+  CvPresentationSource,
+  CvPresentationStoryView,
+  CvVariant,
+} from "./cv-presentation.js";
+export { buildCvPresentation, CvProfileNotFoundError } from "./cv-presentation.js";
 export type { DependencyAllowlist } from "./dependency-allowlist.js";
 export { findDisallowedDependencies } from "./dependency-allowlist.js";
+export type {
+  CvPresentationEducationEntry,
+  CvPresentationExperienceEntry,
+  CvPresentationProjectEntry,
+  GetCvPresentationData,
+  GetCvPresentationOptions,
+} from "./get-cv-presentation.js";
+export { getCvPresentation } from "./get-cv-presentation.js";
 export type { ExperienceFilter } from "./get-experience.js";
 export { compareExperience, getExperience } from "./get-experience.js";
 export { getProfile, ProfileNotFoundError } from "./get-profile.js";

@@ -9,5 +9,5 @@
     "Built and maintained full-stack features across the procurement platform.",
     "Migrated the client's historical quote data from their legacy system into the rebuilt platform with custom ETL scripts, expert verification, and financial totals aligned to the legacy calculations — number continuity was an explicit client requirement."
   ],
-  "tech": ["nodejs", "react", "postgresql", "aws", "docker"]
+  "tech": ["nodejs", "react", "postgresql", "aws", "docker", "redux"]
 }

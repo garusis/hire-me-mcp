@@ -3,6 +3,7 @@ import { defineTool } from "../../../lib/mcp/define-tool";
 import { readRateLimitConfig } from "../../../lib/mcp/rate-limit/config";
 import { selectRateLimiter } from "../../../lib/mcp/rate-limit/select-limiter";
 import { withRateLimit } from "../../../lib/mcp/rate-limit/with-rate-limit";
+import { getCvPresentationTool } from "../../../lib/mcp/tools/get-cv-presentation";
 import { getExperienceTool } from "../../../lib/mcp/tools/get-experience";
 import { getProfileTool } from "../../../lib/mcp/tools/get-profile";
 import { getSkillEvidenceTool } from "../../../lib/mcp/tools/get-skill-evidence";
@@ -56,6 +57,7 @@ const handler = createMcpHandler(
     defineTool(server, listWritingTool);
     defineTool(server, listRecommendationsTool);
     defineTool(server, listCareerStoriesTool);
+    defineTool(server, getCvPresentationTool);
   },
   {
     serverInfo: {
@@ -77,7 +79,11 @@ const handler = createMcpHandler(
       "ownership, conflict, ambiguity, stakeholder management, failure, decision making), use " +
       "`list-career-stories`: it deterministically returns complete situation/task/actions/" +
       "results stories filtered by competency, company, or experience id, each cited to the " +
-      "role where the event occurred. Every tool call is recorded as an anonymized, aggregate-only usage " +
+      "role where the event occurred. For his curated, recruiter-facing CV presentation — " +
+      "the exact headline, summary, per-role highlight bullets, and skill grouping the " +
+      "generated CV PDF renders from, for the 'general' or 'ai'-focused variant — use " +
+      "`get-cv-presentation` instead of assembling one yourself from the other tools. " +
+      "Every tool call is recorded as an anonymized, aggregate-only usage " +
       "event (which tool, which surface, the outcome) — never the raw arguments, your IP, " +
       "or any identifying information. See the privacy note at /privacy for the full, " +
       "auditable list of what is and isn't collected.",

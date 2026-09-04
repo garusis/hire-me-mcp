@@ -4,12 +4,18 @@
  * repository seam, the same pattern `gaps.ts`/`writing.ts` use — no career
  * fact here is anything other than a pass-through of dataset fields.
  *
- * `packages/core` has no dedicated "build a CV" service (a CV is a
- * presentation concern — section order, highlight trimming, filename — not
- * a new domain query), so this reads the dataset via `repository.getDataset()`
- * directly, exactly like `gaps.ts` does, and accepts an injectable
- * repository so tests (and the guard test in `apps/web/lib/cv/render-cv-html.test.ts`)
- * can exercise it against fixture data with no filesystem access.
+ * The overlay-merge logic that used to live here now lives in
+ * `packages/core`'s `buildCvPresentation()` (#315, follow-up to #309), so
+ * both this web renderer and the public MCP's `get-cv-presentation` tool
+ * read the exact same projection instead of each re-deriving it. This
+ * module is now a thin wrapper: it calls `buildCvPresentation()`, then
+ * reshapes its (richer, id/source-carrying) result down to the `CvView`
+ * shape this file has always exposed — dropping the ids and `*Source`
+ * fields no web consumer has ever needed, renaming `bullets` back to
+ * `highlights`, and folding `skillGroups[].skills` down to plain
+ * display-name strings — and adds the one genuinely web-only field,
+ * `filename`. Every existing `CvView` consumer (`render-cv-html.ts`, the
+ * CV PDF generator, `generate-llms.ts`) is unaffected.
  */
 
 import "server-only";
@@ -19,28 +25,25 @@ import type {
   EducationEntry,
   Profile,
   Project,
-  Skill,
 } from "@hire-me-mcp/career-data";
-import { loadCvOverrides, resolveDefaultContentDir } from "@hire-me-mcp/career-data";
-import type { CareerDataRepository } from "@hire-me-mcp/core";
+import {
+  buildCvPresentation,
+  type CareerDataRepository,
+  type CvPresentationStoryView,
+  CvProfileNotFoundError,
+} from "@hire-me-mcp/core";
 import { slugify } from "@hire-me-mcp/core/slugify";
-import { sortFeaturedFirst } from "./projects";
 import { getCareerDataRepository } from "./repository";
 
 export type { CvVariant };
+export { CvProfileNotFoundError };
 
 /**
  * One behavioral story attached to a role (#309 stage 1): the same
  * situation/task/actions/results shape as `CareerStory`, minus the
  * competency/retrieval metadata that has no place on a printed CV.
  */
-export interface CvStoryView {
-  title: string;
-  situation: string;
-  task: string;
-  actions: string[];
-  results: string[];
-}
+export type CvStoryView = CvPresentationStoryView;
 
 /**
  * One experience entry trimmed for the CV: authored company/role/dates plus
@@ -172,237 +175,59 @@ export interface GetCvViewOptions {
   overrides?: CvOverrides;
 }
 
-/** Thrown when no profile has been authored — a CV with no subject is not a renderable state. */
-export class CvProfileNotFoundError extends Error {
-  constructor() {
-    super("career-data: no profile authored — getCvView() has nothing to render");
-    this.name = "CvProfileNotFoundError";
-  }
-}
-
-const DEFAULT_MAX_HIGHLIGHTS_PER_ROLE = 2;
-
-const MAX_DATE = "9999-12";
-
-function compareExperienceMostRecentFirst(
-  a: CvExperienceItemView,
-  b: CvExperienceItemView,
-): number {
-  if (a.startDate !== b.startDate) {
-    return a.startDate < b.startDate ? 1 : -1;
-  }
-  const aEnd = a.endDate ?? MAX_DATE;
-  const bEnd = b.endDate ?? MAX_DATE;
-  if (aEnd !== bEnd) {
-    return aEnd < bEnd ? 1 : -1;
-  }
-  return 0;
-}
-
-/** Ranks a proficiency tier for CV ordering — expert first, then proficient, then familiar. */
 /**
- * Resolves one `tech` tag (#299) to a display name: a `dataset.skills`
- * entry whose `id` matches the tag first, then one whose `aliases`
- * includes it, falling back to the raw tag when no skill claims it.
- */
-function resolveTechName(tag: string, skills: readonly Skill[]): string {
-  const byId = skills.find((skill) => skill.id === tag);
-  if (byId !== undefined) {
-    return byId.name;
-  }
-  const byAlias = skills.find((skill) => skill.aliases.includes(tag));
-  if (byAlias !== undefined) {
-    return byAlias.name;
-  }
-  return tag;
-}
-
-/**
- * Loads the real `cv-overrides.json` once per process and memoizes it,
- * exactly like `repository.ts` memoizes the real content repository. An
- * absent overlay file (a content set with nothing overridden yet) resolves
- * to `undefined`, never a throw — {@link getCvView} then falls back to
- * every field's canonical value.
- */
-const NOT_LOADED = Symbol("cv-overrides-not-loaded");
-let cachedDefaultOverrides: CvOverrides | undefined | typeof NOT_LOADED = NOT_LOADED;
-
-function defaultOverrides(): CvOverrides | undefined {
-  if (cachedDefaultOverrides === NOT_LOADED) {
-    cachedDefaultOverrides = loadCvOverrides(resolveDefaultContentDir());
-  }
-  return cachedDefaultOverrides;
-}
-
-/** `{ general, ai }` -> the text for `variant`, falling back to the other variant's text, then to `fallback`. */
-function resolveVariantText(
-  value: { general?: string; ai?: string } | undefined,
-  variant: CvVariant,
-  fallback: string,
-): string {
-  if (value === undefined) {
-    return fallback;
-  }
-  return value[variant] ?? value.general ?? value.ai ?? fallback;
-}
-
-/**
- * `{ general, ai }` -> the bullet list for `variant`, falling back to the
- * other variant's bullets, then to `fallback` (the canonical highlights,
- * capped) — the same fallback chain {@link resolveVariantText} already
- * applies to headline/summary (#309 stage 3 second review, item 2: before
- * this fix, an overlay entry authored only for `bullets.general` silently
- * dropped the `ai` variant straight to the canonical highlights, skipping
- * the general bullets entirely).
- */
-function resolveVariantBullets(
-  value: { general?: string[]; ai?: string[] } | undefined,
-  variant: CvVariant,
-  fallback: string[],
-): string[] {
-  if (value === undefined) {
-    return fallback;
-  }
-  return value[variant] ?? value.general ?? value.ai ?? fallback;
-}
-
-function buildSkillGroups(
-  skills: readonly Skill[],
-  overrides: CvOverrides["skills"] | undefined,
-  variant: CvVariant,
-): CvSkillCategoryGroupView[] {
-  const excludeIds = new Set(overrides?.excludeIds ?? []);
-  const displayNames = overrides?.displayNames ?? {};
-  const categoryLabels = overrides?.categoryLabels ?? {};
-  const groupOrder = overrides?.groupOrder[variant] ?? [];
-  const categoryOverrides = overrides?.categoryOverrides ?? {};
-
-  const namesByCategory = new Map<string, string[]>();
-  for (const skill of skills) {
-    if (excludeIds.has(skill.id)) {
-      continue;
-    }
-    const category = categoryOverrides[skill.id] ?? skill.category;
-    const names = namesByCategory.get(category) ?? [];
-    const displayName = displayNames[skill.id] ?? skill.name;
-    if (!names.includes(displayName)) {
-      names.push(displayName);
-    }
-    namesByCategory.set(category, names);
-  }
-
-  const orderedCategories = [
-    ...groupOrder.filter((category) => namesByCategory.has(category)),
-    ...[...namesByCategory.keys()].filter((category) => !groupOrder.includes(category)).sort(),
-  ];
-
-  return orderedCategories.map((category) => ({
-    category,
-    label: categoryLabels[category] ?? category,
-    names: namesByCategory.get(category) ?? [],
-  }));
-}
-
-/**
- * Builds the CV view model from `repository`'s dataset. Throws
+ * Builds the CV view model from `repository`'s dataset via
+ * `packages/core`'s `buildCvPresentation()`. Throws
  * {@link CvProfileNotFoundError} if no profile has been authored.
  */
 export function getCvView(
   repository: CareerDataRepository = getCareerDataRepository(),
   options: GetCvViewOptions = {},
 ): CvView {
-  const dataset = repository.getDataset();
-  if (dataset.profile === undefined) {
-    throw new CvProfileNotFoundError();
-  }
-  const maxHighlightsPerRole = options.maxHighlightsPerRole ?? DEFAULT_MAX_HIGHLIGHTS_PER_ROLE;
-  const includeSummary = options.includeSummary ?? false;
-  const includeStories = options.includeStories ?? false;
-  const variant = options.variant ?? "general";
-  const overrides = "overrides" in options ? options.overrides : defaultOverrides();
+  const presentation = buildCvPresentation(repository, {
+    maxHighlightsPerRole: options.maxHighlightsPerRole,
+    includeSummary: options.includeSummary,
+    includeStories: options.includeStories,
+    variant: options.variant,
+    ...("overrides" in options ? { overrides: options.overrides } : {}),
+  });
 
-  const experienceOverridesById = new Map(
-    (overrides?.experience ?? []).map((entry) => [entry.id, entry]),
-  );
+  const experience: CvExperienceItemView[] = presentation.experience.map((item) => ({
+    company: item.company,
+    role: item.role,
+    startDate: item.startDate,
+    endDate: item.endDate,
+    highlights: item.bullets,
+    tech: item.tech,
+    ...(item.summary === undefined ? {} : { summary: item.summary }),
+    ...(item.stories === undefined ? {} : { stories: item.stories }),
+    ...(item.compactLine === undefined ? {} : { compactLine: item.compactLine }),
+    ...(item.keepTogether === undefined ? {} : { keepTogether: item.keepTogether }),
+  }));
 
-  const experience = dataset.experience
-    .map((entry) => {
-      const entryOverride = experienceOverridesById.get(entry.id);
-      const techAdditions = entryOverride?.techAdditions ?? [];
-      const techExcludeIds = new Set(entryOverride?.techExcludeIds ?? []);
-      return {
-        company: entry.company,
-        role: entry.role,
-        startDate: entry.startDate,
-        endDate: entry.endDate,
-        highlights: resolveVariantBullets(
-          entryOverride?.bullets,
-          variant,
-          entry.highlights.slice(0, maxHighlightsPerRole),
-        ),
-        tech: [...entry.tech.filter((tag) => !techExcludeIds.has(tag)), ...techAdditions].map(
-          (tag) => resolveTechName(tag, dataset.skills),
-        ),
-        ...(entryOverride?.compactLine !== undefined
-          ? { compactLine: entryOverride.compactLine }
-          : {}),
-        ...(entryOverride?.keepTogether !== undefined
-          ? { keepTogether: entryOverride.keepTogether }
-          : {}),
-        ...(includeSummary ? { summary: entry.summary } : {}),
-        ...(includeStories
-          ? {
-              stories: dataset.stories
-                .filter((story) => story.experienceId === entry.id)
-                .map((story) => ({
-                  title: story.title,
-                  situation: story.situation,
-                  task: story.task,
-                  actions: story.actions,
-                  results: story.results,
-                })),
-            }
-          : {}),
-      };
-    })
-    .sort(compareExperienceMostRecentFirst);
+  const projects: CvProjectItemView[] = presentation.projects.map((project) => ({
+    name: project.name,
+    role: project.role,
+    summary: project.summary,
+    links: project.links,
+  }));
 
-  const projectOverridesById = new Map(
-    (overrides?.projects ?? []).map((entry) => [entry.id, entry]),
-  );
-  const projects = sortFeaturedFirst(dataset.projects)
-    .filter((project) => projectOverridesById.get(project.id)?.showOnCv ?? true)
-    .map((project) => {
-      const projectOverride = projectOverridesById.get(project.id);
-      const excludeLinkLabels = new Set(projectOverride?.excludeLinkLabels ?? []);
-      return {
-        name: project.name,
-        role: project.role,
-        summary: projectOverride?.summary ?? project.summary,
-        links: project.links.filter((projectLink) => !excludeLinkLabels.has(projectLink.label)),
-      };
-    });
-
-  const educationOverridesById = new Map(
-    (overrides?.education ?? []).map((entry) => [entry.id, entry]),
-  );
-  const education = dataset.education
-    .filter((entry) => (educationOverridesById.get(entry.id)?.showOnCv ?? true) !== false)
-    .map((entry) => {
-      const displayLine = educationOverridesById.get(entry.id)?.line;
-      return displayLine === undefined ? entry : { ...entry, displayLine };
-    });
+  const skillGroups: CvSkillCategoryGroupView[] = presentation.skillGroups.map((group) => ({
+    category: group.category,
+    label: group.label,
+    names: group.skills.map((skill) => skill.name),
+  }));
 
   return {
-    profile: dataset.profile,
-    variant,
-    headline: resolveVariantText(overrides?.profile.headline, variant, dataset.profile.headline),
-    summary: resolveVariantText(overrides?.profile.summary, variant, dataset.profile.summary),
-    timezoneLine: overrides?.profile.timezoneLine,
+    profile: presentation.profile,
+    variant: presentation.variant,
+    headline: presentation.headline,
+    summary: presentation.summary,
+    ...(presentation.timezoneLine === undefined ? {} : { timezoneLine: presentation.timezoneLine }),
     experience,
     projects,
-    skillGroups: buildSkillGroups(dataset.skills, overrides?.skills, variant),
-    education,
-    filename: `${slugify(dataset.profile.name)}-cv.pdf`,
+    skillGroups,
+    education: presentation.education,
+    filename: `${slugify(presentation.profile.name)}-cv.pdf`,
   };
 }
