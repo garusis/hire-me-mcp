@@ -9,17 +9,18 @@
   {
     "experienceId": "house-numbers-2022-senior-full-stack-engineer",
     "field": "highlights.0",
-    "classification": "concise-outcome",
+    "classification": "detailed-story",
+    "storyIds": ["house-numbers-communication-service-ownership"],
     "action": "shorten",
-    "note": "Document-extraction PoC. No owner-approved story exists: the story candidate was explicitly paused by the owner on 2026-08-30 pending #300 and none was approved afterwards. The detailed, corrected record is the project `document-extraction-pipeline` (stage proof-of-concept, #300), which #300 designates as the detailed source of truth. #297 may leave one short highlight but must not lose the PoC-stayed-experimental / production-kept-the-vendor boundary, which the real-content tests in #300 assert. Shortened in #297 to one highlight; the experimental / production-kept-the-vendor boundary is retained verbatim."
+    "note": "Communication infrastructure end to end: email sync, SMS channel, LLM classification split from deterministic routing, encrypted loan matching. The story holds the full narrative, the observability work, and the bounded 57,000 / ~70% snapshot figure. Shortened in #297 to a one-sentence capability bullet (webhook-driven intake, LLM classification split from deterministic routing, encrypted loan matching); the retries/reconciliation build-out and the 57,000 / ~70% figure now live only in the story. Moved to highlights.0 in #309 stage 3 round 3 (Marcos's requested lead-bullet order)."
   },
   {
     "experienceId": "house-numbers-2022-senior-full-stack-engineer",
     "field": "highlights.1",
     "classification": "detailed-story",
-    "storyIds": ["house-numbers-communication-service-ownership"],
+    "storyIds": ["house-numbers-secure-public-document-upload"],
     "action": "shorten",
-    "note": "Communication infrastructure end to end: email sync, SMS channel, LLM classification split from deterministic routing, encrypted loan matching. The story holds the full narrative, the observability work, and the bounded 57,000 / ~70% snapshot figure. Shortened in #297 to a one-sentence capability bullet (webhook-driven intake, LLM classification split from deterministic routing, encrypted loan matching); the retries/reconciliation build-out and the 57,000 / ~70% figure now live only in the story."
+    "note": "Added in #309 stage 3 round 3 (Marcos's requested lead-bullet order): the public document-upload security-boundary rebuild, authored from the story's situation/actions/results, conservatively worded (\"an estimated two in three\", matching the story's \"roughly two out of every three\"). The story holds the full narrative (the audit-trail diagnostic skill, the hybrid routing rationale, the later reuse of the same security principles elsewhere)."
   },
   {
     "experienceId": "house-numbers-2022-senior-full-stack-engineer",
@@ -30,7 +31,7 @@
       "house-numbers-deterministic-document-checks"
     ],
     "action": "keep",
-    "note": "Concise capability bullet (eval harnesses, cost tracing, version-controlled prompts, cost reduction). The prompt-platform migration and the deterministic-check decision are the detailed events behind it."
+    "note": "Concise capability bullet: the Orq.ai migration across four services, version-controlled prompts, provider failover, per-call cost tracing, eval harnesses, and the deterministic replacement of hallucination-prone document checks. Expanded in #309 stage 3 round 3 to replace the prior slogan wording (\"turned agentic AI features into engineered systems\") with these concrete facts, plus the LLM-as-judge / *.agents.ts CI-lane and opposing-provider-judging facts sourced from André Treib's recommendation (recommendation-andre-treib-2026, no dedicated story exists for the CI-lane design). The prompt-platform migration and the deterministic-check decision remain the detailed events behind the rest of the bullet."
   },
   {
     "experienceId": "house-numbers-2022-senior-full-stack-engineer",
@@ -52,6 +53,13 @@
     "note": "Documentation system plus broad ownership (public upload flows, observability, incident response). The named stories are the detailed events behind the public-upload, incident-response, and observability clauses; the documentation system itself is the project `monorepo-documentation-system`."
   },
   {
+    "experienceId": "house-numbers-2022-senior-full-stack-engineer",
+    "field": "highlights.5",
+    "classification": "concise-outcome",
+    "action": "shorten",
+    "note": "Document-extraction PoC. No owner-approved story exists: the story candidate was explicitly paused by the owner on 2026-08-30 pending #300 and none was approved afterwards. The detailed, corrected record is the project `document-extraction-pipeline` (stage proof-of-concept, #300), which #300 designates as the detailed source of truth. #297 may leave one short highlight but must not lose the PoC-stayed-experimental / production-kept-the-vendor boundary, which the real-content tests in #300 assert. Shortened in #297 to one highlight; the experimental / production-kept-the-vendor boundary is retained verbatim. Moved to highlights.5 (last) in #309 stage 3 round 3 (Marcos's requested lead-bullet order)."
+  },
+  {
     "experienceId": "xogito-group-2020-senior-software-development-engineer",
     "field": "summary",
     "classification": "role-context",
@@ -69,7 +77,7 @@
     "classification": "detailed-story",
     "storyIds": ["xogito-client-account-recovery"],
     "action": "correct-inconsistency",
-    "note": "Client-account recovery after the PM left. Must be shortened AND corrected: the highlight's closing clause 'the recovered account won the company further work' asserts causation and personal credit that the approved story does not support; audit #305 point 9 allows the later commissioned work only as a later observed outcome. The highlight also says 'reorganized roadmap' and 'renegotiated scope and deadlines' where the approved narrative says quick wins, a capacity split, client-approved sprint plans, and eased deadline pressure. Resolve against the story, never strengthen the claim. Done in #297: shortened and corrected — the causal closing clause and the 'reorganized roadmap' / 'renegotiated scope and deadlines' wording are gone; the highlight now names the quick wins, the client-approved sprint plans, and trust rebuilt over a few sprints. The original 'brought the lead frontend engineer and lead QA into the client meetings' also contradicted the approved story ('I joined a senior frontend developer and QA in product meetings') and was resolved against the story."
+    "note": "Client-account recovery after the PM left. Must be shortened AND corrected: the highlight's closing clause 'the recovered account won the company further work' asserts causation and personal credit that the approved story does not support; audit #305 point 9 allows the later commissioned work only as a later observed outcome. The highlight also says 'reorganized roadmap' and 'renegotiated scope and deadlines' where the approved narrative says quick wins, a capacity split, client-approved sprint plans, and eased deadline pressure. Resolve against the story, never strengthen the claim. Done in #297: shortened and corrected \u2014 the causal closing clause and the 'reorganized roadmap' / 'renegotiated scope and deadlines' wording are gone; the highlight now names the quick wins, the client-approved sprint plans, and trust rebuilt over a few sprints. The original 'brought the lead frontend engineer and lead QA into the client meetings' also contradicted the approved story ('I joined a senior frontend developer and QA in product meetings') and was resolved against the story."
   },
   {
     "experienceId": "xogito-group-2020-senior-software-development-engineer",
@@ -181,5 +189,12 @@
     "classification": "concise-outcome",
     "action": "keep",
     "note": "No story by owner decision (#305 point 1)."
+  },
+  {
+    "experienceId": "xogito-group-2020-senior-software-development-engineer",
+    "field": "highlights.3",
+    "classification": "concise-outcome",
+    "action": "keep",
+    "note": "Second, larger SAP migration, added in #309 stage 3 (open question 9). Sourced from the FullStack Labs story's `reflection` field (fullstack-labs-sap-migration), not from a Xogito-specific story \u2014 reflection is not preservable narrative under #290's classification, so no storyIds is attached here; the reflection field remains the fuller account."
   }
 ]

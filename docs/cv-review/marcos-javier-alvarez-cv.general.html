@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="/icon" />
+<title>Marcos Javier Alvarez — CV</title>
+<style>
+  @page { size: Letter; margin: 0.5in; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; color: #000; background: #fff;
+    font-family: Arial, "Helvetica Neue", Helvetica, "Liberation Sans", sans-serif;
+    font-size: 10pt; line-height: 1.24;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .sheet { max-width: 6.5in; margin: 0 auto; padding: 1in 0; }
+  p { margin: 0 0 6pt; orphans: 3; widows: 3; }
+  a { color: inherit; text-decoration: none; }
+  h1 { font-size: 19pt; line-height: 1.2; font-weight: bold; margin: 0 0 4pt; }
+  h2 { font-size: 12.5pt; line-height: 1.3; font-weight: bold; margin: 8pt 0 4pt; page-break-after: avoid; break-after: avoid; }
+  .contact { margin: 0 0 3pt; }
+  .contact-line { margin: 0 0 5pt; font-size: 9.5pt; }
+  .role { margin: 0 0 3pt; page-break-after: avoid; break-after: avoid; }
+  /* Entries deliberately are NOT break-inside: avoid (#309 stage 3): the two-page budget needs
+     a long role's bullets to flow across a page boundary — only the role header (.role, above)
+     and a single bullet line (li, below) stay atomic. */
+  .entry { margin: 0 0 6pt; }
+  /* Short entries the overlay flags keepTogether (#309 stage 3 second review, item 5) stay
+     atomic across the page break — unlike the general rule above, which lets a long role's
+     bullets flow across a page boundary. */
+  .entry.keep-together { break-inside: avoid; }
+  ul { margin: 0 0 3pt; padding-left: 16pt; }
+  li { margin: 0 0 1pt; orphans: 2; widows: 2; break-inside: avoid; page-break-inside: avoid; }
+  /* A "Tech: …" line can never open a page on its own (#309 stage 3 second review, item 5). */
+  .tech { font-style: italic; margin: 0; break-before: avoid; page-break-before: avoid; }
+  .role-summary { margin: 2pt 0 0; }
+  .role-stories { margin: 4pt 0 0; }
+  .role-story { break-inside: avoid; margin: 0 0 4pt; padding-left: 6pt; border-left: 2px solid #ccc; }
+  .story-title, .story-field { margin: 1pt 0; }
+  .story-list { margin: 1pt 0; padding-left: 14pt; }
+  .story-list li { margin: 0 0 1pt; }
+  @media print { .sheet { max-width: none; margin: 0; padding: 0; } }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>Marcos Javier Alvarez</h1>
+  <p class="contact"><strong>Senior Full-Stack Engineer · TypeScript, Node.js, React, AWS · Production LLM systems</strong></p>
+  <p class="contact-line">Cúcuta, Colombia (Remote) &middot; UTC-5, US-hours overlap &middot; <a href="mailto:garusis@gmail.com">garusis@gmail.com</a> &middot; <a href="https://github.com/garusis">github.com/garusis</a> &middot; <a href="https://www.linkedin.com/in/garusis/">linkedin.com/in/garusis</a></p>
+  <p class="contact"><strong>Portfolio, references and a queryable MCP endpoint:</strong> <a href="https://hire-me-mcp-web.vercel.app">hire-me-mcp-web.vercel.app</a></p>
+
+  <h2>Summary</h2>
+  <p>Senior full-stack engineer with 13 years shipping TypeScript/Node.js, React and AWS products, the last four at House Numbers, where I joined an engineering team of three (now seven) and helped take a mortgage-lending platform through a B2C-to-B2B pivot and from a handful of services to a 16-service event-driven monorepo. I own critical production systems end to end, including a communications service handling 57,000+ emails, SMS and calls in a recent seven-month window (~70% automated) and a hardened public document-upload boundary, and for the last three years have put LLM features into production with evaluation harnesses, cost tracing and deterministic safeguards. Earlier: main backend engineer on a multi-tenant SaaS, two legacy-SAP data migrations, a monolith-to-Kubernetes migration, client-facing delivery.</p>
+
+  <h2>Experience</h2>
+  <div class="entry">
+    <p class="role"><strong>House Numbers</strong> &mdash; Senior Full Stack Engineer &middot; May 2022 – Present</p>
+
+    <ul><li>Built and maintain the communications service that triaged 57,000+ emails, SMS and calls in a recent seven-month window, ~70% to an automated outcome, letting operations retire its manual-triage shifts: webhook intake, LLM-assisted extraction and classification kept separate from deterministic routing, loan matching over field-level-encrypted data, hardened with alerts, durable retries and webhook reconciliation.</li><li>Eliminated failed-upload complaints on a public document-upload flow where an estimated two in three submissions had ended in a complaint or escalation: designed and built the replacement security boundary (opaque sessions, CAPTCHA, rate limiting, replay protection, encrypted audit trail) and a hybrid deterministic/LLM routing model that kept ambiguous matches with a human.</li><li>Built the loan-application product's filter UI in React and the reusable TypeScript query library behind it — multi-value, related-entity, date-range and text-search operators — tenant-scoped for sensitive loan data.</li><li>Owned incident response on the document-processing path: contained a crash loop (96 restarts in 24 hours against a 0-4 baseline), made the failing path observable and retryable, and reprocessed the affected window with no permanent data loss.</li><li>Replaced hallucination-prone LLM-generated loan-document checks with deterministic validation covered by focused unit and integration tests (plus capped, evaluated AI observations) in under two weeks, after decomposing the monolithic analysis pipeline into three idempotent, retryable stages; processors adopted the checks and the open-ended LLM runtime cost for them was removed.</li><li>Retired a prompt-management vendor (Orq.ai) and its recurring cost by leading a multi-month, service-by-service migration to repository-native LLM infrastructure across four services with no significant regression: version-controlled prompts, provider failover, shared per-call cost tracing and automated evaluations that let the team swap in cheaper models under measured quality.</li><li>Authored the shared on-call investigation workflow the whole rotation adopted, and proposed the alert-to-PR automation on top of it: a human report or a New Relic alert can trigger an agent that gathers evidence and drafts a fix for engineer review; designed the CI-gated, agent-consumable monorepo documentation system.</li></ul>
+    <p class="tech">Tech: TypeScript, Node.js, React, MongoDB, AWS ECS, Redis, Kubernetes, OpenAI API, Anthropic API, New Relic, Zod.</p>
+  </div>
+  <div class="entry">
+    <p class="role"><strong>Xogito Group</strong> &mdash; Senior Software Development Engineer &middot; Dec 2020 – Mar 2022</p>
+
+    <ul><li>First engineer assigned to, then main backend engineer of, a multi-tenant SaaS for real-time quality-control inspections (NestJS, TypeScript, PostgreSQL, AWS, GitLab CI); owned backend architecture and delivery end to end.</li><li>Recovered a frustrated client's account after the project manager resigned: became the team's spokesperson, paired quick wins with core-workflow repairs, rebuilt trust within a few sprints and led the client product conversations for about six months; the client went on to commission additional projects.</li><li>Onboarded and mentored new engineers with an approach later adopted at House Numbers as a rotating buddy program; 15+ people onboarded across the two companies.</li><li>Led the platform's legacy-SAP data migration: evaluated ETL tooling, built custom scripts where existing tools could not represent the source and target models, validated rounding compatibility early with platform users, and needed no post-migration reconciliation.</li></ul>
+    <p class="tech">Tech: NestJS, TypeScript, PostgreSQL, Docker, GitLab CI, AWS.</p>
+  </div>
+  <div class="entry keep-together">
+    <p class="role"><strong>FullStack Labs</strong> &mdash; Senior Software Engineer &middot; Dec 2018 – Dec 2020</p>
+
+    <ul><li>Full-stack engineer (Node.js, React, PostgreSQL) on a procurement platform rebuilt for a US fiduciary purchasing agent (FF&amp;E/OS&amp;E).</li><li>Owned the migration of historical quote data out of a legacy SAP system with zero data loss: custom ETL, traced a financial-total discrepancy to SAP/JavaScript rounding differences, and ran a frozen cutover with snapshot-backed reconciliation; users retired the legacy system after MVP launch.</li></ul>
+    <p class="tech">Tech: Node.js, React, PostgreSQL, AWS, Docker.</p>
+  </div>
+
+  <h2>Earlier Experience</h2>
+  <div class="entry">
+    <p class="role"><strong>Belatrix Software</strong> &mdash; Senior NodeJS Software Developer &middot; Jul 2018 – Nov 2018</p>
+    <ul><li>Acting technical lead: serverless architecture (Lambda, CloudFormation, DynamoDB) for a dynamic-document platform; led a four-person team delivering it.</li></ul>
+  </div>
+  <div class="entry">
+    <p class="role"><strong>Rokk3r</strong> &mdash; Senior Full Stack Developer and DevOps &middot; Feb 2016 – Jun 2018</p>
+    <ul><li>Via Kubesoft SAS: migrated a real-time telecom monolith to an AWS Kubernetes microservices cluster; migrated a mobile backend off Parse ahead of its shutdown deadline.</li></ul>
+  </div>
+  <div class="entry">
+    <p class="role"><strong>Kubesoft SAS</strong> &mdash; Senior Full Stack &amp; Mobile Developer &middot; Jan 2015 – Jun 2018</p>
+    <ul><li>Web/hybrid-mobile products for Colombian and international clients; built the first backend of Mutual, a hackathon-winning parenting app. From Feb 2016 assigned full-time to Rokk3r (above).</li></ul>
+  </div>
+  <div class="entry">
+    <p class="role"><strong>Jarvi Games</strong> &mdash; Full Stack Developer and DevOps &middot; Feb 2013 – Jun 2015</p>
+    <ul><li>Real-time game backend with micropayments (Node.js, MongoDB, PostgreSQL, PHP) and its infrastructure.</li></ul>
+  </div>
+
+  <h2>Selected Projects</h2>
+  <div class="entry">
+    <p class="role"><strong>hire-me-mcp</strong> &mdash; Creator and maintainer &middot; <a href="https://github.com/garusis/hire-me-mcp">github.com/garusis/hire-me-mcp</a> &middot; <a href="https://hire-me-mcp-web.vercel.app">hire-me-mcp-web.vercel.app</a></p>
+    <ul><li>Public MCP server, RAG-backed interview agent (Neon pgvector, Gemini embeddings) and Next.js site over one typed career dataset; Vitest, Playwright e2e against real Vercel previews, and retrieval/agent evals as required CI gates.</li></ul>
+  </div>
+  <div class="entry">
+    <p class="role"><strong>cowork</strong> &mdash; Creator and maintainer &middot; <a href="https://github.com/garusis/cowork">github.com/garusis/cowork</a></p>
+    <ul><li>Open-source Python CLI that orchestrates multiple AI coding agents into role-based teams, with phase gates, per-role evals and cost reporting.</li></ul>
+  </div>
+
+  <h2>Skills</h2>
+  <ul><li><strong>Languages:</strong> TypeScript, JavaScript, SQL.</li><li><strong>Frontend:</strong> React, Next.js.</li><li><strong>Backend:</strong> Node.js, NestJS, Microservices, Event-Driven Architecture, REST APIs, Webhooks.</li><li><strong>Data:</strong> MongoDB, PostgreSQL, Redis, pgvector.</li><li><strong>Cloud &amp; Infrastructure:</strong> AWS, AWS ECS, Docker, Kubernetes, Serverless (Lambda/CloudFormation), GitLab CI, GitHub Actions, Vercel, New Relic.</li><li><strong>AI / LLM Engineering:</strong> OpenAI API, Anthropic API, LLMs (Large Language Models), LLM Evaluation (human-graded, LLM-as-judge), AI Agents, Prompt Engineering, Document AI (OCR/vision-LLM), MCP (Model Context Protocol), RAG (Retrieval-Augmented Generation).</li><li><strong>Practices:</strong> CI/CD, Observability, Turborepo/pnpm monorepos, Mentoring &amp; Onboarding, PII handling and field-level encryption, Playwright, Vitest, Zod, ETL / Data Migration.</li></ul>
+
+  <h2>Education</h2>
+  <ul><li>Universidad Nacional Abierta y a Distancia (UNAD) — coursework toward B.S. Systems Engineering</li></ul>
+</div>
+</body>
+</html>

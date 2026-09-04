@@ -1,0 +1,12 @@
+{
+  "profile": { "headline": {} },
+  "experience": [],
+  "projects": [],
+  "education": [],
+  "skills": {
+    "categoryLabels": {},
+    "groupOrder": { "general": ["language"], "ai": ["language"] },
+    "excludeIds": [],
+    "displayNames": {}
+  }
+}

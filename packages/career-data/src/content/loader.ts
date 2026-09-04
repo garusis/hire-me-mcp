@@ -3,6 +3,8 @@ import path from "node:path";
 import matter from "gray-matter";
 import type { z } from "zod";
 import type { CitableEntityType } from "../schemas/common.js";
+import type { CvOverrides } from "../schemas/cv-overrides.js";
+import { cvOverridesSchema } from "../schemas/cv-overrides.js";
 import type { EducationEntry } from "../schemas/education.js";
 import { educationEntrySchema } from "../schemas/education.js";
 import type { ExperienceEntry } from "../schemas/experience.js";
@@ -52,6 +54,17 @@ type ContentLayoutEntry =
  */
 const STORY_PRESERVATION_MAP_FILE = "story-preservation-map.json";
 
+/**
+ * `cv-overrides.json` — the #309 stage 3 CV-only overlay (headline/summary
+ * variants, per-role bullet replacements, skills grouping, etc.). Like
+ * `story-preservation-map.json`, it is review/presentation data, not a
+ * citable entity: it is validated by {@link validateContentDir} but loaded
+ * separately by {@link loadCvOverrides}, never folded into
+ * {@link CareerDataset} — the MCP and the rest of the web app must never
+ * see it, only `apps/web`'s CV projection.
+ */
+const CV_OVERRIDES_FILE = "cv-overrides.json";
+
 const contentLayout: ContentLayoutEntry[] = [
   { entityType: "profile", kind: "single-json", relPath: "profile.json", schema: profileSchema },
   {
@@ -82,6 +95,12 @@ const contentLayout: ContentLayoutEntry[] = [
     kind: "array-json",
     relPath: STORY_PRESERVATION_MAP_FILE,
     schema: storyPreservationMapSchema,
+  },
+  {
+    entityType: "cv-overrides",
+    kind: "single-json",
+    relPath: CV_OVERRIDES_FILE,
+    schema: cvOverridesSchema,
   },
 ];
 
@@ -485,6 +504,36 @@ export function loadStoryPreservationMap(contentDir: string): StoryPreservationE
     );
   }
   return storyPreservationMapSchema.parse(data);
+}
+
+/** Whether `contentDir` carries a `cv-overrides.json` overlay at all. */
+export function hasCvOverrides(contentDir: string): boolean {
+  return fs.existsSync(path.join(contentDir, CV_OVERRIDES_FILE));
+}
+
+/**
+ * Loads `cv-overrides.json` — the #309 stage 3 CV-only overlay. Returns
+ * `undefined` when the file is absent (nothing overridden yet, or a
+ * consumer — like the MCP — that must never see CV-only fields anyway);
+ * throws with a readable report when the file is present but invalid, the
+ * same convention {@link loadStoryPreservationMap} follows.
+ */
+export function loadCvOverrides(contentDir: string): CvOverrides | undefined {
+  const absPath = path.join(contentDir, CV_OVERRIDES_FILE);
+  if (!fs.existsSync(absPath)) {
+    return undefined;
+  }
+  const errors: ContentValidationError[] = [];
+  const data = parseJsonFile(absPath, CV_OVERRIDES_FILE, errors);
+  if (data !== undefined) {
+    validateParsed(data, cvOverridesSchema, CV_OVERRIDES_FILE, errors);
+  }
+  if (errors.length > 0 || data === undefined) {
+    throw new Error(
+      `career-data: cannot load invalid ${CV_OVERRIDES_FILE}:\n${formatValidationReport(errors)}`,
+    );
+  }
+  return cvOverridesSchema.parse(data);
 }
 
 /**

@@ -176,6 +176,20 @@
     ]
   },
   {
+    "id": "ecs",
+    "name": "AWS ECS",
+    "aliases": ["elastic container service"],
+    "category": "cloud-infra",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      }
+    ]
+  },
+  {
     "id": "docker",
     "name": "Docker",
     "aliases": [],
@@ -319,7 +333,7 @@
     "name": "Python",
     "aliases": ["py"],
     "category": "language",
-    "proficiency": "proficient",
+    "proficiency": "familiar",
     "evidence": [
       {
         "entityType": "project",
@@ -346,7 +360,7 @@
     "id": "microservices",
     "name": "Microservices",
     "aliases": [],
-    "category": "architecture",
+    "category": "runtime",
     "proficiency": "proficient",
     "evidence": [
       {
@@ -361,14 +375,14 @@
     "id": "event-driven-architecture",
     "name": "Event-Driven Architecture",
     "aliases": ["eda", "event driven"],
-    "category": "architecture",
+    "category": "runtime",
     "proficiency": "proficient",
     "evidence": [
       {
         "entityType": "experience",
         "entityId": "house-numbers-2022-senior-full-stack-engineer",
         "label": "Senior Full Stack Engineer, House Numbers",
-        "fragment": "highlights.1"
+        "fragment": "highlights.0"
       }
     ]
   },
@@ -376,7 +390,7 @@
     "id": "rest-apis",
     "name": "REST APIs",
     "aliases": ["restful apis", "rest"],
-    "category": "protocol",
+    "category": "runtime",
     "proficiency": "expert",
     "evidence": [
       {
@@ -441,12 +455,32 @@
         "entityType": "experience",
         "entityId": "house-numbers-2022-senior-full-stack-engineer",
         "label": "Senior Full Stack Engineer, House Numbers",
-        "fragment": "highlights.0"
+        "fragment": "highlights.5"
       },
       {
         "entityType": "project",
         "entityId": "document-extraction-pipeline",
         "label": "AI Document Extraction Proof of Concept"
+      }
+    ]
+  },
+  {
+    "id": "llm-evaluation",
+    "name": "LLM Evaluation (human-graded, LLM-as-judge)",
+    "aliases": ["llm evals", "model evals", "eval harnesses"],
+    "category": "ai-ml",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers",
+        "fragment": "highlights.2"
+      },
+      {
+        "entityType": "recommendation",
+        "entityId": "recommendation-andre-treib-2026",
+        "label": "Andr\u00e9 Treib recommendation"
       }
     ]
   },
@@ -578,7 +612,7 @@
         "entityType": "experience",
         "entityId": "house-numbers-2022-senior-full-stack-engineer",
         "label": "Senior Full Stack Engineer, House Numbers",
-        "fragment": "highlights.1"
+        "fragment": "highlights.0"
       }
     ]
   },
@@ -607,12 +641,221 @@
         "entityType": "experience",
         "entityId": "house-numbers-2022-senior-full-stack-engineer",
         "label": "Senior Full Stack Engineer, House Numbers",
-        "fragment": "highlights.0"
+        "fragment": "highlights.5"
       },
       {
         "entityType": "project",
         "entityId": "document-extraction-pipeline",
         "label": "AI Document Extraction Proof of Concept"
+      }
+    ]
+  },
+  {
+    "id": "nextjs",
+    "name": "Next.js",
+    "aliases": ["next.js", "next js"],
+    "category": "framework",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "project",
+        "entityId": "hire-me-mcp",
+        "label": "hire-me-mcp"
+      }
+    ]
+  },
+  {
+    "id": "mcp",
+    "name": "MCP (Model Context Protocol)",
+    "aliases": ["model context protocol"],
+    "category": "ai-ml",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "project",
+        "entityId": "hire-me-mcp",
+        "label": "hire-me-mcp"
+      }
+    ]
+  },
+  {
+    "id": "rag",
+    "name": "RAG (Retrieval-Augmented Generation)",
+    "aliases": ["retrieval-augmented generation", "retrieval augmented generation"],
+    "category": "ai-ml",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "project",
+        "entityId": "hire-me-mcp",
+        "label": "hire-me-mcp"
+      }
+    ]
+  },
+  {
+    "id": "pgvector",
+    "name": "pgvector",
+    "aliases": ["postgres vector search"],
+    "category": "database",
+    "proficiency": "familiar",
+    "evidence": [
+      {
+        "entityType": "project",
+        "entityId": "hire-me-mcp",
+        "label": "hire-me-mcp"
+      }
+    ]
+  },
+  {
+    "id": "playwright",
+    "name": "Playwright",
+    "aliases": [],
+    "category": "practice",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "project",
+        "entityId": "hire-me-mcp",
+        "label": "hire-me-mcp"
+      }
+    ]
+  },
+  {
+    "id": "vitest",
+    "name": "Vitest",
+    "aliases": [],
+    "category": "practice",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "project",
+        "entityId": "hire-me-mcp",
+        "label": "hire-me-mcp"
+      }
+    ]
+  },
+  {
+    "id": "zod",
+    "name": "Zod",
+    "aliases": [],
+    "category": "practice",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      },
+      {
+        "entityType": "project",
+        "entityId": "hire-me-mcp",
+        "label": "hire-me-mcp"
+      }
+    ]
+  },
+  {
+    "id": "github-actions",
+    "name": "GitHub Actions",
+    "aliases": ["gh actions"],
+    "category": "cloud-infra",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "project",
+        "entityId": "hire-me-mcp",
+        "label": "hire-me-mcp"
+      }
+    ]
+  },
+  {
+    "id": "vercel",
+    "name": "Vercel",
+    "aliases": [],
+    "category": "cloud-infra",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "project",
+        "entityId": "hire-me-mcp",
+        "label": "hire-me-mcp"
+      }
+    ]
+  },
+  {
+    "id": "gemini",
+    "name": "Gemini API",
+    "aliases": ["google gemini"],
+    "category": "ai-ml",
+    "proficiency": "familiar",
+    "evidence": [
+      {
+        "entityType": "project",
+        "entityId": "hire-me-mcp",
+        "label": "hire-me-mcp"
+      }
+    ]
+  },
+  {
+    "id": "new-relic",
+    "name": "New Relic",
+    "aliases": [],
+    "category": "cloud-infra",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      }
+    ]
+  },
+  {
+    "id": "dynamodb",
+    "name": "DynamoDB",
+    "aliases": [],
+    "category": "database",
+    "proficiency": "familiar",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "belatrix-software-2018-senior-nodejs-software-developer",
+        "label": "Senior NodeJS Software Developer, Belatrix Software"
+      }
+    ]
+  },
+  {
+    "id": "webhooks",
+    "name": "Webhooks",
+    "aliases": ["webhook integrations"],
+    "category": "runtime",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers",
+        "fragment": "highlights.0"
+      }
+    ]
+  },
+  {
+    "id": "etl",
+    "name": "ETL / Data Migration",
+    "aliases": ["etl pipelines", "legacy data migration"],
+    "category": "practice",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "fullstack-labs-2018-senior-software-engineer",
+        "label": "Senior Software Engineer, FullStack Labs",
+        "fragment": "highlights.1"
+      },
+      {
+        "entityType": "experience",
+        "entityId": "xogito-group-2020-senior-software-development-engineer",
+        "label": "Senior Software Development Engineer, Xogito Group",
+        "fragment": "highlights.3"
       }
     ]
   }

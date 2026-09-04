@@ -9,5 +9,5 @@
     "Designed the serverless architecture and led the development team delivering it.",
     "Orchestrated automated deployments via CloudFormation."
   ],
-  "tech": ["aws", "nodejs", "react", "docker", "serverless"]
+  "tech": ["aws", "nodejs", "react", "docker", "serverless", "dynamodb"]
 }

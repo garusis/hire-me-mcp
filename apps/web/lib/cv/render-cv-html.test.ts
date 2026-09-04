@@ -18,6 +18,10 @@ const FIXTURE_VIEW: CvView = {
       { label: "LinkedIn", url: "https://www.linkedin.example/in/fixture-person/" },
     ],
   },
+  variant: "general",
+  headline: "Fixture Headline Role",
+  summary: "Fixture summary paragraph describing the fixture person.",
+  timezoneLine: "Remote (Fixture-5)",
   experience: [
     {
       company: "Fixture Employer Inc",
@@ -34,6 +38,15 @@ const FIXTURE_VIEW: CvView = {
       endDate: "2016-06",
       highlights: ["Fixture highlight about the older fixture role."],
       tech: [],
+    },
+    {
+      company: "Fixture Earliest Employer",
+      role: "Fixture Earliest Role",
+      startDate: "2013-02",
+      endDate: "2015-01",
+      highlights: [],
+      tech: [],
+      compactLine: "fixture compact-line summary.",
     },
   ],
   projects: [
@@ -53,9 +66,9 @@ const FIXTURE_VIEW: CvView = {
       links: [],
     },
   ],
-  skillsByProficiency: [
-    { proficiency: "expert", names: ["Fixture Expert Skill"] },
-    { proficiency: "familiar", names: ["Fixture Familiar Skill"] },
+  skillGroups: [
+    { category: "language", label: "Fixture Languages", names: ["Fixture Expert Skill"] },
+    { category: "tool", label: "Fixture Tools", names: ["Fixture Familiar Skill"] },
   ],
   education: [
     {
@@ -152,8 +165,11 @@ describe("renderCvHtml", () => {
     expect(html).not.toContain("Selected Projects");
   });
 
-  it("the header (not a footer) calls out the MCP endpoint URL passed in options (#232) — no footer is emitted", () => {
-    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+  it("the header (not a footer) calls out the MCP endpoint URL passed in options for the ai variant (#232, #309 stage 3 action 12) — no footer is emitted", () => {
+    // The general variant collapses the portfolio line to one URL
+    // (#309 stage 3 action 12); the MCP endpoint callout is an ai-variant
+    // header feature now, exercised here with variant: "ai".
+    const html = renderCvHtml({ ...FIXTURE_VIEW, variant: "ai" }, FIXTURE_OPTIONS);
     expect(html).toContain("https://example.test/api/mcp");
     expect(html).toMatch(/MCP client/);
     expect(html).not.toContain("<footer");
@@ -169,6 +185,15 @@ describe("renderCvHtml", () => {
   it("does not force whole sections onto one page — no section-level avoid-page rule (#230)", () => {
     const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
     expect(html).not.toMatch(/section\s*\{[^}]*break-inside:\s*avoid-page/);
+  });
+
+  it("does not force a whole role entry onto one page — a long role's bullets may split across the page boundary, only a single bullet line and the role header stay atomic (#309 stage 3, two-page budget)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).not.toMatch(/\.entry\s*\{[^}]*break-inside:\s*avoid/);
+    // The role header itself still can't be orphaned from its first bullet.
+    expect(html).toMatch(/\.role\s*\{[^}]*(page-break-after|break-after):\s*avoid/);
+    // Individual bullets still never split mid-sentence.
+    expect(html).toMatch(/li\s*\{[^}]*orphans/);
   });
 
   it("renders an open-ended role as Present", () => {
@@ -235,10 +260,13 @@ describe("renderCvHtml", () => {
     expect(html).toContain(
       'href="https://www.linkedin.example/in/fixture-person/">linkedin.example/in/fixture-person</a>',
     );
-    // The portfolio siteUrl link is shown the same way; the MCP endpoint
-    // is kept in full so it survives copy/paste.
+    // The general-variant portfolio siteUrl link is shown the same way.
     expect(html).toContain('href="https://example.test">example.test</a>');
-    expect(html).toContain('href="https://example.test/api/mcp">https://example.test/api/mcp</a>');
+    // The ai variant additionally shows the MCP endpoint, displayed like
+    // every other URL on the page (scheme stripped, full href kept) so the
+    // header reads consistently (#309 round 3 grading, nit 6).
+    const aiHtml = renderCvHtml({ ...FIXTURE_VIEW, variant: "ai" }, FIXTURE_OPTIONS);
+    expect(aiHtml).toContain('href="https://example.test/api/mcp">example.test/api/mcp</a>');
   });
 
   it("renders a Tech line under a role from the view's tech field, omitted when it is empty (#299)", () => {
@@ -250,6 +278,78 @@ describe("renderCvHtml", () => {
       FIXTURE_OPTIONS,
     );
     expect(html2).not.toContain('class="tech"');
+  });
+
+  it("renders the timezoneLine after location when present, and skips it when absent (#309 stage 3, action 12)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).toContain("Remote (Fixture-5)");
+    const htmlNoTimezone = renderCvHtml(
+      { ...FIXTURE_VIEW, timezoneLine: undefined },
+      FIXTURE_OPTIONS,
+    );
+    expect(htmlNoTimezone).not.toContain("Remote (Fixture-5)");
+  });
+
+  it("collapses the portfolio line to the site URL alone for the general variant, and includes the MCP URL for the ai variant (#309 stage 3, action 12)", () => {
+    const generalHtml = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    const headerEndGeneral = generalHtml.indexOf("<h2>");
+    expect(generalHtml.slice(0, headerEndGeneral)).not.toContain(FIXTURE_OPTIONS.mcpUrl);
+
+    const aiHtml = renderCvHtml({ ...FIXTURE_VIEW, variant: "ai" }, FIXTURE_OPTIONS);
+    const headerEndAi = aiHtml.indexOf("<h2>");
+    expect(aiHtml.slice(0, headerEndAi)).toContain(FIXTURE_OPTIONS.mcpUrl);
+  });
+
+  it("renders a role with compactLine as a structured entry under an Earlier Experience heading — bold company, role, full date range, one description line (#309 stage 3 second review, item 7)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).toContain("Earlier Experience");
+    // Same DOM shape as a full entry: bold company, role, formatted period, a single description bullet.
+    expect(html).toContain("<strong>Fixture Earliest Employer</strong>");
+    expect(html).toContain("Fixture Earliest Role");
+    expect(html).toContain("Feb 2013 – Jan 2015");
+    expect(html).toContain("<li>fixture compact-line summary.</li>");
+    // The compact entry appears after the "Earlier Experience" heading, not mixed into the main Experience list.
+    const earlierIndex = html.indexOf("Earlier Experience");
+    const compactIndex = html.indexOf("Fixture Earliest Employer");
+    expect(compactIndex).toBeGreaterThan(earlierIndex);
+  });
+
+  it("renders each Earlier Experience entry with the same .entry/.role/<ul><li> DOM shape as a full Experience entry, so ATS parsers count it as a position (#309 stage 3 second review, item 7)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    const earlierIndex = html.indexOf("<h2>Earlier Experience</h2>");
+    expect(earlierIndex).toBeGreaterThan(-1);
+    const earlierSection = html.slice(earlierIndex);
+    expect(earlierSection).toMatch(/<div class="entry">\s*<p class="role"><strong>/);
+    expect(earlierSection).toContain("<ul><li>");
+  });
+
+  it("does not force a compact entry's .entry block onto one page unless the view sets keepTogether (#309 stage 3 second review, item 5)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    const earlierIndex = html.indexOf("<h2>Earlier Experience</h2>");
+    const earlierSection = html.slice(earlierIndex);
+    expect(earlierSection).not.toContain('class="entry keep-together"');
+    const keepTogetherView: CvView = {
+      ...FIXTURE_VIEW,
+      experience: FIXTURE_VIEW.experience.map((item) =>
+        item.company === "Fixture Older Employer" ? { ...item, keepTogether: true } : item,
+      ),
+    };
+    const keepTogetherHtml = renderCvHtml(keepTogetherView, FIXTURE_OPTIONS);
+    expect(keepTogetherHtml).toContain('class="entry keep-together"');
+    expect(keepTogetherHtml).toMatch(/\.entry\.keep-together\s*\{[^}]*break-inside:\s*avoid/);
+  });
+
+  it("keeps a Tech: line from starting a new page (#309 stage 3 second review, item 5)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).toMatch(/\.tech\s*\{[^}]*break-before:\s*avoid/);
+  });
+
+  it("renders each skill group under its own label, from skillGroups rather than proficiency tiers (#309 stage 3, action 5)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).toContain("Fixture Languages");
+    expect(html).toContain("Fixture Tools");
+    expect(html).toContain("Fixture Expert Skill");
+    expect(html).toContain("Fixture Familiar Skill");
   });
 });
 
@@ -314,5 +414,163 @@ describe("renderCvHtml never leaks real story content (#296)", () => {
     for (const needle of needles) {
       expect(normalized).not.toContain(` ${needle} `);
     }
+  });
+});
+
+// #309 stage 3, action 19: a phrasing guard, not a content guard — the
+// Stage 2 review's #1 finding was that the non-shipped PoC's "stayed
+// experimental" framing, as the CV's very first bullet, was the single
+// most damaging line on the document (section 1, point 3). This never
+// asserts *what* the lead bullet says, only that it can never open with
+// language admitting the work was never deployed — regardless of future
+// wording changes to that bullet or the overlay.
+const NEVER_DEPLOYED_PHRASES = [
+  "never deployed",
+  "stayed experimental",
+  "left as a later team decision",
+];
+
+describe("renderCvHtml never leads with non-shipped-work framing (#309 stage 3, action 19)", () => {
+  it("the real CV's lead bullet, for every variant, never contains 'never deployed', 'stayed experimental', or 'left as a later team decision'", () => {
+    for (const variant of ["general", "ai"] as const) {
+      const view = getCvView(createContentCareerDataRepository(), { variant });
+      for (const item of view.experience) {
+        const leadBullet = item.highlights[0];
+        if (leadBullet === undefined) {
+          continue;
+        }
+        const normalizedLead = leadBullet.toLowerCase();
+        for (const phrase of NEVER_DEPLOYED_PHRASES) {
+          expect(
+            normalizedLead,
+            `variant "${variant}", ${item.company} lead bullet: "${leadBullet}"`,
+          ).not.toContain(phrase);
+        }
+      }
+    }
+  });
+
+  it("the rendered HTML for both variants carries none of the banned phrases anywhere in the Experience section's lead bullets", () => {
+    for (const variant of ["general", "ai"] as const) {
+      const view = getCvView(createContentCareerDataRepository(), { variant });
+      const html = renderCvHtml(view, FIXTURE_OPTIONS).toLowerCase();
+      // A coarse whole-document check backs up the per-bullet one above:
+      // none of these phrases should appear anywhere at all in the
+      // optimized CV — they are interview material, not CV material.
+      for (const phrase of NEVER_DEPLOYED_PHRASES) {
+        expect(html, `variant "${variant}"`).not.toContain(phrase);
+      }
+    }
+  });
+});
+
+// #309 stage 1 — the "everything on the table" full projection intentionally
+// carries per-role summaries and every attached story. This is the parallel
+// case the #296 guard test above calls for: the guard stays scoped to the
+// default (web) projection (`getCvView()` with no options, asserted above,
+// unchanged), while this describe block proves the opt-in `includeSummary`/
+// `includeStories` full mode DOES surface that same content when the view
+// model is built to carry it.
+const FULL_MODE_FIXTURE_VIEW: CvView = {
+  ...FIXTURE_VIEW,
+  experience: [
+    {
+      company: "Fixture Employer Inc",
+      role: "Fixture Senior Role",
+      startDate: "2020-01",
+      endDate: undefined,
+      highlights: ["Fixture highlight about shipping fixture things."],
+      tech: [],
+      summary: "Fixture full-mode role summary paragraph.",
+      stories: [
+        {
+          title: "Fixture Full-Mode Story Title",
+          situation: "Fixture full-mode story situation prose.",
+          task: "Fixture full-mode story task prose.",
+          actions: ["Fixture full-mode story action one.", "Fixture full-mode story action two."],
+          results: ["Fixture full-mode story result one."],
+        },
+      ],
+    },
+  ],
+};
+
+/**
+ * Reverses `escapeHtml` so a quote-heavy sentence (rendered as `&quot;`)
+ * still matches its plain source text when normalized, instead of picking
+ * up a spurious "quot" token from the untouched entity.
+ */
+function decodeEscapedHtml(html: string): string {
+  return html
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+/**
+ * Every real story's title/situation/task/actions/results needle, same
+ * shape as {@link realStorySentences}/{@link realStoryTitles} but excluding
+ * `reflection` — `CvStoryView` deliberately has no reflection field, so a
+ * full-mode-renders-everything assertion must not expect it either.
+ */
+function realStoryNeedlesExcludingReflection(): string[] {
+  const dataset = createContentCareerDataRepository().getDataset();
+  const needles: string[] = [];
+  for (const story of dataset.stories) {
+    needles.push(normalizeStoryProse(story.title));
+    const units = [story.situation, story.task, ...story.actions, ...story.results];
+    for (const unit of units) {
+      for (const sentence of storySentencesOf(unit)) {
+        const normalizedSentence = normalizeStoryProse(sentence);
+        if (normalizedSentence.split(" ").length >= MIN_STORY_SENTENCE_WORDS) {
+          needles.push(normalizedSentence);
+        }
+      }
+    }
+  }
+  return needles;
+}
+
+describe("renderCvHtml full mode (#309 stage 1)", () => {
+  it("renders each role's summary and every attached story's full title/situation/task/actions/results", () => {
+    const html = renderCvHtml(FULL_MODE_FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).toContain("Fixture full-mode role summary paragraph.");
+    expect(html).toContain("Fixture Full-Mode Story Title");
+    expect(html).toContain("Fixture full-mode story situation prose.");
+    expect(html).toContain("Fixture full-mode story task prose.");
+    expect(html).toContain("Fixture full-mode story action one.");
+    expect(html).toContain("Fixture full-mode story action two.");
+    expect(html).toContain("Fixture full-mode story result one.");
+  });
+
+  it("renders the real CV view built with includeSummary/includeStories: every real story's title/situation/task/actions/results appears (reflection is deliberately not part of CvStoryView, so it's excluded here too)", () => {
+    // #309 stage 1's "everything on the table" full projection also
+    // disables the CV-only overlay (overrides: undefined): a compact-line
+    // role would otherwise collapse out of the "Experience" section and
+    // take its attached stories with it, defeating the whole point of the
+    // unfiltered dump this stage produces for the Stage 2 reviewer.
+    const fullView = getCvView(createContentCareerDataRepository(), {
+      maxHighlightsPerRole: Number.POSITIVE_INFINITY,
+      includeSummary: true,
+      includeStories: true,
+      overrides: undefined,
+    });
+    const html = renderCvHtml(fullView, FIXTURE_OPTIONS);
+    const normalized = ` ${normalizeStoryProse(decodeEscapedHtml(html))} `;
+    const needles = realStoryNeedlesExcludingReflection();
+    expect(needles.length).toBeGreaterThan(0);
+
+    for (const needle of needles) {
+      expect(normalized).toContain(` ${needle} `);
+    }
+  });
+
+  it("omits summary/stories elements when a role has neither (default projection still renders cleanly)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).not.toContain('<p class="role-summary">');
+    expect(html).not.toContain('<div class="role-stories">');
+    expect(html).not.toContain("Situation:");
+    expect(html).not.toContain("Actions:");
   });
 });

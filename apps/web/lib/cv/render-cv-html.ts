@@ -124,20 +124,41 @@ function link(url: string): string {
   return `<a href="${escapeHtml(url)}">${escapeHtml(display(url))}</a>`;
 }
 
-function renderHeader(
-  profile: CvView["profile"],
+/**
+ * The header's portfolio line (#309 stage 3, action 12): the general
+ * variant collapses to one URL; the `ai` variant keeps the MCP endpoint
+ * callout, since the AI-tooling audience it targets treats a queryable MCP
+ * server as a differentiator rather than noise.
+ */
+function renderPortfolioLine(
+  variant: CvView["variant"],
   options: Pick<RenderCvHtmlOptions, "siteUrl" | "mcpUrl">,
 ): string {
+  if (variant === "ai") {
+    return `<p class="contact"><strong>Portfolio, references and a queryable MCP endpoint:</strong> ${link(
+      options.siteUrl,
+    )} &middot; <strong>Query it from any MCP client:</strong> ${link(options.mcpUrl)}</p>`;
+  }
+  return `<p class="contact"><strong>Portfolio, references and a queryable MCP endpoint:</strong> ${link(
+    options.siteUrl,
+  )}</p>`;
+}
+
+function renderHeader(
+  view: Pick<CvView, "profile" | "headline" | "timezoneLine" | "variant">,
+  options: Pick<RenderCvHtmlOptions, "siteUrl" | "mcpUrl">,
+): string {
+  const { profile } = view;
   const contacts = profile.contacts.map((contact) => link(contact.url)).join(" &middot; ");
+  const locationLine =
+    view.timezoneLine === undefined
+      ? escapeHtml(profile.location)
+      : `${escapeHtml(profile.location)} &middot; ${escapeHtml(view.timezoneLine)}`;
   return `
   <h1>${escapeHtml(profile.name)}</h1>
-  <p class="contact"><strong>${escapeHtml(profile.headline)}</strong></p>
-  <p class="contact-line">${escapeHtml(profile.location)} &middot; ${contacts}</p>
-  <p class="contact"><strong>Portfolio &amp; detailed career evidence:</strong> ${link(
-    options.siteUrl,
-  )} &middot; <strong>Query it from any MCP client:</strong> <a href="${escapeHtml(
-    options.mcpUrl,
-  )}">${escapeHtml(options.mcpUrl)}</a></p>`;
+  <p class="contact"><strong>${escapeHtml(view.headline)}</strong></p>
+  <p class="contact-line">${locationLine} &middot; ${contacts}</p>
+  ${renderPortfolioLine(view.variant, options)}`;
 }
 
 function renderSummary(summary: string): string {
@@ -146,27 +167,122 @@ function renderSummary(summary: string): string {
   <p>${escapeHtml(summary)}</p>`;
 }
 
-function renderExperience(experience: CvView["experience"]): string {
-  const items = experience
-    .map((item) => {
-      const highlights = item.highlights
-        .map((highlight) => `<li>${escapeHtml(highlight)}</li>`)
-        .join("");
-      const tech =
-        item.tech.length === 0
-          ? ""
-          : `\n    <p class="tech">Tech: ${escapeHtml(item.tech.join(", "))}.</p>`;
-      return `
-  <div class="entry">
+/**
+ * A role's full summary paragraph — populated only when `getCvView()` was
+ * called with `includeSummary: true` (#309 stage 1's "full" projection).
+ * The default (web) projection never sets `item.summary`, so this renders
+ * nothing there, exactly as before.
+ */
+function renderRoleSummary(summary: string | undefined): string {
+  if (summary === undefined) {
+    return "";
+  }
+  return `<p class="role-summary">${escapeHtml(summary)}</p>`;
+}
+
+/**
+ * A role's attached behavioral stories — populated only when `getCvView()`
+ * was called with `includeStories: true` (#309 stage 1's "full"
+ * projection). The default (web) projection never sets `item.stories`, so
+ * this renders nothing there — the exact case `render-cv-html.test.ts`'s
+ * #296 story-leakage guard exercises and keeps green unchanged.
+ */
+function renderRoleStories(stories: CvView["experience"][number]["stories"]): string {
+  if (stories === undefined || stories.length === 0) {
+    return "";
+  }
+  const items = stories
+    .map(
+      (story) => `
+        <div class="role-story">
+          <p class="story-title"><strong>${escapeHtml(story.title)}</strong></p>
+          <p class="story-field"><strong>Situation:</strong> ${escapeHtml(story.situation)}</p>
+          <p class="story-field"><strong>Task:</strong> ${escapeHtml(story.task)}</p>
+          <p class="story-field"><strong>Actions:</strong></p>
+          <ul class="story-list">
+            ${story.actions.map((action) => `<li>${escapeHtml(action)}</li>`).join("")}
+          </ul>
+          <p class="story-field"><strong>Results:</strong></p>
+          <ul class="story-list">
+            ${story.results.map((result) => `<li>${escapeHtml(result)}</li>`).join("")}
+          </ul>
+        </div>`,
+    )
+    .join("");
+  return `<div class="role-stories">${items}</div>`;
+}
+
+function renderExperienceEntry(item: CvView["experience"][number]): string {
+  const highlights = item.highlights
+    .map((highlight) => `<li>${escapeHtml(highlight)}</li>`)
+    .join("");
+  const tech =
+    item.tech.length === 0
+      ? ""
+      : `\n    <p class="tech">Tech: ${escapeHtml(item.tech.join(", "))}.</p>`;
+  const summary = renderRoleSummary(item.summary);
+  const stories = renderRoleStories(item.stories);
+  const entryClass = item.keepTogether === true ? "entry keep-together" : "entry";
+  return `
+  <div class="${entryClass}">
     <p class="role"><strong>${escapeHtml(item.company)}</strong> &mdash; ${escapeHtml(
       item.role,
     )} &middot; ${escapeHtml(formatPeriod(item.startDate, item.endDate))}</p>
-    <ul>${highlights}</ul>${tech}
+${summary}
+    <ul>${highlights}</ul>${tech}${stories}
   </div>`;
-    })
+}
+
+/**
+ * One "Earlier Experience" role (#309 stage 3 second review, item 7): the
+ * same `.entry`/`.role`/`<ul><li>` DOM shape as a full `renderExperienceEntry`
+ * — bold company, role, the full "Mon YYYY – Mon YYYY" period from the
+ * canonical dates, one description bullet from the overlay's `compactLine`
+ * — so an ATS parser counts it as a real position instead of prose it can't
+ * recognize. No tech line, no summary, no stories: an earlier role is
+ * compacted precisely because it doesn't carry that much detail on the CV.
+ */
+function renderEarlierExperienceEntry(item: CvView["experience"][number]): string {
+  const entryClass = item.keepTogether === true ? "entry keep-together" : "entry";
+  return `
+  <div class="${entryClass}">
+    <p class="role"><strong>${escapeHtml(item.company)}</strong> &mdash; ${escapeHtml(
+      item.role,
+    )} &middot; ${escapeHtml(formatPeriod(item.startDate, item.endDate))}</p>
+    <ul><li>${escapeHtml(item.compactLine ?? "")}</li></ul>
+  </div>`;
+}
+
+/**
+ * The full "Experience" section: every role whose overlay gives it no
+ * `compactLine` (#309 stage 3, action 11) — House Numbers, Xogito,
+ * FullStack Labs on the real CV — rendered as a full entry with bullets.
+ */
+function renderExperience(experience: CvView["experience"]): string {
+  const items = experience
+    .filter((item) => item.compactLine === undefined)
+    .map(renderExperienceEntry)
     .join("");
   return `
   <h2>Experience</h2>${items}`;
+}
+
+/**
+ * "Earlier experience" (#309 stage 3, action 11, report section 5.6 and
+ * 7): every role whose overlay gives it a `compactLine` collapses to one
+ * dated line instead of a full entry, so the earliest roles still show
+ * career progression without spending page-1/2 space on full bullets.
+ * Omitted entirely when no role has a `compactLine` (the default web
+ * projection, which carries no overlay-driven compaction).
+ */
+function renderEarlierExperience(experience: CvView["experience"]): string {
+  const compactEntries = experience.filter((item) => item.compactLine !== undefined);
+  if (compactEntries.length === 0) {
+    return "";
+  }
+  const items = compactEntries.map(renderEarlierExperienceEntry).join("");
+  return `
+  <h2>Earlier Experience</h2>${items}`;
 }
 
 /**
@@ -199,17 +315,17 @@ function renderProjects(projects: CvView["projects"]): string {
   <h2>Selected Projects</h2>${items}`;
 }
 
-const PROFICIENCY_LABEL: Record<CvView["skillsByProficiency"][number]["proficiency"], string> = {
-  expert: "Expert",
-  proficient: "Proficient",
-  familiar: "Familiar",
-};
-
-function renderSkills(groups: CvView["skillsByProficiency"]): string {
+/**
+ * Skills grouped by category (#309 stage 3, action 5), each group under
+ * its own overlay-supplied label, in the overlay's variant-ordered
+ * sequence — `getCvView()` has already excluded ids, applied display-name
+ * overrides, and dropped any group left with zero names.
+ */
+function renderSkills(groups: CvView["skillGroups"]): string {
   const items = groups
     .map(
       (group) =>
-        `<li><strong>${escapeHtml(PROFICIENCY_LABEL[group.proficiency])}:</strong> ${escapeHtml(
+        `<li><strong>${escapeHtml(group.label)}:</strong> ${escapeHtml(
           group.names.join(", "),
         )}.</li>`,
     )
@@ -222,6 +338,9 @@ function renderSkills(groups: CvView["skillsByProficiency"]): string {
 function renderEducation(education: CvView["education"]): string {
   const items = education
     .map((entry) => {
+      if (entry.displayLine !== undefined) {
+        return `<li>${escapeHtml(entry.displayLine)}</li>`;
+      }
       const period = formatEducationPeriod(entry.startDate, entry.endDate);
       return `<li>${escapeHtml(entry.institution)} &mdash; ${escapeHtml(entry.credential)}${
         period !== undefined ? ` (${escapeHtml(period)})` : ""
@@ -234,26 +353,40 @@ function renderEducation(education: CvView["education"]): string {
 }
 
 const STYLE = `
-  @page { size: Letter; margin: 0.7in; }
+  @page { size: Letter; margin: 0.5in; }
   html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0; color: #000; background: #fff;
     font-family: Arial, "Helvetica Neue", Helvetica, "Liberation Sans", sans-serif;
-    font-size: 11pt; line-height: 1.5;
+    font-size: 10pt; line-height: 1.24;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
   .sheet { max-width: 6.5in; margin: 0 auto; padding: 1in 0; }
-  p { margin: 0 0 11pt; orphans: 3; widows: 3; }
+  p { margin: 0 0 6pt; orphans: 3; widows: 3; }
   a { color: inherit; text-decoration: none; }
-  h1 { font-size: 20pt; line-height: 1.2; font-weight: bold; margin: 0 0 4pt; }
-  h2 { font-size: 13pt; line-height: 1.3; font-weight: bold; margin: 16pt 0 8pt; page-break-after: avoid; break-after: avoid; }
-  .contact { margin: 0 0 4pt; }
-  .contact-line { margin: 0 0 11pt; }
-  .role { margin: 0 0 6pt; page-break-after: avoid; break-after: avoid; }
-  .entry { margin: 0 0 14pt; page-break-inside: avoid; break-inside: avoid; }
-  ul { margin: 0 0 6pt; padding-left: 18pt; }
-  li { margin: 0 0 5pt; orphans: 2; widows: 2; }
-  .tech { font-style: italic; margin: 0; }
+  h1 { font-size: 19pt; line-height: 1.2; font-weight: bold; margin: 0 0 4pt; }
+  h2 { font-size: 12.5pt; line-height: 1.3; font-weight: bold; margin: 8pt 0 4pt; page-break-after: avoid; break-after: avoid; }
+  .contact { margin: 0 0 3pt; }
+  .contact-line { margin: 0 0 5pt; font-size: 9.5pt; }
+  .role { margin: 0 0 3pt; page-break-after: avoid; break-after: avoid; }
+  /* Entries deliberately are NOT break-inside: avoid (#309 stage 3): the two-page budget needs
+     a long role's bullets to flow across a page boundary — only the role header (.role, above)
+     and a single bullet line (li, below) stay atomic. */
+  .entry { margin: 0 0 6pt; }
+  /* Short entries the overlay flags keepTogether (#309 stage 3 second review, item 5) stay
+     atomic across the page break — unlike the general rule above, which lets a long role's
+     bullets flow across a page boundary. */
+  .entry.keep-together { break-inside: avoid; }
+  ul { margin: 0 0 3pt; padding-left: 16pt; }
+  li { margin: 0 0 1pt; orphans: 2; widows: 2; break-inside: avoid; page-break-inside: avoid; }
+  /* A "Tech: …" line can never open a page on its own (#309 stage 3 second review, item 5). */
+  .tech { font-style: italic; margin: 0; break-before: avoid; page-break-before: avoid; }
+  .role-summary { margin: 2pt 0 0; }
+  .role-stories { margin: 4pt 0 0; }
+  .role-story { break-inside: avoid; margin: 0 0 4pt; padding-left: 6pt; border-left: 2px solid #ccc; }
+  .story-title, .story-field { margin: 1pt 0; }
+  .story-list { margin: 1pt 0; padding-left: 14pt; }
+  .story-list li { margin: 0 0 1pt; }
   @media print { .sheet { max-width: none; margin: 0; padding: 0; } }
 `;
 
@@ -277,11 +410,12 @@ export function renderCvHtml(view: CvView, options: RenderCvHtmlOptions): string
 ${styleTag}${STYLE}</style>
 </head>
 <body>
-<div class="sheet">${renderHeader(profile, options)}
-${renderSummary(profile.summary)}
+<div class="sheet">${renderHeader(view, options)}
+${renderSummary(view.summary)}
 ${renderExperience(view.experience)}
+${renderEarlierExperience(view.experience)}
 ${renderProjects(view.projects)}
-${renderSkills(view.skillsByProficiency)}
+${renderSkills(view.skillGroups)}
 ${renderEducation(view.education)}
 </div>
 </body>

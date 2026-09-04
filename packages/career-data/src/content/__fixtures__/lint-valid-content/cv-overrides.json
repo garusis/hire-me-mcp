@@ -1,0 +1,21 @@
+{
+  "profile": {
+    "headline": { "general": "Fixture general headline" },
+    "summary": { "general": "Fixture general summary" },
+    "timezoneLine": "Remote (UTC-5)"
+  },
+  "experience": [
+    {
+      "id": "fixture-role-fixtureco-2020",
+      "bullets": { "general": ["Fixture CV-only bullet"] }
+    }
+  ],
+  "projects": [],
+  "education": [],
+  "skills": {
+    "categoryLabels": { "language": "Languages" },
+    "groupOrder": { "general": ["language"], "ai": ["language"] },
+    "excludeIds": [],
+    "displayNames": {}
+  }
+}
