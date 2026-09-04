@@ -286,13 +286,16 @@ describe("getCvPresentation never leaks real story content into the MCP response
     return dataset.stories.flatMap((story) => storyUnits(story).flatMap(longSentencesOf));
   }
 
-  it("the real MCP tool response contains no story sentence from the real dataset (default variant)", () => {
-    const result = getCvPresentation(createContentCareerDataRepository());
-    const normalized = ` ${normalizeStoryProse(JSON.stringify(result.data))} `;
-    const needles = realStorySentences();
-    expect(needles.length).toBeGreaterThan(0);
-    for (const needle of needles) {
-      expect(normalized).not.toContain(` ${needle} `);
-    }
-  });
+  it.each(["general", "ai"] as const)(
+    "the real MCP tool response contains no story sentence from the real dataset (%s variant)",
+    (variant) => {
+      const result = getCvPresentation(createContentCareerDataRepository(), { variant });
+      const normalized = ` ${normalizeStoryProse(JSON.stringify(result.data))} `;
+      const needles = realStorySentences();
+      expect(needles.length).toBeGreaterThan(0);
+      for (const needle of needles) {
+        expect(normalized).not.toContain(` ${needle} `);
+      }
+    },
+  );
 });

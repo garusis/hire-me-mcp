@@ -32,7 +32,7 @@
           "Eliminated failed-upload complaints on a public document-upload flow where an estimated two in three submissions had ended in a complaint or escalation: designed and built the replacement security boundary (opaque sessions, CAPTCHA, rate limiting, replay protection, encrypted audit trail) and a hybrid deterministic/LLM routing model that kept ambiguous matches with a human.",
           "Built the loan-application product's filter UI in React and the reusable TypeScript query library behind it — multi-value, related-entity, date-range and text-search operators — tenant-scoped for sensitive loan data.",
           "Owned incident response on the document-processing path: contained a crash loop (96 restarts in 24 hours against a 0-4 baseline), made the failing path observable and retryable, and reprocessed the affected window with no permanent data loss.",
-          "Authored the shared on-call investigation workflow the whole rotation adopted, and proposed the alert-to-PR automation built on top of it: today a human report or a New Relic alert can trigger an agent that reviews the available evidence and develops likely causes, and prepares a pull request when the issue maps to a code change, for an engineer to validate and merge."
+          "Authored the shared on-call investigation workflow the whole rotation adopted, and proposed the alert-to-PR automation built on top of it: an incident report or a New Relic alert now starts an agent that correlates the evidence, ranks likely causes and drafts a fix as a pull request for an engineer to validate before anything merges."
         ]
       }
     },
