@@ -141,8 +141,8 @@ describe("real content: experience summaries and highlights after #297", () => {
     });
   });
 
-  describe("house-numbers highlights.1 — communication infrastructure (story house-numbers-communication-service-ownership)", () => {
-    const text = () => highlight("house-numbers-2022-senior-full-stack-engineer", 1);
+  describe("house-numbers highlights.0 — communication infrastructure (story house-numbers-communication-service-ownership)", () => {
+    const text = () => highlight("house-numbers-2022-senior-full-stack-engineer", 0);
 
     it("still states the capability every citing skill relies on: classification and routing over encrypted loan data", () => {
       expect(text()).toMatch(/classif/i);
@@ -173,8 +173,8 @@ describe("real content: experience summaries and highlights after #297", () => {
     });
   });
 
-  describe("house-numbers highlights.0 — document-extraction PoC (#300; project record is canonical)", () => {
-    const text = () => highlight("house-numbers-2022-senior-full-stack-engineer", 0);
+  describe("house-numbers highlights.5 — document-extraction PoC (#300; project record is canonical)", () => {
+    const text = () => highlight("house-numbers-2022-senior-full-stack-engineer", 5);
 
     it("is one short highlight that keeps the PoC-stayed-experimental boundary", () => {
       expect(text()).toMatch(/proof of concept/i);
@@ -235,6 +235,7 @@ describe("real content: experience summaries and highlights after #297", () => {
       "event-driven-architecture": /asynchronous|event|webhook/i,
       observability: /observab/i,
       llms: /LLM/,
+      "llm-evaluation": /LLM-as-judge|eval/i,
       "ai-agents": /agentic|agent/i,
       "prompt-engineering": /prompt/i,
       mentoring: /onboard|mentor/i,

@@ -45,7 +45,7 @@
     "id": "django",
     "name": "Django",
     "aliases": ["django rest framework", "drf"],
-    "statement": "No production Django experience. Backend framework depth is concentrated in NestJS and other convention-driven frameworks; Python itself is real production experience (the open-source cowork CLI is a Python codebase), but framework-level Django depth specifically has not been exercised on the job.",
+    "statement": "No production Django experience. Backend framework depth is concentrated in NestJS and other convention-driven frameworks, with Python familiarity limited to tooling work — not enough to present as a Python specialist.",
     "relatedSkills": ["nestjs", "python"]
   },
   {

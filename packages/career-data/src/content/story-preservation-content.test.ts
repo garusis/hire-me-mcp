@@ -20,12 +20,22 @@ import { loadContentDir, loadStoryPreservationMap } from "./loader.js";
  */
 const contentDir = fileURLToPath(new URL("../../content/", import.meta.url));
 
-/** Every field selected for cleanup in #297 and the story that preserves it. */
+/**
+ * Every field selected for cleanup in #297 (plus the #309 stage 3 round 3
+ * upload-flow highlight House Numbers gained when its highlights were
+ * reordered and reworded — new bullet, same "story preserves the detail"
+ * treatment) and the story that preserves each one.
+ */
 const DETAILED_FIELDS_SELECTED_FOR_CLEANUP = [
   {
     experienceId: "house-numbers-2022-senior-full-stack-engineer",
-    field: "highlights.1",
+    field: "highlights.0",
     storyIds: ["house-numbers-communication-service-ownership"],
+  },
+  {
+    experienceId: "house-numbers-2022-senior-full-stack-engineer",
+    field: "highlights.1",
+    storyIds: ["house-numbers-secure-public-document-upload"],
   },
   {
     experienceId: "xogito-group-2020-senior-software-development-engineer",
@@ -128,9 +138,9 @@ describe("real content: story-preservation-map.json (#290)", () => {
     }
   });
 
-  it("records, on every row #297 acted on, what was done — the map is the audit trail the issue requires", () => {
+  it("records, on every row a cleanup issue acted on, what was done and which issue did it — the map is the audit trail the issue requires", () => {
     for (const entry of map.filter((candidate) => candidate.action !== "keep")) {
-      expect(entry.note, `${entry.experienceId}#${entry.field}`).toMatch(/#297/);
+      expect(entry.note, `${entry.experienceId}#${entry.field}`).toMatch(/#297|#309/);
     }
   });
 
@@ -152,7 +162,7 @@ describe("real content: story-preservation-map.json (#290)", () => {
     const entry = map.find(
       (candidate) =>
         candidate.experienceId === "house-numbers-2022-senior-full-stack-engineer" &&
-        candidate.field === "highlights.0",
+        candidate.field === "highlights.5",
     );
     expect(entry?.classification).not.toBe("detailed-story");
     expect(entry?.storyIds).toBeUndefined();

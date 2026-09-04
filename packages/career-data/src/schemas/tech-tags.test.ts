@@ -60,4 +60,8 @@ describe("TECH_TAGS coverage for #309 stage 3 evidenced-but-missing skills", () 
       expect(TECH_TAGS).toContain(tag);
     }
   });
+
+  it("includes llm-evaluation, the eval-CI-lane skill added in #309 stage 3 round 3", () => {
+    expect(TECH_TAGS).toContain("llm-evaluation");
+  });
 });

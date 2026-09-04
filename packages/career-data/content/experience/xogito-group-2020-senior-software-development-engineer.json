@@ -6,7 +6,7 @@
   "endDate": "2022-03",
   "summary": "Main backend engineer on a cloud-based, multi-tenant SaaS for real-time quality-control inspections across factories, product lots, and distribution points.",
   "highlights": [
-    "Owned backend architecture and delivery for the multi-tenant inspection platform end to end.",
+    "First engineer assigned to the multi-tenant inspection platform; owned backend architecture and delivery end to end.",
     "After the project manager left, became the team's voice with a frustrated client and recovered the account: joined the frontend developer and QA in client meetings to realign requirements, paired quick wins with the core workflow repairs, and rebuilt trust over a few sprints of approved plans.",
     "Onboarded and mentored new team members on the business domain and technical stack.",
     "Led a more complex legacy-SAP data migration: evaluated ETL tooling, built custom scripts where the source and target models could not be represented by existing tools, checked rounding compatibility early, and iterated with platform users ahead of the bulk migration — it did not require post-migration reconciliation."

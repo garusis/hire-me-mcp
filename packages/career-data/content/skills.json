@@ -208,6 +208,11 @@
     "evidence": [
       {
         "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers"
+      },
+      {
+        "entityType": "experience",
         "entityId": "rokk3r-2016-senior-full-stack-developer-and-devops",
         "label": "Senior Full Stack Developer and DevOps, Rokk3r",
         "fragment": "highlights.0"
@@ -314,7 +319,7 @@
     "name": "Python",
     "aliases": ["py"],
     "category": "language",
-    "proficiency": "proficient",
+    "proficiency": "familiar",
     "evidence": [
       {
         "entityType": "project",
@@ -363,7 +368,7 @@
         "entityType": "experience",
         "entityId": "house-numbers-2022-senior-full-stack-engineer",
         "label": "Senior Full Stack Engineer, House Numbers",
-        "fragment": "highlights.1"
+        "fragment": "highlights.0"
       }
     ]
   },
@@ -436,12 +441,32 @@
         "entityType": "experience",
         "entityId": "house-numbers-2022-senior-full-stack-engineer",
         "label": "Senior Full Stack Engineer, House Numbers",
-        "fragment": "highlights.0"
+        "fragment": "highlights.5"
       },
       {
         "entityType": "project",
         "entityId": "document-extraction-pipeline",
         "label": "AI Document Extraction Proof of Concept"
+      }
+    ]
+  },
+  {
+    "id": "llm-evaluation",
+    "name": "LLM Evaluation (human-graded, LLM-as-judge)",
+    "aliases": ["llm evals", "model evals", "eval harnesses"],
+    "category": "ai-ml",
+    "proficiency": "proficient",
+    "evidence": [
+      {
+        "entityType": "experience",
+        "entityId": "house-numbers-2022-senior-full-stack-engineer",
+        "label": "Senior Full Stack Engineer, House Numbers",
+        "fragment": "highlights.2"
+      },
+      {
+        "entityType": "recommendation",
+        "entityId": "recommendation-andre-treib-2026",
+        "label": "Andr\u00e9 Treib recommendation"
       }
     ]
   },
@@ -573,7 +598,7 @@
         "entityType": "experience",
         "entityId": "house-numbers-2022-senior-full-stack-engineer",
         "label": "Senior Full Stack Engineer, House Numbers",
-        "fragment": "highlights.1"
+        "fragment": "highlights.0"
       }
     ]
   },
@@ -602,7 +627,7 @@
         "entityType": "experience",
         "entityId": "house-numbers-2022-senior-full-stack-engineer",
         "label": "Senior Full Stack Engineer, House Numbers",
-        "fragment": "highlights.0"
+        "fragment": "highlights.5"
       },
       {
         "entityType": "project",
@@ -809,7 +834,7 @@
         "entityType": "experience",
         "entityId": "house-numbers-2022-senior-full-stack-engineer",
         "label": "Senior Full Stack Engineer, House Numbers",
-        "fragment": "highlights.1"
+        "fragment": "highlights.0"
       }
     ]
   },

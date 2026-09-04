@@ -36,6 +36,7 @@ export const TECH_TAGS = [
   "ci-cd",
   "observability",
   "llms",
+  "llm-evaluation",
   "ai-agents",
   "prompt-engineering",
   "sql",
