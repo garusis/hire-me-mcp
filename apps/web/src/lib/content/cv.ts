@@ -82,6 +82,13 @@ export interface CvExperienceItemView {
    * for every role rendered as a full entry.
    */
   compactLine?: string;
+  /**
+   * CV-only (#309 stage 3 second review, item 5): when the overlay sets
+   * `keepTogether` for this role, the CV renders its `.entry` block with
+   * `break-inside: avoid` so a short entry never splits across the page
+   * boundary. Undefined for every role the overlay doesn't flag.
+   */
+  keepTogether?: boolean;
 }
 
 /**
@@ -239,6 +246,26 @@ function resolveVariantText(
   return value[variant] ?? value.general ?? value.ai ?? fallback;
 }
 
+/**
+ * `{ general, ai }` -> the bullet list for `variant`, falling back to the
+ * other variant's bullets, then to `fallback` (the canonical highlights,
+ * capped) — the same fallback chain {@link resolveVariantText} already
+ * applies to headline/summary (#309 stage 3 second review, item 2: before
+ * this fix, an overlay entry authored only for `bullets.general` silently
+ * dropped the `ai` variant straight to the canonical highlights, skipping
+ * the general bullets entirely).
+ */
+function resolveVariantBullets(
+  value: { general?: string[]; ai?: string[] } | undefined,
+  variant: CvVariant,
+  fallback: string[],
+): string[] {
+  if (value === undefined) {
+    return fallback;
+  }
+  return value[variant] ?? value.general ?? value.ai ?? fallback;
+}
+
 function buildSkillGroups(
   skills: readonly Skill[],
   overrides: CvOverrides["skills"] | undefined,
@@ -248,18 +275,20 @@ function buildSkillGroups(
   const displayNames = overrides?.displayNames ?? {};
   const categoryLabels = overrides?.categoryLabels ?? {};
   const groupOrder = overrides?.groupOrder[variant] ?? [];
+  const categoryOverrides = overrides?.categoryOverrides ?? {};
 
   const namesByCategory = new Map<string, string[]>();
   for (const skill of skills) {
     if (excludeIds.has(skill.id)) {
       continue;
     }
-    const names = namesByCategory.get(skill.category) ?? [];
+    const category = categoryOverrides[skill.id] ?? skill.category;
+    const names = namesByCategory.get(category) ?? [];
     const displayName = displayNames[skill.id] ?? skill.name;
     if (!names.includes(displayName)) {
       names.push(displayName);
     }
-    namesByCategory.set(skill.category, names);
+    namesByCategory.set(category, names);
   }
 
   const orderedCategories = [
@@ -299,17 +328,26 @@ export function getCvView(
   const experience = dataset.experience
     .map((entry) => {
       const entryOverride = experienceOverridesById.get(entry.id);
-      const variantBullets = entryOverride?.bullets?.[variant];
       const techAdditions = entryOverride?.techAdditions ?? [];
+      const techExcludeIds = new Set(entryOverride?.techExcludeIds ?? []);
       return {
         company: entry.company,
         role: entry.role,
         startDate: entry.startDate,
         endDate: entry.endDate,
-        highlights: variantBullets ?? entry.highlights.slice(0, maxHighlightsPerRole),
-        tech: [...entry.tech, ...techAdditions].map((tag) => resolveTechName(tag, dataset.skills)),
+        highlights: resolveVariantBullets(
+          entryOverride?.bullets,
+          variant,
+          entry.highlights.slice(0, maxHighlightsPerRole),
+        ),
+        tech: [...entry.tech.filter((tag) => !techExcludeIds.has(tag)), ...techAdditions].map(
+          (tag) => resolveTechName(tag, dataset.skills),
+        ),
         ...(entryOverride?.compactLine !== undefined
           ? { compactLine: entryOverride.compactLine }
+          : {}),
+        ...(entryOverride?.keepTogether !== undefined
+          ? { keepTogether: entryOverride.keepTogether }
           : {}),
         ...(includeSummary ? { summary: entry.summary } : {}),
         ...(includeStories
@@ -329,17 +367,21 @@ export function getCvView(
     })
     .sort(compareExperienceMostRecentFirst);
 
-  const projectShowOnCvById = new Map(
-    (overrides?.projects ?? []).map((entry) => [entry.id, entry.showOnCv]),
+  const projectOverridesById = new Map(
+    (overrides?.projects ?? []).map((entry) => [entry.id, entry]),
   );
   const projects = sortFeaturedFirst(dataset.projects)
-    .filter((project) => projectShowOnCvById.get(project.id) ?? true)
-    .map((project) => ({
-      name: project.name,
-      role: project.role,
-      summary: project.summary,
-      links: project.links,
-    }));
+    .filter((project) => projectOverridesById.get(project.id)?.showOnCv ?? true)
+    .map((project) => {
+      const projectOverride = projectOverridesById.get(project.id);
+      const excludeLinkLabels = new Set(projectOverride?.excludeLinkLabels ?? []);
+      return {
+        name: project.name,
+        role: project.role,
+        summary: projectOverride?.summary ?? project.summary,
+        links: project.links.filter((projectLink) => !excludeLinkLabels.has(projectLink.label)),
+      };
+    });
 
   const educationOverridesById = new Map(
     (overrides?.education ?? []).map((entry) => [entry.id, entry]),
