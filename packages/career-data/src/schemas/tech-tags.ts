@@ -58,6 +58,8 @@ export const TECH_TAGS = [
   "dynamodb",
   "webhooks",
   "etl",
+  "redux",
+  "ruby-on-rails",
 ] as const;
 
 /** A single canonical technology tag spelling from {@link TECH_TAGS}. */
