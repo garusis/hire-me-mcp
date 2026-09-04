@@ -355,12 +355,12 @@ function renderEducation(education: CvView["education"]): string {
 }
 
 const STYLE = `
-  @page { size: Letter; margin: 0.45in; }
+  @page { size: Letter; margin: 0.5in; }
   html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0; color: #000; background: #fff;
     font-family: Arial, "Helvetica Neue", Helvetica, "Liberation Sans", sans-serif;
-    font-size: 9.6pt; line-height: 1.28;
+    font-size: 10pt; line-height: 1.24;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
   .sheet { max-width: 6.5in; margin: 0 auto; padding: 1in 0; }
