@@ -107,12 +107,12 @@ export interface RetrievalEvalEnvConfig {
  * `absent-mainframe-cobol`. `absent-blockchain` is retired, not a
  * currently-tolerated outlier.
  *
- * `0.644` itself is UNCHANGED by that swap: it was calibrated against the
- * legitimate-query floor (0.6466) and the clean absent-topic cluster's
- * ceiling (0.6407), neither of which the corpus-drift fix touches — the
- * fix removes a query whose top score sat above the floor, it doesn't move
- * the floor or the ceiling. Re-calibrating `0.644` is warranted only by a
- * fresh real provider run showing the floor or ceiling itself has moved.
+ * `0.644` itself is deliberately UNCHANGED by this offline correction: it
+ * remains the committed calibration baseline and is neither lowered nor
+ * re-calibrated from inferred embedding behavior. The metadata changes can
+ * move the current score distribution, so only a fresh real provider run
+ * can confirm whether the present legitimate floor and absent-topic ceiling
+ * still support that baseline.
  */
 const DEFAULTS: RetrievalEvalEnvConfig = {
   topK: 5,
