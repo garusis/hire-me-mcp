@@ -299,7 +299,9 @@ describe.runIf(neonConfig !== undefined)("ingest pipeline (real Neon branch)", (
     expect(rows.every((r) => r.embedding_model === "a-different-embedding-model")).toBe(true);
   }, 30_000);
 
-  it("a permanent embedding failure aborts with no partial commit", async () => {
+  // #317: with a default persistBatchSize, these 2 chunks form a single
+  // batch, so batch-level atomicity still means nothing is written.
+  it("a permanent embedding failure on the only batch aborts with no partial commit", async () => {
     if (sql === undefined) throw new Error("sql not initialized");
     const before = await sql`SELECT id FROM career_chunks`;
 
