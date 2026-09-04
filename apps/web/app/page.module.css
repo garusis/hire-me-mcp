@@ -1,3 +1,25 @@
+/* Two columns at >=960px (issue 308): copy left, the MCP query panel
+   right. Single column, panel below the copy, at narrower widths. */
+.heroGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+/* Grid children default to min-width:auto, which lets a wide mono line in the
+   MCP panel push the whole page into horizontal scroll at 375px. */
+.heroGrid > * {
+  min-width: 0;
+}
+
+@media (min-width: 960px) {
+  .heroGrid {
+    grid-template-columns: 3fr 2fr;
+    gap: var(--space-8);
+  }
+}
+
 /* Availability + location side by side (issue 229) — where he is and that he
    works remotely belong right next to "open to new roles". */
 .heroBadges {
@@ -21,9 +43,10 @@
 
 .heroPositioning {
   margin-top: var(--space-4);
-  max-width: 60ch;
-  font-size: var(--text-lg);
-  line-height: var(--leading-lg);
+  max-width: var(--measure);
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  color: var(--color-fg-muted);
 }
 
 .heroActions {
@@ -50,7 +73,7 @@
   }
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 960px) {
   .highlightGrid {
     grid-template-columns: repeat(3, 1fr);
   }
@@ -75,14 +98,13 @@
   margin-top: var(--space-5);
 }
 
-/* Accent border + badge only — no tinted background, for the same WCAG AA
-   contrast reason documented on /projects' .flagshipCard. */
+/* Amber left rule + badge only (issue 308) — no tinted background, for the
+   same WCAG AA contrast reason documented on /projects' .flagshipCard. */
 .flagshipCard {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  border-color: var(--color-accent);
-  border-width: 2px;
+  border-left: 4px solid var(--color-highlight);
 }
 
 .flagshipBadge {
@@ -109,6 +131,19 @@
 .seeAllLink {
   display: inline-block;
   margin-top: var(--space-4);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.seeAllLink::after {
+  content: " →";
+  display: inline-block;
+  margin-left: 0.25em;
+  transition: transform var(--motion-duration-fast) var(--motion-ease);
+}
+
+.seeAllLink:hover::after {
+  transform: translateX(0.15em);
 }
 
 .mcpTeaser {

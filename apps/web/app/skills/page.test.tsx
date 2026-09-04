@@ -244,6 +244,22 @@ describe("Skills page", () => {
     expect(within(pyCard).getAllByRole("link")).toHaveLength(1);
   });
 
+  it("renders each skill entry as a compact card, since it's a dense single-line entry (issue 308)", async () => {
+    getSkillsListView.mockReturnValue(skillsView([strongSkill]));
+    getGapsListView.mockReturnValue({ items: [] });
+    getWritingListView.mockReturnValue({ items: [], citations: [] });
+    const { default: SkillsPage } = await import("./page.js");
+
+    render(await SkillsPage());
+
+    const heading = screen.getByRole("heading", { name: "TypeScript" });
+    const card = heading.closest("article");
+    if (card === null) {
+      throw new Error("expected TypeScript skill card to render as an article");
+    }
+    expect(card.className).toMatch(/compact/);
+  });
+
   it("renders a visible failure state for a skill with no evidence, instead of silently rendering it as fully claimed", async () => {
     getSkillsListView.mockReturnValue(skillsView([noEvidenceSkill]));
     getGapsListView.mockReturnValue({ items: [] });

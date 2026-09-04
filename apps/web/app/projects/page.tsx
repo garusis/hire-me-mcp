@@ -39,7 +39,7 @@ function ProjectCard({ item }: { item: ProjectListItemView }) {
     <Card as="article" className={cx(flagship && styles.flagshipCard)}>
       {flagship && (
         <p className={styles.flagshipBadge}>
-          <Badge variant="accent">Flagship project of this portfolio</Badge>
+          <Badge variant="status">Flagship project of this portfolio</Badge>
         </p>
       )}
       <Heading level={2}>
