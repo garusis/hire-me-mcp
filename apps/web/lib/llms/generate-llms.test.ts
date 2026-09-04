@@ -133,9 +133,12 @@ function gapsView(): GapsListView {
 function cvView(): CvView {
   return {
     profile: profileView().profile,
+    variant: "general",
+    headline: profileView().profile.headline,
+    summary: profileView().profile.summary,
     experience: [],
     projects: [],
-    skillsByProficiency: [],
+    skillGroups: [],
     education: [],
     filename: "fixture-cv.pdf",
   };
