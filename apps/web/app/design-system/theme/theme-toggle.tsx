@@ -18,10 +18,16 @@ export function ThemeToggle() {
       type="button"
       className={styles.toggle}
       aria-pressed={isDark}
+      // The visible label hides below 768px (icon-only, issue 308); this
+      // keeps the accessible name stable at every width since a hidden
+      // (display: none) child is excluded from it.
+      aria-label={isDark ? "Dark theme" : "Light theme"}
       onClick={() => setTheme(isDark ? "light" : "dark")}
     >
       <span aria-hidden="true">{isDark ? "🌙" : "☀️"}</span>
-      <span>{isDark ? "Dark theme" : "Light theme"}</span>
+      <span data-toggle-label className={styles.label}>
+        {isDark ? "Dark theme" : "Light theme"}
+      </span>
     </button>
   );
 }

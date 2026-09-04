@@ -67,7 +67,7 @@ function EvidenceCitations({
 function EvidenceStrengthBadge({ count }: { count: number }) {
   const strong = count >= 2;
   return (
-    <Badge variant={strong ? "accent" : "neutral"}>
+    <Badge variant={strong ? "status" : "neutral"}>
       {strong ? `${count} sources` : "Single source"}
     </Badge>
   );
@@ -83,7 +83,7 @@ function SkillCard({
   storyParents: readonly StoryParentRef[];
 }) {
   return (
-    <Card as="article" id={toSlug(skill.id)}>
+    <Card as="article" compact id={toSlug(skill.id)}>
       <div className={styles.skillHead}>
         <Heading level={3}>{skill.name}</Heading>
         <EvidenceStrengthBadge count={skill.evidence.length} />

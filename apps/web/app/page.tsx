@@ -23,6 +23,7 @@ import { Heading } from "./design-system/primitives/heading";
 import { Link } from "./design-system/primitives/link";
 import { Prose } from "./design-system/primitives/prose";
 import { Section } from "./design-system/primitives/section";
+import { HeroMcpPanel } from "./hero-mcp-panel";
 import { getDeepLinksForClient } from "./mcp/client-deep-links";
 import { ConnectPanel } from "./mcp/connect-panel";
 import styles from "./page.module.css";
@@ -85,7 +86,7 @@ function FlagshipProjectCard({ item }: { item: ProjectListItemView }) {
   return (
     <Card as="article" className={styles.flagshipCard}>
       <p className={styles.flagshipBadge}>
-        <Badge variant="accent">Flagship</Badge>
+        <Badge variant="status">Flagship</Badge>
       </p>
       <Heading level={4} className={styles.highlightCardTitle}>
         <Link href={`/projects/${item.slug}`}>{item.project.name}</Link>
@@ -143,25 +144,30 @@ export default async function Home() {
       <Section aria-labelledby="hero-heading">
         <Container>
           <RevealOnScroll>
-            <div className={styles.heroBadges}>
-              <Badge variant="accent">{AVAILABILITY_LABEL[profile.availability]}</Badge>
-              {/* issue 229 — location + remote status, straight from the profile record. */}
-              <Badge>{profile.location}</Badge>
-            </div>
-            <Heading level={1} id="hero-heading" className={styles.heroName}>
-              {profile.name}
-            </Heading>
-            <p className={styles.heroHeadline}>{profile.headline}</p>
-            <p className={styles.heroPositioning}>{firstSentence(profile.summary)}</p>
-            <div className={styles.heroActions}>
-              {primaryContact ? (
-                <Button href={primaryContact.url} variant="solid">
-                  {primaryContact.label}
-                </Button>
-              ) : null}
-              <Button href="#mcp" variant="outline">
-                Add me to your AI
-              </Button>
+            <div className={styles.heroGrid}>
+              <div>
+                <div className={styles.heroBadges}>
+                  <Badge variant="status">{AVAILABILITY_LABEL[profile.availability]}</Badge>
+                  {/* issue 229 — location + remote status, straight from the profile record. */}
+                  <Badge>{profile.location}</Badge>
+                </div>
+                <Heading level={1} id="hero-heading" className={styles.heroName}>
+                  {profile.name}
+                </Heading>
+                <p className={styles.heroHeadline}>{profile.headline}</p>
+                <p className={styles.heroPositioning}>{firstSentence(profile.summary)}</p>
+                <div className={styles.heroActions}>
+                  {primaryContact ? (
+                    <Button href={primaryContact.url} variant="solid">
+                      {primaryContact.label}
+                    </Button>
+                  ) : null}
+                  <Button href="#mcp" variant="outline">
+                    Add me to your AI
+                  </Button>
+                </div>
+              </div>
+              <HeroMcpPanel endpointUrl={endpointUrl} />
             </div>
           </RevealOnScroll>
         </Container>

@@ -11,7 +11,7 @@
  * working around it).
  */
 
-export const COLOR_BG_LIGHT = "#f7f5f0";
-export const COLOR_BG_DARK = "#16140f";
-export const COLOR_ACCENT = "#b5541f";
-export const COLOR_ACCENT_FG = "#fff8f0";
+export const COLOR_BG_LIGHT = "#f6f7f4";
+export const COLOR_BG_DARK = "#0f1418";
+export const COLOR_ACCENT = "#0f766e";
+export const COLOR_ACCENT_FG = "#f0fdfa";

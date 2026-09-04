@@ -9,23 +9,40 @@
   gap: var(--space-3);
 }
 
+/*
+ * Surface + border with an accent dot, not an accent fill (issue 308) — the
+ * page's one primary CTA stays the only solid-accent control on screen, so
+ * the FAB never competes with it.
+ */
 .launcher {
   appearance: none;
-  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
-  background: var(--color-accent);
-  color: var(--color-accent-fg);
+  background: var(--color-surface);
+  color: var(--color-fg);
   font-family: var(--font-body);
   font-size: var(--text-sm);
   font-weight: 600;
   padding: var(--space-3) var(--space-5);
   box-shadow: var(--shadow-md);
   cursor: pointer;
-  transition: filter var(--motion-duration-base) var(--motion-ease);
+  transition: border-color var(--motion-duration-base) var(--motion-ease);
+}
+
+.launcher::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  flex: none;
 }
 
 .launcher:hover {
-  filter: brightness(1.08);
+  border-color: var(--color-accent);
 }
 
 .panel {
@@ -50,7 +67,7 @@
 
 .heading {
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
   margin: 0;
 }
 
@@ -59,7 +76,7 @@
   border: none;
   background: transparent;
   color: var(--color-fg-muted);
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
   line-height: 1;
   cursor: pointer;
   padding: var(--space-1) var(--space-2);

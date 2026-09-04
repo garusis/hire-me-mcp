@@ -16,4 +16,9 @@ describe("Card", () => {
     render(<Card as="article">content</Card>);
     expect(screen.getByText("content").tagName).toBe("ARTICLE");
   });
+
+  it("applies the compact padding variant when requested, for dense entries like Skills", () => {
+    render(<Card compact>content</Card>);
+    expect(screen.getByText("content").className).toMatch(/compact/);
+  });
 });
