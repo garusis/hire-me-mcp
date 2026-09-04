@@ -23,6 +23,15 @@ describe("Button", () => {
     expect(screen.getByRole("button", { name: "Outline" }).className).toMatch(/outline/);
   });
 
+  it("supports a ghost variant for arrow-style 'see all' links", () => {
+    render(
+      <Button variant="ghost" href="/experience">
+        See all
+      </Button>,
+    );
+    expect(screen.getByRole("link", { name: "See all" }).className).toMatch(/ghost/);
+  });
+
   it("forwards onClick to the native button", () => {
     const onClick = vi.fn();
     render(<Button onClick={onClick}>Click</Button>);

@@ -1,7 +1,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getWritingListView } from "../../../src/lib/content/index.js";
-import { SiteHeader } from "./site-header.js";
+
+vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
+
+const { SiteHeader } = await import("./site-header.js");
 
 describe("SiteHeader", () => {
   afterEach(() => {
@@ -55,6 +58,13 @@ describe("SiteHeader", () => {
     render(<SiteHeader />);
     const nav = screen.getByRole("navigation", { name: /primary/i });
     expect(nav.querySelector('a[href="/recommendations"]')).not.toBeNull();
+  });
+
+  it("marks the current route's nav entry active with aria-current=page (issue 308)", () => {
+    render(<SiteHeader />);
+    const nav = screen.getByRole("navigation", { name: /primary/i });
+    const homeLink = nav.querySelector('a[href="/"]');
+    expect(homeLink).toHaveAttribute("aria-current", "page");
   });
 
   it("adds a visible Download CV link pointing at the CV's stable, deterministic-filename URL (#35)", () => {

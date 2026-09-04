@@ -45,6 +45,15 @@ describe("Link", () => {
     expect(screen.getByRole("link", { name: "About" }).className).toMatch(/link/);
   });
 
+  it("supports a quiet variant with no default underline, for nav links", () => {
+    render(
+      <Link href="/about" variant="quiet">
+        About
+      </Link>,
+    );
+    expect(screen.getByRole("link", { name: "About" }).className).toMatch(/quiet/);
+  });
+
   it("disables next/link prefetching for a same-origin static file href, e.g. a downloadable PDF (#35)", () => {
     render(<Link href="/cv/example-cv.pdf">Download CV</Link>);
     expect(NextLinkSpy).toHaveBeenCalledWith(
