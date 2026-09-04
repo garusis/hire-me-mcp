@@ -63,14 +63,14 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
-    "@biomejs/biome": "2.5.10",
+    "@biomejs/biome": "2.5.11",
     "@hire-me-mcp/core": "workspace:*",
     "@lhci/cli": "0.15.1",
     "@playwright/test": "1.62.1",
     "@vitest/coverage-v8": "4.1.11",
-    "lefthook": "2.1.10",
-    "tsx": "4.23.12",
-    "turbo": "2.10.11",
+    "lefthook": "2.1.12",
+    "tsx": "4.23.13",
+    "turbo": "2.10.12",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
   }

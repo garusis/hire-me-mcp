@@ -49,16 +49,16 @@
     "eval:retrieval": "tsx src/eval-retrieval/cli.ts"
   },
   "dependencies": {
-    "@ai-sdk/google": "4.0.50",
+    "@ai-sdk/google": "4.0.59",
     "@hire-me-mcp/career-data": "workspace:*",
-    "ai": "7.0.77",
+    "ai": "7.0.87",
     "postgres": "3.4.9",
-    "zod": "4.4.3"
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "@types/node": "24.13.3",
     "@vitest/coverage-v8": "4.1.11",
-    "tsx": "4.23.12",
+    "tsx": "4.23.13",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
   }
