@@ -43,3 +43,21 @@ describe("isKnownTechTag", () => {
     expect(isKnownTechTag("TypeScript")).toBe(false);
   });
 });
+
+describe("TECH_TAGS coverage for #309 stage 3 evidenced-but-missing skills", () => {
+  it("includes the tags backing skills added for the CV keyword gap (#309 action 6)", () => {
+    for (const tag of [
+      "pgvector",
+      "vitest",
+      "zod",
+      "gemini",
+      "new-relic",
+      "ecs",
+      "dynamodb",
+      "webhooks",
+      "etl",
+    ]) {
+      expect(TECH_TAGS).toContain(tag);
+    }
+  });
+});

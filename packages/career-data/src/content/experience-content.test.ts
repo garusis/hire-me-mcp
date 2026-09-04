@@ -241,6 +241,8 @@ describe("real content: experience summaries and highlights after #297", () => {
       "requirements-gathering": /requirements/i,
       "regulated-data-handling": /encrypt/i,
       "vision-document-processing": /vision/i,
+      webhooks: /webhook/i,
+      etl: /ETL/i,
     };
 
     /** Every `(skill, experience fragment)` pair skills.json cites, with the cited text resolved. */

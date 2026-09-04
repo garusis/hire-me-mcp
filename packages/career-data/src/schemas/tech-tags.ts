@@ -48,6 +48,15 @@ export const TECH_TAGS = [
   "rag",
   "github-actions",
   "vision-document-processing",
+  "pgvector",
+  "vitest",
+  "zod",
+  "gemini",
+  "new-relic",
+  "ecs",
+  "dynamodb",
+  "webhooks",
+  "etl",
 ] as const;
 
 /** A single canonical technology tag spelling from {@link TECH_TAGS}. */
