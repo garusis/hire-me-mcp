@@ -121,9 +121,36 @@ either fails fast with a message naming the variable, never its value. On comple
 one-line summary (`inserted: N, updated: N, deleted: N, unchanged: N, embedding calls: N, wall
 time: Nms`) so re-index behavior is visible in CI logs once this is wired into a deploy step
 (#41, out of scope for #24). A permanent embedding failure (retries exhausted, or a non-retryable
-error) aborts the whole run with a non-zero exit code and makes no database writes at all — see
-`packages/core/src/ingest/run.ts`'s docstring for why ordering (embed everything needed, then
-write) makes that guarantee free rather than requiring a rollback.
+error) aborts the whole run with a non-zero exit code. Unlike #24's original guarantee, this no
+longer means zero database writes: `runIngest` persists each embedded batch as it completes
+(#317), so a partial run's progress is durable — the next run's fingerprint diff
+(`packages/core/src/ingest/diff.ts`) skips whatever was already written and only re-embeds what's
+left, rather than re-spending quota on the whole batch again. See
+`packages/core/src/ingest/run.ts`'s docstring for the full rationale.
+
+`EMBED_MAX_TEXTS_PER_MINUTE` (#317, optional, defaults to `80`) caps how many texts `pnpm ingest`
+and `pnpm eval:retrieval` embed in any trailing 60 seconds, so a full run never trips Gemini's
+free-tier `EmbedContentRequestsPerMinutePerUserPerProjectPerModel` limit (100, counted in texts,
+not calls) in the first place — backoff-on-429 (see `embedding/client.ts`) is a safety net for
+unexpected bursts, not a substitute for pacing a ~190-text ingest. There's no "off" value; set it
+higher only if the configured key/project has a higher-than-free-tier quota. A value below the
+embedder's batch size (16) doesn't error — `createPacedEmbedder` clamps its effective batch size
+down to `EMBED_MAX_TEXTS_PER_MINUTE` instead, so it simply sends smaller batches.
+
+**Daily budget**: the free tier also caps `EmbedContentRequestsPerDayPerProjectPerModel` at 1000
+per project. `reindex-production.yml` and `retrieval-eval.yml` both read the same
+repository-level `GOOGLE_GENERATIVE_AI_API_KEY` secret — there are no environment-scoped
+secrets, so it's one shared free-tier project, 1000 embed requests/day, split across both
+workflows. A full ingest is ~190 texts; a `retrieval-eval` run is ~66 query embeddings plus
+whatever that PR's ingest diff spends. Because `retrieval-eval.yml`'s disposable Neon branch
+forks from the project's default branch (inheriting production's already-ingested rows — see
+"How re-indexing works" below) and production is reindexed on every content merge, a PR's `pnpm
+ingest` normally embeds only the chunks it changed, so steady-state daily spend across both
+workflows stays small. A burst of PRs that each change a lot of content can still exhaust the
+day's budget; when that happens `reindex-production.yml`'s ingest fails on Gemini's
+`EmbedContentRequestsPerDay...` error and must be re-run (`workflow_dispatch`) once the quota
+resets at midnight Pacific. Moving the key to a paid tier remains the owner's call (issue #317
+item 3).
 
 Changing the embedding model id (`EMBEDDING_MODEL_ID` in `embedding/config.ts`) triggers a full
 re-embed on the next run: each row stores the model id it was embedded with
@@ -191,8 +218,11 @@ Three loops, all running the exact same underlying commands (`db:migrate` then `
   graph plus an explicit asset regex, with a `run-evals` label override; see "What triggers the
   eval workflows" below. Irrelevant PRs report green in seconds with zero Neon branches
   and zero embedding calls. Relevant PRs run the full loop: create a disposable Neon branch, run
-  migrations, run a full `pnpm ingest`
-  (real embeddings — the branch starts empty, so this is never an incremental no-op), runs `pnpm
+  migrations, run `pnpm ingest`
+  (real embeddings, paced by `EMBED_MAX_TEXTS_PER_MINUTE` — #317. The branch forks from the
+  project's default branch, so it inherits production's already-ingested rows; as long as
+  production is fresh, this is an incremental run that only embeds the PR's changed chunks, not a
+  full re-embed — see "Daily budget" above), runs `pnpm
   eval:retrieval` against it, uploads the JSON report as a build artifact, writes the aggregate
   metrics vs. thresholds to the job summary, and deletes the branch in an `always()` step
   regardless of outcome. A PR that degrades retrieval quality below the committed thresholds
@@ -203,11 +233,15 @@ Three loops, all running the exact same underlying commands (`db:migrate` then `
   retrieval eval, all against disposable databases, all cleaned up on completion.
 - **Production loop** (`.github/workflows/reindex-production.yml`). Every push to `main` that
   touches the same paths runs migrations and a real, incremental `pnpm ingest` directly against
-  production's `DATABASE_URL` — no Neon branch, no dry run. Because ingestion is incremental and
+  production's `DATABASE_URL` — no Neon branch, no dry run, paced by `EMBED_MAX_TEXTS_PER_MINUTE`
+  (#317), reading the same repository-level `GOOGLE_GENERATIVE_AI_API_KEY` secret
+  `retrieval-eval.yml` spends (see "Daily budget" above). Because ingestion is incremental and
   idempotent (#24), an unchanged-content re-run makes zero embedding calls and zero writes (visible
   in the ingestion summary line the job prints); a genuinely new/changed chunk gets embedded and
-  written for real, and a permanent ingest failure fails the job loudly rather than leaving a
-  stale or partial index in place. This is a **separate GitHub Actions job, not part of Vercel's
+  written for real, and a permanent ingest failure fails the job loudly. A failure partway through
+  no longer risks leaving a stale index behind: each embedded batch is persisted as it completes
+  (#317), so whatever did complete is already live, and the next run's fingerprint diff picks up
+  exactly where the failed run left off. This is a **separate GitHub Actions job, not part of Vercel's
   own build** — see `docs/deployment.md`'s "CI vs. Vercel" section for why the two systems are kept
   independent; a transient ingest hiccup should never block an otherwise-healthy deploy, and a
   deploy failure should never skip a needed reindex.
@@ -801,7 +835,10 @@ red) on fork PRs, same pattern as `db-integration`.
 A NINTH workflow, [`.github/workflows/reindex-production.yml`](../.github/workflows/reindex-production.yml)
 (#52), is the production loop: on every push to `main` touching the same paths, it runs migrations
 and a real, incremental `pnpm ingest` directly against production's `DATABASE_URL` — no Neon
-branch — failing loudly on a permanent ingest error rather than leaving a stale/partial index. Also
+branch, the same repository-level `GOOGLE_GENERATIVE_AI_API_KEY` secret `retrieval-eval.yml`
+uses, paced by `EMBED_MAX_TEXTS_PER_MINUTE` (#317) — failing loudly on a permanent ingest error. Per-batch persistence (#317) means such a failure
+never leaves progress stranded: whatever embedded before the failure is already written, and the
+next run's fingerprint diff resumes from there. Also
 an `ci-embedding` slot-lease holder. Deliberately **not** wired into Vercel's own build —
 see "How re-indexing works" above and `docs/deployment.md`'s "CI vs. Vercel" section.
 

@@ -47,6 +47,25 @@ describe("ingest cli", () => {
     expect(output).toMatch(/GOOGLE_GENERATIVE_AI_API_KEY/);
   });
 
+  it("exits non-zero with a clear message when EMBED_MAX_TEXTS_PER_MINUTE is invalid (#317)", () => {
+    const { PATH, HOME } = process.env;
+    const { status, output } = runCli([], {
+      PATH,
+      HOME,
+      DATABASE_URL: "postgres://user:pass@host/db",
+      GOOGLE_GENERATIVE_AI_API_KEY: "test-key",
+      EMBED_MAX_TEXTS_PER_MINUTE: "off",
+    });
+
+    expect(status).not.toBe(0);
+    expect(output).toMatch(/EMBED_MAX_TEXTS_PER_MINUTE/);
+    // A recognized config error prints a clean message (like the
+    // DATABASE_URL/GOOGLE_GENERATIVE_AI_API_KEY cases above), not a raw
+    // stack trace — verifies cli.ts's catch handles InvalidEmbedPacingError
+    // explicitly rather than falling through to the generic branch.
+    expect(output).not.toMatch(/\n\s+at /);
+  });
+
   it("exits non-zero with a clear message for an unrecognized flag", () => {
     const { PATH, HOME } = process.env;
     const { status, output } = runCli(["--bogus"], {

@@ -27,3 +27,7 @@ export type {
   GoogleEmbeddingTaskType,
 } from "./google-client.js";
 export { createGoogleEmbeddingClient } from "./google-client.js";
+export type { PaceableEmbedder, PacedEmbedder, PacedEmbedderOptions } from "./pacing.js";
+export { createPacedEmbedder, InvalidPacingOptionsError } from "./pacing.js";
+export type { EmbedPacingEnvSource } from "./pacing-env.js";
+export { InvalidEmbedPacingError, loadEmbedMaxTextsPerMinute } from "./pacing-env.js";

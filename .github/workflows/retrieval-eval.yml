@@ -211,18 +211,42 @@ jobs:
         if: steps.secrets-check.outputs.available == 'true'
         run: pnpm --filter @hire-me-mcp/core db:migrate
 
-      # Full ingest (not --dry-run): the branch starts empty, so this is
-      # always a full initial population, not an incremental no-op.
+      # Not --dry-run, but NOT a full initial population either (#317): a
+      # Neon branch created with no explicit parent forks the project's
+      # default branch, so it inherits production's already-ingested
+      # career_chunks rows. As long as production is kept fresh (see
+      # reindex-production.yml), this ingest only embeds the chunks this
+      # PR actually changed — same fingerprint-diff incrementality as
+      # production's own ingest. EMBED_MAX_TEXTS_PER_MINUTE (#317) paces
+      # it so it never trips Gemini's free-tier per-minute limit even on
+      # the rare PR that changes a lot of content at once.
       - name: Ingest career data (real embeddings)
         if: steps.secrets-check.outputs.available == 'true'
         env:
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+          EMBED_MAX_TEXTS_PER_MINUTE: "80"
         run: pnpm ingest
 
+      # The ingest step above and the eval step below are separate `pnpm`
+      # processes, so `createPacedEmbedder`'s sliding 60s window (#317) is
+      # NOT shared between them — each starts with an empty window, so an
+      # ingest that just spent close to the per-minute limit and an eval
+      # that immediately starts spending it again can together exceed
+      # Gemini's real 100-texts/minute cap even though each process paced
+      # itself correctly. Sleeping a full window here forces the next
+      # process to start from zero for real.
+      - name: Let the embedding per-minute window clear (#317)
+        if: steps.secrets-check.outputs.available == 'true'
+        run: sleep 65
+
+      # Golden queries are embedded one at a time (66+ cases), which can
+      # also trip the free-tier per-minute limit in a fast run — paced the
+      # same way as ingestion (#317).
       - name: Run retrieval eval (real embeddings, real thresholds)
         if: steps.secrets-check.outputs.available == 'true'
         env:
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+          EMBED_MAX_TEXTS_PER_MINUTE: "80"
         run: pnpm --filter @hire-me-mcp/core eval:retrieval
 
       # always(), not tied to the previous step's outcome: a threshold

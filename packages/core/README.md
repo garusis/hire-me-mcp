@@ -642,10 +642,15 @@ section covers the module layout.
   the `CareerDataRepository`, chunker function, an `IngestEmbedder` (`{ embed(texts) }`), and an
   `IngestStore` all as injected options — which is what makes it unit testable
   (`run.test.ts`) against fakes for all four, asserting (via `vi.spyOn`) that an unchanged re-run
-  makes zero `embed()`/`upsertMany()`/`deleteMany()` calls. **Ordering matters**: `embedder.embed()`
-  is awaited — and can throw — before any `store` write happens, so a permanent embedding failure
-  propagates out having made zero writes, with no rollback needed. `--dry-run` returns the diff
-  counts without ever calling the embedder or the store.
+  makes zero `embed()`/`upsertMany()`/`deleteMany()` calls. **Per-batch persistence (#317)**:
+  `diff.toEmbed` is embedded and written in `persistBatchSize`-sized batches (default 16) —
+  `store.upsertMany` runs after each batch completes, before the next batch starts, so a permanent
+  failure partway through leaves whatever already embedded already persisted rather than making
+  zero writes. `store.deleteMany` still only runs once every batch has succeeded. This replaces
+  #24's original "no partial commit" guarantee with "partial progress is durable and resumable,
+  because the diff is fingerprint-based and every persisted row is a complete, correct chunk" — a
+  re-run after a partial failure re-embeds only what wasn't already written. `--dry-run` returns
+  the diff counts without ever calling the embedder or the store.
 - **`store.ts` — `IngestStore` / `createDbIngestStore`.** The storage seam: `listFingerprints`,
   `upsertMany`, `deleteMany`. `createDbIngestStore` is the real adapter over
   `chunks-repository.ts`, running each of `upsertMany`/`deleteMany` inside its own `sql.begin`
@@ -654,10 +659,15 @@ section covers the module layout.
   tolerant of a leading `--` passthrough separator since `pnpm ingest -- --dry-run` forwards one)
   and a one-line summary formatter (`formatIngestSummary`) for CI-log-friendly output.
 - **`cli.ts`.** The `pnpm --filter @hire-me-mcp/core ingest` entry point (root `pnpm ingest`
-  forwards to it) — reads `DATABASE_URL`/`GOOGLE_GENERATIVE_AI_API_KEY`, wires the real
+  forwards to it) — reads `DATABASE_URL`/`GOOGLE_GENERATIVE_AI_API_KEY`/
+  `EMBED_MAX_TEXTS_PER_MINUTE`, wires the real
   `createContentCareerDataRepository`/`chunkCareerData`/`createGoogleEmbeddingClient`/
-  `createDbIngestStore` together, prints the summary, and exits non-zero (naming the missing
-  variable, never its value) on any misconfiguration or failure. Tested as a subprocess
+  `createDbIngestStore` together — wrapping the Google client with `createPacedEmbedder`
+  (`embedding/pacing.ts`, #317) so a full ingest never trips the free-tier per-minute limit, and
+  wiring `runIngest`'s `onProgress` (`ingest/run.ts`, #317) to log `persisted X/Y chunks` lines to
+  stderr as each persistence batch completes — prints the summary, and
+  exits non-zero (naming the missing/invalid variable, never a secret's value) on any
+  misconfiguration or failure. Tested as a subprocess
   (`cli.test.ts`, mirroring `db/migrate-cli.test.ts`) for the network-free misconfigured-env and
   bad-flag paths only — importing it directly would run its real top-level side effects at test
   collection time.
@@ -781,7 +791,10 @@ pnpm eval:retrieval   # runs the golden dataset against a populated store, write
 ```
 
 Requires `DATABASE_URL` and `GOOGLE_GENERATIVE_AI_API_KEY` (see `.env.example`), and a store
-already populated by `pnpm ingest` (#24) — this command only queries, it never ingests. Locally,
+already populated by `pnpm ingest` (#24) — this command only queries, it never ingests. Golden
+queries are embedded one at a time (66+ cases), also paced by `EMBED_MAX_TEXTS_PER_MINUTE` (#317,
+default 80 — see `docs/development.md`'s "Ingestion pipeline" section) so a full eval run doesn't
+trip the free-tier per-minute limit either. Locally,
 the checked-in `.env`'s `GOOGLE_GENERATIVE_AI_API_KEY` is a known-invalid placeholder, so a real
 run happens via `.github/workflows/retrieval-eval.yml` — a **required PR check** as of #52 — against
 a disposable Neon branch (created, migrated, ingested, evaluated, and deleted in one job run,

@@ -1,3 +1,6 @@
+import { execFileSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { formatCaseTable, resolveRetrievalEvalEnvConfig, runRetrievalEvalCli } from "./cli.js";
 import type { GoldenQuery } from "./dataset/schema.js";
@@ -240,5 +243,44 @@ describe("runRetrievalEvalCli", () => {
 
     expect(exitCode).toBe(1);
     expect(writeFile).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Runs cli.ts as a real subprocess (mirroring ingest/cli.test.ts) rather
+// than importing it — importing would run `main()`'s top-level side
+// effects (a real DB connection, a real embedding call) at test collection
+// time. This only exercises the fast, network-free misconfigured-env path,
+// added for #317's `EMBED_MAX_TEXTS_PER_MINUTE` pacing wiring.
+const packageDir = fileURLToPath(new URL("../..", import.meta.url));
+const cliPath = fileURLToPath(new URL("./cli.ts", import.meta.url));
+const tsxBin = path.join(packageDir, "node_modules", ".bin", "tsx");
+
+function runCli(env: NodeJS.ProcessEnv): { status: number; output: string } {
+  try {
+    const output = execFileSync(tsxBin, [cliPath], { encoding: "utf-8", env });
+    return { status: 0, output };
+  } catch (error) {
+    const err = error as { status: number; stdout: string; stderr: string };
+    return { status: err.status, output: `${err.stdout}${err.stderr}` };
+  }
+}
+
+describe("eval-retrieval cli (subprocess)", () => {
+  it("exits non-zero with a clear message when EMBED_MAX_TEXTS_PER_MINUTE is invalid (#317)", () => {
+    const { PATH, HOME } = process.env;
+    const { status, output } = runCli({
+      PATH,
+      HOME,
+      DATABASE_URL: "postgres://user:pass@host/db",
+      GOOGLE_GENERATIVE_AI_API_KEY: "test-key",
+      EMBED_MAX_TEXTS_PER_MINUTE: "off",
+    });
+
+    expect(status).not.toBe(0);
+    expect(output).toMatch(/EMBED_MAX_TEXTS_PER_MINUTE/);
+    // A recognized config error prints a clean message, not a raw stack
+    // trace — verifies cli.ts's catch handles InvalidEmbedPacingError
+    // explicitly, the same as MissingDatabaseUrlError/MissingEmbeddingApiKeyError.
+    expect(output).not.toMatch(/\n\s+at /);
   });
 });
