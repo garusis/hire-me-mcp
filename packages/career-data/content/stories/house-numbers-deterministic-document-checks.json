@@ -31,12 +31,12 @@
     "cost-awareness",
     "deterministic-validation",
     "deterministic-over-ai",
+    "challenged-preferred-direction",
     "llm-evaluation",
     "user-research",
     "golden-sets",
     "hallucination-mitigation",
     "bounded-ai",
-    "document-analysis",
-    "nondeterminism"
+    "document-analysis"
   ]
 }

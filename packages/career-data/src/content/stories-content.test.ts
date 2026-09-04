@@ -99,12 +99,55 @@ describe("real content: the #290 story corpus", () => {
 
   it("carries the owner-reviewed minimized tag sets locked in #305 decision 3 (176 assignments, 166 distinct)", () => {
     const tags = dataset.stories.flatMap((entry) => entry.retrievalTags);
+    // #307 owner-authorized correction: to resolve the story-scoped preference collisions the
+    // real-run diagnosis found, one retrieval tag was REPLACED (not appended) in each of two
+    // stories — mutual-informal-leadership swapped "personal-sacrifice" for
+    // "mission-over-personal-gain" (X02, preferred over mutual-sustainable-ownership-failure);
+    // house-numbers-deterministic-document-checks swapped the redundant "nondeterminism" for
+    // "challenged-preferred-direction" (A01, preferred over
+    // house-numbers-prompt-platform-migration). Net assignment/distinct counts are unchanged —
+    // a swap, not an addition — which also keeps every chunk-size boundary unchanged (#296's
+    // locked 90-story-chunk count in `packages/core/src/chunking/index.test.ts` is unaffected).
+    // Both new tags are accurate paraphrases of facts already stated in each story's own text,
+    // never a narrative or fact change.
     expect(tags).toHaveLength(176);
     expect(new Set(tags).size).toBe(166);
     for (const entry of dataset.stories) {
       expect(entry.retrievalTags.length).toBeGreaterThanOrEqual(6);
       expect(entry.retrievalTags.length).toBeLessThanOrEqual(15);
     }
+  });
+
+  describe("#307 story-scoped preference-collision retrieval tags", () => {
+    function storyById(id: string) {
+      const entry = dataset.stories.find((story) => story.id === id);
+      expect(entry, `expected a story with id "${id}"`).toBeDefined();
+      return entry as (typeof dataset.stories)[number];
+    }
+
+    it("X02: the preferred story (mutual-informal-leadership) carries mission-over-personal-gain, and its competing alternative (mutual-sustainable-ownership-failure) does not", () => {
+      expect(storyById("mutual-informal-leadership").retrievalTags).toContain(
+        "mission-over-personal-gain",
+      );
+      expect(storyById("mutual-sustainable-ownership-failure").retrievalTags).not.toContain(
+        "mission-over-personal-gain",
+      );
+    });
+
+    it("A01: the preferred story (house-numbers-deterministic-document-checks) carries challenged-preferred-direction, and its competing alternative (house-numbers-prompt-platform-migration) does not", () => {
+      expect(storyById("house-numbers-deterministic-document-checks").retrievalTags).toContain(
+        "challenged-preferred-direction",
+      );
+      expect(storyById("house-numbers-prompt-platform-migration").retrievalTags).not.toContain(
+        "challenged-preferred-direction",
+      );
+    });
+
+    it("preserves the global 001 > 002 leadership priority: mutual-informal-leadership's new tag does not touch xogito-client-account-recovery", () => {
+      expect(storyById("xogito-client-account-recovery").retrievalTags).not.toContain(
+        "mission-over-personal-gain",
+      );
+    });
   });
 
   it("covers a useful spread of behavioral competencies as primaries", () => {

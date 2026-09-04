@@ -125,26 +125,62 @@ function baseCaseReport(
   };
 }
 
+/**
+ * A case whose `expectedSources` are exclusively story sources routes its
+ * top-level metrics/pass-fail/preferred-source check from the `storyScoped`
+ * lane instead of `unscoped` (#307 owner-authorized implementation
+ * direction, following the real-run diagnosis that recommendations and
+ * other source types crowd stories out of the unscoped top-5 — the
+ * production chat's own story-scoped search path is what these cases
+ * actually exercise). A mixed or non-story case is unaffected and stays on
+ * `unscoped`, exactly as before.
+ */
+export function isStoryOnlyCase(query: GoldenQuery): boolean {
+  return (
+    query.expectedSources.length > 0 &&
+    query.expectedSources.every((source) => source.sourceType === STORY_SOURCE_TYPE)
+  );
+}
+
+/**
+ * Picks which lane's raw retrieved list a story-only case's top-level
+ * metrics/pass-fail/preferred-source check is computed against (#307):
+ * `storyScoped` for a case whose `expectedSources` are exclusively story
+ * sources, `unscoped` for everything else. Always returns a fresh, mutable
+ * array — never an alias of either readonly input — so the result can
+ * safely be assigned to `RetrievalCaseReport.retrieved` regardless of how
+ * the caller's own arrays are typed.
+ */
+export function selectScoringRetrieved(
+  query: GoldenQuery,
+  retrieved: readonly ScoredSource[],
+  storyScopedRetrieved: readonly ScoredSource[],
+): ScoredSource[] {
+  return isStoryOnlyCase(query) ? [...storyScopedRetrieved] : [...retrieved];
+}
+
 function scoreExpectedCase(
   query: GoldenQuery,
   retrieved: RetrievalCaseReport["retrieved"],
+  storyScopedRetrieved: readonly ScoredSource[],
   lanes: Record<RetrievalLane, RetrievalLaneResult>,
 ): RetrievalCaseReport {
+  const scoringRetrieved = selectScoringRetrieved(query, retrieved, storyScopedRetrieved);
   const matchMode = query.matchMode ?? "all";
   const metrics = {
-    recallAtK: recallAtK(retrieved, query.expectedSources, matchMode),
-    precisionAtK: precisionAtK(retrieved, query.expectedSources),
-    reciprocalRank: reciprocalRank(retrieved, query.expectedSources),
+    recallAtK: recallAtK(scoringRetrieved, query.expectedSources, matchMode),
+    precisionAtK: precisionAtK(scoringRetrieved, query.expectedSources),
+    reciprocalRank: reciprocalRank(scoringRetrieved, query.expectedSources),
   };
   const matchModePassed = metrics.recallAtK === 1;
 
   const preferenceCheck =
     query.preferredSource === undefined
       ? null
-      : checkPreferredSource(retrieved, query.expectedSources, query.preferredSource);
+      : checkPreferredSource(scoringRetrieved, query.expectedSources, query.preferredSource);
 
   return {
-    ...baseCaseReport(query, retrieved, lanes),
+    ...baseCaseReport(query, scoringRetrieved, lanes),
     metrics,
     matchModePassed,
     preferencePassed: preferenceCheck?.passed ?? null,
@@ -214,7 +250,7 @@ export async function runRetrievalEval(
     cases.push(
       query.category === "absent-topic"
         ? scoreAbsentTopicCase(query, retrieved, config.absentTopicMinScore, lanes)
-        : scoreExpectedCase(query, retrieved, lanes),
+        : scoreExpectedCase(query, retrieved, storyScopedRetrieved, lanes),
     );
   }
 

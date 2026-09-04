@@ -17,6 +17,7 @@ function validAbsent() {
     category: "absent-topic" as const,
     expectedSources: [],
     expectEmpty: true as const,
+    distinguishingTerms: ["blockchain", "smart contract"],
   };
 }
 
@@ -70,6 +71,29 @@ describe("goldenQuerySchema", () => {
 
   it("rejects an unknown extra field (strict schema)", () => {
     expect(goldenQuerySchema.safeParse({ ...validExact(), extra: "nope" }).success).toBe(false);
+  });
+});
+
+describe("goldenQuerySchema: distinguishingTerms (#307 corpus-drift guard)", () => {
+  it("accepts an absent-topic entry with a non-empty distinguishingTerms array", () => {
+    expect(goldenQuerySchema.safeParse(validAbsent()).success).toBe(true);
+  });
+
+  it("rejects an absent-topic entry that omits distinguishingTerms", () => {
+    const { distinguishingTerms, ...withoutTerms } = validAbsent();
+    expect(goldenQuerySchema.safeParse(withoutTerms).success).toBe(false);
+  });
+
+  it("rejects an absent-topic entry with an empty distinguishingTerms array", () => {
+    expect(goldenQuerySchema.safeParse({ ...validAbsent(), distinguishingTerms: [] }).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects a non-absent-topic entry that declares distinguishingTerms", () => {
+    expect(
+      goldenQuerySchema.safeParse({ ...validExact(), distinguishingTerms: ["typescript"] }).success,
+    ).toBe(false);
   });
 });
 
