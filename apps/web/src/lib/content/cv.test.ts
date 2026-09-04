@@ -1,12 +1,25 @@
 import type { CvOverrides } from "@hire-me-mcp/career-data";
 import {
+  buildCvPresentation,
   type CareerDataset,
   createContentCareerDataRepository,
   createInMemoryCareerDataRepository,
   emptyCareerDataset,
 } from "@hire-me-mcp/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { getCvView } from "./cv";
+
+// #315: the overlay merge now lives in `@hire-me-mcp/core`'s
+// `buildCvPresentation()`, shared with the public MCP's
+// `get-cv-presentation` tool — `getCvView()` must be a thin wrapper over
+// it, not a second copy of the merge. Partial-mock so every other export
+// (the repository fixtures this file uses) stays real, while
+// `buildCvPresentation` becomes an observable spy around the real
+// implementation.
+vi.mock("@hire-me-mcp/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@hire-me-mcp/core")>();
+  return { ...actual, buildCvPresentation: vi.fn(actual.buildCvPresentation) };
+});
 
 function datasetWith(overrides: Partial<CareerDataset>): CareerDataset {
   return { ...emptyCareerDataset(), ...overrides };
@@ -145,6 +158,23 @@ describe("getCvView", () => {
   it("throws when no profile has been authored — a CV with no subject is not a renderable state", () => {
     const repository = createInMemoryCareerDataRepository(datasetWith({}));
     expect(() => getCvView(repository)).toThrow();
+  });
+
+  it("delegates the overlay merge to @hire-me-mcp/core's buildCvPresentation (#315) — a thin wrapper, not a second copy of the merge", () => {
+    vi.mocked(buildCvPresentation).mockClear();
+    const repository = createInMemoryCareerDataRepository(
+      datasetWith({ profile: PROFILE, experience: EXPERIENCE }),
+    );
+    getCvView(repository, { overrides: EMPTY_OVERRIDES, variant: "ai", maxHighlightsPerRole: 1 });
+    expect(buildCvPresentation).toHaveBeenCalledTimes(1);
+    expect(buildCvPresentation).toHaveBeenCalledWith(
+      repository,
+      expect.objectContaining({
+        overrides: EMPTY_OVERRIDES,
+        variant: "ai",
+        maxHighlightsPerRole: 1,
+      }),
+    );
   });
 
   it("carries the profile through unchanged", () => {
