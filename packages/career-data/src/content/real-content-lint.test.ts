@@ -35,15 +35,15 @@ describe("real career-data content — lint (#51)", () => {
       .filter((violation) => violation.rule === "no-orphan-entities")
       .map((violation) => violation.entityId)
       .sort();
-    // Two education credentials no skill cites, plus the hire-me-mcp
-    // flagship write-up (#191) — a brand-new project record not yet cited
-    // as evidence by any skill. Legitimate warnings, per the rule's own
-    // docstring, not errors.
+    // Two education credentials no skill cites. hire-me-mcp (#191) is no
+    // longer an orphan as of #309 stage 3: the evidenced-but-missing
+    // skills added for the CV keyword gap (Next.js, MCP, RAG, pgvector,
+    // Playwright, Vitest, GitHub Actions, Vercel, Gemini) all cite it.
+    // Legitimate warnings, per the rule's own docstring, not errors.
     expect(orphanIds).toEqual(
       [
         "unad-bs-systems-engineering",
         "international-scrum-institute-2020-scrum-master-product-owner",
-        "hire-me-mcp",
       ].sort(),
     );
     expect(
