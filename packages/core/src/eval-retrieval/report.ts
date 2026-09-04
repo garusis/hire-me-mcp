@@ -115,7 +115,7 @@ export interface RetrievalAggregates {
   absentTopicAccuracy: number;
   /** Fraction of preference-declaring cases whose preference passed — `1` (vacuous) when no case declares a `preferredSource`. */
   preferredSourceCompliance: number;
-  /** Per-lane recall@k/precision@k/MRR (#307) — `unscoped` duplicates the top-level fields above; `storyScoped` is the new diagnostic. */
+  /** Per-lane recall@k/precision@k/MRR (#307). Top-level aggregates combine each case according to its `scoringLane`, so neither lane necessarily duplicates them. */
   lanes: Record<RetrievalLane, RetrievalLaneAggregates>;
 }
 

@@ -39,7 +39,7 @@
  *   retrieved already fails that check, satisfying #75's "no citation
  *   references a source outside this turn's retrieval results" acceptance
  *   criterion with no scorer change needed.
- * - `gap-blockchain`/`gap-sap-erp` — plausible recruiter questions about
+ * - `gap-blockchain`/`gap-genomics-bioinformatics` — plausible recruiter questions about
  *   topics genuinely absent from the ENTIRE corpus (not just `gaps.json`'s
  *   curated list), mirroring `packages/core`'s own
  *   `src/eval-retrieval/dataset/cases.ts` `absent-topic` category.
