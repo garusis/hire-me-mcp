@@ -7,10 +7,13 @@ import {
   careerStorySchema,
   citationSchema,
   competencySchema,
+  cvOverridesSchema,
   formatYearRange,
+  hasCvOverrides,
   hasStoryPreservationMap,
   isCompetency,
   loadContentDir,
+  loadCvOverrides,
   loadStoryPreservationMap,
   resolveDefaultContentDir,
   storyPreservationMapSchema,
@@ -68,6 +71,12 @@ describe("public entry point", () => {
     expect(storyPreservationMapSchema).toBeDefined();
     expect(loadStoryPreservationMap(resolveDefaultContentDir()).length).toBeGreaterThan(0);
     expect(hasStoryPreservationMap(resolveDefaultContentDir())).toBe(true);
+  });
+
+  it("re-exports the #309 stage 3 CV-only overlay loader and schema", () => {
+    expect(cvOverridesSchema).toBeDefined();
+    expect(hasCvOverrides(resolveDefaultContentDir())).toBe(true);
+    expect(loadCvOverrides(resolveDefaultContentDir())).toBeDefined();
   });
 
   it("re-exports the citation schema for downstream consumers like packages/core", () => {

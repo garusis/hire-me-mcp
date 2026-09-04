@@ -1,6 +1,17 @@
 export { type Citation, citationSchema } from "./citation.js";
 export { type CitableEntityType, citableEntityTypeSchema, idSchema } from "./common.js";
 export { COMPETENCIES, type Competency, competencySchema, isCompetency } from "./competency.js";
+export {
+  type CvEducationOverride,
+  type CvExperienceOverride,
+  type CvOverrides,
+  type CvProfileOverride,
+  type CvProjectOverride,
+  type CvSkillsOverride,
+  type CvVariant,
+  cvOverridesSchema,
+  cvVariantSchema,
+} from "./cv-overrides.js";
 export { type EducationEntry, educationEntrySchema } from "./education.js";
 export { type ExperienceEntry, experienceEntrySchema } from "./experience.js";
 export { type Gap, gapSchema } from "./gap.js";

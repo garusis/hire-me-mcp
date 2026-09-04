@@ -27,4 +27,9 @@ describe("schemas barrel", () => {
     expect(schemas.competencySchema).toBeDefined();
     expect(schemas.isCompetency("leadership")).toBe(true);
   });
+
+  it("re-exports the CV-only overlay schema (#309 stage 3)", () => {
+    expect(schemas.cvOverridesSchema).toBeDefined();
+    expect(schemas.cvVariantSchema).toBeDefined();
+  });
 });

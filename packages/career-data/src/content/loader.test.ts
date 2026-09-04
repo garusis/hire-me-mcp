@@ -1,9 +1,11 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  hasCvOverrides,
   hasStoryPreservationMap,
   loadContentDir,
   loadContentDirWithSources,
+  loadCvOverrides,
   loadStoryPreservationMap,
   validateContentDir,
 } from "./loader.js";
@@ -277,5 +279,34 @@ describe("story-preservation-map.json (#290)", () => {
   it("the map is review data, not a citable entity: it never appears in the dataset's sources", () => {
     const { sources } = loadContentDirWithSources(fixtureDir("lint-valid-content"));
     expect(sources.some((source) => source.file === "story-preservation-map.json")).toBe(false);
+  });
+});
+
+describe("cv-overrides.json (#309 stage 3)", () => {
+  it("hasCvOverrides distinguishes a present overlay from an absent one", () => {
+    expect(hasCvOverrides(fixtureDir("lint-valid-content"))).toBe(true);
+    expect(hasCvOverrides(fixtureDir("valid-content"))).toBe(false);
+  });
+
+  it("loadCvOverrides returns the typed overlay of a valid file", () => {
+    const overrides = loadCvOverrides(fixtureDir("lint-valid-content"));
+    expect(overrides?.profile.timezoneLine).toBe("Remote (UTC-5)");
+    expect(overrides?.experience).toContainEqual({
+      id: "fixture-role-fixtureco-2020",
+      bullets: { general: ["Fixture CV-only bullet"] },
+    });
+  });
+
+  it("loadCvOverrides returns undefined when the file is absent — the MCP dataset never carries CV-only fields", () => {
+    expect(loadCvOverrides(fixtureDir("valid-content"))).toBeUndefined();
+  });
+
+  it("loadCvOverrides throws with a readable report for an invalid overlay", () => {
+    expect(() => loadCvOverrides(fixtureDir("invalid-content"))).toThrow(/cv-overrides\.json/);
+  });
+
+  it("the overlay is CV-only presentation data, not a citable entity: it never appears in the dataset's sources", () => {
+    const { sources } = loadContentDirWithSources(fixtureDir("lint-valid-content"));
+    expect(sources.some((source) => source.file === "cv-overrides.json")).toBe(false);
   });
 });
