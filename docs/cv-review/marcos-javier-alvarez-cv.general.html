@@ -20,7 +20,7 @@
   h1 { font-size: 19pt; line-height: 1.2; font-weight: bold; margin: 0 0 4pt; }
   h2 { font-size: 12.5pt; line-height: 1.3; font-weight: bold; margin: 8pt 0 4pt; page-break-after: avoid; break-after: avoid; }
   .contact { margin: 0 0 3pt; }
-  .contact-line { margin: 0 0 5pt; }
+  .contact-line { margin: 0 0 5pt; font-size: 9.5pt; }
   .role { margin: 0 0 3pt; page-break-after: avoid; break-after: avoid; }
   /* Entries deliberately are NOT break-inside: avoid (#309 stage 3): the two-page budget needs
      a long role's bullets to flow across a page boundary — only the role header (.role, above)
@@ -31,7 +31,7 @@
      bullets flow across a page boundary. */
   .entry.keep-together { break-inside: avoid; }
   ul { margin: 0 0 3pt; padding-left: 16pt; }
-  li { margin: 0 0 1pt; orphans: 2; widows: 2; }
+  li { margin: 0 0 1pt; orphans: 2; widows: 2; break-inside: avoid; page-break-inside: avoid; }
   /* A "Tech: …" line can never open a page on its own (#309 stage 3 second review, item 5). */
   .tech { font-style: italic; margin: 0; break-before: avoid; page-break-before: avoid; }
   .role-summary { margin: 2pt 0 0; }
@@ -47,11 +47,11 @@
 <div class="sheet">
   <h1>Marcos Javier Alvarez</h1>
   <p class="contact"><strong>Senior Full-Stack Engineer · TypeScript, Node.js, React, AWS · Production LLM systems</strong></p>
-  <p class="contact-line">Cúcuta, Colombia (Remote) &middot; UTC-5, full US-hours overlap &middot; <a href="mailto:garusis@gmail.com">garusis@gmail.com</a> &middot; <a href="https://github.com/garusis">github.com/garusis</a> &middot; <a href="https://www.linkedin.com/in/garusis/">linkedin.com/in/garusis</a></p>
+  <p class="contact-line">Cúcuta, Colombia (Remote) &middot; UTC-5, US-hours overlap &middot; <a href="mailto:garusis@gmail.com">garusis@gmail.com</a> &middot; <a href="https://github.com/garusis">github.com/garusis</a> &middot; <a href="https://www.linkedin.com/in/garusis/">linkedin.com/in/garusis</a></p>
   <p class="contact"><strong>Portfolio, references and a queryable MCP endpoint:</strong> <a href="https://hire-me-mcp-web.vercel.app">hire-me-mcp-web.vercel.app</a></p>
 
   <h2>Summary</h2>
-  <p>Senior full-stack engineer with 13 years shipping TypeScript/Node.js, React and AWS products, the last four at House Numbers — joined when the engineering team was three people, since grown to seven engineers (excluding design, PM and QA) — helping take a mortgage-lending platform through a B2C-to-B2B pivot and from a handful of services to a 16-service event-driven monorepo. I own critical production systems end to end, including a communications service handling 57,000+ emails, SMS and calls in a recent seven-month window (~70% automated) and a hardened public document-upload boundary, and for the last three years have put LLM features into production with evaluation harnesses, cost tracing and deterministic safeguards. Earlier: main backend engineer on a multi-tenant SaaS, two legacy-SAP data migrations, a monolith-to-Kubernetes migration, client-facing delivery.</p>
+  <p>Senior full-stack engineer with 13 years shipping TypeScript/Node.js, React and AWS products, the last four at House Numbers, where I joined an engineering team of three (now seven) and helped take a mortgage-lending platform through a B2C-to-B2B pivot and from a handful of services to a 16-service event-driven monorepo. I own critical production systems end to end, including a communications service handling 57,000+ emails, SMS and calls in a recent seven-month window (~70% automated) and a hardened public document-upload boundary, and for the last three years have put LLM features into production with evaluation harnesses, cost tracing and deterministic safeguards. Earlier: main backend engineer on a multi-tenant SaaS, two legacy-SAP data migrations, a monolith-to-Kubernetes migration, client-facing delivery.</p>
 
   <h2>Experience</h2>
   <div class="entry">

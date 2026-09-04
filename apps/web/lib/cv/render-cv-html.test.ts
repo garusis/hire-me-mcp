@@ -262,12 +262,11 @@ describe("renderCvHtml", () => {
     );
     // The general-variant portfolio siteUrl link is shown the same way.
     expect(html).toContain('href="https://example.test">example.test</a>');
-    // The ai variant additionally keeps the MCP endpoint in full so it
-    // survives copy/paste (#309 stage 3 action 12).
+    // The ai variant additionally shows the MCP endpoint, displayed like
+    // every other URL on the page (scheme stripped, full href kept) so the
+    // header reads consistently (#309 round 3 grading, nit 6).
     const aiHtml = renderCvHtml({ ...FIXTURE_VIEW, variant: "ai" }, FIXTURE_OPTIONS);
-    expect(aiHtml).toContain(
-      'href="https://example.test/api/mcp">https://example.test/api/mcp</a>',
-    );
+    expect(aiHtml).toContain('href="https://example.test/api/mcp">example.test/api/mcp</a>');
   });
 
   it("renders a Tech line under a role from the view's tech field, omitted when it is empty (#299)", () => {

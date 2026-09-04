@@ -137,9 +137,7 @@ function renderPortfolioLine(
   if (variant === "ai") {
     return `<p class="contact"><strong>Portfolio, references and a queryable MCP endpoint:</strong> ${link(
       options.siteUrl,
-    )} &middot; <strong>Query it from any MCP client:</strong> <a href="${escapeHtml(
-      options.mcpUrl,
-    )}">${escapeHtml(options.mcpUrl)}</a></p>`;
+    )} &middot; <strong>Query it from any MCP client:</strong> ${link(options.mcpUrl)}</p>`;
   }
   return `<p class="contact"><strong>Portfolio, references and a queryable MCP endpoint:</strong> ${link(
     options.siteUrl,
@@ -369,7 +367,7 @@ const STYLE = `
   h1 { font-size: 19pt; line-height: 1.2; font-weight: bold; margin: 0 0 4pt; }
   h2 { font-size: 12.5pt; line-height: 1.3; font-weight: bold; margin: 8pt 0 4pt; page-break-after: avoid; break-after: avoid; }
   .contact { margin: 0 0 3pt; }
-  .contact-line { margin: 0 0 5pt; }
+  .contact-line { margin: 0 0 5pt; font-size: 9.5pt; }
   .role { margin: 0 0 3pt; page-break-after: avoid; break-after: avoid; }
   /* Entries deliberately are NOT break-inside: avoid (#309 stage 3): the two-page budget needs
      a long role's bullets to flow across a page boundary — only the role header (.role, above)
@@ -380,7 +378,7 @@ const STYLE = `
      bullets flow across a page boundary. */
   .entry.keep-together { break-inside: avoid; }
   ul { margin: 0 0 3pt; padding-left: 16pt; }
-  li { margin: 0 0 1pt; orphans: 2; widows: 2; }
+  li { margin: 0 0 1pt; orphans: 2; widows: 2; break-inside: avoid; page-break-inside: avoid; }
   /* A "Tech: …" line can never open a page on its own (#309 stage 3 second review, item 5). */
   .tech { font-style: italic; margin: 0; break-before: avoid; page-break-before: avoid; }
   .role-summary { margin: 2pt 0 0; }
