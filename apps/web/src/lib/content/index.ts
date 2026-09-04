@@ -13,9 +13,11 @@ import "server-only";
 // value `apps/web` renders comes from this barrel, including this one.
 export { CAREER_DATA_PACKAGE_NAME } from "@hire-me-mcp/career-data";
 export {
+  type CvEducationItemView,
   type CvExperienceItemView,
   CvProfileNotFoundError,
-  type CvSkillGroupView,
+  type CvSkillCategoryGroupView,
+  type CvVariant,
   type CvView,
   type GetCvViewOptions,
   getCvView,
