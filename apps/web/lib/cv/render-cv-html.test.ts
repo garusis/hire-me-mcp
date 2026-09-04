@@ -18,6 +18,10 @@ const FIXTURE_VIEW: CvView = {
       { label: "LinkedIn", url: "https://www.linkedin.example/in/fixture-person/" },
     ],
   },
+  variant: "general",
+  headline: "Fixture Headline Role",
+  summary: "Fixture summary paragraph describing the fixture person.",
+  timezoneLine: "Remote (Fixture-5)",
   experience: [
     {
       company: "Fixture Employer Inc",
@@ -34,6 +38,16 @@ const FIXTURE_VIEW: CvView = {
       endDate: "2016-06",
       highlights: ["Fixture highlight about the older fixture role."],
       tech: [],
+    },
+    {
+      company: "Fixture Earliest Employer",
+      role: "Fixture Earliest Role",
+      startDate: "2013-02",
+      endDate: "2015-01",
+      highlights: [],
+      tech: [],
+      compactLine:
+        "Fixture Earliest Employer, Fixture Earliest Role, Feb 2013 – Jan 2015 — fixture compact-line summary.",
     },
   ],
   projects: [
@@ -53,9 +67,9 @@ const FIXTURE_VIEW: CvView = {
       links: [],
     },
   ],
-  skillsByProficiency: [
-    { proficiency: "expert", names: ["Fixture Expert Skill"] },
-    { proficiency: "familiar", names: ["Fixture Familiar Skill"] },
+  skillGroups: [
+    { category: "language", label: "Fixture Languages", names: ["Fixture Expert Skill"] },
+    { category: "tool", label: "Fixture Tools", names: ["Fixture Familiar Skill"] },
   ],
   education: [
     {
@@ -152,8 +166,11 @@ describe("renderCvHtml", () => {
     expect(html).not.toContain("Selected Projects");
   });
 
-  it("the header (not a footer) calls out the MCP endpoint URL passed in options (#232) — no footer is emitted", () => {
-    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+  it("the header (not a footer) calls out the MCP endpoint URL passed in options for the ai variant (#232, #309 stage 3 action 12) — no footer is emitted", () => {
+    // The general variant collapses the portfolio line to one URL
+    // (#309 stage 3 action 12); the MCP endpoint callout is an ai-variant
+    // header feature now, exercised here with variant: "ai".
+    const html = renderCvHtml({ ...FIXTURE_VIEW, variant: "ai" }, FIXTURE_OPTIONS);
     expect(html).toContain("https://example.test/api/mcp");
     expect(html).toMatch(/MCP client/);
     expect(html).not.toContain("<footer");
@@ -169,6 +186,15 @@ describe("renderCvHtml", () => {
   it("does not force whole sections onto one page — no section-level avoid-page rule (#230)", () => {
     const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
     expect(html).not.toMatch(/section\s*\{[^}]*break-inside:\s*avoid-page/);
+  });
+
+  it("does not force a whole role entry onto one page — a long role's bullets may split across the page boundary, only a single bullet line and the role header stay atomic (#309 stage 3, two-page budget)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).not.toMatch(/\.entry\s*\{[^}]*break-inside:\s*avoid/);
+    // The role header itself still can't be orphaned from its first bullet.
+    expect(html).toMatch(/\.role\s*\{[^}]*(page-break-after|break-after):\s*avoid/);
+    // Individual bullets still never split mid-sentence.
+    expect(html).toMatch(/li\s*\{[^}]*orphans/);
   });
 
   it("renders an open-ended role as Present", () => {
@@ -235,10 +261,14 @@ describe("renderCvHtml", () => {
     expect(html).toContain(
       'href="https://www.linkedin.example/in/fixture-person/">linkedin.example/in/fixture-person</a>',
     );
-    // The portfolio siteUrl link is shown the same way; the MCP endpoint
-    // is kept in full so it survives copy/paste.
+    // The general-variant portfolio siteUrl link is shown the same way.
     expect(html).toContain('href="https://example.test">example.test</a>');
-    expect(html).toContain('href="https://example.test/api/mcp">https://example.test/api/mcp</a>');
+    // The ai variant additionally keeps the MCP endpoint in full so it
+    // survives copy/paste (#309 stage 3 action 12).
+    const aiHtml = renderCvHtml({ ...FIXTURE_VIEW, variant: "ai" }, FIXTURE_OPTIONS);
+    expect(aiHtml).toContain(
+      'href="https://example.test/api/mcp">https://example.test/api/mcp</a>',
+    );
   });
 
   it("renders a Tech line under a role from the view's tech field, omitted when it is empty (#299)", () => {
@@ -250,6 +280,46 @@ describe("renderCvHtml", () => {
       FIXTURE_OPTIONS,
     );
     expect(html2).not.toContain('class="tech"');
+  });
+
+  it("renders the timezoneLine after location when present, and skips it when absent (#309 stage 3, action 12)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).toContain("Remote (Fixture-5)");
+    const htmlNoTimezone = renderCvHtml(
+      { ...FIXTURE_VIEW, timezoneLine: undefined },
+      FIXTURE_OPTIONS,
+    );
+    expect(htmlNoTimezone).not.toContain("Remote (Fixture-5)");
+  });
+
+  it("collapses the portfolio line to the site URL alone for the general variant, and includes the MCP URL for the ai variant (#309 stage 3, action 12)", () => {
+    const generalHtml = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    const headerEndGeneral = generalHtml.indexOf("<h2>");
+    expect(generalHtml.slice(0, headerEndGeneral)).not.toContain(FIXTURE_OPTIONS.mcpUrl);
+
+    const aiHtml = renderCvHtml({ ...FIXTURE_VIEW, variant: "ai" }, FIXTURE_OPTIONS);
+    const headerEndAi = aiHtml.indexOf("<h2>");
+    expect(aiHtml.slice(0, headerEndAi)).toContain(FIXTURE_OPTIONS.mcpUrl);
+  });
+
+  it("renders a role with compactLine as one line under an Earlier Experience heading, not a full entry with bullets (#309 stage 3, action 11)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).toContain("Earlier Experience");
+    expect(html).toContain(
+      "Fixture Earliest Employer, Fixture Earliest Role, Feb 2013 – Jan 2015 — fixture compact-line summary.",
+    );
+    // The compact entry appears after the "Earlier Experience" heading, not mixed into the main Experience list.
+    const earlierIndex = html.indexOf("Earlier Experience");
+    const compactIndex = html.indexOf("Fixture Earliest Employer");
+    expect(compactIndex).toBeGreaterThan(earlierIndex);
+  });
+
+  it("renders each skill group under its own label, from skillGroups rather than proficiency tiers (#309 stage 3, action 5)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    expect(html).toContain("Fixture Languages");
+    expect(html).toContain("Fixture Tools");
+    expect(html).toContain("Fixture Expert Skill");
+    expect(html).toContain("Fixture Familiar Skill");
   });
 });
 
@@ -313,6 +383,53 @@ describe("renderCvHtml never leaks real story content (#296)", () => {
 
     for (const needle of needles) {
       expect(normalized).not.toContain(` ${needle} `);
+    }
+  });
+});
+
+// #309 stage 3, action 19: a phrasing guard, not a content guard — the
+// Stage 2 review's #1 finding was that the non-shipped PoC's "stayed
+// experimental" framing, as the CV's very first bullet, was the single
+// most damaging line on the document (section 1, point 3). This never
+// asserts *what* the lead bullet says, only that it can never open with
+// language admitting the work was never deployed — regardless of future
+// wording changes to that bullet or the overlay.
+const NEVER_DEPLOYED_PHRASES = [
+  "never deployed",
+  "stayed experimental",
+  "left as a later team decision",
+];
+
+describe("renderCvHtml never leads with non-shipped-work framing (#309 stage 3, action 19)", () => {
+  it("the real CV's lead bullet, for every variant, never contains 'never deployed', 'stayed experimental', or 'left as a later team decision'", () => {
+    for (const variant of ["general", "ai"] as const) {
+      const view = getCvView(createContentCareerDataRepository(), { variant });
+      for (const item of view.experience) {
+        const leadBullet = item.highlights[0];
+        if (leadBullet === undefined) {
+          continue;
+        }
+        const normalizedLead = leadBullet.toLowerCase();
+        for (const phrase of NEVER_DEPLOYED_PHRASES) {
+          expect(
+            normalizedLead,
+            `variant "${variant}", ${item.company} lead bullet: "${leadBullet}"`,
+          ).not.toContain(phrase);
+        }
+      }
+    }
+  });
+
+  it("the rendered HTML for both variants carries none of the banned phrases anywhere in the Experience section's lead bullets", () => {
+    for (const variant of ["general", "ai"] as const) {
+      const view = getCvView(createContentCareerDataRepository(), { variant });
+      const html = renderCvHtml(view, FIXTURE_OPTIONS).toLowerCase();
+      // A coarse whole-document check backs up the per-bullet one above:
+      // none of these phrases should appear anywhere at all in the
+      // optimized CV — they are interview material, not CV material.
+      for (const phrase of NEVER_DEPLOYED_PHRASES) {
+        expect(html, `variant "${variant}"`).not.toContain(phrase);
+      }
     }
   });
 });
@@ -398,10 +515,16 @@ describe("renderCvHtml full mode (#309 stage 1)", () => {
   });
 
   it("renders the real CV view built with includeSummary/includeStories: every real story's title/situation/task/actions/results appears (reflection is deliberately not part of CvStoryView, so it's excluded here too)", () => {
+    // #309 stage 1's "everything on the table" full projection also
+    // disables the CV-only overlay (overrides: undefined): a compact-line
+    // role would otherwise collapse out of the "Experience" section and
+    // take its attached stories with it, defeating the whole point of the
+    // unfiltered dump this stage produces for the Stage 2 reviewer.
     const fullView = getCvView(createContentCareerDataRepository(), {
       maxHighlightsPerRole: Number.POSITIVE_INFINITY,
       includeSummary: true,
       includeStories: true,
+      overrides: undefined,
     });
     const html = renderCvHtml(fullView, FIXTURE_OPTIONS);
     const normalized = ` ${normalizeStoryProse(decodeEscapedHtml(html))} `;
