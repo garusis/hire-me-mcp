@@ -1,3 +1,4 @@
+import { chunkCareerData, createContentCareerDataRepository } from "@hire-me-mcp/core";
 import { describe, expect, it } from "vitest";
 import { scoreAnswerAssertions } from "../scorers/answer-assertions.js";
 import { EVAL_CASES } from "./cases.js";
@@ -298,6 +299,29 @@ describe("EVAL_CASES", () => {
     expect(STORY_MANIFEST_CASES.length).toBe(38);
     const baseCaseCount = EVAL_CASES.length - STORY_MANIFEST_CASES.length;
     expect(baseCaseCount).toBe(28);
+  });
+
+  describe("gap-sap-erp replacement (Codex review checkpoint correction, #307)", () => {
+    it("no longer includes gap-sap-erp: story fullstack-labs-sap-migration.json makes 'no mention of SAP or ERP systems anywhere in the corpus' factually false", () => {
+      expect(EVAL_CASES.some((evalCase) => evalCase.id === "gap-sap-erp")).toBe(false);
+    });
+
+    it("replaces it with a genuinely-absent gap-genomics-bioinformatics case aligned with packages/core's corrected absent-topic retrieval set", () => {
+      const replacement = EVAL_CASES.find(
+        (evalCase) => evalCase.id === "gap-genomics-bioinformatics",
+      );
+      expect(replacement).toBeDefined();
+      expect(replacement?.category).toBe("gap");
+      expect(replacement?.gapHonestyDirection).toBe("gap");
+      expect(replacement?.expectedToolCall).toBe("search-career");
+    });
+
+    it("durable corpus-drift guard: the real committed corpus has no genomics/bioinformatics mention anywhere, so a future addition (the same failure mode that invalidated gap-sap-erp) is caught here instead of silently rotting", () => {
+      const repository = createContentCareerDataRepository();
+      const chunks = chunkCareerData(repository.getDataset());
+      const violatingChunks = chunks.filter((chunk) => /genomics|bioinformatics/i.test(chunk.text));
+      expect(violatingChunks).toEqual([]);
+    });
   });
 
   it("carries no private personal data (no email addresses or phone-like digit runs)", () => {

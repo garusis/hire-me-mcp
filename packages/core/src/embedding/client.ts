@@ -60,11 +60,110 @@ function statusCodeOf(error: unknown): number | undefined {
   return typeof candidate === "number" ? candidate : undefined;
 }
 
+const MAX_UNWRAP_DEPTH = 5;
+
+/**
+ * The AI SDK retries a batch of requests internally and, once exhausted,
+ * throws an outer `AI_RetryError` that carries no status code or response
+ * body of its own — the real `APICallError` (with `statusCode`,
+ * `responseBody`, etc.) lives on its `lastError` and/or `errors[]`
+ * properties. This walks those nested properties to find the first error
+ * object exposing a status code, so retryability and provider-delay
+ * inspection see through the wrapper. Bounded by depth and a `seen` set so a
+ * cyclic or malformed nested shape can't cause unbounded recursion.
+ */
+function unwrapProviderError(error: unknown, seen: Set<unknown> = new Set(), depth = 0): unknown {
+  if (typeof error !== "object" || error === null) return error;
+  if (statusCodeOf(error) !== undefined) return error;
+  if (seen.has(error) || depth >= MAX_UNWRAP_DEPTH) return error;
+  seen.add(error);
+
+  const lastError = (error as { lastError?: unknown }).lastError;
+  if (typeof lastError === "object" && lastError !== null) {
+    const resolved = unwrapProviderError(lastError, seen, depth + 1);
+    if (statusCodeOf(resolved) !== undefined) return resolved;
+  }
+
+  const errors = (error as { errors?: unknown }).errors;
+  if (Array.isArray(errors)) {
+    for (const nested of errors) {
+      const resolved = unwrapProviderError(nested, seen, depth + 1);
+      if (statusCodeOf(resolved) !== undefined) return resolved;
+    }
+  }
+
+  return error;
+}
+
 /** Rate limits (429) and server-side transient errors (5xx) are worth retrying; anything else isn't. */
 function isRetryable(error: unknown): boolean {
-  const status = statusCodeOf(error);
+  const status = statusCodeOf(unwrapProviderError(error));
   if (status === 429) return true;
   return status !== undefined && status >= 500 && status < 600;
+}
+
+/** Parses a protobuf duration string (`"47s"`, `"1.5s"`) into milliseconds; `undefined` if malformed. */
+function parseProtobufDurationMs(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const match = /^(\d+(?:\.\d+)?)s$/.exec(value.trim());
+  if (!match?.[1]) return undefined;
+  const seconds = Number(match[1]);
+  if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+  return Math.round(seconds * 1000);
+}
+
+/** Reads a `retry-after` response header (numeric seconds) as milliseconds; `undefined` if absent or malformed. */
+function retryDelayFromHeaders(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const headers = (error as { responseHeaders?: unknown }).responseHeaders;
+  if (typeof headers !== "object" || headers === null) return undefined;
+  const raw =
+    (headers as Record<string, unknown>)["retry-after"] ??
+    (headers as Record<string, unknown>)["Retry-After"];
+  if (typeof raw !== "string") return undefined;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+  return Math.round(seconds * 1000);
+}
+
+/**
+ * Reads Google's `RetryInfo.retryDelay` out of a 429 response body — the
+ * real AI SDK / Gemini error shape:
+ * `{ error: { details: [{ "@type": ".../google.rpc.RetryInfo", retryDelay: "47s" }] } }`.
+ * Tolerant by design: an unparseable or differently-shaped body yields
+ * `undefined` rather than throwing, so the caller falls back to backoff.
+ */
+function retryDelayFromBody(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const body = (error as { responseBody?: unknown }).responseBody;
+  if (typeof body !== "string") return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  const details = (parsed as { error?: { details?: unknown } } | null)?.error?.details;
+  if (!Array.isArray(details)) return undefined;
+  for (const detail of details) {
+    const delayMs = parseProtobufDurationMs(
+      (detail as { retryDelay?: unknown } | null)?.retryDelay,
+    );
+    if (delayMs !== undefined) return delayMs;
+  }
+  return undefined;
+}
+
+/**
+ * The provider's own "come back in N ms" hint for a 429 — a `retry-after`
+ * response header first, then Gemini's `RetryInfo.retryDelay` body detail.
+ * `undefined` when the error isn't a 429 or carries no parseable hint;
+ * callers fall back to exponential backoff in that case.
+ */
+function providerRetryDelayMs(error: unknown): number | undefined {
+  const resolved = unwrapProviderError(error);
+  if (statusCodeOf(resolved) !== 429) return undefined;
+  return retryDelayFromHeaders(resolved) ?? retryDelayFromBody(resolved);
 }
 
 function chunk<T>(items: readonly T[], size: number): T[][] {
@@ -123,7 +222,10 @@ async function embedBatchWithRetry(
       if (!isRetryable(error) || exhausted) {
         throw toEmbeddingFailure(error, attempt, exhausted);
       }
-      await sleep(delay);
+      const providerDelayMs = providerRetryDelayMs(error);
+      await sleep(
+        providerDelayMs !== undefined && providerDelayMs > delay ? providerDelayMs : delay,
+      );
       delay *= 2;
     }
   }

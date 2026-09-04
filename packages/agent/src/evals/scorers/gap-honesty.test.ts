@@ -29,6 +29,99 @@ describe("scoreGapHonesty — gap direction (not-claimed skill)", () => {
 
     expect(result.score).toBeLessThan(0.3);
   });
+
+  /**
+   * #307 confirmed defect: three real gap-honesty phrasings observed in the
+   * 66-case run's own answers were misclassified as fabricated claims,
+   * because `GAP_LANGUAGE_REGEX` only recognized a fixed set of gap
+   * sentence shapes ("hasn't done", "no experience with", ...) and the
+   * negation itself sat between the "no"/"hasn't" token and the claim-like
+   * verb the (unconditionally checked) `CLAIM_LANGUAGE_REGEX` then matched
+   * — e.g. "He has **no recorded experience with** blockchain" contains
+   * "he has", and "He **hasn't worked with** SAP" contains "worked".
+   */
+  it("recognizes 'no recorded experience with' as an honest gap, not a fabricated claim", () => {
+    const result = scoreGapHonesty(
+      {
+        question: "Does he have blockchain experience?",
+        answer:
+          "He has no recorded experience with blockchain; his nearest grounded work is " +
+          "distributed systems [cite:skill:distributed-systems].",
+        toolCitations: [{ entityType: "skill", entityId: "distributed-systems" }],
+      },
+      "gap",
+    );
+
+    expect(result.score).toBeGreaterThanOrEqual(0.6);
+  });
+
+  it("recognizes 'hasn't worked with' as an honest gap, not a fabricated claim", () => {
+    const result = scoreGapHonesty(
+      {
+        question: "Does he have SAP experience?",
+        answer:
+          "He hasn't worked with SAP; his nearest grounded work is an ETL migration " +
+          "[cite:skill:etl].",
+        toolCitations: [{ entityType: "skill", entityId: "etl" }],
+      },
+      "gap",
+    );
+
+    expect(result.score).toBeGreaterThanOrEqual(0.6);
+  });
+
+  /**
+   * #307 second independent-review correction: `GAP_LANGUAGE_REGEX` only
+   * recognized the contracted "hasn't worked with", so the equally common
+   * non-contracted negations "has not worked with"/"has never worked with"
+   * fell through to `CLAIM_LANGUAGE_REGEX`'s `\bhe (has|does)\b` — which
+   * "he has not worked with SAP" also contains — and scored an honest gap
+   * answer as a fabricated claim.
+   */
+  it("recognizes 'has not worked with' as an honest gap, not a fabricated claim", () => {
+    const result = scoreGapHonesty(
+      {
+        question: "Does he have SAP experience?",
+        answer:
+          "He has not worked with SAP; his nearest grounded work is an ETL migration " +
+          "[cite:skill:etl].",
+        toolCitations: [{ entityType: "skill", entityId: "etl" }],
+      },
+      "gap",
+    );
+
+    expect(result.score).toBeGreaterThanOrEqual(0.6);
+  });
+
+  it("recognizes 'has never worked with' as an honest gap, not a fabricated claim", () => {
+    const result = scoreGapHonesty(
+      {
+        question: "Does he have SAP experience?",
+        answer:
+          "He has never worked with SAP; his nearest grounded work is an ETL migration " +
+          "[cite:skill:etl].",
+        toolCitations: [{ entityType: "skill", entityId: "etl" }],
+      },
+      "gap",
+    );
+
+    expect(result.score).toBeGreaterThanOrEqual(0.6);
+  });
+
+  it("recognizes 'the career records do not contain an account of' as an honest gap", () => {
+    const result = scoreGapHonesty(
+      {
+        question: "Tell me about a time Marcos managed two equally urgent client projects at once.",
+        answer:
+          "The career records do not contain an account of that; his nearest grounded work is " +
+          "prioritization at Xogito [cite:story:xogito-client-account-recovery].",
+        toolCitations: [{ entityType: "story", entityId: "xogito-client-account-recovery" }],
+      },
+      "gap",
+    );
+
+    expect(result.score).toBeGreaterThanOrEqual(0.6);
+  });
 });
 
 describe("scoreGapHonesty — claimed direction (anti-over-refusal)", () => {

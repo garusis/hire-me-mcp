@@ -121,4 +121,279 @@ describe("createEmbeddingClient", () => {
 
     await expect(client.embed(["a", "b"])).rejects.toThrow(EmbeddingFailureError);
   });
+
+  it("honors a provider RetryInfo delay (real Gemini 429 body shape) longer than the exponential backoff", async () => {
+    let attempt = 0;
+    const embedBatch = vi.fn(async (batch: readonly string[]) => {
+      attempt += 1;
+      if (attempt === 1) {
+        throw Object.assign(new Error("rate limited"), {
+          statusCode: 429,
+          responseBody: JSON.stringify({
+            error: {
+              details: [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "47s" }],
+            },
+          }),
+        });
+      }
+      return batch.map((_, index) => fakeVector(index));
+    });
+    const sleep = vi.fn(async () => {});
+
+    const client = createEmbeddingClient({
+      embedBatch,
+      maxRetries: 3,
+      initialDelayMs: 500,
+      sleep,
+    });
+    await client.embed(["x"]);
+
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(47_000);
+  });
+
+  it("honors a provider retry-after header longer than the exponential backoff", async () => {
+    let attempt = 0;
+    const embedBatch = vi.fn(async (batch: readonly string[]) => {
+      attempt += 1;
+      if (attempt === 1) {
+        throw Object.assign(new Error("rate limited"), {
+          statusCode: 429,
+          responseHeaders: { "retry-after": "10" },
+        });
+      }
+      return batch.map((_, index) => fakeVector(index));
+    });
+    const sleep = vi.fn(async () => {});
+
+    const client = createEmbeddingClient({
+      embedBatch,
+      maxRetries: 3,
+      initialDelayMs: 500,
+      sleep,
+    });
+    await client.embed(["x"]);
+
+    expect(sleep).toHaveBeenCalledWith(10_000);
+  });
+
+  it("falls back to exponential backoff when the provider delay is shorter than it", async () => {
+    let attempt = 0;
+    const embedBatch = vi.fn(async (batch: readonly string[]) => {
+      attempt += 1;
+      if (attempt === 1) {
+        throw Object.assign(new Error("rate limited"), {
+          statusCode: 429,
+          responseBody: JSON.stringify({
+            error: {
+              details: [
+                { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "0.1s" },
+              ],
+            },
+          }),
+        });
+      }
+      return batch.map((_, index) => fakeVector(index));
+    });
+    const sleep = vi.fn(async () => {});
+
+    const client = createEmbeddingClient({
+      embedBatch,
+      maxRetries: 3,
+      initialDelayMs: 500,
+      sleep,
+    });
+    await client.embed(["x"]);
+
+    expect(sleep).toHaveBeenCalledWith(500);
+  });
+
+  it("falls back to exponential backoff when no provider delay is present", async () => {
+    let attempt = 0;
+    const embedBatch = vi.fn(async (batch: readonly string[]) => {
+      attempt += 1;
+      if (attempt === 1) {
+        throw Object.assign(new Error("rate limited"), { statusCode: 429 });
+      }
+      return batch.map((_, index) => fakeVector(index));
+    });
+    const sleep = vi.fn(async () => {});
+
+    const client = createEmbeddingClient({
+      embedBatch,
+      maxRetries: 3,
+      initialDelayMs: 500,
+      sleep,
+    });
+    await client.embed(["x"]);
+
+    expect(sleep).toHaveBeenCalledWith(500);
+  });
+
+  it("unwraps a nested AI_RetryError's lastError to find status and RetryInfo delay", async () => {
+    let attempt = 0;
+    const embedBatch = vi.fn(async (batch: readonly string[]) => {
+      attempt += 1;
+      if (attempt === 1) {
+        const apiCallError = Object.assign(new Error("Too Many Requests"), {
+          name: "AI_APICallError",
+          statusCode: 429,
+          responseBody: JSON.stringify({
+            error: {
+              details: [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "11s" }],
+            },
+          }),
+        });
+        const retryError = Object.assign(new Error("Failed after 3 attempts."), {
+          name: "AI_RetryError",
+          reason: "maxRetriesExceeded",
+          lastError: apiCallError,
+          errors: [apiCallError],
+        });
+        throw retryError;
+      }
+      return batch.map((_, index) => fakeVector(index));
+    });
+    const sleep = vi.fn(async () => {});
+
+    const client = createEmbeddingClient({
+      embedBatch,
+      maxRetries: 3,
+      initialDelayMs: 500,
+      sleep,
+    });
+    const result = await client.embed(["x"]);
+
+    expect(result).toHaveLength(1);
+    expect(embedBatch).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(11_000);
+  });
+
+  it("unwraps a nested AI_RetryError's errors array when lastError is absent", async () => {
+    let attempt = 0;
+    const embedBatch = vi.fn(async (batch: readonly string[]) => {
+      attempt += 1;
+      if (attempt === 1) {
+        const apiCallError = Object.assign(new Error("Too Many Requests"), {
+          name: "AI_APICallError",
+          statusCode: 429,
+        });
+        const retryError = Object.assign(new Error("Failed after 3 attempts."), {
+          name: "AI_RetryError",
+          errors: [apiCallError],
+        });
+        throw retryError;
+      }
+      return batch.map((_, index) => fakeVector(index));
+    });
+    const sleep = vi.fn(async () => {});
+
+    const client = createEmbeddingClient({
+      embedBatch,
+      maxRetries: 3,
+      initialDelayMs: 500,
+      sleep,
+    });
+    const result = await client.embed(["x"]);
+
+    expect(result).toHaveLength(1);
+    expect(embedBatch).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not hang on a cyclic nested error shape and treats it as non-retryable", async () => {
+    const embedBatch = vi.fn(async () => {
+      const cyclic = Object.assign(new Error("cyclic"), {
+        name: "AI_RetryError",
+        lastError: undefined as unknown,
+      });
+      cyclic.lastError = cyclic;
+      throw cyclic;
+    });
+
+    const client = createEmbeddingClient({
+      embedBatch,
+      maxRetries: 3,
+      initialDelayMs: 1,
+      sleep: async () => {},
+    });
+
+    await expect(client.embed(["x"])).rejects.toThrow(EmbeddingFailureError);
+    expect(embedBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores malformed nested error shapes (non-object lastError, non-array errors) and falls back to non-retryable", async () => {
+    const malformedNestedCases: Array<() => unknown> = [
+      () => Object.assign(new Error("bad"), { name: "AI_RetryError", lastError: "not an object" }),
+      () => Object.assign(new Error("bad"), { name: "AI_RetryError", errors: "not an array" }),
+      () => Object.assign(new Error("bad"), { name: "AI_RetryError", errors: [null, 42, "x"] }),
+    ];
+
+    for (const makeError of malformedNestedCases) {
+      const embedBatch = vi.fn(async () => {
+        throw makeError();
+      });
+
+      const client = createEmbeddingClient({
+        embedBatch,
+        maxRetries: 3,
+        initialDelayMs: 1,
+        sleep: async () => {},
+      });
+
+      await expect(client.embed(["x"])).rejects.toThrow(EmbeddingFailureError);
+      expect(embedBatch).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("ignores a malformed RetryInfo delay (negative, non-numeric, or unparseable body) and falls back to backoff", async () => {
+    const malformedCases: Array<() => unknown> = [
+      () =>
+        Object.assign(new Error("rate limited"), {
+          statusCode: 429,
+          responseBody: JSON.stringify({
+            error: { details: [{ "@type": "...RetryInfo", retryDelay: "-5s" }] },
+          }),
+        }),
+      () =>
+        Object.assign(new Error("rate limited"), {
+          statusCode: 429,
+          responseBody: JSON.stringify({
+            error: { details: [{ "@type": "...RetryInfo", retryDelay: "not-a-duration" }] },
+          }),
+        }),
+      () =>
+        Object.assign(new Error("rate limited"), {
+          statusCode: 429,
+          responseBody: "not json at all {{{",
+        }),
+      () =>
+        Object.assign(new Error("rate limited"), {
+          statusCode: 429,
+          responseHeaders: { "retry-after": "-3" },
+        }),
+    ];
+
+    for (const makeError of malformedCases) {
+      let attempt = 0;
+      const embedBatch = vi.fn(async (batch: readonly string[]) => {
+        attempt += 1;
+        if (attempt === 1) throw makeError();
+        return batch.map((_, index) => fakeVector(index));
+      });
+      const sleep = vi.fn(async () => {});
+
+      const client = createEmbeddingClient({
+        embedBatch,
+        maxRetries: 3,
+        initialDelayMs: 500,
+        sleep,
+      });
+      await client.embed(["x"]);
+
+      expect(sleep).toHaveBeenCalledWith(500);
+      expect(
+        sleep.mock.calls.every((call: number[]) => call[0] !== undefined && call[0] >= 0),
+      ).toBe(true);
+    }
+  });
 });

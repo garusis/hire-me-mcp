@@ -72,22 +72,47 @@ export interface RetrievalEvalEnvConfig {
  * https://github.com/garusis/hire-me-mcp/actions/runs/32593193386):
  *
  * - Absent-topic top scores: 0.6263, 0.6340, 0.6393, 0.6407, 0.6949
- *   (`absent-blockchain`, the outlier).
+ *   (`absent-blockchain`, the outlier at that time — see below).
  * - Legitimate-query top scores: 0.6466-0.7978, lowest four at 0.6466,
  *   0.6528, 0.6530, 0.6576.
  *
- * Four of the five absent-topic queries are now cleanly separated below
- * every legitimate top score by a real margin (ceiling 0.6407 vs. floor
- * 0.6466). `absent-blockchain` (0.6949) is a genuine remaining outlier —
- * it overlaps the low end of the legitimate range, so no honest threshold
- * makes it pass without also swallowing real matches. `0.644` sits in the
- * gap between the clean absent cluster's ceiling (0.6407) and the
+ * Four of the five absent-topic queries were cleanly separated below every
+ * legitimate top score by a real margin (ceiling 0.6407 vs. floor 0.6466).
+ * `absent-blockchain` (0.6949) was a genuine outlier at that time — it
+ * overlapped the low end of the legitimate range, so no honest threshold
+ * made it pass without also swallowing real matches. `0.644` was set in
+ * the gap between the clean absent cluster's ceiling (0.6407) and the
  * legitimate floor (0.6466) — real margin on both sides — accepting that
  * one known outlier as the "one borderline case out of 5" `thresholds.ts`'s
  * `absentTopicAccuracy: 0.8` floor was deliberately written to tolerate,
  * rather than inflating the threshold past 0.6949 to force a 5/5 that
- * would no longer mean anything (it would also sit below five real
+ * would no longer mean anything (it would also have sat below five real
  * legitimate-query top scores).
+ *
+ * ### Current control set (#307)
+ *
+ * A later real 66-case run (artifact 33848493625) diagnosed BOTH
+ * `absent-blockchain` and `absent-penetration-testing` as scored failures
+ * for the same underlying reason: each shared enough vocabulary/framing
+ * with an unrelated corpus record (a `gaps.json` "No production X
+ * experience" entry for the former; a security-adjacent story added after
+ * #295 for the latter) to land inside the legitimate-query score band.
+ * `./dataset/cases.ts` replaces both with two non-technology-adjacent
+ * domains (genomics/bioinformatics, industrial automation/ICS-OT) chosen
+ * to share no vocabulary with any gap, skill, experience, project, or
+ * story record — see that file's own comment for the full rationale. The
+ * CURRENT `absent-topic` control set is exactly: `absent-genomics-
+ * bioinformatics`, `absent-industrial-control-systems`,
+ * `absent-salesforce-admin`, `absent-embedded-firmware`,
+ * `absent-mainframe-cobol`. `absent-blockchain` is retired, not a
+ * currently-tolerated outlier.
+ *
+ * `0.644` itself is deliberately UNCHANGED by this offline correction: it
+ * remains the committed calibration baseline and is neither lowered nor
+ * re-calibrated from inferred embedding behavior. The metadata changes can
+ * move the current score distribution, so only a fresh real provider run
+ * can confirm whether the present legitimate floor and absent-topic ceiling
+ * still support that baseline.
  */
 const DEFAULTS: RetrievalEvalEnvConfig = {
   topK: 5,
@@ -115,13 +140,22 @@ export function resolveRetrievalEvalEnvConfig(env: CliEnv = process.env): Retrie
   };
 }
 
+function formatLanePart(lane: RetrievalCaseReport["lanes"]["unscoped"]): string {
+  const metricsPart =
+    lane.metrics !== null
+      ? `recall=${lane.metrics.recallAtK.toFixed(2)} precision=${lane.metrics.precisionAtK.toFixed(2)} rr=${lane.metrics.reciprocalRank.toFixed(2)}`
+      : "n/a";
+  return `${lane.lane}[${metricsPart} ids=${lane.retrievedIds.join(",") || "-"}]`;
+}
+
 function formatCaseLine(caseReport: RetrievalCaseReport): string {
   const status = caseReport.passed ? "PASS" : "FAIL";
   const metricsPart =
     caseReport.metrics !== null
       ? `recall=${caseReport.metrics.recallAtK.toFixed(2)} precision=${caseReport.metrics.precisionAtK.toFixed(2)} rr=${caseReport.metrics.reciprocalRank.toFixed(2)}`
       : `expectEmpty=${caseReport.expectEmptyCheck?.passed ?? "?"}`;
-  return `[${status}] ${caseReport.id} (${caseReport.category}) — ${metricsPart}`;
+  const lanesPart = `${formatLanePart(caseReport.lanes.unscoped)} ${formatLanePart(caseReport.lanes.storyScoped)}`;
+  return `[${status}] ${caseReport.id} (${caseReport.category}) scoringLane=${caseReport.scoringLane} — ${metricsPart} — ${lanesPart}`;
 }
 
 /** Render a human-readable per-query pass/fail table for console output. */

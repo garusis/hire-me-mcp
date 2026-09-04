@@ -183,12 +183,22 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
     evalCase.gapHonestyDirection === "n/a"
       ? null
       : scoreGapHonesty(transcript, evalCase.gapHonestyDirection);
+  // #307 second independent-review correction (finding 1): the case's own
+  // acceptable story ids — the same derivation `scoreStoryCompleteness`
+  // already needs below — must reach `scoreToolRouting` too, so its
+  // either-route shortcut can tell "cited an acceptable story" from "cited
+  // any story a tool happened to return."
+  const storyCompletenessRequirement = storyCompletenessRequirementOf(evalCase);
   const toolRouting =
     evalCase.expectedToolCall === undefined
       ? null
       : scoreToolRouting(run.toolCalls ?? [], evalCase.expectedToolCall, {
           expectedCompetencies: evalCase.expectedCompetencies,
           answer: run.answer,
+          acceptableStoryIds:
+            storyCompletenessRequirement.storyIds.length > 0
+              ? storyCompletenessRequirement.storyIds
+              : undefined,
         });
   const answerAssertions =
     evalCase.answerAssertions === undefined
@@ -201,7 +211,6 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
   const expectsStoryCitation =
     (evalCase.answerAssertions?.mustCiteEntity?.length ?? 0) > 0 ||
     (evalCase.answerAssertions?.citationGroups?.length ?? 0) > 0;
-  const storyCompletenessRequirement = storyCompletenessRequirementOf(evalCase);
   const storyCompleteness = expectsStoryCitation
     ? scoreStoryCompleteness(
         { answer: run.answer },
@@ -234,6 +243,11 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
       preferredSourceCompliance,
       factualBoundaryCompliance,
     },
+    // #307 track 2: persist the run's own tool-call trace (name, args,
+    // returned citations, in call order) alongside the scores, so a report
+    // can distinguish a retrieval failure from the model ignoring a
+    // returned result — see ./report.ts's CaseReport.toolTrace doc comment.
+    toolTrace: run.toolCalls ?? [],
   };
 }
 

@@ -92,10 +92,11 @@ const STORY_FACT_ANCHORS: Readonly<Record<string, Readonly<Record<string, RegExp
   "mutual-informal-leadership": {
     situation: /hackathon|stalled/i,
     action: /renounced/i,
-    result: /launched|handed .{0,20}government/i,
+    result: /launch\w*|handed .{0,20}government/i,
   },
   "cross-team-onboarding-framework": {
-    situation: /no established onboarding|no clear person/i,
+    situation:
+      /no established onboarding|no clear person|minimal (?:onboarding )?guidance|absence of (?:an? )?onboarding(?: support)?/i,
     action: /first contact|onboarding buddies/i,
     result: /15 people|adopted/i,
   },
@@ -122,12 +123,12 @@ const STORY_FACT_ANCHORS: Readonly<Record<string, Readonly<Record<string, RegExp
   "house-numbers-secure-public-document-upload": {
     situation: /wordpress|two out of every three/i,
     action: /captcha|rate limiting|hybrid routing/i,
-    result: /complaints? .{0,20}stopped|audit history/i,
+    result: /complaints? .{0,20}stopped|audit (?:history|trail)/i,
   },
   "house-numbers-zod-production-incident": {
     situation: /96 (?:times|restarts)|crash loop|zod/i,
-    action: /contain(?:ed)? the cascade|regression tests?/i,
-    result: /no permanent (?:data )?loss|reprocessed/i,
+    action: /contain\w* the cascad\w*|regression tests?/i,
+    result: /(?:no|without) permanent (?:data )?loss|re-?process\w*/i,
   },
   "house-numbers-vendor-extraction-contract": {
     situation: /never appeared|structured extraction/i,
@@ -142,16 +143,16 @@ const STORY_FACT_ANCHORS: Readonly<Record<string, Readonly<Record<string, RegExp
   "mutual-sustainable-ownership-failure": {
     situation: /hackathon|stalled/i,
     action: /renounced/i,
-    result: /do not consider .{0,20}a success|never recovered shared ownership/i,
+    result: /do(?:es)? not consider .{0,20}a success|never recovered shared ownership/i,
   },
   "rokk3r-sustainable-performance-feedback": {
     situation: /rockstar developer|worked late into the night/i,
-    action: /took a week away|communicating capacity/i,
-    result: /quality and working rhythm restored|mvp successfully/i,
+    action: /took a week away|communicat\w* capacity/i,
+    result: /(?:quality and )?working rhythm restored|mvp successfully/i,
   },
   "belatrix-destructive-deployment-accountability": {
     situation: /dynamodb|shared development environment/i,
-    action: /reported it|restricted the script/i,
+    action: /report\w*\s+(?:it|the incident)|restrict\w* the script/i,
     result: /rebuilt trust|access was restored/i,
   },
   "house-numbers-cross-service-debugging-skill": {
