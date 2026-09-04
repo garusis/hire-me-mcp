@@ -559,14 +559,16 @@ the hybrid retrieval policy the `search-career` tool (see above) and the
 `retrievalPolicy` prompt section add. All eight are copied verbatim from
 `packages/core`'s own `src/eval-retrieval/dataset/cases.ts` fuzzy/
 cross-cutting/absent-topic entries — already-vetted, public-facts-only
-phrasing #41 committed — so both eval suites agree on what "a fuzzy
-question about him" sounds like:
+phrasing #41 committed. Since #307, the agent suite keeps blockchain as an
+answer-honesty case while the retrieval suite uses less semantically adjacent
+negative controls; both suites use genomics/bioinformatics instead of the
+now-invalid SAP/ERP absence claim:
 
 - **Three RAG-grounded (`rag-*`)** — fuzzy/cross-cutting questions with no
   literal wording overlap against the corpus (event-driven architecture,
   combining full-stack with DevOps, taking an AI feature to production).
   `category: "grounded"`, `expectedToolCall: "search-career"`.
-- **Two RAG-grounded absent-topic (`gap-blockchain`, `gap-sap-erp`)** —
+- **Two RAG-grounded absent-topic (`gap-blockchain`, `gap-genomics-bioinformatics`)** —
   plausible recruiter questions about topics genuinely absent from the
   ENTIRE corpus, not just the curated `gaps.json` list (mirroring #41's own
   `absent-topic` category). `category: "gap"`,
@@ -648,7 +650,7 @@ EVAL_CASE_IDS=grounded-nodejs-experience pnpm eval:agent
 
 Requires a real `GOOGLE_GENERATIVE_AI_API_KEY` in your environment (the local `.env`'s value is
 picked up automatically the same way the rest of this package resolves its provider — see
-"Provider abstraction" above), and — since #75, for the `rag-*`/`gap-blockchain`/`gap-sap-erp`
+"Provider abstraction" above), and — since #75, for the `rag-*`/`gap-blockchain`/`gap-genomics-bioinformatics`
 cases to exercise the real `search-career` tool rather than scoring a typed "unavailable" result —
 a real `DATABASE_URL` (the local `.env`'s value is valid; see the root README for how to point it
 at your own or a shared Neon branch). The command prints a summary to stdout and writes the full
