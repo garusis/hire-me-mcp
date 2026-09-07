@@ -72,11 +72,19 @@ describe("GOLDEN_QUERIES", () => {
       expect(GOLDEN_QUERIES.some((entry) => entry.id === "absent-sap-erp")).toBe(false);
     });
 
-    it("replaces it with a genuinely-absent absent-mainframe-cobol negative control", () => {
-      const entry = GOLDEN_QUERIES.find((candidate) => candidate.id === "absent-mainframe-cobol");
+    it("no longer includes the stale absent-mainframe-cobol case: the post-fix provider run (33857016367, comment 5538575047) scored it a false positive (SAP migration story 0.68800, gap:dotnet 0.66693) as technology/modernization-adjacent vocabulary", () => {
+      expect(GOLDEN_QUERIES.some((entry) => entry.id === "absent-mainframe-cobol")).toBe(false);
+    });
+
+    it("replaces it with a genuinely remote, nontechnical absent-veterinary-surgery negative control (#307 correction, comment 5538575047)", () => {
+      const entry = GOLDEN_QUERIES.find(
+        (candidate) => candidate.id === "absent-veterinary-surgery",
+      );
       expect(entry).toBeDefined();
       expect(entry?.category).toBe("absent-topic");
-      expect(entry?.distinguishingTerms).toEqual(expect.arrayContaining(["mainframe", "cobol"]));
+      expect(entry?.distinguishingTerms).toEqual(
+        expect.arrayContaining(["veterinary", "animal surgery"]),
+      );
     });
 
     it("no longer includes absent-blockchain: the real 66-case artifact (33848493625) scored it a known failure (gap:dotnet 0.6949 sits above the 0.644 floor), and the 5-case set's 0.8 threshold has no budget left for a second known failure alongside absent-penetration-testing", () => {
@@ -104,6 +112,19 @@ describe("GOLDEN_QUERIES", () => {
       expect(ics?.distinguishingTerms).toEqual(expect.arrayContaining(["scada"]));
     });
 
+    it("reworded absent-genomics-bioinformatics away from 'data pipelines' phrasing (#307 correction, comment 5538575047): the post-fix provider run scored a false positive against project document-extraction-pipeline (0.65417) and skill llms (0.64602) on that shared generic phrase", () => {
+      const genomics = GOLDEN_QUERIES.find(
+        (candidate) => candidate.id === "absent-genomics-bioinformatics",
+      );
+      expect(genomics?.query.toLowerCase()).not.toContain("data pipeline");
+      expect(
+        genomics?.distinguishingTerms?.some((term) => term.toLowerCase().includes("pipeline")),
+      ).toBe(false);
+      expect(genomics?.distinguishingTerms).toEqual(
+        expect.arrayContaining(["genome sequencing", "clinical bioinformatics"]),
+      );
+    });
+
     it("keeps the retrieval-only absent-topic set small and explicit at exactly 5 entries, all non-story", () => {
       const absentTopicEntries = GOLDEN_QUERIES.filter(
         (entry) => entry.category === "absent-topic",
@@ -114,8 +135,8 @@ describe("GOLDEN_QUERIES", () => {
           "absent-embedded-firmware",
           "absent-genomics-bioinformatics",
           "absent-industrial-control-systems",
-          "absent-mainframe-cobol",
           "absent-salesforce-admin",
+          "absent-veterinary-surgery",
         ].sort(),
       );
     });

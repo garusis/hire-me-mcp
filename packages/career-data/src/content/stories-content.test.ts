@@ -148,6 +148,21 @@ describe("real content: the #290 story corpus", () => {
         "mission-over-personal-gain",
       );
     });
+
+    it("X02 reinforcement (#307 post-fix correction, comment 5538575047): the post-fix provider run (33857016367) still ranked mutual-informal-leadership second by only 0.00063 behind mutual-sustainable-ownership-failure, so the unique working-first-version tag is REPLACED (not appended) by mission-over-financial-benefit, retaining mission-over-personal-gain, without changing tag cardinality", () => {
+      const tags = storyById("mutual-informal-leadership").retrievalTags;
+      expect(tags).toContain("mission-over-financial-benefit");
+      expect(tags).toContain("mission-over-personal-gain");
+      expect(tags).not.toContain("working-first-version");
+    });
+
+    it("A01 reinforcement (#307 owner decision after comment 5568959111): the post-fix provider run (33857016367) still ranked house-numbers-deterministic-document-checks second by only 0.00996 behind house-numbers-prompt-platform-migration, so the unique golden-sets tag is REPLACED (not appended) by compact tech-pushback, retaining challenged-preferred-direction and the locked 90-story-chunk boundary without changing tag cardinality", () => {
+      const tags = storyById("house-numbers-deterministic-document-checks").retrievalTags;
+      expect(tags).toContain("tech-pushback");
+      expect(tags).toContain("challenged-preferred-direction");
+      expect(tags).not.toContain("golden-sets");
+      expect(tags).not.toContain("challenged-technical-direction");
+    });
   });
 
   it("covers a useful spread of behavioral competencies as primaries", () => {

@@ -32,9 +32,9 @@
     "deterministic-validation",
     "deterministic-over-ai",
     "challenged-preferred-direction",
+    "tech-pushback",
     "llm-evaluation",
     "user-research",
-    "golden-sets",
     "hallucination-mitigation",
     "bounded-ai",
     "document-analysis"

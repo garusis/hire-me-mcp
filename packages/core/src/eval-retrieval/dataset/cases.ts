@@ -284,18 +284,28 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
   // without lowering it.
   {
     id: "absent-genomics-bioinformatics",
-    query: "Does he have experience with genomics or bioinformatics data pipelines?",
+    query: "Does he have experience with genome sequencing or clinical bioinformatics research?",
     category: "absent-topic",
     expectedSources: [],
     expectEmpty: true,
-    distinguishingTerms: ["genomics", "bioinformatics"],
+    distinguishingTerms: [
+      "genomics",
+      "bioinformatics",
+      "genome sequencing",
+      "clinical bioinformatics",
+    ],
     notes:
-      "No mention of genomics, bioinformatics, or life-sciences data pipelines anywhere in " +
-      "the corpus. Replaces the former absent-blockchain case (#307): both blockchain and " +
-      "the corpus's own gap records ('No production X experience') share enough framing " +
-      "that the real 66-case artifact (33848493625) scored a gap:dotnet false-positive " +
-      "above the absent-topic floor. Life sciences shares no vocabulary with any gap, " +
-      "skill, experience, project, or story record.",
+      "No mention of genomics, bioinformatics, genome sequencing, or clinical bioinformatics " +
+      "research anywhere in the corpus. Reworded (#307 post-fix correction, comment " +
+      "5538575047): the post-fix provider run (33857016367) scored a false positive because " +
+      "the original 'data pipelines' phrasing collided with project " +
+      "document-extraction-pipeline (0.65417) and skill llms (0.64602) on that shared generic " +
+      "phrase. Anchoring to genome sequencing and clinical bioinformatics research vocabulary " +
+      "shares no terms with any gap, skill, experience, project, or story record. Originally " +
+      "replaced the former absent-blockchain case (#307): both blockchain and the corpus's " +
+      "own gap records ('No production X experience') share enough framing that the real " +
+      "66-case artifact (33848493625) scored a gap:dotnet false-positive above the " +
+      "absent-topic floor.",
   },
   {
     id: "absent-industrial-control-systems",
@@ -336,16 +346,22 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
     notes: "No mention of embedded systems, firmware, or C anywhere in the corpus.",
   },
   {
-    id: "absent-mainframe-cobol",
-    query: "Does he have mainframe COBOL modernization experience?",
+    id: "absent-veterinary-surgery",
+    query: "Has he worked in veterinary medicine or performed animal surgery?",
     category: "absent-topic",
     expectedSources: [],
     expectEmpty: true,
-    distinguishingTerms: ["mainframe", "cobol"],
+    distinguishingTerms: ["veterinary", "animal surgery", "veterinary medicine"],
     notes:
-      "No mention of mainframe or COBOL anywhere in the corpus. Replaces the former " +
-      "absent-sap-erp case (#307): the SAP migration story (006) made SAP/ERP no longer a " +
-      "genuinely absent topic once it was authored (#295).",
+      "No mention of veterinary medicine, animal surgery, or clinical veterinary practice " +
+      "anywhere in the corpus. Replaces the former absent-mainframe-cobol case (#307 " +
+      "post-fix correction, comment 5538575047): the post-fix provider run (33857016367) " +
+      "scored it a false positive (fullstack-labs-sap-migration story 0.68800, gap:dotnet " +
+      "0.66693) as technology/modernization-adjacent vocabulary. Veterinary medicine is a " +
+      "genuinely remote, nontechnical domain that shares no vocabulary with any gap, skill, " +
+      "experience, project, or story record. absent-mainframe-cobol itself had replaced the " +
+      "former absent-sap-erp case (#307): the SAP migration story (006) made SAP/ERP no " +
+      "longer a genuinely absent topic once it was authored (#295).",
   },
 
   // ---- behavioral-story eval manifest (#295): the locked 36-case retrieval set ----
