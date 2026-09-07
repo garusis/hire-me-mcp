@@ -1037,4 +1037,139 @@ describe("scoreToolRouting", () => {
       expect(result.score).toBe(0);
     });
   });
+
+  /**
+   * Codex independent review of `a7ea727` (issuecomment-5575583880):
+   * `hasAllCompetencies`'s exact-match check only requires the located
+   * call's `competencies` array to CONTAIN every `expectedCompetencies`
+   * value (`.includes`, a subset check) — it never verifies the array
+   * carries no OTHER, invalid entries. So a mixed filter like
+   * `["risk-management", "SAP"]` against `expectedCompetencies:
+   * ["risk-management"]` satisfies `exactMatch` on the own route
+   * (`scoreListCareerStories`) purely by containment, while the identical
+   * trace scores 0 on the alternate route (`scoreListCareerStoriesAsAlternate`)
+   * because `hasValidCompetencyFilter` correctly rejects "SAP" as
+   * uncontrolled vocabulary — the exact asymmetric repro the review
+   * reported. Separately, when `expectedCompetencies` is undefined/empty
+   * (the alternate route always calls with `undefined`, and an own-route
+   * case may too), the entire competency-filter check was skipped
+   * entirely, so an invalid-only or mixed filter went unchecked on that
+   * path even within the `acceptableStoryIds` behavioral scope. Both
+   * routes must now reject a competencies filter containing any
+   * non-controlled-vocabulary entry, regardless of whether
+   * `expectedCompetencies` is present, while still accepting a genuinely
+   * valid filter (exact or supporting) that retrieves and cites an
+   * acceptable story.
+   */
+  describe("competency-filter controlled-vocabulary validation is symmetric and total, not just an exact-match shortcut (Codex independent review, issuecomment-5575583880)", () => {
+    const sapStoryId = "fullstack-labs-sap-migration";
+    const sapCitation: ReturnedCitation = { entityType: "story", entityId: sapStoryId };
+
+    const table: Array<{
+      name: string;
+      expected: "list-career-stories" | "search-career-story-scoped";
+      expectedCompetencies?: readonly string[];
+      wantScore: 0 | 1;
+    }> = [
+      {
+        name: "own route (expected 'list-career-stories'): a MIXED valid+invalid filter that contains the exact expected value must NOT pass on containment alone",
+        expected: "list-career-stories",
+        expectedCompetencies: ["risk-management"],
+        wantScore: 0,
+      },
+      {
+        name: "alternate route (expected 'search-career-story-scoped'): the identical mixed valid+invalid filter must also score 0 — same trace, same verdict as the own route",
+        expected: "search-career-story-scoped",
+        expectedCompetencies: undefined,
+        wantScore: 0,
+      },
+    ];
+
+    for (const { name, expected, expectedCompetencies, wantScore } of table) {
+      it(name, () => {
+        const result = scoreToolRouting(
+          [
+            call("list-career-stories", { competencies: ["risk-management", "SAP"] }, [
+              sapCitation,
+            ]),
+          ],
+          expected,
+          {
+            expectedCompetencies,
+            acceptableStoryIds: [sapStoryId],
+            answer: `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}]`,
+          },
+        );
+        expect(result.score).toBe(wantScore);
+        if (wantScore === 0) {
+          expect(result.reason).toMatch(/competenc/i);
+        }
+      });
+    }
+
+    it("own route: an invalid-only filter (no valid entries at all) scores 0 even when expectedCompetencies is undefined/empty and the call retrieves and cites an acceptable story — the unchecked-when-undefined gap", () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["SAP"] }, [sapCitation])],
+        "list-career-stories",
+        {
+          expectedCompetencies: undefined,
+          acceptableStoryIds: [sapStoryId],
+          answer: `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}]`,
+        },
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/competenc/i);
+    });
+
+    it("own route: an invalid-only filter scores 0 even with an EMPTY expectedCompetencies array (not just undefined)", () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["SAP"] }, [sapCitation])],
+        "list-career-stories",
+        {
+          expectedCompetencies: [],
+          acceptableStoryIds: [sapStoryId],
+          answer: `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}]`,
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("own route: a genuinely valid supporting-competency filter still scores 1 with expectedCompetencies undefined, when it actually retrieves and cites the acceptable story — the loosened acceptance must survive the tightened check", () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["technical-judgment"] }, [sapCitation])],
+        "list-career-stories",
+        {
+          expectedCompetencies: undefined,
+          acceptableStoryIds: [sapStoryId],
+          answer: `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}]`,
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("own route: with BOTH expectedCompetencies and acceptableStoryIds undefined (outside the behavioral-story scope), the legacy presence-only leniency is preserved and an unvalidated filter that cites the call's own returned story still scores 1", () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["technical-judgment"] }, [sapCitation])],
+        "list-career-stories",
+        {
+          expectedCompetencies: undefined,
+          acceptableStoryIds: undefined,
+          answer: `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}]`,
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("alternate route: an invalid-only filter scores 0 (regression guard — must remain 0 after the fix, same as before)", () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["SAP"] }, [sapCitation])],
+        "search-career-story-scoped",
+        {
+          acceptableStoryIds: [sapStoryId],
+          answer: `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}]`,
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+  });
 });

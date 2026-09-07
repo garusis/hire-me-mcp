@@ -375,6 +375,102 @@ function confirmsAcceptableCitedStory(
   );
 }
 
+/**
+ * Whether `args.competencies` is present and non-empty — regardless of
+ * validity. Used to decide whether a competency-filter check applies at
+ * all: an absent/empty filter (a plain, unfiltered listing) has nothing to
+ * validate, but a present one always does, even when `expectedCompetencies`
+ * is undefined/empty (Codex independent review, issuecomment-5575583880).
+ */
+function hasCompetencyFilter(args: unknown): boolean {
+  if (typeof args !== "object" || args === null) return false;
+  const competencies = (args as Record<string, unknown>).competencies;
+  return Array.isArray(competencies) && competencies.length > 0;
+}
+
+/**
+ * Codex independent review of `a7ea727` (issuecomment-5575583880): the
+ * prior exact-match check (`hasAllCompetencies` alone) only verified the
+ * located call's `competencies` array CONTAINS every `expectedCompetencies`
+ * value — a subset/containment check — never that the array carries no
+ * OTHER, invalid entries. A mixed filter like `["risk-management", "SAP"]`
+ * against `expectedCompetencies: ["risk-management"]` satisfied that exact
+ * match purely by containment, silently letting the uncontrolled "SAP"
+ * entry ride along, while the identical trace correctly scored 0 on the
+ * alternate route because `hasValidCompetencyFilter` rejects it — the
+ * asymmetry the review reproduced. The second bypass: when
+ * `expectedCompetencies` was undefined/empty, this whole check used to be
+ * skipped, so an invalid-only or mixed filter went unvalidated even within
+ * the `acceptableStoryIds` behavioral scope (the alternate route's own
+ * call always passes `expectedCompetencies: undefined`).
+ *
+ * Fixed by making the check unconditional on ANY present competency filter
+ * (`hasCompetencyFilter`, not gated on `expectedCompetencies`), and by
+ * requiring the ENTIRE filter to be controlled vocabulary
+ * (`hasValidCompetencyFilter`) for both the exact-match and
+ * supporting-match paths — an exact match is no longer just "contains the
+ * expected values", it is "contains the expected values AND has no invalid
+ * ones". A valid filter without an exact match still requires a confirmed,
+ * acceptable, cited story (`confirmsAcceptableCitedStory`) to pass, exactly
+ * as before — including failing closed when `acceptableStoryIds` is itself
+ * undefined, since there is then nothing to confirm acceptance against.
+ */
+function competencyFilterViolation(
+  located: ToolCall | undefined,
+  expectedCompetencies: readonly string[] | undefined,
+  answer: string | undefined,
+  acceptableStoryIds: readonly string[] | undefined,
+  trace: string,
+): ScoreResult | null {
+  const hasExpected = expectedCompetencies !== undefined && expectedCompetencies.length > 0;
+  const filterPresent = located !== undefined && hasCompetencyFilter(located.args);
+
+  if (!filterPresent) {
+    if (!hasExpected) return null;
+    return {
+      score: clampScore(0),
+      reason:
+        `Expected the list-career-stories call's competencies argument to contain ` +
+        `${JSON.stringify(expectedCompetencies)}, or a valid controlled-vocabulary ` +
+        "competency filter that retrieves and cites an acceptable story; tool-call trace " +
+        `was: ${trace}.`,
+    };
+  }
+
+  // Outside the behavioral-story scope this decision governs — neither an
+  // exact-label expectation nor a known set of acceptable stories to
+  // confirm against — the pre-existing, more lenient presence-only
+  // behavior stays: `confirmsAcceptableCitedStory`'s own later check
+  // already treats `acceptableStoryIds === undefined` as "no restriction
+  // known", and nothing here should be stricter than that for a case that
+  // never opted into either scope.
+  if (!hasExpected && acceptableStoryIds === undefined) return null;
+
+  const args = located?.args;
+  const filterIsValidVocabulary = hasValidCompetencyFilter(args);
+  const exactMatch =
+    hasExpected && filterIsValidVocabulary && hasAllCompetencies(args, expectedCompetencies);
+  const validSupportingMatch =
+    !exactMatch &&
+    filterIsValidVocabulary &&
+    acceptableStoryIds !== undefined &&
+    confirmsAcceptableCitedStory(located?.citations, answer, acceptableStoryIds);
+
+  if (exactMatch || validSupportingMatch) return null;
+
+  return {
+    score: clampScore(0),
+    reason: hasExpected
+      ? `Expected the list-career-stories call's competencies argument to contain ` +
+        `${JSON.stringify(expectedCompetencies)} with no other, invalid entries, or a valid ` +
+        "controlled-vocabulary competency filter that retrieves and cites an acceptable " +
+        `story; tool-call trace was: ${trace}.`
+      : "The list-career-stories call's competencies argument must be a valid, " +
+        "controlled-vocabulary competency filter that retrieves and cites an acceptable " +
+        `story; tool-call trace was: ${trace}.`,
+  };
+}
+
 function scoreListCareerStories(
   toolCalls: readonly ToolCall[],
   expectedCompetencies: readonly string[] | undefined,
@@ -404,34 +500,14 @@ function scoreListCareerStories(
 
   const located = toolCalls[listCareerStoriesIndex];
 
-  // #307 owner-approved decision (issuecomment-5575463218): an exact match
-  // to `expectedCompetencies` always satisfies this check, but a valid
-  // controlled-vocabulary competency filter (`hasValidCompetencyFilter`) —
-  // e.g. a story's supporting competency instead of its primary one — also
-  // satisfies it PROVIDED it actually retrieves and cites the case's own
-  // acceptable story (`acceptableStoryIds`, `confirmsAcceptableCitedStory`).
-  // Without a confirmed, acceptable citation to fall back on, the exact
-  // match stays required, same as before this decision.
-  if (expectedCompetencies !== undefined && expectedCompetencies.length > 0) {
-    const exactMatch =
-      located !== undefined && hasAllCompetencies(located.args, expectedCompetencies);
-    const validSupportingMatch =
-      !exactMatch &&
-      located !== undefined &&
-      hasValidCompetencyFilter(located.args) &&
-      acceptableStoryIds !== undefined &&
-      confirmsAcceptableCitedStory(located.citations, answer, acceptableStoryIds);
-    if (!exactMatch && !validSupportingMatch) {
-      return {
-        score: clampScore(0),
-        reason:
-          `Expected the list-career-stories call's competencies argument to contain ` +
-          `${JSON.stringify(expectedCompetencies)}, or a valid controlled-vocabulary ` +
-          "competency filter that retrieves and cites an acceptable story; tool-call trace " +
-          `was: ${trace}.`,
-      };
-    }
-  }
+  const competencyViolation = competencyFilterViolation(
+    located,
+    expectedCompetencies,
+    answer,
+    acceptableStoryIds,
+    trace,
+  );
+  if (competencyViolation) return competencyViolation;
 
   if (citesUnreturnedStory(answer, located?.citations)) {
     return {
