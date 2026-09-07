@@ -434,11 +434,9 @@ describe("runIngest", () => {
     expect(summary.unchanged).toBe(0);
   });
 
-  it("aborts with a non-zero-exit-signaling error and performs no writes when embedding permanently fails", async () => {
+  it("aborts with a non-zero-exit-signaling error when embedding permanently fails", async () => {
     const repository = createInMemoryCareerDataRepository(fakeDataset(["a", "b"]));
     const store = fakeStore();
-    const upsertSpy = vi.spyOn(store, "upsertMany");
-    const deleteSpy = vi.spyOn(store, "deleteMany");
     const embedder = {
       async embed(): Promise<number[][]> {
         throw new Error("permanent embedding failure");
@@ -448,8 +446,185 @@ describe("runIngest", () => {
     await expect(
       runIngest({ repository, chunker: fakeChunker, embedder, store, modelId: MODEL_ID }),
     ).rejects.toThrow("permanent embedding failure");
-    expect(upsertSpy).not.toHaveBeenCalled();
+  });
+
+  it("#317: persists batches completed before a later batch's embedding failure, and writes nothing after it", async () => {
+    // Three new chunks, persisted one at a time (persistBatchSize: 1) — "b"
+    // fails to embed, so "a" (embedded and persisted first) should already
+    // be in the store, while "b" and "c" (never embedded) should not be.
+    const repository = createInMemoryCareerDataRepository(fakeDataset(["a", "b", "c"]));
+    const store = fakeStore();
+    const embedCalls: string[][] = [];
+    const embedder = {
+      async embed(texts: readonly string[]): Promise<number[][]> {
+        embedCalls.push([...texts]);
+        if (texts[0]?.includes("Body for b")) {
+          throw new Error("permanent embedding failure on b");
+        }
+        return texts.map((_, i) => [i]);
+      },
+    };
+
+    await expect(
+      runIngest({
+        repository,
+        chunker: fakeChunker,
+        embedder,
+        store,
+        modelId: MODEL_ID,
+        persistBatchSize: 1,
+      }),
+    ).rejects.toThrow("permanent embedding failure on b");
+
+    expect(embedCalls).toEqual([["Body for a"], ["Body for b"]]);
+    expect(store.rows.has("chunk-a")).toBe(true);
+    expect(store.rows.has("chunk-b")).toBe(false);
+    expect(store.rows.has("chunk-c")).toBe(false);
+    expect(store.rows.size).toBe(1);
+  });
+
+  it("#317: does not call deleteMany when embedding fails partway through", async () => {
+    const repository = createInMemoryCareerDataRepository(fakeDataset(["a", "b"]));
+    const store = fakeStore([
+      { id: "chunk-stale", contentHash: "hash-stale", embeddingModel: MODEL_ID },
+    ]);
+    const deleteSpy = vi.spyOn(store, "deleteMany");
+    const embedder = {
+      async embed(): Promise<number[][]> {
+        throw new Error("permanent embedding failure");
+      },
+    };
+
+    await expect(
+      runIngest({
+        repository,
+        chunker: fakeChunker,
+        embedder,
+        store,
+        modelId: MODEL_ID,
+        persistBatchSize: 1,
+      }),
+    ).rejects.toThrow("permanent embedding failure");
+
     expect(deleteSpy).not.toHaveBeenCalled();
-    expect(store.rows.size).toBe(0);
+    // The stale row (no longer in the fresh dataset) is still present,
+    // since deletion never ran.
+    expect(store.rows.has("chunk-stale")).toBe(true);
+  });
+
+  it("#317: embeddingCalls counts the number of batches actually embedded, not the chunk count", async () => {
+    const repository = createInMemoryCareerDataRepository(fakeDataset(["a", "b", "c", "d", "e"]));
+    const store = fakeStore();
+    const embedder = fakeEmbedder();
+
+    const summary = await runIngest({
+      repository,
+      chunker: fakeChunker,
+      embedder,
+      store,
+      modelId: MODEL_ID,
+      persistBatchSize: 2,
+    });
+
+    // 5 chunks / batch size 2 -> batches of [2, 2, 1] = 3 batches.
+    expect(summary.embeddingCalls).toBe(3);
+    expect(store.upsertCalls).toBe(5);
+    expect(store.rows.size).toBe(5);
+  });
+
+  it("#317: upsertMany is called once per batch as it completes, in order", async () => {
+    const repository = createInMemoryCareerDataRepository(fakeDataset(["a", "b", "c"]));
+    const store = fakeStore();
+    const upsertBatches: string[][] = [];
+    const originalUpsertMany = store.upsertMany.bind(store);
+    store.upsertMany = async (chunks) => {
+      upsertBatches.push(chunks.map((c) => c.id));
+      await originalUpsertMany(chunks);
+    };
+    const embedder = fakeEmbedder();
+
+    await runIngest({
+      repository,
+      chunker: fakeChunker,
+      embedder,
+      store,
+      modelId: MODEL_ID,
+      persistBatchSize: 1,
+    });
+
+    expect(upsertBatches).toEqual([["chunk-a"], ["chunk-b"], ["chunk-c"]]);
+  });
+
+  it("#317: onProgress reports cumulative persisted count and the total to embed, once per batch", async () => {
+    const repository = createInMemoryCareerDataRepository(fakeDataset(["a", "b", "c", "d", "e"]));
+    const store = fakeStore();
+    const embedder = fakeEmbedder();
+    const progressCalls: { persisted: number; total: number }[] = [];
+
+    await runIngest({
+      repository,
+      chunker: fakeChunker,
+      embedder,
+      store,
+      modelId: MODEL_ID,
+      persistBatchSize: 2,
+      onProgress: (info) => progressCalls.push(info),
+    });
+
+    // 5 chunks, batches of [2, 2, 1] -> cumulative persisted after each.
+    expect(progressCalls).toEqual([
+      { persisted: 2, total: 5 },
+      { persisted: 4, total: 5 },
+      { persisted: 5, total: 5 },
+    ]);
+  });
+
+  it("#317: onProgress is not called when there's nothing to embed", async () => {
+    const repository = createInMemoryCareerDataRepository(fakeDataset(["a", "b"]));
+    const chunks = fakeChunker(repository.getDataset());
+    const store = fakeStore(
+      chunks.map((c) => ({ id: c.id, contentHash: c.contentHash, embeddingModel: MODEL_ID })),
+    );
+    const embedder = fakeEmbedder();
+    const onProgress = vi.fn();
+
+    await runIngest({
+      repository,
+      chunker: fakeChunker,
+      embedder,
+      store,
+      modelId: MODEL_ID,
+      onProgress,
+    });
+
+    expect(onProgress).not.toHaveBeenCalled();
+  });
+
+  it("#317: throws for a zero or negative persistBatchSize instead of hanging", async () => {
+    const repository = createInMemoryCareerDataRepository(fakeDataset(["a", "b"]));
+    const store = fakeStore();
+    const embedder = fakeEmbedder();
+
+    await expect(
+      runIngest({
+        repository,
+        chunker: fakeChunker,
+        embedder,
+        store,
+        modelId: MODEL_ID,
+        persistBatchSize: 0,
+      }),
+    ).rejects.toThrow(/persistBatchSize/);
+
+    await expect(
+      runIngest({
+        repository,
+        chunker: fakeChunker,
+        embedder,
+        store,
+        modelId: MODEL_ID,
+        persistBatchSize: -1,
+      }),
+    ).rejects.toThrow(/persistBatchSize/);
   });
 });

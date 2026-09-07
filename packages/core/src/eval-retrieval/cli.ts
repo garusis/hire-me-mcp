@@ -27,6 +27,8 @@ import { createDbClient } from "../db/client.js";
 import { loadDbConfig, MissingDatabaseUrlError } from "../db/config.js";
 import { loadEmbeddingApiKey, MissingEmbeddingApiKeyError } from "../embedding/env.js";
 import { createGoogleEmbeddingClient } from "../embedding/google-client.js";
+import { createPacedEmbedder, InvalidPacingOptionsError } from "../embedding/pacing.js";
+import { InvalidEmbedPacingError, loadEmbedMaxTextsPerMinute } from "../embedding/pacing-env.js";
 import { createSearchCareer } from "../search-career.js";
 import { GOLDEN_QUERIES } from "./dataset/index.js";
 import type { GoldenQuery } from "./dataset/schema.js";
@@ -195,12 +197,22 @@ async function main(): Promise<void> {
   const envConfig = resolveRetrievalEvalEnvConfig();
   const dbConfig = loadDbConfig();
   const apiKey = loadEmbeddingApiKey();
+  const maxTextsPerMinute = loadEmbedMaxTextsPerMinute();
 
   const client = createDbClient(dbConfig);
   try {
+    // Each golden query is embedded individually (one text per
+    // `searchCareer` call), but 66+ cases run back to back can still trip
+    // Gemini's free-tier per-minute limit — see #317. `createPacedEmbedder`
+    // tracks the same sliding 60s window across every call on this
+    // instance, so it paces the whole eval run, not just one call.
+    const pacedEmbedder = createPacedEmbedder(
+      createGoogleEmbeddingClient({ apiKey, taskType: "RETRIEVAL_QUERY" }),
+      { maxTextsPerMinute },
+    );
     const searchCareer = createSearchCareer({
       sql: client.sql,
-      embedder: createGoogleEmbeddingClient({ apiKey, taskType: "RETRIEVAL_QUERY" }),
+      embedder: pacedEmbedder,
     });
 
     const exitCode = await runRetrievalEvalCli(
@@ -221,7 +233,12 @@ const isDirectInvocation =
   process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
 if (isDirectInvocation) {
   main().catch((error: unknown) => {
-    if (error instanceof MissingDatabaseUrlError || error instanceof MissingEmbeddingApiKeyError) {
+    if (
+      error instanceof MissingDatabaseUrlError ||
+      error instanceof MissingEmbeddingApiKeyError ||
+      error instanceof InvalidEmbedPacingError ||
+      error instanceof InvalidPacingOptionsError
+    ) {
       console.error(error.message);
     } else {
       console.error("Retrieval eval run failed:", error);

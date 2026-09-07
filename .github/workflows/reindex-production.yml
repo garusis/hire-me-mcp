@@ -124,12 +124,18 @@ jobs:
       # subsequent run with no content change it makes zero embedding
       # calls and zero writes — visible in the summary line this step
       # prints. A failure here (retries exhausted, non-retryable error)
-      # exits non-zero and fails this job — no partial/stale index is ever
-      # left in place, see packages/core/src/ingest/run.ts's docstring for
-      # why ordering (embed everything needed, then write) makes that
-      # guarantee free.
+      # exits non-zero and fails this job. Unlike #52's original guarantee,
+      # a failure partway through is no longer guaranteed to leave zero
+      # writes: `runIngest` now persists each embedded batch as it
+      # completes (#317), so a partial run's progress is durable and
+      # resumable — the next run's fingerprint diff (`ingest/diff.ts`)
+      # skips whatever was already written and only re-spends quota on
+      # what's left. EMBED_MAX_TEXTS_PER_MINUTE (#317) paces embedding
+      # calls so a full ingest (~190 texts) never trips Gemini's free-tier
+      # per-minute limit (100) in the first place.
       - name: Reindex production (pnpm ingest, real embeddings)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+          EMBED_MAX_TEXTS_PER_MINUTE: "80"
         run: pnpm ingest
