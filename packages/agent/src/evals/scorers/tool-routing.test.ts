@@ -896,4 +896,145 @@ describe("scoreToolRouting", () => {
       expect(result.score).toBe(1);
     });
   });
+
+  /**
+   * #307 owner-approved decision (issuecomment-5575463218): "accept a valid
+   * competency filter that actually retrieves and cites an acceptable
+   * story, rather than requiring one exact competency label." Prior
+   * behavior was asymmetric: the case's own `list-career-stories` route
+   * (`scoreListCareerStories`) required an EXACT match to
+   * `expectedCompetencies`, rejecting a real, valid supporting competency
+   * (e.g. `technical-judgment`, one of `fullstack-labs-sap-migration`'s
+   * `supportingCompetencies`, per its story record) even when it correctly
+   * retrieved and cited the case's acceptable story — while the alternate
+   * route (`scoreListCareerStoriesAsAlternate`, used when a
+   * `search-career-story-scoped` case is instead answered via
+   * `list-career-stories` alone) skipped competency validation entirely,
+   * letting an arbitrary, uncontrolled string (e.g. "SAP" itself — a
+   * vendor name the competency taxonomy explicitly excludes, per
+   * `packages/career-data/src/schemas/competency.ts`) through unchecked.
+   * These tests fix that symmetry: both routes now accept an exact match OR
+   * any valid controlled-vocabulary competency filter that goes on to
+   * retrieve and cite an acceptable story, and both reject an
+   * invalid/arbitrary filter even when it happens to retrieve the right
+   * story.
+   */
+  describe("expected-list vs alternate-list competency-filter symmetry (#307 owner-approved decision)", () => {
+    const sapStoryId = "fullstack-labs-sap-migration";
+    const sapCitation: ReturnedCitation = { entityType: "story", entityId: sapStoryId };
+
+    it('positive (own route, SAP supporting competency): scores 1 when the list-career-stories call uses a valid SUPPORTING competency ("technical-judgment") instead of the exact expected primary competency ("risk-management"), and it retrieves and cites the acceptable story', () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["technical-judgment"] }, [sapCitation])],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}]`,
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("positive (equivalent alternate route): the same valid-supporting-competency retrieval scores 1 when list-career-stories is used as the alternate to search-career-story-scoped", () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["technical-judgment"] }, [sapCitation])],
+        "search-career-story-scoped",
+        {
+          acceptableStoryIds: [sapStoryId],
+          answer: `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}]`,
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it('negative (own route, invalid filter): scores 0 when the competencies argument is an arbitrary, uncontrolled string ("SAP" itself, not a competency) even though it retrieves and cites the acceptable story', () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["SAP"] }, [sapCitation])],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}]`,
+        },
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/competenc/i);
+    });
+
+    it('negative (alternate route, invalid filter): scores 0 when list-career-stories (used as the alternate route) filters by an arbitrary string ("SAP") even though it retrieves and cites the acceptable story', () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["SAP"] }, [sapCitation])],
+        "search-career-story-scoped",
+        {
+          acceptableStoryIds: [sapStoryId],
+          answer: `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}]`,
+        },
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/competenc/i);
+    });
+
+    it("negative (missing result evidence): scores 0 when the supporting-competency filter is valid but the call's citations are undefined (unconfirmed) — an unconfirmed result cannot license the loosened acceptance", () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["technical-judgment"] })],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}]`,
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("negative (unrelated citation): scores 0 when the valid supporting-competency filter's confirmed citation is for a story NOT in the case's acceptable story ids", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["technical-judgment"] }, [
+            { entityType: "story", entityId: "unrelated-story" },
+          ]),
+        ],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: "He did something else. [cite:story:unrelated-story]",
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("negative (wrong order): scores 0 when search-career precedes list-career-stories, even with a valid supporting competency and a confirmed acceptable citation", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "financial discrepancy" }),
+          call("list-career-stories", { competencies: ["technical-judgment"] }, [sapCitation]),
+        ],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}]`,
+        },
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/precede|before|first|order/i);
+    });
+
+    it("negative (existing fallback control intact): the loosened supporting-competency path still fails when the answer cites a story the call's own confirmed citations don't include (citesUnreturnedStory safeguard)", () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["technical-judgment"] }, [sapCitation])],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer:
+            `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}] ` +
+            "[cite:story:unreturned-story]",
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+  });
 });

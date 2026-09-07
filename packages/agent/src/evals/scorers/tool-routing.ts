@@ -22,6 +22,7 @@
  * just tool-name presence.
  */
 
+import { competencySchema } from "@hire-me-mcp/core";
 import { parseCitations } from "../../citations.js";
 import type { EvalCaseExpectedToolCall } from "../dataset/schema.js";
 import type { ReturnedCitation, ScoreResult } from "./types.js";
@@ -304,6 +305,28 @@ function hasAllCompetencies(args: unknown, expected: readonly string[]): boolean
 }
 
 /**
+ * Whether `args.competencies` is present, non-empty, and every value is a
+ * member of the controlled competency vocabulary (`@hire-me-mcp/core`'s
+ * `competencySchema`, career-data's own taxonomy, #289). #307 owner-approved
+ * decision (issuecomment-5575463218): "accept a valid competency filter that
+ * actually retrieves and cites an acceptable story, rather than requiring
+ * one exact competency label" — a real supporting competency (not just a
+ * story's primary one) can license the loosened acceptance below, but an
+ * arbitrary, uncontrolled string (a technology/vendor name like "SAP",
+ * which the taxonomy explicitly excludes — see
+ * `packages/career-data/src/schemas/competency.ts`) never does, regardless
+ * of what it happens to retrieve.
+ */
+function hasValidCompetencyFilter(args: unknown): boolean {
+  if (typeof args !== "object" || args === null) return false;
+  const competencies = (args as Record<string, unknown>).competencies;
+  if (!Array.isArray(competencies) || competencies.length === 0) return false;
+  return competencies.every(
+    (value) => typeof value === "string" && competencySchema.safeParse(value).success,
+  );
+}
+
+/**
  * #307 second independent-review correction (finding 1, repro 2): a
  * `list-career-stories` call's own CONFIRMED citations (`call.citations !==
  * undefined` — see `ToolCall`'s doc: `undefined` is "unavailable/unknown"
@@ -381,13 +404,31 @@ function scoreListCareerStories(
 
   const located = toolCalls[listCareerStoriesIndex];
 
+  // #307 owner-approved decision (issuecomment-5575463218): an exact match
+  // to `expectedCompetencies` always satisfies this check, but a valid
+  // controlled-vocabulary competency filter (`hasValidCompetencyFilter`) —
+  // e.g. a story's supporting competency instead of its primary one — also
+  // satisfies it PROVIDED it actually retrieves and cites the case's own
+  // acceptable story (`acceptableStoryIds`, `confirmsAcceptableCitedStory`).
+  // Without a confirmed, acceptable citation to fall back on, the exact
+  // match stays required, same as before this decision.
   if (expectedCompetencies !== undefined && expectedCompetencies.length > 0) {
-    if (located === undefined || !hasAllCompetencies(located.args, expectedCompetencies)) {
+    const exactMatch =
+      located !== undefined && hasAllCompetencies(located.args, expectedCompetencies);
+    const validSupportingMatch =
+      !exactMatch &&
+      located !== undefined &&
+      hasValidCompetencyFilter(located.args) &&
+      acceptableStoryIds !== undefined &&
+      confirmsAcceptableCitedStory(located.citations, answer, acceptableStoryIds);
+    if (!exactMatch && !validSupportingMatch) {
       return {
         score: clampScore(0),
         reason:
           `Expected the list-career-stories call's competencies argument to contain ` +
-          `${JSON.stringify(expectedCompetencies)}; tool-call trace was: ${trace}.`,
+          `${JSON.stringify(expectedCompetencies)}, or a valid controlled-vocabulary ` +
+          "competency filter that retrieves and cites an acceptable story; tool-call trace " +
+          `was: ${trace}.`,
       };
     }
   }
@@ -496,6 +537,23 @@ function scoreListCareerStoriesAsAlternate(
   if (base.score !== 1) return base;
 
   const located = toolCalls.find((call) => call.toolName === "list-career-stories");
+
+  // #307 owner-approved decision (issuecomment-5575463218): the mirror of
+  // the own-route loosening above — the alternate route has no case-specific
+  // `expectedCompetencies` to match, but its competency filter (when
+  // present) must still be a valid, controlled-vocabulary one, never an
+  // arbitrary/uncontrolled string, regardless of what it happens to
+  // retrieve.
+  if (!hasValidCompetencyFilter(located?.args)) {
+    return {
+      score: clampScore(0),
+      reason:
+        "list-career-stories (used as the alternate route) must filter by a valid " +
+        "controlled-vocabulary competency, not an arbitrary/unvalidated string; tool-call " +
+        `trace was: ${traceOf(toolCalls)}.`,
+    };
+  }
+
   if (!confirmsAcceptableCitedStory(located?.citations, answer, acceptableStoryIds)) {
     return {
       score: clampScore(0),
