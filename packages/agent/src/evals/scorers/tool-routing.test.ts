@@ -1235,7 +1235,27 @@ describe("scoreToolRouting", () => {
       ).score;
     }
 
-    describe("legitimate no-filter shapes (own route only — the alternate route's own, separate hasValidCompetencyFilter gate is unrelated to this fix and out of scope)", () => {
+    /**
+     * Codex independent review (issuecomment-5575823109): the previous
+     * version of this matrix labeled the alternate route's no-filter
+     * behavior "out of scope", but the prior independent review already
+     * required legitimate omitted/empty semantics to be consistent across
+     * both routes. `scoreListCareerStoriesAsAlternate`'s own, separate
+     * `hasValidCompetencyFilter` gate (added in a7ea727) unconditionally
+     * required a non-empty, valid array — even for a legitimately
+     * absent/empty filter, which is never an "invalid" filter, just no
+     * filter at all — so an omitted/`[]` competencies argument scored 1 on
+     * the own route but 0 on the alternate route despite an identical,
+     * confirmed, acceptable citation. This block now asserts both routes
+     * score equally for every legitimate no-filter shape, while an actually
+     * invalid PRESENT filter (covered by the malformed-shapes and
+     * dedicated-invalid-filter tests elsewhere in this file) must still
+     * score 0 on both, and a no-filter case with missing/unrelated evidence
+     * must still score 0 on both — the fix narrows the alternate route's
+     * extra gate to reject only present-and-invalid filters, it does not
+     * remove evidence checking.
+     */
+    describe("legitimate no-filter shapes score equally on both routes when an acceptable story is confirmed and cited (Codex independent review, issuecomment-5575823109)", () => {
       const legitimateShapes: Array<{ name: string; value: unknown }> = [
         { name: "competencies key entirely omitted", value: "__absent__" },
         { name: "competencies explicitly undefined", value: undefined },
@@ -1243,14 +1263,69 @@ describe("scoreToolRouting", () => {
       ];
 
       for (const { name, value } of legitimateShapes) {
-        it(`${name}: with expectedCompetencies present, scores 0 (a filter was required and none was supplied)`, () => {
+        it(`${name}: own route — with expectedCompetencies present, scores 0 (a filter was required and none was supplied)`, () => {
           expect(runOwnRoute(value, ["risk-management"])).toBe(0);
         });
 
-        it(`${name}: with expectedCompetencies undefined, scores 1 (no filter required, acceptable story confirmed and cited)`, () => {
+        it(`${name}: own route — with expectedCompetencies undefined, scores 1 (no filter required, acceptable story confirmed and cited)`, () => {
           expect(runOwnRoute(value, undefined)).toBe(1);
         });
+
+        it(`${name}: alternate route — scores 1, matching the own route (no filter to validate, and the acceptable story is confirmed and cited)`, () => {
+          expect(runAlternateRoute(value)).toBe(1);
+        });
       }
+
+      it("own route: an omitted filter still scores 0 when the call's citations are undefined (unconfirmed) — no filter to blame, but no confirmed evidence either", () => {
+        const result = scoreToolRouting([call("list-career-stories", {})], "list-career-stories", {
+          expectedCompetencies: undefined,
+          acceptableStoryIds: [sapStoryId],
+          answer: acceptableAnswer,
+        });
+        expect(result.score).toBe(0);
+      });
+
+      it("alternate route: an omitted filter still scores 0 when the call's citations are undefined (unconfirmed) — the fix must not become an unconditional pass", () => {
+        const result = scoreToolRouting(
+          [call("list-career-stories", {})],
+          "search-career-story-scoped",
+          { acceptableStoryIds: [sapStoryId], answer: acceptableAnswer },
+        );
+        expect(result.score).toBe(0);
+      });
+
+      it("own route: an empty-array filter still scores 0 when the confirmed citation is for an unrelated story, not an acceptable one", () => {
+        const result = scoreToolRouting(
+          [
+            call("list-career-stories", { competencies: [] }, [
+              { entityType: "story", entityId: "unrelated-story" },
+            ]),
+          ],
+          "list-career-stories",
+          {
+            expectedCompetencies: undefined,
+            acceptableStoryIds: [sapStoryId],
+            answer: "He did something else. [cite:story:unrelated-story]",
+          },
+        );
+        expect(result.score).toBe(0);
+      });
+
+      it("alternate route: an empty-array filter still scores 0 when the confirmed citation is for an unrelated story, not an acceptable one", () => {
+        const result = scoreToolRouting(
+          [
+            call("list-career-stories", { competencies: [] }, [
+              { entityType: "story", entityId: "unrelated-story" },
+            ]),
+          ],
+          "search-career-story-scoped",
+          {
+            acceptableStoryIds: [sapStoryId],
+            answer: "He did something else. [cite:story:unrelated-story]",
+          },
+        );
+        expect(result.score).toBe(0);
+      });
     });
 
     describe("malformed-present shapes score 0 on BOTH routes, symmetrically, regardless of expectedCompetencies", () => {

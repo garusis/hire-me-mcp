@@ -637,7 +637,18 @@ function scoreListCareerStoriesAsAlternate(
   // present) must still be a valid, controlled-vocabulary one, never an
   // arbitrary/uncontrolled string, regardless of what it happens to
   // retrieve.
-  if (!hasValidCompetencyFilter(located?.args)) {
+  //
+  // Codex independent review (issuecomment-5575823109): this gate used to
+  // fire unconditionally, so a legitimately ABSENT filter (omitted or `[]`
+  // — the tool's own "no constraint" semantics, per `hasCompetencyFilter`'s
+  // doc) failed `hasValidCompetencyFilter` (which requires a non-empty,
+  // fully valid array) and scored 0 here even though the identical
+  // no-filter trace scores 1 on the own route via `competencyFilterViolation`
+  // above. Gating this check on `hasCompetencyFilter` first restores that
+  // symmetry — a present-but-invalid filter still scores 0, but an absent
+  // one has nothing to validate and falls through to the citation check
+  // below, exactly like the own route.
+  if (hasCompetencyFilter(located?.args) && !hasValidCompetencyFilter(located?.args)) {
     return {
       score: clampScore(0),
       reason:
