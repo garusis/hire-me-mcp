@@ -34,10 +34,7 @@ pnpm-debug.log*
 coverage/
 
 # Eval suite (#72) report artifact — generated per-run, never committed.
-# Includes segmented reports (e.g. eval-report-307-segment1.json) from a
-# split live-eval run (#307) — same generated-artifact convention, not
-# formatted/linted as source.
-packages/agent/eval-report*.json
+packages/agent/eval-report.json
 
 # Playwright
 /test-results/
