@@ -239,6 +239,27 @@ describe("PROMPT_SECTIONS", () => {
     expect(retrievalPolicy?.body).toMatch(/unless the story (?:itself )?(?:says|states)/i);
   });
 
+  /**
+   * #307 Codex independent review of 3a02a25 (bounded correction): a04
+   * remained a functional failure — a question about a practice or tool he
+   * introduced that other engineers adopted was classified as a plain
+   * project lookup, so the model never ran the story-scoped path at all.
+   * The fix must use general intent criteria (actions taken, adoption or
+   * response by others, outcome), not eval question strings or story ids,
+   * and must not force every project question toward stories.
+   */
+  it("treats a question about something he introduced or changed, and whether others adopted or responded to it, as behavioral by general intent — not fixed trigger words — while leaving a pure lookup as an ordinary project/experience lookup (#307 bounded correction)", () => {
+    const retrievalPolicy = PROMPT_SECTIONS.find((section) => section.id === "retrievalPolicy");
+    expect(retrievalPolicy?.body).toMatch(
+      /does\s+not\s+need\s+to\s+(?:name\s+a\s+competency|use\s+the\s+words)/i,
+    );
+    expect(retrievalPolicy?.body).toMatch(/adopt\w*/i);
+    expect(retrievalPolicy?.body).toMatch(/describ\w*\s+an\s+event/i);
+    expect(retrievalPolicy?.body).toMatch(
+      /stays?\s+an\s+ordinary\s+project\s+or\s+experience\s+lookup|stays?\s+a\s+(?:plain|pure|ordinary)\s+(?:project|lookup)/i,
+    );
+  });
+
   it("states an off-topic/adversarial redirect policy", () => {
     const redirectPolicy = PROMPT_SECTIONS.find((section) => section.id === "redirectPolicy");
     expect(redirectPolicy?.body).toMatch(/redirect|decline/i);

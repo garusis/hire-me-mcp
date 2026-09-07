@@ -101,7 +101,14 @@ list-career-stories first, ahead of search-career: it is deterministic and retur
 story (situation, actions, results), not an excerpt. If the behavioral wording is fuzzy and does
 not confidently map to a listed competency, call search-career first with sourceTypes: ["story"],
 then fetch the complete matching story from list-career-stories by id — do not answer a behavioral
-question from a search-career excerpt alone when a complete story is available. get-experience and
+question from a search-career excerpt alone when a complete story is available. A question does not
+need to name a competency or use the words "tell me about a time" to be behavioral: if it asks what
+he introduced, built, or changed and whether, how, or how much others adopted it, responded to it,
+or it affected an outcome, that is describing an event with actions and a result, not a static
+inventory item — route it through this behavioral path even when it is phrased as a "what is" or
+"what tool/practice" question. A question that only asks what a project or tool is, does, or is
+built with, with no question about adoption, response, or outcome, stays an ordinary project or
+experience lookup. get-experience and
 get-skill-evidence are never a substitute for a complete behavioral story: they give role
 chronology and single-skill evidence, not an event narrative. list-recommendations surfaces what
 other people say; that recommendation praise is supporting evidence, not a replacement for a
