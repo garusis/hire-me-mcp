@@ -3,6 +3,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import type { ChatModel } from "../model-provider.js";
 import {
+  apiErrorStatusCode,
   createRateLimitedModel,
   createRequestRateLimiter,
   DEFAULT_EVAL_RPM_LIMIT,
@@ -293,6 +294,39 @@ describe("isRateLimitError", () => {
   it("looks through a wrapping error's cause chain", () => {
     const wrapped = new Error("agent step failed", { cause: rateLimitError({}) });
     expect(isRateLimitError(wrapped)).toBe(true);
+  });
+});
+
+describe("apiErrorStatusCode", () => {
+  it("reads the status code off a wrapped APICallError (#307 C5 — shared with the retry-policy module)", () => {
+    expect(apiErrorStatusCode(rateLimitError({}))).toBe(429);
+    expect(
+      apiErrorStatusCode(
+        new APICallError({
+          message: "Bad Gateway",
+          url: "https://example.test",
+          requestBodyValues: {},
+          statusCode: 502,
+        }),
+      ),
+    ).toBe(502);
+  });
+
+  it("returns undefined for a non-API error or no error at all", () => {
+    expect(apiErrorStatusCode(new Error("plain"))).toBeUndefined();
+    expect(apiErrorStatusCode(undefined)).toBeUndefined();
+  });
+
+  it("looks through a wrapping error's cause chain", () => {
+    const wrapped = new Error("agent step failed", {
+      cause: new APICallError({
+        message: "Bad Gateway",
+        url: "https://example.test",
+        requestBodyValues: {},
+        statusCode: 502,
+      }),
+    });
+    expect(apiErrorStatusCode(wrapped)).toBe(502);
   });
 });
 

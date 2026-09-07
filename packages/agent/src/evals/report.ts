@@ -10,6 +10,7 @@
  */
 
 import type { EvalCaseCategory } from "./dataset/schema.js";
+import type { RetryAttemptRecord } from "./retry.js";
 import type { ToolCall } from "./scorers/tool-routing.js";
 import type { ScoreResult } from "./scorers/types.js";
 import type { ScorerThresholds, Verdict } from "./thresholds.js";
@@ -73,6 +74,24 @@ export interface CaseReport {
   toolTrace?: ToolCall[];
 }
 
+/**
+ * A case that never produced a score because its provider call failed
+ * terminally (#307 C5 — see `./retry.ts`'s module docs for what "terminal"
+ * means: a 429, a permanent error, exhausted transient retries, or a
+ * deadline). Carries the sanitized error info plus the full per-attempt
+ * trace `./retry.ts`'s `onAttempt` recorded for this case's own request(s)
+ * — never a raw provider error object, never a fabricated score.
+ */
+export interface FailedCaseReport {
+  id: string;
+  category: EvalCaseCategory;
+  question: string;
+  statusCode?: number;
+  errorName?: string;
+  errorMessage: string;
+  attempts: RetryAttemptRecord[];
+}
+
 /** A per-scorer aggregate: the mean score over every case the scorer applied to, and how many cases that was. */
 export interface ScorerAggregate {
   mean: number;
@@ -106,6 +125,27 @@ export interface EvalReport {
   totals: EvalTotals & { cases: number };
   thresholds: ScorerThresholds;
   verdict: Verdict;
+  /**
+   * Every case that failed terminally and stopped the suite (#307 C5) —
+   * empty when the run completed every selected case. The runner stops at
+   * the FIRST terminal failure (no continuing suite), so this is at most
+   * one entry today; typed as an array so a report consumer never needs a
+   * separate "did anything fail" check.
+   */
+  failedCases: FailedCaseReport[];
+  /**
+   * Ids of every selected case that never ran because the suite stopped on
+   * a terminal failure before reaching it (#307 C5) — empty on a completed
+   * run. Order matches dataset/selection order.
+   */
+  unexecutedCaseIds: string[];
+  /**
+   * `false` whenever `failedCases` or `unexecutedCaseIds` is non-empty —
+   * i.e. this report reflects a partial run, not the full selected case
+   * set. Deliberately top-level (not folded into `totals`) so existing
+   * totals-shape assertions aren't disturbed by this addition.
+   */
+  complete: boolean;
 }
 
 function mean(values: number[]): number {
@@ -126,8 +166,14 @@ export function buildReport(params: {
   totals: EvalTotals;
   thresholds?: ScorerThresholds;
   generatedAt?: string;
+  /** See {@link EvalReport.failedCases}. Defaults to `[]` (a completed run). */
+  failedCases?: FailedCaseReport[];
+  /** See {@link EvalReport.unexecutedCaseIds}. Defaults to `[]` (a completed run). */
+  unexecutedCaseIds?: string[];
 }): EvalReport {
   const thresholds = params.thresholds ?? EVAL_THRESHOLDS;
+  const failedCases = params.failedCases ?? [];
+  const unexecutedCaseIds = params.unexecutedCaseIds ?? [];
   const aggregates = {
     groundedness: aggregate(params.cases.map((c) => c.scores.groundedness)),
     gapHonesty: aggregate(params.cases.map((c) => c.scores.gapHonesty)),
@@ -143,6 +189,67 @@ export function buildReport(params: {
     ),
   };
 
+  const scoreVerdict = evaluateVerdict(
+    {
+      groundedness: aggregates.groundedness.mean,
+      gapHonesty: aggregates.gapHonesty.mean,
+      relevance: aggregates.relevance.mean,
+      // Only fed into the verdict when at least one case actually asserted
+      // routing this run — an unset/zero-count aggregate must never be
+      // compared against the threshold as if it were a real 0 score (see
+      // ./thresholds.ts's ScorerThresholds doc comment).
+      ...(aggregates.toolRouting.count > 0 ? { toolRouting: aggregates.toolRouting.mean } : {}),
+      // Same optional treatment for answer assertions (#300): only cases
+      // that declare them contribute, so a run without any never fails on it.
+      ...(aggregates.answerAssertions.count > 0
+        ? { answerAssertions: aggregates.answerAssertions.mean }
+        : {}),
+      // Same optional treatment for story completeness (#295 correction,
+      // finding 2): only cases the runner scores for it contribute.
+      ...(aggregates.storyCompleteness.count > 0
+        ? { storyCompleteness: aggregates.storyCompleteness.mean }
+        : {}),
+      // Same optional treatment for preferred-source compliance (#295
+      // second independent-review correction, finding 4): only cases
+      // declaring a `preferredRef` contribute, and — unlike the other
+      // optional scorers — its committed threshold is blocking (1.0), so
+      // a single failed preference case fails the run regardless of how
+      // many others passed.
+      ...(aggregates.preferredSourceCompliance.count > 0
+        ? { preferredSourceCompliance: aggregates.preferredSourceCompliance.mean }
+        : {}),
+      // Same optional treatment for factual-boundary compliance (#295
+      // third-independent-review correction, finding 1): only cases
+      // declaring mustMatch/mustNotMatch/conditionalMustMatch contribute,
+      // and — like preferredSourceCompliance — its committed threshold is
+      // blocking (1.0): a single violated boundary in ANY case fails the
+      // run, regardless of how many other assertions or cases passed.
+      ...(aggregates.factualBoundaryCompliance.count > 0
+        ? { factualBoundaryCompliance: aggregates.factualBoundaryCompliance.mean }
+        : {}),
+    },
+    thresholds,
+  );
+
+  // A terminal case failure or an unexecuted case fails the run outright
+  // (#307 C5) — never diluted by how well the cases that DID complete
+  // scored, the same "one violation blocks the whole run" treatment
+  // `preferredSourceCompliance`/`factualBoundaryCompliance` already get
+  // above.
+  const failures = [...scoreVerdict.failures];
+  for (const failedCase of failedCases) {
+    failures.push(
+      `Case ${failedCase.id} failed terminally after ${failedCase.attempts.length} attempt(s): ` +
+        `${failedCase.errorMessage}`,
+    );
+  }
+  if (unexecutedCaseIds.length > 0) {
+    failures.push(
+      `${unexecutedCaseIds.length} case(s) did not run after a terminal failure: ` +
+        unexecutedCaseIds.join(", "),
+    );
+  }
+
   return {
     promptVersion: params.promptVersion,
     modelId: params.modelId,
@@ -151,46 +258,12 @@ export function buildReport(params: {
     aggregates,
     totals: { cases: params.cases.length, ...params.totals },
     thresholds,
-    verdict: evaluateVerdict(
-      {
-        groundedness: aggregates.groundedness.mean,
-        gapHonesty: aggregates.gapHonesty.mean,
-        relevance: aggregates.relevance.mean,
-        // Only fed into the verdict when at least one case actually asserted
-        // routing this run — an unset/zero-count aggregate must never be
-        // compared against the threshold as if it were a real 0 score (see
-        // ./thresholds.ts's ScorerThresholds doc comment).
-        ...(aggregates.toolRouting.count > 0 ? { toolRouting: aggregates.toolRouting.mean } : {}),
-        // Same optional treatment for answer assertions (#300): only cases
-        // that declare them contribute, so a run without any never fails on it.
-        ...(aggregates.answerAssertions.count > 0
-          ? { answerAssertions: aggregates.answerAssertions.mean }
-          : {}),
-        // Same optional treatment for story completeness (#295 correction,
-        // finding 2): only cases the runner scores for it contribute.
-        ...(aggregates.storyCompleteness.count > 0
-          ? { storyCompleteness: aggregates.storyCompleteness.mean }
-          : {}),
-        // Same optional treatment for preferred-source compliance (#295
-        // second independent-review correction, finding 4): only cases
-        // declaring a `preferredRef` contribute, and — unlike the other
-        // optional scorers — its committed threshold is blocking (1.0), so
-        // a single failed preference case fails the run regardless of how
-        // many others passed.
-        ...(aggregates.preferredSourceCompliance.count > 0
-          ? { preferredSourceCompliance: aggregates.preferredSourceCompliance.mean }
-          : {}),
-        // Same optional treatment for factual-boundary compliance (#295
-        // third-independent-review correction, finding 1): only cases
-        // declaring mustMatch/mustNotMatch/conditionalMustMatch contribute,
-        // and — like preferredSourceCompliance — its committed threshold is
-        // blocking (1.0): a single violated boundary in ANY case fails the
-        // run, regardless of how many other assertions or cases passed.
-        ...(aggregates.factualBoundaryCompliance.count > 0
-          ? { factualBoundaryCompliance: aggregates.factualBoundaryCompliance.mean }
-          : {}),
-      },
-      thresholds,
-    ),
+    verdict: {
+      passed: scoreVerdict.passed && failedCases.length === 0 && unexecutedCaseIds.length === 0,
+      failures,
+    },
+    failedCases,
+    unexecutedCaseIds,
+    complete: failedCases.length === 0 && unexecutedCaseIds.length === 0,
   };
 }

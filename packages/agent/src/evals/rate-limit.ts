@@ -200,6 +200,17 @@ export function isRateLimitError(error: unknown): boolean {
 }
 
 /**
+ * The provider's own HTTP status code for an error, or `undefined` when it
+ * isn't (or doesn't wrap) an `APICallError` — the same cause-chain walk
+ * {@link isRateLimitError} uses, shared with `./retry.ts` (#307 C5) so the
+ * single retry-owner policy classifies 502/503/504 the same way this module
+ * classifies 429, from one source of truth.
+ */
+export function apiErrorStatusCode(error: unknown): number | undefined {
+  return findApiCallError(error)?.statusCode;
+}
+
+/**
  * The provider's own "come back in N ms" hint for a rate-limit error: the
  * `retry-after` header first, then Gemini's `RetryInfo.retryDelay` in the
  * response body. `undefined` when the error carries no hint (or isn't an

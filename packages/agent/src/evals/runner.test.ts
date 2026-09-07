@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { BudgetExceededError } from "./budget.js";
 import type { EvalCase } from "./dataset/schema.js";
-import { runEvalSuite, selectCasesForBudget } from "./runner.js";
+import { EvalCaseError, runEvalSuite, selectCasesForBudget } from "./runner.js";
 
 function makeCase(overrides: Partial<EvalCase> & Pick<EvalCase, "id">): EvalCase {
   return {
@@ -918,5 +918,110 @@ describe("runEvalSuite", () => {
       "utf8",
     );
     expect(runnerSource).not.toMatch(/CI's current 25-case/);
+  });
+
+  /**
+   * #307 C5 (retry/observability, Codex supervision correction): a terminal
+   * provider failure — everything already retried by `./retry.ts`'s single
+   * retry owner and still rejected — must stop the suite outright, not
+   * continue to the next case. Completed cases and their known usage are
+   * preserved; the failing case is recorded with its sanitized error and
+   * attempt trace; every case that never got a turn is listed as
+   * unexecuted; the run never regenerates an already-completed answer.
+   */
+  describe("terminal case failure stops the suite (#307 C5)", () => {
+    it("stops after the failing case, recording it and every case after it as unexecuted", async () => {
+      const thirdCase = makeCase({ id: "grounded-3" });
+      const runCase = vi
+        .fn()
+        .mockResolvedValueOnce({
+          answer: "He built things [cite:skill:aws].",
+          toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
+          usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+        })
+        .mockRejectedValueOnce(
+          new EvalCaseError("Eval case failed: Service Unavailable", {
+            statusCode: 503,
+            errorName: "APICallError",
+            errorMessage: "Service Unavailable",
+            attempts: [
+              { attempt: 1, outcome: "retrying", durationMs: 5, statusCode: 503 },
+              { attempt: 2, outcome: "stopped-retries-exhausted", durationMs: 5, statusCode: 503 },
+            ],
+          }),
+        );
+
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase, gapCase, thirdCase],
+          budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase },
+      );
+
+      // Never called a third time — no continuing the suite past the failure.
+      expect(runCase).toHaveBeenCalledTimes(2);
+      // The one case that DID complete is preserved, fully scored.
+      expect(report.cases).toHaveLength(1);
+      expect(report.cases[0]?.id).toBe("grounded-1");
+      expect(report.totals.totalTokens).toBe(150);
+
+      expect(report.failedCases).toHaveLength(1);
+      expect(report.failedCases[0]).toMatchObject({
+        id: "gap-1",
+        statusCode: 503,
+        errorMessage: "Service Unavailable",
+      });
+      expect(report.failedCases[0]?.attempts).toHaveLength(2);
+
+      expect(report.unexecutedCaseIds).toEqual(["grounded-3"]);
+      expect(report.complete).toBe(false);
+      expect(report.verdict.passed).toBe(false);
+    });
+
+    it("does not throw — a terminal case failure resolves to a partial, failing report rather than rejecting the whole run", async () => {
+      const runCase = vi.fn().mockRejectedValueOnce(
+        new EvalCaseError("Eval case failed: quota exceeded", {
+          statusCode: 429,
+          errorMessage: "quota exceeded",
+          attempts: [
+            { attempt: 1, outcome: "stopped-rate-limited", durationMs: 5, statusCode: 429 },
+          ],
+        }),
+      );
+
+      await expect(
+        runEvalSuite(
+          {
+            cases: [groundedCase],
+            budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+            promptVersion: "test-version",
+            modelId: "gemini-3.6-flash",
+          },
+          { runCase },
+        ),
+      ).resolves.toMatchObject({ complete: false });
+    });
+
+    it("still enforces the budget cap normally — an EvalCaseError doesn't interfere with BudgetExceededError propagation", async () => {
+      const runCase = vi.fn().mockResolvedValue({
+        answer: "He built things [cite:skill:aws].",
+        toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
+        usage: { inputTokens: 100_000, outputTokens: 100_000, totalTokens: 200_000 },
+      });
+      await expect(
+        runEvalSuite(
+          {
+            cases: [groundedCase, gapCase],
+            budget: { maxCases: 10, maxTotalTokens: 100_000, maxCostUsd: 100 },
+            promptVersion: "test-version",
+            modelId: "gemini-3.6-flash",
+          },
+          { runCase },
+        ),
+      ).rejects.toThrow(BudgetExceededError);
+    });
   });
 });

@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { APICallError } from "ai";
+import { describe, expect, it, vi } from "vitest";
 import {
+  type CaseAttemptTracker,
+  createCaseAttemptTracker,
+  createRunCase,
+  describeCaseFailure,
   extractCitationsFromToolResults,
   extractToolCallsFromToolResults,
   extractToolNamesFromToolResults,
@@ -8,6 +13,8 @@ import {
 } from "./cli.js";
 import type { EvalCase } from "./dataset/schema.js";
 import { DEFAULT_EVAL_RPM_LIMIT, FREE_TIER_RPM_CEILING } from "./rate-limit.js";
+import type { RetryAttemptRecord } from "./retry.js";
+import { EvalCaseError } from "./runner.js";
 
 describe("resolveRunnerEnvConfig", () => {
   it("falls back to conservative defaults when env is empty", () => {
@@ -278,5 +285,146 @@ describe("extractToolCallsFromToolResults (#294)", () => {
     const toolResults = [{ payload: { toolName: 42 } }, { garbage: true }, undefined];
     expect(() => extractToolCallsFromToolResults(toolResults)).not.toThrow();
     expect(extractToolCallsFromToolResults(toolResults)).toEqual([]);
+  });
+});
+
+/**
+ * #307 C5 (retry/observability): `describeCaseFailure` builds the sanitized
+ * `CaseFailureInfo` a real `runCase` throws inside an `EvalCaseError` when
+ * `agent.generate()` fails terminally — same cause-chain walk as
+ * `apiErrorStatusCode`, plus whatever per-attempt trace the retry policy
+ * collected for this case, never a raw provider error object.
+ */
+describe("describeCaseFailure", () => {
+  const attempts: RetryAttemptRecord[] = [
+    { attempt: 1, outcome: "retrying", durationMs: 5, statusCode: 503 },
+    { attempt: 2, outcome: "stopped-retries-exhausted", durationMs: 5, statusCode: 503 },
+  ];
+
+  it("reads the status code and error name/message off a wrapped APICallError", () => {
+    const error = new APICallError({
+      message: "Service Unavailable",
+      url: "https://example.test",
+      requestBodyValues: {},
+      statusCode: 503,
+    });
+    expect(describeCaseFailure(error, attempts)).toEqual({
+      statusCode: 503,
+      errorName: "AI_APICallError",
+      errorMessage: "Service Unavailable",
+      attempts,
+    });
+  });
+
+  it("omits statusCode/errorName for a plain non-API error, but still carries the message and attempts", () => {
+    const error = new Error("boom");
+    expect(describeCaseFailure(error, [])).toEqual({
+      errorName: "Error",
+      errorMessage: "boom",
+      attempts: [],
+    });
+  });
+
+  it("stringifies a thrown non-Error value rather than throwing", () => {
+    expect(describeCaseFailure("just a string", [])).toEqual({
+      errorMessage: "just a string",
+      attempts: [],
+    });
+  });
+});
+
+describe("createCaseAttemptTracker", () => {
+  it("accumulates attempts pushed via onAttempt until reset() clears them", () => {
+    const tracker = createCaseAttemptTracker();
+    expect(tracker.attempts()).toEqual([]);
+
+    tracker.onAttempt({ attempt: 1, outcome: "success", durationMs: 5 });
+    expect(tracker.attempts()).toHaveLength(1);
+
+    tracker.reset();
+    expect(tracker.attempts()).toEqual([]);
+  });
+});
+
+/**
+ * #307 C5: `createRunCase` is the pure, unit-testable seam for `main()`'s
+ * real `runCase` wiring — a fake `agent.generate` in place of a real
+ * `Mastra` `Agent`, so this module's own retry-observability wiring (no
+ * nested Mastra retry, terminal failures become `EvalCaseError` carrying
+ * the case's own attempt trace) is proven with zero real model calls,
+ * matching every other helper in this file.
+ */
+describe("createRunCase", () => {
+  // A fake `agent.generate` in these tests never actually triggers
+  // `retryPolicy`'s `onAttempt` (that wiring lives in `main()`, not in
+  // `createRunCase` itself), so this tracker double's `attempts()` returns
+  // a fixed set regardless of `reset()` — it only records that `reset()`
+  // was called at the right point, and that whatever `attempts()` returns
+  // at failure time ends up on the thrown `EvalCaseError`.
+  function makeTracker(seedAttempts: RetryAttemptRecord[] = []): CaseAttemptTracker {
+    return {
+      reset: vi.fn(),
+      attempts: () => seedAttempts,
+    };
+  }
+
+  it("calls agent.generate with maxRetries: 0 (Mastra's own nested retry disabled) and shapes a successful result", async () => {
+    const generate = vi.fn().mockResolvedValue({
+      text: "He built things [cite:skill:aws].",
+      toolResults: [{ payload: { toolName: "search-career", result: { citations: [] } } }],
+      totalUsage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+    });
+    const runCase = createRunCase({ generate }, makeTracker());
+
+    const result = await runCase("What has he built?");
+
+    expect(generate).toHaveBeenCalledWith("What has he built?", { maxRetries: 0 });
+    expect(result.answer).toBe("He built things [cite:skill:aws].");
+    expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 5, totalTokens: 15 });
+  });
+
+  it("resets the tracker before calling agent.generate, for a fresh per-case attempt trace", async () => {
+    const generate = vi.fn().mockResolvedValue({
+      text: "answer",
+      toolResults: [],
+      totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    });
+    const tracker = makeTracker([{ attempt: 1, outcome: "success", durationMs: 1 }]);
+    const runCase = createRunCase({ generate }, tracker);
+
+    await runCase("question");
+
+    expect(tracker.reset).toHaveBeenCalledTimes(1);
+  });
+
+  it("wraps a terminal agent.generate rejection in an EvalCaseError carrying the tracker's attempts, never regenerating the answer", async () => {
+    const providerError = new APICallError({
+      message: "Service Unavailable",
+      url: "https://example.test",
+      requestBodyValues: {},
+      statusCode: 503,
+    });
+    const generate = vi.fn().mockRejectedValue(providerError);
+    const attempts: RetryAttemptRecord[] = [
+      { attempt: 1, outcome: "retrying", durationMs: 5, statusCode: 503 },
+      { attempt: 2, outcome: "stopped-retries-exhausted", durationMs: 5, statusCode: 503 },
+    ];
+    const tracker = makeTracker(attempts);
+    const runCase = createRunCase({ generate }, tracker);
+
+    await expect(runCase("question")).rejects.toThrow(EvalCaseError);
+    // Exactly one call — a terminal failure must never trigger a second,
+    // regenerating call from this seam.
+    expect(generate).toHaveBeenCalledTimes(1);
+
+    try {
+      await runCase("question");
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(EvalCaseError);
+      const caseError = error as EvalCaseError;
+      expect(caseError.failure.statusCode).toBe(503);
+      expect(caseError.failure.attempts).toEqual(attempts);
+    }
   });
 });

@@ -55,7 +55,8 @@ import {
   getModelPricing,
 } from "./budget.js";
 import type { EvalCase } from "./dataset/schema.js";
-import { buildReport, type CaseReport, type EvalReport } from "./report.js";
+import { buildReport, type CaseReport, type EvalReport, type FailedCaseReport } from "./report.js";
+import type { RetryAttemptRecord } from "./retry.js";
 import {
   scoreAnswerAssertions,
   scoreFactualBoundaryCompliance,
@@ -92,7 +93,49 @@ export interface CaseRunResult {
 
 /** Injected dependencies — the real-model-call seam. See module docs. */
 export interface RunnerDeps {
+  /**
+   * Throws {@link EvalCaseError} (never a raw provider error) when the
+   * case's provider call(s) failed TERMINALLY — after `./retry.ts`'s single
+   * retry owner already exhausted every retry it would attempt. The runner
+   * treats any `EvalCaseError` as "stop the suite here", never as a signal
+   * to try this case again.
+   */
   runCase: (question: string) => Promise<CaseRunResult>;
+}
+
+/**
+ * Sanitized info about one case's terminal provider failure (#307 C5) —
+ * exactly what {@link FailedCaseReport} needs, minus the case's own
+ * id/category/question (the runner already has those from the `EvalCase`
+ * being run when it catches this error).
+ */
+export interface CaseFailureInfo {
+  statusCode?: number;
+  errorName?: string;
+  errorMessage: string;
+  /** Every attempt `./retry.ts`'s `onAttempt` recorded for this case's request(s), in order. */
+  attempts: RetryAttemptRecord[];
+}
+
+/**
+ * Thrown by a `RunnerDeps.runCase` implementation (`./cli.ts`'s real one)
+ * when a case's provider call failed TERMINALLY — a 429, a permanent error,
+ * exhausted transient retries, or a deadline (see `./retry.ts`'s module
+ * docs for the full classification). `runEvalSuite` catches exactly this
+ * type to stop the suite and produce a partial report (#307 C5, "Codex
+ * supervision correction": stop launching further requests AND cases,
+ * never continue after a terminal failure or regenerate a completed
+ * answer). Any OTHER thrown error (e.g. a bug in `runCase` itself) is not
+ * caught here and propagates as before.
+ */
+export class EvalCaseError extends Error {
+  readonly failure: CaseFailureInfo;
+
+  constructor(message: string, failure: CaseFailureInfo) {
+    super(message);
+    this.name = "EvalCaseError";
+    this.failure = failure;
+  }
 }
 
 /** Configuration for one eval suite run. */
@@ -293,7 +336,36 @@ export async function runEvalSuite(config: RunnerConfig, deps: RunnerDeps): Prom
   let costUsd = 0;
 
   for (const [index, evalCase] of casesToRun.entries()) {
-    const run = await deps.runCase(evalCase.question);
+    let run: CaseRunResult;
+    try {
+      run = await deps.runCase(evalCase.question);
+    } catch (error) {
+      if (!(error instanceof EvalCaseError)) throw error;
+
+      // Terminal failure (#307 C5): stop launching further requests AND
+      // cases — no continuing the suite, no regenerating this or any other
+      // completed answer. Preserve every case that DID complete (with its
+      // known usage) plus this failure and the ids of everything left
+      // unexecuted, rather than losing the whole run to one rejection.
+      const failedCase: FailedCaseReport = {
+        id: evalCase.id,
+        category: evalCase.category,
+        question: evalCase.question,
+        ...error.failure,
+      };
+      const unexecutedCaseIds = casesToRun.slice(index + 1).map((c) => c.id);
+
+      return buildReport({
+        promptVersion: config.promptVersion,
+        modelId: config.modelId,
+        cases: caseReports,
+        totals: { inputTokens, outputTokens, totalTokens, costUsd },
+        thresholds: config.thresholds,
+        failedCases: [failedCase],
+        unexecutedCaseIds,
+      });
+    }
+
     caseReports.push(scoreCase(evalCase, run));
 
     inputTokens += run.usage.inputTokens;

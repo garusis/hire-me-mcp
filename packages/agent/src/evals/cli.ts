@@ -31,12 +31,14 @@ import { createChatModel } from "../model-provider.js";
 import { EVAL_CASES } from "./dataset/index.js";
 import type { EvalCase } from "./dataset/schema.js";
 import {
+  apiErrorStatusCode,
   createRateLimitedModel,
   createRequestRateLimiter,
   DEFAULT_EVAL_RPM_LIMIT,
   toLanguageModel,
 } from "./rate-limit.js";
-import { runEvalSuite } from "./runner.js";
+import { createRetryingModel, createRetryPolicy, type RetryAttemptRecord } from "./retry.js";
+import { type CaseFailureInfo, type CaseRunResult, EvalCaseError, runEvalSuite } from "./runner.js";
 import type { ReturnedCitation } from "./scorers/types.js";
 import { EVAL_THRESHOLDS } from "./thresholds.js";
 
@@ -279,6 +281,109 @@ export function extractToolCallsFromToolResults(toolResults: readonly unknown[])
   return calls;
 }
 
+/**
+ * Build the sanitized {@link CaseFailureInfo} a real `runCase` throws inside
+ * an {@link EvalCaseError} when `agent.generate()` fails terminally (#307
+ * C5) — the same `apiErrorStatusCode` cause-chain walk `./retry.ts` uses for
+ * classification, plus whatever per-attempt trace `./retry.ts`'s
+ * `onAttempt` collected for this case's own request(s). Never throws, and
+ * never carries the raw error object itself into the report.
+ */
+export function describeCaseFailure(
+  error: unknown,
+  attempts: readonly RetryAttemptRecord[],
+): CaseFailureInfo {
+  const statusCode = apiErrorStatusCode(error);
+  return {
+    ...(statusCode !== undefined ? { statusCode } : {}),
+    ...(error instanceof Error ? { errorName: error.name } : {}),
+    errorMessage: error instanceof Error ? error.message : String(error),
+    attempts: [...attempts],
+  };
+}
+
+/** Per-case scratch space for the retry policy's `onAttempt` records (#307 C5) — see {@link createCaseAttemptTracker}. */
+export interface CaseAttemptTracker {
+  /** Clear the trace — called right before a new case's `agent.generate()` call. */
+  reset(): void;
+  /** The current case's attempts so far, in order. */
+  attempts(): RetryAttemptRecord[];
+}
+
+/**
+ * Build the mutable per-case attempt scratch space `main()`'s shared
+ * `retryPolicy.onAttempt` writes into and {@link createRunCase} reads back
+ * (#307 C5). A closure, not a class, since nothing outside this module ever
+ * needs more than the two methods on {@link CaseAttemptTracker}. Cases run
+ * strictly sequentially (`./runner.ts` awaits each `runCase` before
+ * starting the next), so one shared mutable array is safe — there is never
+ * a second case's attempts interleaved with the current one's.
+ */
+export function createCaseAttemptTracker(): CaseAttemptTracker & {
+  onAttempt: (record: RetryAttemptRecord) => void;
+} {
+  let attempts: RetryAttemptRecord[] = [];
+  return {
+    reset: () => {
+      attempts = [];
+    },
+    attempts: () => attempts,
+    onAttempt: (record) => {
+      attempts.push(record);
+    },
+  };
+}
+
+/** The slice of Mastra's `Agent` this module actually calls — `agent.generate(question, { maxRetries: 0 })`. Narrowed so {@link createRunCase} is testable with a fake, never a real `Agent`. */
+export interface GenerateLike {
+  generate: (
+    question: string,
+    options?: { maxRetries?: number },
+  ) => Promise<{
+    text: string;
+    toolResults?: unknown[];
+    totalUsage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+  }>;
+}
+
+/**
+ * Build the real `RunnerDeps.runCase` (#307 C5): calls `agent.generate`
+ * with `maxRetries: 0` — Mastra's own nested per-generate retry disabled,
+ * since `./retry.ts`'s `createRetryPolicy` (wrapping the model `agent` was
+ * built with — see `main()`) is the single retry owner now. A rejection
+ * that reaches here already exhausted every retry that policy would
+ * attempt, so it is always terminal: wrapped in an `EvalCaseError` carrying
+ * `tracker`'s recorded attempts, never retried again here and never used to
+ * regenerate an answer.
+ */
+export function createRunCase(
+  agent: GenerateLike,
+  tracker: CaseAttemptTracker,
+): (question: string) => Promise<CaseRunResult> {
+  return async (question) => {
+    tracker.reset();
+    let result: Awaited<ReturnType<GenerateLike["generate"]>>;
+    try {
+      result = await agent.generate(question, { maxRetries: 0 });
+    } catch (error) {
+      throw new EvalCaseError(
+        `Eval case failed: ${error instanceof Error ? error.message : String(error)}`,
+        describeCaseFailure(error, tracker.attempts()),
+      );
+    }
+    return {
+      answer: result.text,
+      toolCitations: extractCitationsFromToolResults(result.toolResults ?? []),
+      toolCalls: extractToolCallsFromToolResults(result.toolResults ?? []),
+      usage: {
+        inputTokens: result.totalUsage?.inputTokens ?? 0,
+        outputTokens: result.totalUsage?.outputTokens ?? 0,
+        totalTokens: result.totalUsage?.totalTokens ?? 0,
+      },
+    };
+  };
+}
+
 async function main(): Promise<void> {
   const envConfig = resolveRunnerEnvConfig();
   const modelId = resolveChatModelConfig().modelId;
@@ -296,15 +401,36 @@ async function main(): Promise<void> {
   // call), so only a model-boundary limiter counts what the provider
   // counts. Built once and shared by every case, since the sliding window
   // has to span the whole run.
+  //
+  // #307 C5: `./retry.ts`'s `createRetryPolicy` is now the SINGLE retry
+  // owner for eval provider calls — this limiter's own 429 retry is
+  // disabled (`maxRetries: 0`) and so is Mastra's own per-generate retry
+  // (`createRunCase` passes `{ maxRetries: 0 }` to `agent.generate`), so
+  // nothing retries underneath the policy. See `./retry.ts`'s module docs
+  // for the full classification (429 stops immediately; 502/503/504/
+  // timeout retry, bounded; everything else is permanent).
   const limiter = createRequestRateLimiter({
     rpmLimit: envConfig.rpmLimit,
-    onRetry: ({ attempt, delayMs, message }) => {
-      console.warn(
-        `Rate limited by the provider (retry ${attempt}, waiting ${delayMs}ms): ${message}`,
-      );
+    maxRetries: 0,
+  });
+
+  const attemptTracker = createCaseAttemptTracker();
+  const retryPolicy = createRetryPolicy({
+    onAttempt: (record) => {
+      attemptTracker.onAttempt(record);
+      if (record.outcome !== "success") {
+        console.warn(
+          `[retry] attempt ${record.attempt} ${record.outcome}` +
+            (record.statusCode !== undefined ? ` (status ${record.statusCode})` : "") +
+            (record.errorMessage ? `: ${record.errorMessage}` : ""),
+        );
+      }
     },
   });
-  const model = createRateLimitedModel({ model: toLanguageModel(createChatModel()), limiter });
+  const model = createRetryingModel({
+    model: createRateLimitedModel({ model: toLanguageModel(createChatModel()), limiter }),
+    retryPolicy,
+  });
   const agent = getInterviewAgent({ model });
 
   const report = await runEvalSuite(
@@ -319,21 +445,7 @@ async function main(): Promise<void> {
       modelId,
       thresholds: EVAL_THRESHOLDS,
     },
-    {
-      runCase: async (question) => {
-        const result = await agent.generate(question);
-        return {
-          answer: result.text,
-          toolCitations: extractCitationsFromToolResults(result.toolResults ?? []),
-          toolCalls: extractToolCallsFromToolResults(result.toolResults ?? []),
-          usage: {
-            inputTokens: result.totalUsage?.inputTokens ?? 0,
-            outputTokens: result.totalUsage?.outputTokens ?? 0,
-            totalTokens: result.totalUsage?.totalTokens ?? 0,
-          },
-        };
-      },
-    },
+    { runCase: createRunCase(agent, attemptTracker) },
   );
 
   await writeFile(envConfig.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
@@ -347,6 +459,26 @@ async function main(): Promise<void> {
   console.log(
     `Total tokens: ${report.totals.totalTokens}, estimated cost: $${report.totals.costUsd.toFixed(4)}.`,
   );
+
+  // #307 C5: a terminal case failure no longer throws — it comes back as an
+  // incomplete report (failedCases/unexecutedCaseIds populated,
+  // verdict.passed false). Surface that distinctly from an ordinary
+  // threshold miss so a CI log doesn't read "eval failed" without saying
+  // WHY: the suite ran to completion but scored poorly, versus the suite
+  // was cut short by a provider failure.
+  if (!report.complete) {
+    console.error("Eval suite STOPPED early after a terminal provider failure:");
+    for (const failedCase of report.failedCases) {
+      console.error(
+        `  - ${failedCase.id} failed after ${failedCase.attempts.length} attempt(s)` +
+          (failedCase.statusCode !== undefined ? ` (status ${failedCase.statusCode})` : "") +
+          `: ${failedCase.errorMessage}`,
+      );
+    }
+    if (report.unexecutedCaseIds.length > 0) {
+      console.error(`  - never ran: ${report.unexecutedCaseIds.join(", ")}`);
+    }
+  }
 
   if (!report.verdict.passed) {
     console.error("Eval suite FAILED threshold checks:");

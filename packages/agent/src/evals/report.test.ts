@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildReport, type CaseReport } from "./report.js";
+import { buildReport, type CaseReport, type FailedCaseReport } from "./report.js";
 
 const baseCases = [
   {
@@ -385,5 +385,86 @@ describe("buildReport", () => {
 
     expect(report.cases[0]?.toolTrace).toEqual(caseWithTrace.toolTrace);
     expect(report.cases[1]?.toolTrace).toEqual([]);
+  });
+
+  /**
+   * #307 C5 (retry/observability): a terminal provider failure stops the
+   * suite mid-run rather than aborting with nothing to show for it — the
+   * runner (`./runner.ts`) hands `buildReport` whatever cases DID complete,
+   * plus the one that failed terminally and the ids of every case that never
+   * got to run. The report must surface all three, mark itself incomplete,
+   * and fail the verdict outright — a partial run is never silently reported
+   * as passing just because every case that ran happened to score well.
+   */
+  describe("terminal case failure (#307 C5)", () => {
+    const failedCase: FailedCaseReport = {
+      id: "grounded-2",
+      category: "grounded",
+      question: "What has he built with Kubernetes?",
+      statusCode: 503,
+      errorName: "APICallError",
+      errorMessage: "Service Unavailable",
+      attempts: [
+        { attempt: 1, outcome: "retrying", durationMs: 5, statusCode: 503 },
+        { attempt: 2, outcome: "stopped-retries-exhausted", durationMs: 5, statusCode: 503 },
+      ],
+    };
+
+    it("defaults to complete with no failed or unexecuted cases when the suite ran to completion", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+      });
+
+      expect(report.failedCases).toEqual([]);
+      expect(report.unexecutedCaseIds).toEqual([]);
+      expect(report.complete).toBe(true);
+    });
+
+    it("carries failedCases and unexecutedCaseIds through to the report and marks it incomplete", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases.slice(0, 1),
+        totals,
+        failedCases: [failedCase],
+        unexecutedCaseIds: ["off-topic-1"],
+      });
+
+      expect(report.failedCases).toEqual([failedCase]);
+      expect(report.unexecutedCaseIds).toEqual(["off-topic-1"]);
+      expect(report.complete).toBe(false);
+    });
+
+    it("fails the verdict on a terminal case failure even when every completed case's aggregate clears its threshold", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+        thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.05 },
+        failedCases: [failedCase],
+      });
+
+      expect(report.verdict.passed).toBe(false);
+      expect(report.verdict.failures.some((line) => line.includes(failedCase.id))).toBe(true);
+    });
+
+    it("fails the verdict when cases were left unexecuted after a terminal failure, naming them", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+        thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.05 },
+        unexecutedCaseIds: ["off-topic-2", "off-topic-3"],
+      });
+
+      expect(report.verdict.passed).toBe(false);
+      expect(report.verdict.failures.some((line) => line.includes("off-topic-2"))).toBe(true);
+      expect(report.verdict.failures.some((line) => line.includes("off-topic-3"))).toBe(true);
+    });
   });
 });
