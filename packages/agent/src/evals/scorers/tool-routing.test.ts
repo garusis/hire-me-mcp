@@ -1172,4 +1172,128 @@ describe("scoreToolRouting", () => {
       expect(result.score).toBe(0);
     });
   });
+
+  /**
+   * Codex independent routing review of `de326d5` (issuecomment-5575701584):
+   * `hasCompetencyFilter` decided "filter present" purely by
+   * `Array.isArray(competencies) && competencies.length > 0` — so a
+   * MALFORMED-but-present value (a string, a number, `null`, a plain object:
+   * none of them arrays) was indistinguishable from an OMITTED field. The
+   * reported repro: own route (`expected: "list-career-stories"`) with
+   * `expectedCompetencies` undefined, `acceptableStoryIds` set, and a
+   * confirmed citation to the acceptable story — `competencies: "SAP"` (or
+   * `42`) scored 1 (the bug: read as "no filter", so nothing to validate),
+   * while the identical trace scored 0 on the alternate route
+   * (`expected: "search-career-story-scoped"`, actual call
+   * `list-career-stories`) only because `scoreListCareerStoriesAsAlternate`
+   * separately, unconditionally requires `hasValidCompetencyFilter` — an
+   * accident of that other check catching it, not of `hasCompetencyFilter`
+   * doing its job.
+   *
+   * This matrix locks the corrected symmetric behavior across every
+   * `competencies` shape:
+   * - `undefined` (omitted) and `[]` (explicit empty array) are the tool
+   *   schema's own OWNED "no constraint" semantics
+   *   (`apps/web/lib/mcp/tools/list-career-stories.ts`: "Omit, or pass an
+   *   empty array, for no constraint") — legitimately absent, not malformed.
+   * - Any other present value — a non-array primitive/object, `null`, or an
+   *   array containing a non-string/invalid entry — is a MALFORMED filter,
+   *   never treated as "no filter", and must fail validation on both routes
+   *   identically.
+   * - A genuinely valid controlled-vocabulary array still passes via the
+   *   existing exact/supporting-match acceptance, unchanged.
+   */
+  describe("competencies filter-shape matrix: malformed-present values are never conflated with an omitted filter (Codex independent routing review, issuecomment-5575701584)", () => {
+    const sapStoryId = "fullstack-labs-sap-migration";
+    const sapCitation: ReturnedCitation = { entityType: "story", entityId: sapStoryId };
+    const acceptableAnswer = `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}]`;
+
+    function runOwnRoute(
+      competencies: unknown,
+      expectedCompetencies: readonly string[] | undefined,
+    ): number {
+      const args =
+        competencies === "__absent__" ? {} : ({ competencies } as Record<string, unknown>);
+      return scoreToolRouting(
+        [call("list-career-stories", args, [sapCitation])],
+        "list-career-stories",
+        {
+          expectedCompetencies,
+          acceptableStoryIds: [sapStoryId],
+          answer: acceptableAnswer,
+        },
+      ).score;
+    }
+
+    function runAlternateRoute(competencies: unknown): number {
+      const args =
+        competencies === "__absent__" ? {} : ({ competencies } as Record<string, unknown>);
+      return scoreToolRouting(
+        [call("list-career-stories", args, [sapCitation])],
+        "search-career-story-scoped",
+        { acceptableStoryIds: [sapStoryId], answer: acceptableAnswer },
+      ).score;
+    }
+
+    describe("legitimate no-filter shapes (own route only — the alternate route's own, separate hasValidCompetencyFilter gate is unrelated to this fix and out of scope)", () => {
+      const legitimateShapes: Array<{ name: string; value: unknown }> = [
+        { name: "competencies key entirely omitted", value: "__absent__" },
+        { name: "competencies explicitly undefined", value: undefined },
+        { name: "competencies: [] (explicit empty array)", value: [] },
+      ];
+
+      for (const { name, value } of legitimateShapes) {
+        it(`${name}: with expectedCompetencies present, scores 0 (a filter was required and none was supplied)`, () => {
+          expect(runOwnRoute(value, ["risk-management"])).toBe(0);
+        });
+
+        it(`${name}: with expectedCompetencies undefined, scores 1 (no filter required, acceptable story confirmed and cited)`, () => {
+          expect(runOwnRoute(value, undefined)).toBe(1);
+        });
+      }
+    });
+
+    describe("malformed-present shapes score 0 on BOTH routes, symmetrically, regardless of expectedCompetencies", () => {
+      const malformedShapes: Array<{ name: string; value: unknown }> = [
+        { name: 'competencies: a bare string ("SAP")', value: "SAP" },
+        { name: "competencies: a number (42)", value: 42 },
+        { name: "competencies: null", value: null },
+        { name: "competencies: a plain object ({})", value: {} },
+        { name: "competencies: an array with a non-string entry ([42])", value: [42] },
+        { name: "competencies: an array with a null entry ([null])", value: [null] },
+        {
+          name: 'competencies: an array mixing a valid entry with a non-string entry (["risk-management", 42])',
+          value: ["risk-management", 42],
+        },
+      ];
+
+      for (const { name, value } of malformedShapes) {
+        it(`${name}: own route scores 0 with expectedCompetencies present`, () => {
+          expect(runOwnRoute(value, ["risk-management"])).toBe(0);
+        });
+
+        it(`${name}: own route scores 0 with expectedCompetencies undefined (the exact reported repro shape)`, () => {
+          expect(runOwnRoute(value, undefined)).toBe(0);
+        });
+
+        it(`${name}: alternate route also scores 0 — same verdict as the own route, no asymmetry`, () => {
+          expect(runAlternateRoute(value)).toBe(0);
+        });
+      }
+    });
+
+    describe("a genuinely valid controlled-vocabulary filter is unaffected by the fix", () => {
+      it("own route: a valid supporting-competency array still scores 1 with expectedCompetencies undefined", () => {
+        expect(runOwnRoute(["technical-judgment"], undefined)).toBe(1);
+      });
+
+      it("own route: a valid exact-match array still scores 1 with expectedCompetencies present", () => {
+        expect(runOwnRoute(["risk-management"], ["risk-management"])).toBe(1);
+      });
+
+      it("alternate route: a valid supporting-competency array still scores 1", () => {
+        expect(runAlternateRoute(["technical-judgment"])).toBe(1);
+      });
+    });
+  });
 });

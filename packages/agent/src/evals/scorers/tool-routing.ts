@@ -376,16 +376,33 @@ function confirmsAcceptableCitedStory(
 }
 
 /**
- * Whether `args.competencies` is present and non-empty — regardless of
- * validity. Used to decide whether a competency-filter check applies at
- * all: an absent/empty filter (a plain, unfiltered listing) has nothing to
- * validate, but a present one always does, even when `expectedCompetencies`
- * is undefined/empty (Codex independent review, issuecomment-5575583880).
+ * Whether `args.competencies` is present — regardless of validity. Used to
+ * decide whether a competency-filter check applies at all: an absent/empty
+ * filter (a plain, unfiltered listing) has nothing to validate, but a
+ * present one always does, even when `expectedCompetencies` is
+ * undefined/empty (Codex independent review, issuecomment-5575583880).
+ *
+ * Only two shapes count as "absent", matching the `list-career-stories`
+ * tool's own input schema (`apps/web/lib/mcp/tools/list-career-stories.ts`:
+ * "Omit, or pass an empty array, for no constraint"): the field is
+ * `undefined` (omitted), or it is an empty array. Every other value —
+ * including a non-array primitive/object (a string, a number, `null`, a
+ * plain object) or a non-empty array with invalid entries — is a MALFORMED
+ * but PRESENT filter and must not be conflated with "no filter" (Codex
+ * independent routing review of `de326d5`, issuecomment-5575701584: the
+ * prior `Array.isArray(competencies) && competencies.length > 0` check read
+ * any non-array value as absent, so `competencies: "SAP"` scored the same
+ * as an omitted filter on the own route while the identical trace correctly
+ * scored 0 on the alternate route only because that route's separate
+ * `hasValidCompetencyFilter` gate happened to catch it — an asymmetric
+ * accident, not intended leniency).
  */
 function hasCompetencyFilter(args: unknown): boolean {
   if (typeof args !== "object" || args === null) return false;
   const competencies = (args as Record<string, unknown>).competencies;
-  return Array.isArray(competencies) && competencies.length > 0;
+  if (competencies === undefined) return false;
+  if (Array.isArray(competencies) && competencies.length === 0) return false;
+  return true;
 }
 
 /**
