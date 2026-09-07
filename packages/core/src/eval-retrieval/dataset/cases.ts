@@ -605,10 +605,6 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
       { sourceType: "story", sourceId: "house-numbers-prompt-platform-migration" },
     ],
     matchMode: "any",
-    preferredSource: {
-      sourceType: "story",
-      sourceId: "house-numbers-deterministic-document-checks",
-    },
   },
   {
     id: "story-a02-diagnosing-production-failure",

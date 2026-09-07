@@ -221,6 +221,22 @@ describe("GOLDEN_QUERIES", () => {
       }
     });
 
+    it("story-a01-challenged-technical-direction has no preferredSource — both co-valid stories stay acceptable under matchMode: any (owner-approved, #307)", () => {
+      const entry = GOLDEN_QUERIES.find(
+        (candidate) => candidate.id === "story-a01-challenged-technical-direction",
+      );
+      expect(entry).toBeDefined();
+      expect(entry?.query).toBe(
+        "Tell me about a time Marcos challenged a technical direction others preferred.",
+      );
+      expect(entry?.matchMode).toBe("any");
+      expect(entry?.preferredSource).toBeUndefined();
+      expect(entry?.expectedSources).toEqual([
+        { sourceType: "story", sourceId: "house-numbers-deterministic-document-checks" },
+        { sourceType: "story", sourceId: "house-numbers-prompt-platform-migration" },
+      ]);
+    });
+
     it("no story case is absent-topic in the retrieval dataset — honest behavioral absence (N01/N02) is evaluated only in the agent eval's story-manifest-cases.ts (#307)", () => {
       const absentTopics = storyEntries().filter((entry) => entry.category === "absent-topic");
       expect(absentTopics).toHaveLength(0);

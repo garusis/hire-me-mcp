@@ -187,6 +187,58 @@ describe("PROMPT_SECTIONS", () => {
     expect(retrievalPolicy?.body).toMatch(/company/i);
   });
 
+  /**
+   * #307 owner decision (issuecomment-5571657504, diagnosis 1a): a behavioral
+   * answer must relay the story's situation, actions, and results, even when
+   * the question asks about only one of them — the prior prompt only said
+   * how to *fetch* a complete story, never that the answer must *relay* all
+   * three STAR parts. Scoped to behavioral answers only, not every answer.
+   */
+  it("requires a behavioral answer to relay the story's situation, actions, and results concisely, even when the question asks about only one part (#307 decision 1a)", () => {
+    const retrievalPolicy = PROMPT_SECTIONS.find((section) => section.id === "retrievalPolicy");
+    expect(retrievalPolicy?.body).toMatch(/situation/i);
+    expect(retrievalPolicy?.body).toMatch(/actions?/i);
+    expect(retrievalPolicy?.body).toMatch(/results?/i);
+    expect(retrievalPolicy?.body).toMatch(
+      /even\s+when\s+the\s+question\s+asks\s+about\s+only\s+one/i,
+    );
+  });
+
+  it("carves a behavioral-story exception into the voice section's 'stop once answered' rule so a complete story can still be relayed (#307 decision 1a)", () => {
+    const voice = PROMPT_SECTIONS.find((section) => section.id === "voice");
+    expect(voice?.body).toMatch(/stop\s+once\s+the\s+question\s+is\s+answered/i);
+    expect(voice?.body).toMatch(/behavioral\s+story\s+answer/i);
+  });
+
+  /**
+   * #307 owner decision (issuecomment-5571657504, diagnosis 2): the
+   * never-displace rule named only "experiences and recommendations" —
+   * projects were missing, so a mixed-sourceTypes search-career call whose
+   * top rank was a project (with a story lower in the same result) got
+   * treated as a project answer instead of a story hit.
+   */
+  it("adds projects to the never-displace rule and treats any story present in a mixed-sourceTypes search as a story hit (#307 decision 2)", () => {
+    const retrievalPolicy = PROMPT_SECTIONS.find((section) => section.id === "retrievalPolicy");
+    expect(retrievalPolicy?.body).toMatch(
+      /experiences?,?\s*(recommendations?,?\s*)?(and\s*)?projects.*never displace|projects.*never displace/is,
+    );
+    expect(retrievalPolicy?.body).toMatch(/mixed[- ]sourceTypes/i);
+    expect(retrievalPolicy?.body).toMatch(/counts as a story hit|counts? as a (?:story )?hit/i);
+  });
+
+  /**
+   * #307 owner decision (issuecomment-5571657504, diagnosis 3, f01): a story
+   * must be relayed as it records its results — a later observed outcome
+   * (e.g. a client commissioning more work after the fact) must not be
+   * presented as caused by his actions unless the story itself says so.
+   */
+  it("requires relaying a story's results as recorded, without presenting a later observed outcome as caused by his actions unless the story says so (#307 decision 3)", () => {
+    const retrievalPolicy = PROMPT_SECTIONS.find((section) => section.id === "retrievalPolicy");
+    expect(retrievalPolicy?.body).toMatch(/as (?:the story )?records?|as (?:the story )?states?/i);
+    expect(retrievalPolicy?.body).toMatch(/later observed outcome/i);
+    expect(retrievalPolicy?.body).toMatch(/unless the story (?:itself )?(?:says|states)/i);
+  });
+
   it("states an off-topic/adversarial redirect policy", () => {
     const redirectPolicy = PROMPT_SECTIONS.find((section) => section.id === "redirectPolicy");
     expect(redirectPolicy?.body).toMatch(/redirect|decline/i);
