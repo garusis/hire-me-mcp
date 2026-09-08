@@ -550,6 +550,84 @@ describe("buildReport", () => {
   });
 
   /**
+   * #307 review issuecomment-5577656024, finding 1: a case that was IN
+   * FLIGHT (had already made at least one known-usage attempt) when the
+   * shared budget guard stopped it must be classified distinctly from a case
+   * that never started at all — `unexecutedCaseIds` alone can't carry that
+   * distinction, so `partialCases` (parallel to `failedCases`) carries the
+   * aborted case's own id/category/question and its known attempt trace. A
+   * stop before ANY request (an empty attempts trace) is never a
+   * `partialCases` entry — it stays a plain unexecuted case.
+   */
+  describe("partial (mid-flight budget-aborted) cases", () => {
+    it("defaults partialCases to [] on a completed run", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+      });
+
+      expect(report.partialCases).toEqual([]);
+    });
+
+    it("carries a supplied partialCases entry through, keeps it distinct from unexecutedCaseIds and failedCases, and fails the verdict", () => {
+      const partialCase = {
+        id: "gap-1",
+        category: "gap" as const,
+        question: "Has he used Rust?",
+        attempts: [
+          {
+            attempt: 1,
+            outcome: "success" as const,
+            durationMs: 5,
+            usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+          },
+        ],
+      };
+
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases.slice(0, 1),
+        totals,
+        unexecutedCaseIds: ["off-topic-1"],
+        budgetExceeded: { message: "Eval token budget exceeded: stopping." },
+        partialCases: [partialCase],
+      });
+
+      expect(report.partialCases).toEqual([partialCase]);
+      expect(report.failedCases).toEqual([]);
+      expect(report.unexecutedCaseIds).toEqual(["off-topic-1"]);
+      expect(report.complete).toBe(false);
+      expect(report.verdict.passed).toBe(false);
+      expect(
+        report.verdict.failures.some((line) => line.includes("gap-1") && line.includes("aborted")),
+      ).toBe(true);
+    });
+
+    it("marks totals.usageComplete false whenever partialCases is non-empty, even if every scored case's own usage was known", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases.slice(0, 1),
+        totals,
+        budgetExceeded: { message: "Eval token budget exceeded: stopping." },
+        partialCases: [
+          {
+            id: "gap-1",
+            category: "gap" as const,
+            question: "Has he used Rust?",
+            attempts: [],
+          },
+        ],
+      });
+
+      expect(report.totals.usageComplete).toBe(false);
+    });
+  });
+
+  /**
    * #307 second independent-review correction (2nd round), finding 3:
    * `usageKnown` was collected per case (`createRunCase`'s
    * `CaseRunResult.usageKnown`) but `scoreCase`/`buildReport` dropped it —

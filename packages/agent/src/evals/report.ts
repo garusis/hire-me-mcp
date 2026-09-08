@@ -125,6 +125,25 @@ export interface BudgetStopInfo {
   message: string;
 }
 
+/**
+ * A case that was IN FLIGHT — had already made at least one attempt — when
+ * the run's shared budget guard stopped it mid-case (#307 review
+ * issuecomment-5577656024, finding 1). Distinct from both
+ * {@link FailedCaseReport} (a provider call failing) and an entry in
+ * {@link EvalReport.unexecutedCaseIds} (a case that never started at all):
+ * this case's own known usage (`attempts`) is real spend that must be
+ * counted in `EvalReport.totals`, not discarded just because the case
+ * produced no scored answer. A stop before ANY request (an empty attempts
+ * trace) is never a `partialCases` entry — it stays a plain unexecuted case.
+ */
+export interface AbortedCaseReport {
+  id: string;
+  category: EvalCaseCategory;
+  question: string;
+  /** Every attempt recorded before the shared budget guard stopped this case mid-flight. */
+  attempts: readonly RetryAttemptRecord[];
+}
+
 /** A per-scorer aggregate: the mean score over every case the scorer applied to, and how many cases that was. */
 export interface ScorerAggregate {
   mean: number;
@@ -185,6 +204,15 @@ export interface EvalReport {
    */
   unexecutedCaseIds: string[];
   /**
+   * Every case that was IN FLIGHT (had already made at least one attempt)
+   * when the run's shared budget guard stopped it mid-case (#307 review
+   * issuecomment-5577656024, finding 1) — empty on a completed run, and
+   * empty on a budget stop that happened before the aborted case's first
+   * request (that case is a plain `unexecutedCaseIds` entry instead). See
+   * {@link AbortedCaseReport}.
+   */
+  partialCases: AbortedCaseReport[];
+  /**
    * `false` whenever `failedCases` or `unexecutedCaseIds` is non-empty, or
    * `budgetExceeded` is set — i.e. this report reflects a partial run, not
    * the full selected case set. Deliberately top-level (not folded into
@@ -225,14 +253,60 @@ function computeUsageComplete(params: {
   cases: readonly CaseReport[];
   failedCases: readonly FailedCaseReport[];
   unexecutedCaseIds: readonly string[];
+  partialCases: readonly AbortedCaseReport[];
   budgetExceeded: BudgetStopInfo | null;
 }): boolean {
   return (
     params.cases.every((c) => c.usageKnown !== false) &&
     params.failedCases.length === 0 &&
     params.unexecutedCaseIds.length === 0 &&
+    params.partialCases.length === 0 &&
     params.budgetExceeded === null
   );
+}
+
+/**
+ * Build every execution-related (non-score) verdict failure line: terminal
+ * case failures, unexecuted cases, budget-aborted mid-flight cases, and a
+ * budget overage message. Split out of `buildReport` purely to keep that
+ * function's cognitive complexity under this repo's Biome limit — no
+ * behavior change from the inline version this replaces (report.test.ts's
+ * relevant suites cover every branch either way).
+ */
+function collectExecutionFailures(params: {
+  failedCases: readonly FailedCaseReport[];
+  unexecutedCaseIds: readonly string[];
+  partialCases: readonly AbortedCaseReport[];
+  budgetExceeded: BudgetStopInfo | null;
+}): string[] {
+  const failures: string[] = [];
+  for (const failedCase of params.failedCases) {
+    failures.push(
+      `Case ${failedCase.id} failed terminally after ${failedCase.attempts.length} attempt(s): ` +
+        `${failedCase.errorMessage}`,
+    );
+  }
+  if (params.unexecutedCaseIds.length > 0) {
+    failures.push(
+      `${params.unexecutedCaseIds.length} case(s) did not run after a terminal failure: ` +
+        params.unexecutedCaseIds.join(", "),
+    );
+  }
+  // #307 review issuecomment-5577656024, finding 1: a case aborted mid-flight
+  // by the shared budget guard is its own distinct failure reason — not a
+  // provider failure (failedCases) and not "never ran" (unexecutedCaseIds).
+  for (const partialCase of params.partialCases) {
+    failures.push(
+      `Case ${partialCase.id} was aborted mid-flight after ${partialCase.attempts.length} attempt(s) when the run's shared budget guard stopped it.`,
+    );
+  }
+  // #307 second independent-review correction, finding 5: a budget overage
+  // blocks the verdict outright, the same "one violation blocks the whole
+  // run" treatment a terminal case failure already gets above.
+  if (params.budgetExceeded) {
+    failures.push(params.budgetExceeded.message);
+  }
+  return failures;
 }
 
 /** Assemble the final {@link EvalReport} from collected per-case results and run totals. Pure — no model calls, no I/O. */
@@ -247,12 +321,15 @@ export function buildReport(params: {
   failedCases?: FailedCaseReport[];
   /** See {@link EvalReport.unexecutedCaseIds}. Defaults to `[]` (a completed run). */
   unexecutedCaseIds?: string[];
+  /** See {@link EvalReport.partialCases}. Defaults to `[]` (a completed run, or a stop with no case in flight). */
+  partialCases?: AbortedCaseReport[];
   /** See {@link EvalReport.budgetExceeded}. Defaults to `null` (a completed run). */
   budgetExceeded?: BudgetStopInfo;
 }): EvalReport {
   const thresholds = params.thresholds ?? EVAL_THRESHOLDS;
   const failedCases = params.failedCases ?? [];
   const unexecutedCaseIds = params.unexecutedCaseIds ?? [];
+  const partialCases = params.partialCases ?? [];
   const budgetExceeded = params.budgetExceeded ?? null;
   const aggregates = {
     groundedness: aggregate(params.cases.map((c) => c.scores.groundedness)),
@@ -311,35 +388,22 @@ export function buildReport(params: {
     thresholds,
   );
 
-  // A terminal case failure or an unexecuted case fails the run outright
-  // (#307 C5) — never diluted by how well the cases that DID complete
-  // scored, the same "one violation blocks the whole run" treatment
+  // A terminal case failure, an unexecuted case, a mid-flight budget abort,
+  // or a budget overage fails the run outright (#307 C5 / review
+  // issuecomment-5577656024) — never diluted by how well the cases that DID
+  // complete scored, the same "one violation blocks the whole run" treatment
   // `preferredSourceCompliance`/`factualBoundaryCompliance` already get
   // above.
-  const failures = [...scoreVerdict.failures];
-  for (const failedCase of failedCases) {
-    failures.push(
-      `Case ${failedCase.id} failed terminally after ${failedCase.attempts.length} attempt(s): ` +
-        `${failedCase.errorMessage}`,
-    );
-  }
-  if (unexecutedCaseIds.length > 0) {
-    failures.push(
-      `${unexecutedCaseIds.length} case(s) did not run after a terminal failure: ` +
-        unexecutedCaseIds.join(", "),
-    );
-  }
-  // #307 second independent-review correction, finding 5: a budget overage
-  // blocks the verdict outright, the same "one violation blocks the whole
-  // run" treatment a terminal case failure already gets above.
-  if (budgetExceeded) {
-    failures.push(budgetExceeded.message);
-  }
+  const failures = [
+    ...scoreVerdict.failures,
+    ...collectExecutionFailures({ failedCases, unexecutedCaseIds, partialCases, budgetExceeded }),
+  ];
 
   const usageComplete = computeUsageComplete({
     cases: params.cases,
     failedCases,
     unexecutedCaseIds,
+    partialCases,
     budgetExceeded,
   });
 
@@ -361,12 +425,18 @@ export function buildReport(params: {
         scoreVerdict.passed &&
         failedCases.length === 0 &&
         unexecutedCaseIds.length === 0 &&
+        partialCases.length === 0 &&
         budgetExceeded === null,
       failures,
     },
     failedCases,
     unexecutedCaseIds,
-    complete: failedCases.length === 0 && unexecutedCaseIds.length === 0 && budgetExceeded === null,
+    partialCases,
+    complete:
+      failedCases.length === 0 &&
+      unexecutedCaseIds.length === 0 &&
+      partialCases.length === 0 &&
+      budgetExceeded === null,
     budgetExceeded,
   };
 }

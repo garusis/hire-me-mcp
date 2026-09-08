@@ -727,6 +727,42 @@ describe("createRunCase", () => {
     await expect(runCase("question")).rejects.toBe(budgetError);
   });
 
+  /**
+   * #307 review issuecomment-5577656024, finding 1: a mid-case
+   * `BudgetExceededError` (thrown from `./retry.ts`'s `beforeAttempt` hook
+   * before a request that would cross the shared budget) previously
+   * propagated with NO attempts trace attached, so `./runner.ts` had no way
+   * to recover this case's own known usage collected before the stop — a
+   * successful first request's known 150 tokens were silently lost from the
+   * report's totals. `createRunCase` must attach the tracker's own attempts
+   * (collected for THIS case, via the shared `onAttempt` wiring) onto the
+   * error before rethrowing, same as `describeCaseFailure` already does for
+   * an `EvalCaseError`.
+   */
+  it("attaches the tracker's known attempt trace onto a rethrown BudgetExceededError, so mid-case known usage is never lost", async () => {
+    const budgetError = new BudgetExceededError("Eval token budget exceeded: stopping.");
+    const generate = vi.fn().mockRejectedValue(budgetError);
+    const attempts: RetryAttemptRecord[] = [
+      {
+        attempt: 1,
+        outcome: "success",
+        durationMs: 5,
+        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      },
+      { attempt: 1, outcome: "stopped-budget-exceeded", durationMs: 0 },
+    ];
+    const tracker = makeTracker(attempts);
+    const runCase = createRunCase({ generate }, tracker);
+
+    try {
+      await runCase("question");
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(BudgetExceededError);
+      expect((error as BudgetExceededError).attempts).toEqual(attempts);
+    }
+  });
+
   it("marks usageKnown false rather than silently reporting a fabricated zero when neither totalUsage nor any attempt carries known usage", async () => {
     const generate = vi.fn().mockResolvedValue({ text: "answer", toolResults: [] });
     const tracker = makeTracker([{ attempt: 1, outcome: "success", durationMs: 5 }]);
@@ -743,5 +779,84 @@ describe("createRunCase", () => {
     const secondResult = await runCase("question");
     expect(secondResult.usageKnown).toBe(false);
     expect(secondResult.usage).toEqual({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
+  });
+
+  /**
+   * #307 review issuecomment-5577656024, finding 2: a successful case whose
+   * `agent.generate()` result carries no `totalUsage` and whose own attempt
+   * trace is a MIX of known and unknown usage (e.g. a retried request whose
+   * first attempt succeeded with known usage and a later attempt's usage
+   * genuinely can't be read) previously discarded the known partial sum
+   * entirely — `sumKnownUsage(...).complete` was `false` so the fallback was
+   * dropped and the case reported an all-zero `usage` with `usageKnown:
+   * false`, even though 150 tokens of that case's own consumption WAS known.
+   * The fix preserves that known partial sum in `usage` while keeping
+   * `usageKnown: false` to keep the incompleteness explicit — never
+   * presenting the partial sum as the complete total.
+   */
+  it("preserves a known PARTIAL usage sum (not zero) when some attempts carry known usage and others don't, while keeping usageKnown false", async () => {
+    const generate = vi.fn().mockResolvedValue({ text: "answer", toolResults: [] });
+    const attempts: RetryAttemptRecord[] = [
+      {
+        attempt: 1,
+        outcome: "success",
+        durationMs: 5,
+        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      },
+      { attempt: 1, outcome: "success", durationMs: 5, usage: "unknown" },
+    ];
+    const tracker = makeTracker(attempts);
+    const runCase = createRunCase({ generate }, tracker);
+
+    const result = await runCase("question");
+
+    // The known 150 tokens are preserved, never zeroed out just because a
+    // later attempt's usage was unknowable.
+    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50, totalTokens: 150 });
+    // But usageKnown stays false — this is a partial sum, not a certified
+    // complete total (never presented as if it accounted for every attempt).
+    expect(result.usageKnown).toBe(false);
+  });
+
+  /**
+   * #307 review issuecomment-5577656024, finding 2 (2nd part): "ensure
+   * reported totalUsage does not incorrectly certify complete provider usage
+   * when retry attempts have unknown consumption." A real Mastra `Agent` can
+   * return a fully-numeric, well-formed `result.totalUsage` that SILENTLY
+   * dropped a step whose own usage was unreadable (proven against the real
+   * `@mastra/core` `Agent` in `runner.test.ts`'s durable-verification suite)
+   * — trusting that reported total as "complete" just because it parses
+   * would wrongly certify a partial sum as the whole picture. Whenever this
+   * case's own attempt trace shows incomplete usage, the reported total must
+   * be treated the same as the attempts-based fallback: usable as the known
+   * partial sum, but never `usageKnown: true`.
+   */
+  it("never trusts a well-formed reported totalUsage as complete when this case's own attempt trace shows incomplete usage", async () => {
+    const generate = vi.fn().mockResolvedValue({
+      text: "answer",
+      toolResults: [],
+      // A fully-numeric, parseable totalUsage — the shape `reportedUsageOf`
+      // accepts outright today.
+      totalUsage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+    });
+    const attempts: RetryAttemptRecord[] = [
+      {
+        attempt: 1,
+        outcome: "success",
+        durationMs: 5,
+        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      },
+      // A 2nd attempt whose own usage genuinely can't be read — the trace
+      // this case's tracker actually collected is INCOMPLETE, even though
+      // `totalUsage` above looks like a clean, complete number.
+      { attempt: 1, outcome: "success", durationMs: 5, usage: "unknown" },
+    ];
+    const tracker = makeTracker(attempts);
+    const runCase = createRunCase({ generate }, tracker);
+
+    const result = await runCase("question");
+
+    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50, totalTokens: 150 });
+    expect(result.usageKnown).toBe(false);
   });
 });

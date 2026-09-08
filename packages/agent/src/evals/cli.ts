@@ -403,6 +403,46 @@ function reportedUsageOf(
 }
 
 /**
+ * Resolve a case's final `{ usage, usageKnown }` from `agent.generate()`'s
+ * own reported `totalUsage` plus the tracker's own per-attempt trace (#307
+ * second independent-review correction, finding 4; review
+ * issuecomment-5577656024, finding 2). Split out of `createRunCase` purely
+ * to keep that function's cognitive complexity under this repo's Biome
+ * limit — no behavior change from the inline version this replaces
+ * (cli.test.ts's usage-fallback suite covers every branch either way).
+ */
+function resolveCaseUsage(
+  reportedUsage: { inputTokens: number; outputTokens: number; totalTokens: number } | undefined,
+  attempts: readonly RetryAttemptRecord[],
+): {
+  usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+  usageKnown: boolean;
+} {
+  const attemptSummary = sumKnownUsage(attempts);
+  // #307 review issuecomment-5577656024, finding 2: when an attempt trace
+  // EXISTS but is incomplete (some attempt's own usage is unknown — e.g. a
+  // multi-step case whose 2nd step's provider result carried no readable
+  // usage), a well-formed `result.totalUsage` must NOT be trusted as
+  // complete: Mastra's own aggregation can silently drop that step's
+  // contribution while still returning a fully-numeric, innocent-looking
+  // total — incorrectly certifying a PARTIAL sum as the complete one. Only
+  // when there's no attempt-level visibility at all (`attempts` empty — e.g.
+  // a `GenerateLike` stub not wired to this module's own attempt tracker) is
+  // `reportedUsage` trusted outright, same as before.
+  const attemptsIncomplete = attempts.length > 0 && !attemptSummary.complete;
+  const fallbackUsage = attemptSummary.usage !== "unknown" ? attemptSummary.usage : undefined;
+  // The known partial sum is preserved in `usage` even when incomplete —
+  // never a fabricated zero — while `usageKnown` alone carries whether it's
+  // COMPLETE, so a report consumer never mistakes a partial sum for the
+  // whole picture (and never double-counts: `fallbackUsage` sums each
+  // attempt's own step total exactly once).
+  const usage = attemptsIncomplete ? fallbackUsage : (reportedUsage ?? fallbackUsage);
+  const usageKnown =
+    !attemptsIncomplete && (reportedUsage !== undefined || attemptSummary.complete);
+  return { usage: usage ?? { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, usageKnown };
+}
+
+/**
  * Build the real `RunnerDeps.runCase` (#307 C5): calls `agent.generate`
  * with `modelSettings: { maxRetries: 0 }` — Mastra's own nested
  * per-generate retry actually disabled (#307 second independent-review
@@ -431,7 +471,18 @@ export function createRunCase(
       // own decision to stop, not a case's provider call failing — it must
       // propagate as-is so `./runner.ts` can tell the two apart, never
       // wrapped in an EvalCaseError.
-      if (error instanceof BudgetExceededError) throw error;
+      //
+      // #307 review issuecomment-5577656024, finding 1: attach THIS case's
+      // own tracker attempts before rethrowing — without it, a request that
+      // succeeded (known usage) before a LATER request in the same case got
+      // stopped by the budget guard left `./runner.ts` with no way to
+      // recover that known usage, silently losing it from the report's
+      // totals. Mutating the caught error in place (rather than throwing a
+      // new one) preserves its identity for a caller narrowing on it.
+      if (error instanceof BudgetExceededError) {
+        error.attempts = tracker.attempts();
+        throw error;
+      }
 
       const failure = describeCaseFailure(error, tracker.attempts());
       // #307 second independent-review correction, 2nd round, finding 1:
@@ -448,20 +499,14 @@ export function createRunCase(
     // "0 tokens spent" — fall back to the real per-attempt usage this
     // module's own retry policy already collected, and only report the
     // zero (explicitly flagged `usageKnown: false`) when THAT is also
-    // unknown. #307 second independent-review correction, 2nd round,
-    // finding 3: the fallback must not be treated as known unless it is
-    // COMPLETE (every attempt carried known usage), not just non-empty.
-    const reportedUsage = reportedUsageOf(result.totalUsage);
-    const fallback = reportedUsage ? undefined : sumKnownUsage(attempts);
-    const fallbackUsage =
-      fallback && fallback.usage !== "unknown" && fallback.complete ? fallback.usage : undefined;
-    const usage = reportedUsage ?? fallbackUsage;
+    // unknown.
+    const { usage, usageKnown } = resolveCaseUsage(reportedUsageOf(result.totalUsage), attempts);
     return {
       answer: result.text,
       toolCitations: extractCitationsFromToolResults(result.toolResults ?? []),
       toolCalls: extractToolCallsFromToolResults(result.toolResults ?? []),
-      usage: usage ?? { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-      usageKnown: usage !== undefined,
+      usage,
+      usageKnown,
       attempts,
     };
   };

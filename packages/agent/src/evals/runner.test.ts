@@ -1,8 +1,14 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { Agent } from "@mastra/core/agent";
+import { createTool } from "@mastra/core/tools";
+import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { BudgetExceededError } from "./budget.js";
+import { createCaseAttemptTracker, createEvalRetryPolicy, createRunCase } from "./cli.js";
 import type { EvalCase } from "./dataset/schema.js";
+import { createRetryingModel } from "./retry.js";
 import { EvalCaseError, runEvalSuite, selectCasesForBudget } from "./runner.js";
 
 function makeCase(overrides: Partial<EvalCase> & Pick<EvalCase, "id">): EvalCase {
@@ -1214,6 +1220,91 @@ describe("runEvalSuite", () => {
       expect(report.budgetExceeded).toEqual({ message: budgetError.message });
       expect(report.verdict.passed).toBe(false);
     });
+
+    /**
+     * #307 review issuecomment-5577656024, finding 1: the reviewer's own
+     * offline reproduction — a case's first request succeeds with KNOWN
+     * usage (150 tokens), then a second request within the SAME case is
+     * blocked by the shared budget guard before it's issued
+     * (`BudgetExceededError` carrying that case's own known-usage attempt
+     * trace, per `./cli.ts`'s `createRunCase` fix). The persisted report
+     * must carry that known 150 tokens into `totals` exactly once, classify
+     * the case as aborted mid-flight (`partialCases`, not conflated with
+     * `unexecutedCaseIds`), and preserve fail/partial semantics (never
+     * pretend the run completed).
+     */
+    it("folds a mid-case BudgetExceededError's own KNOWN attempt usage into totals exactly once, and classifies the aborted case in partialCases — not unexecutedCaseIds", async () => {
+      const knownAttempts = [
+        {
+          attempt: 1,
+          outcome: "success" as const,
+          durationMs: 5,
+          usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+        },
+        { attempt: 1, outcome: "stopped-budget-exceeded" as const, durationMs: 0 },
+      ];
+      const budgetError = new BudgetExceededError(
+        "Eval token budget exceeded: stopping.",
+        knownAttempts,
+      );
+      const runCase = vi.fn().mockRejectedValueOnce(budgetError);
+
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase, gapCase, offTopicCase],
+          budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase },
+      );
+
+      expect(runCase).toHaveBeenCalledTimes(1);
+      expect(report.cases).toHaveLength(0);
+      // The known 150 tokens from the aborted case's own first attempt are
+      // in totals exactly once — never lost, never doubled.
+      expect(report.totals.totalTokens).toBe(150);
+      expect(report.totals.usageComplete).toBe(false);
+      expect(report.failedCases).toEqual([]);
+      // The aborted case itself is NOT in unexecutedCaseIds — it started and
+      // made real progress, distinct from the cases after it that never ran.
+      expect(report.unexecutedCaseIds).toEqual(["gap-1", "off-topic-1"]);
+      expect(report.partialCases).toEqual([
+        {
+          id: "grounded-1",
+          category: "grounded",
+          question: groundedCase.question,
+          attempts: knownAttempts,
+        },
+      ]);
+      expect(report.complete).toBe(false);
+      expect(report.verdict.passed).toBe(false);
+    });
+
+    /**
+     * A stop before ANY request in a case (an empty attempts trace) must
+     * remain distinguishable from a mid-case abort — it stays a plain
+     * unexecuted case, not a `partialCases` entry, since there is no known
+     * usage to fold in and the case never actually started.
+     */
+    it("keeps a budget stop with an EMPTY attempts trace as a plain unexecuted case, never a partialCases entry", async () => {
+      const budgetError = new BudgetExceededError("Eval token budget exceeded: stopping.", []);
+      const runCase = vi.fn().mockRejectedValueOnce(budgetError);
+
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase, gapCase],
+          budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase },
+      );
+
+      expect(report.totals.totalTokens).toBe(0);
+      expect(report.partialCases).toEqual([]);
+      expect(report.unexecutedCaseIds).toEqual(["grounded-1", "gap-1"]);
+    });
   });
 
   /**
@@ -1274,5 +1365,201 @@ describe("runEvalSuite", () => {
       expect(report.budgetExceeded).not.toBeNull();
       expect(report.failedCases).toEqual([]);
     });
+  });
+});
+
+/**
+ * #307 review issuecomment-5577656024: "Required durable verification:
+ * exercise the actual installed Mastra Agent with a fake multi-step provider
+ * through the production wiring and report path, not only sequential
+ * policy.run mocks." Every other budget/usage test in this file (and in
+ * `cli.test.ts`) either injects a fake `deps.runCase` directly or drives
+ * `./retry.ts`'s `RetryPolicy.run()` sequentially by hand — neither proves
+ * the REAL composition `./cli.ts`'s `main()` builds actually behaves this
+ * way: a real `@mastra/core` `Agent` (with a real tool, so it genuinely
+ * issues a SECOND provider request mid-case after the first requests a tool
+ * call) wrapped by `createRetryingModel`, fed through `createEvalRetryPolicy`
+ * (the exact shared budget guard + attempt tracker wiring `main()` uses), and
+ * `createRunCase` (the exact `RunnerDeps.runCase` `main()` passes to
+ * `runEvalSuite`).
+ */
+describe("durable verification with a real Mastra Agent + fake multi-step provider (#307 review issuecomment-5577656024)", () => {
+  function fakeTool() {
+    return createTool({
+      id: "fake-tool",
+      description: "test tool",
+      inputSchema: z.object({}).strict(),
+      execute: async () => ({ ok: true }),
+    });
+  }
+
+  function toolCallStep(inputTokens: number, outputTokens: number) {
+    return {
+      content: [
+        { type: "tool-call" as const, toolCallId: "call-1", toolName: "fake-tool", input: "{}" },
+      ],
+      finishReason: { unified: "tool-calls" as const, raw: undefined },
+      usage: {
+        inputTokens: {
+          total: inputTokens,
+          noCache: inputTokens,
+          cacheRead: undefined,
+          cacheWrite: undefined,
+        },
+        outputTokens: { total: outputTokens, text: outputTokens, reasoning: undefined },
+      },
+      warnings: [],
+    };
+  }
+
+  function textStep(text: string, inputTokens: number, outputTokens: number) {
+    return {
+      content: [{ type: "text" as const, text }],
+      finishReason: { unified: "stop" as const, raw: undefined },
+      usage: {
+        inputTokens: {
+          total: inputTokens,
+          noCache: inputTokens,
+          cacheRead: undefined,
+          cacheWrite: undefined,
+        },
+        outputTokens: { total: outputTokens, text: outputTokens, reasoning: undefined },
+      },
+      warnings: [],
+    };
+  }
+
+  /** Build the exact production composition `./cli.ts`'s `main()` builds, around a fake `doGenerate`. */
+  function buildProductionWiring(
+    doGenerate: () => Promise<unknown>,
+    budget: { maxTotalTokens: number; maxCostUsd: number },
+  ) {
+    const attemptTracker = createCaseAttemptTracker();
+    const retryPolicy = createEvalRetryPolicy({
+      modelId: "gemini-3.6-flash",
+      maxTotalTokens: budget.maxTotalTokens,
+      maxCostUsd: budget.maxCostUsd,
+      attemptTracker,
+    });
+    const inner = new MockLanguageModelV4({ doGenerate: doGenerate as never });
+    const model = createRetryingModel({ model: inner, retryPolicy });
+    const agent = new Agent({
+      id: "test-agent",
+      name: "Test Agent",
+      instructions: "test",
+      model,
+      tools: { "fake-tool": fakeTool() },
+    });
+    return { runCase: createRunCase(agent, attemptTracker) };
+  }
+
+  it("stops a case MID-FLIGHT when its own 2nd real provider request would cross the token budget, retains the per-attempt trace, folds the known 150 tokens into totals exactly once, and produces a JSON-serializable report", async () => {
+    let calls = 0;
+    const doGenerate = async () => {
+      calls += 1;
+      if (calls === 1) return toolCallStep(100, 50); // known 150 tokens
+      throw new Error("must never be called — the 2nd request must be blocked before dispatch");
+    };
+    const { runCase } = buildProductionWiring(doGenerate, { maxTotalTokens: 100, maxCostUsd: 100 });
+
+    const report = await runEvalSuite(
+      {
+        cases: [groundedCase, gapCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    // Exactly ONE real provider request — the 2nd was stopped before dispatch.
+    expect(calls).toBe(1);
+    expect(report.totals.totalTokens).toBe(150);
+    expect(report.partialCases).toHaveLength(1);
+    expect(report.partialCases[0]?.id).toBe("grounded-1");
+    expect(report.partialCases[0]?.attempts.map((a) => a.outcome)).toEqual([
+      "success",
+      "stopped-budget-exceeded",
+    ]);
+    expect(report.unexecutedCaseIds).toEqual(["gap-1"]);
+    expect(report.complete).toBe(false);
+    // The exact "persisted JSON" step `./cli.ts`'s `main()` performs — must
+    // never throw (no non-serializable values) and must round-trip the
+    // totals/partialCases this test just asserted on.
+    const persisted = JSON.parse(JSON.stringify(report));
+    expect(persisted.totals.totalTokens).toBe(150);
+    expect(persisted.partialCases[0].id).toBe("grounded-1");
+  });
+
+  it("stops CROSS-CASE before the next case's own first request when the shared budget is already exhausted, never losing the completed case's known usage", async () => {
+    let calls = 0;
+    const doGenerate = async () => {
+      calls += 1;
+      return textStep(`answer ${calls}`, 100, 50); // 150 known tokens per case
+    };
+    const { runCase } = buildProductionWiring(doGenerate, { maxTotalTokens: 150, maxCostUsd: 100 });
+
+    const report = await runEvalSuite(
+      {
+        cases: [groundedCase, gapCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    // The 1st case's own request went through (150 known tokens); the 2nd
+    // case's FIRST request never dispatched at all.
+    expect(calls).toBe(1);
+    expect(report.cases).toHaveLength(1);
+    expect(report.cases[0]?.id).toBe("grounded-1");
+    expect(report.totals.totalTokens).toBe(150);
+    // A stop before any request in the next case is a plain unexecuted case,
+    // never a partialCases entry — it never actually started.
+    expect(report.partialCases).toEqual([]);
+    expect(report.unexecutedCaseIds).toEqual(["gap-1"]);
+  });
+
+  it("persists a partial-known successful case (mixed known/unknown attempt usage, no reported totalUsage) with its known partial sum, never a fabricated zero", async () => {
+    let calls = 0;
+    const doGenerate = async () => {
+      calls += 1;
+      if (calls === 1) return toolCallStep(100, 50); // known 150 tokens
+      // 2nd step succeeds but this fake provider result carries no usage
+      // AI SDK can parse (`extractDoGenerateUsage` falls back to "unknown").
+      return {
+        content: [{ type: "text" as const, text: "final answer" }],
+        finishReason: { unified: "stop" as const, raw: undefined },
+        warnings: [],
+      };
+    };
+    const { runCase } = buildProductionWiring(doGenerate, {
+      maxTotalTokens: 1_000_000,
+      maxCostUsd: 100,
+    });
+
+    const report = await runEvalSuite(
+      {
+        cases: [groundedCase],
+        budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
+
+    expect(calls).toBe(2);
+    expect(report.cases).toHaveLength(1);
+    // The known 150 tokens from the 1st (successful) step are preserved as
+    // the case's own usage and folded into totals — never zeroed out just
+    // because the 2nd step's usage couldn't be read.
+    expect(report.cases[0]?.usageKnown).toBe(false);
+    expect(report.totals.totalTokens).toBe(150);
+    expect(report.totals.usageComplete).toBe(false);
+
+    const persisted = JSON.parse(JSON.stringify(report));
+    expect(persisted.cases[0].usageKnown).toBe(false);
+    expect(persisted.totals.totalTokens).toBe(150);
   });
 });

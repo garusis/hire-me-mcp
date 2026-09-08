@@ -387,17 +387,47 @@ function buildReportForRunCaseFailure(
   const { config, casesToRun, caseReports, index, evalCase, totals, pricing } = context;
 
   if (error instanceof BudgetExceededError) {
-    // This aborted case produced no usable `CaseRunResult`, so — unlike the
-    // `EvalCaseError` branch below — its (unknowable) usage is never added
-    // to the totals, and the aborted case itself is marked unexecuted
-    // alongside every case after it, not scored as a failure.
+    // #307 review issuecomment-5577656024, finding 1: `error.attempts` is
+    // the aborted case's OWN attempt trace, attached by `./cli.ts`'s
+    // `createRunCase` before rethrowing. Note this can be NON-empty even
+    // when NO real request was ever dispatched: `./retry.ts`'s `run()`
+    // records a "stopped-budget-exceeded" attempt for a `beforeAttempt`
+    // check that fires BEFORE issuing the request. The real signal for "did
+    // this case make genuine progress" is whether any of its attempts
+    // carries KNOWN usage — not merely whether the trace is non-empty.
+    const attempts = error.attempts;
+    const caseUsage = sumKnownUsage(attempts);
+    // The aborted case's own KNOWN usage (e.g. a successful first request
+    // before a second one was blocked) is real spend — fold it into totals
+    // exactly once, the same "never discard known usage from a case that
+    // didn't finish" treatment the EvalCaseError branch below already gets.
+    // `sumKnownUsage` never fabricates a number for an attempt with no known
+    // usage, so this never invents spend that didn't happen.
+    const finalTotals =
+      caseUsage.usage === "unknown"
+        ? totals
+        : {
+            inputTokens: totals.inputTokens + caseUsage.usage.inputTokens,
+            outputTokens: totals.outputTokens + caseUsage.usage.outputTokens,
+            totalTokens: totals.totalTokens + caseUsage.usage.totalTokens,
+            costUsd: totals.costUsd + estimateCostUsd(caseUsage.usage, pricing),
+          };
+
+    const wasMidCase = caseUsage.usage !== "unknown";
     return buildReport({
       promptVersion: config.promptVersion,
       modelId: config.modelId,
       cases: caseReports,
-      totals,
+      totals: finalTotals,
       thresholds: config.thresholds,
-      unexecutedCaseIds: casesToRun.slice(index).map((c) => c.id),
+      // A case aborted mid-flight is classified separately (partialCases,
+      // below) — only the cases strictly AFTER it never started at all.
+      // A stop before this case's own first request keeps the prior
+      // behavior: this case, and everything after it, is unexecuted.
+      unexecutedCaseIds: casesToRun.slice(wasMidCase ? index + 1 : index).map((c) => c.id),
+      partialCases: wasMidCase
+        ? [{ id: evalCase.id, category: evalCase.category, question: evalCase.question, attempts }]
+        : [],
       budgetExceeded: { message: error.message },
     });
   }

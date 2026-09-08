@@ -128,4 +128,57 @@ describe("createBudgetGuard", () => {
 
     expect(() => guard.assertNotExceeded()).toThrow(BudgetExceededError);
   });
+
+  /**
+   * #307 review issuecomment-5577656024: "Review exhausted budget equality
+   * too: no additional request once known consumption equals its cap."
+   * Previously `assertNotExceeded` used strict `>`, so known usage sitting
+   * EXACTLY on the cap let one more real provider request through before the
+   * guard ever fired — the cap is a ceiling to stop AT, not a threshold to
+   * cross before stopping.
+   */
+  it("throws once accumulated KNOWN tokens EQUAL maxTotalTokens exactly — never lets one more request through at the exact cap", () => {
+    const guard = createBudgetGuard({ maxTotalTokens: 100, maxCostUsd: 100 });
+    guard.recordUsage({ inputTokens: 60, outputTokens: 40, totalTokens: 100 }, pricing);
+
+    expect(() => guard.assertNotExceeded()).toThrow(BudgetExceededError);
+  });
+
+  it("throws once accumulated KNOWN cost EQUALS maxCostUsd exactly", () => {
+    const guard = createBudgetGuard({ maxTotalTokens: 1_000_000, maxCostUsd: 1 });
+    guard.recordUsage(
+      { inputTokens: 1_000_000, outputTokens: 0, totalTokens: 1_000_000 },
+      { inputPerMillion: 1, outputPerMillion: 0 },
+    );
+
+    expect(() => guard.assertNotExceeded()).toThrow(BudgetExceededError);
+  });
+});
+
+/**
+ * #307 review issuecomment-5577656024, finding 1: a `BudgetExceededError`
+ * thrown mid-case (from `beforeAttempt`, before a request that would cross
+ * the shared budget) must be able to carry the case's own known-usage
+ * attempt trace, so `./runner.ts` can fold that KNOWN usage into totals
+ * instead of losing it, and classify the case as aborted rather than
+ * never-started. Previously this class had no such field at all.
+ */
+describe("BudgetExceededError attempts", () => {
+  it("defaults to an empty attempts trace when none is supplied", () => {
+    const error = new BudgetExceededError("stopped");
+    expect(error.attempts).toEqual([]);
+  });
+
+  it("carries a supplied attempts trace", () => {
+    const attempts = [
+      {
+        attempt: 1,
+        outcome: "success" as const,
+        durationMs: 5,
+        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      },
+    ];
+    const error = new BudgetExceededError("stopped", attempts);
+    expect(error.attempts).toEqual(attempts);
+  });
 });
