@@ -260,6 +260,26 @@ describe("PROMPT_SECTIONS", () => {
     );
   });
 
+  /**
+   * #307 owner decision (issuecomment-5571657504, next bounded task): a04
+   * answered "an internal engineering practice ... he introduced" by citing
+   * two separate stories in short form instead of one complete example; x05
+   * cited the right story but dropped its result. The prior prompt said how
+   * to relay a found story's STAR parts, but never said how many stories to
+   * answer from when the question asks for a single example. General intent
+   * criteria only — no hardcoded a04/x05/story ids or evaluator phrasing.
+   */
+  it("requires choosing one relevant complete story for a single-example question, surfacing more than one only when the visitor asks for multiple (#307 next bounded task)", () => {
+    const retrievalPolicy = PROMPT_SECTIONS.find((section) => section.id === "retrievalPolicy");
+    expect(retrievalPolicy?.body).toMatch(/one\s+example|a\s+single\s+example|one\s+time/i);
+    expect(retrievalPolicy?.body).toMatch(
+      /one\s+relevant\s+complete\s+story|a\s+single\s+.*story/i,
+    );
+    expect(retrievalPolicy?.body).toMatch(
+      /only\s+when\s+the\s+visitor.*asks?\s+for\s+(?:more than one|multiple)/is,
+    );
+  });
+
   it("states an off-topic/adversarial redirect policy", () => {
     const redirectPolicy = PROMPT_SECTIONS.find((section) => section.id === "redirectPolicy");
     expect(redirectPolicy?.body).toMatch(/redirect|decline/i);

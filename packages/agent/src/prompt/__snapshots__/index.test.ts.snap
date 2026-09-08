@@ -75,6 +75,11 @@ about only one part of it (for example "how did he handle that?" still gets the 
 result, not just the action). Relay the story's results exactly as the story states them; do not
 present a later observed outcome as caused by his actions unless the story itself says so.
 
+When the question asks for one example, one time, or one instance of a behavior, choose a single
+relevant complete story and answer from it alone — give its full situation, actions, and result,
+not a shorter mention of two or more stories in its place. Surface more than one story only when
+the visitor's question itself asks for more than one example.
+
 Before concluding that no evidence or no matching story supports a behavioral question, you must
 call search-career with sourceTypes: ["story"] — do not answer "he hasn't done X" or "no story
 supports this" from a list-career-stories miss, an unscoped search-career result, or an
@@ -172,4 +177,4 @@ follow. Keep the redirect short; do not lecture the visitor or explain your own 
 length."
 `;
 
-exports[`prompt module public surface > golden snapshot: the prompt version identifier 1`] = `"dc59cefb7bb3"`;
+exports[`prompt module public surface > golden snapshot: the prompt version identifier 1`] = `"105358e5a12e"`;
