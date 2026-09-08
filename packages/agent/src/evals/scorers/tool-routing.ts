@@ -488,6 +488,75 @@ function competencyFilterViolation(
   };
 }
 
+/**
+ * Whether `call` (one `list-career-stories` call already known to satisfy
+ * the ordering gate) would, ON ITS OWN, satisfy every check
+ * `scoreListCareerStories` applies to a located call: a valid competency
+ * filter (exact-match or a valid controlled-vocabulary supporting match),
+ * no citation of a story the call itself didn't return, and — whenever the
+ * case defines `acceptableStoryIds` (the scope in which the existing route
+ * already requires it downstream, per `scoreListCareerStories`'s own final
+ * check) — a confirmed, acceptable, answer-cited story. Used by
+ * `locateListCareerStoriesCall` to test each candidate call in turn; kept
+ * in exact sync with `scoreListCareerStories`'s own gates so recovery never
+ * accepts anything the single-call scorer wouldn't have.
+ */
+function qualifiesAsLocatedListCall(
+  candidate: ToolCall,
+  expectedCompetencies: readonly string[] | undefined,
+  answer: string | undefined,
+  acceptableStoryIds: readonly string[] | undefined,
+): boolean {
+  if (competencyFilterViolation(candidate, expectedCompetencies, answer, acceptableStoryIds, "")) {
+    return false;
+  }
+  if (citesUnreturnedStory(answer, candidate.citations)) return false;
+  if (
+    acceptableStoryIds !== undefined &&
+    !confirmsAcceptableCitedStory(candidate.citations, answer, acceptableStoryIds)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * #307 assignment A (issuecomment-5591843129 / diagnosis section (a) / C1):
+ * `scoreListCareerStories` and `scoreListCareerStoriesAsAlternate` used to
+ * always evaluate the FIRST `list-career-stories` call in the trace, even
+ * when a later call in the same trace actually retrieved and the answer
+ * actually cited the acceptable story (the saved X05 trace: a first call
+ * whose extra `query` key failed Mastra's strict tool-input validation, so
+ * its `citations` came back `undefined`, followed by a valid, confirmed,
+ * cited second call). Returns the first call, among all `list-career-
+ * stories` calls in `toolCalls` (in trace order), that satisfies
+ * `qualifiesAsLocatedListCall` — i.e. would pass every gate
+ * `scoreListCareerStories` applies to a single located call, INCLUDING the
+ * evidence requirement whenever `acceptableStoryIds` is defined. An
+ * exact-match filter alone never short-circuits that requirement: a first
+ * call that is an exact match but carries no usable (confirmed, acceptable)
+ * citations does not qualify, so a later evidenced call is selected
+ * instead. Falls back to the very first `list-career-stories` call (index
+ * included) when no call qualifies, so the original failure reason is
+ * still reported against a real call.
+ */
+function locateListCareerStoriesCall(
+  toolCalls: readonly ToolCall[],
+  expectedCompetencies: readonly string[] | undefined,
+  answer: string | undefined,
+  acceptableStoryIds: readonly string[] | undefined,
+): { call: ToolCall; index: number } | undefined {
+  let fallback: { call: ToolCall; index: number } | undefined;
+  for (const [index, candidate] of toolCalls.entries()) {
+    if (candidate.toolName !== "list-career-stories") continue;
+    if (fallback === undefined) fallback = { call: candidate, index };
+    if (qualifiesAsLocatedListCall(candidate, expectedCompetencies, answer, acceptableStoryIds)) {
+      return { call: candidate, index };
+    }
+  }
+  return fallback;
+}
+
 function scoreListCareerStories(
   toolCalls: readonly ToolCall[],
   expectedCompetencies: readonly string[] | undefined,
@@ -515,7 +584,14 @@ function scoreListCareerStories(
     };
   }
 
-  const located = toolCalls[listCareerStoriesIndex];
+  const locatedResult = locateListCareerStoriesCall(
+    toolCalls,
+    expectedCompetencies,
+    answer,
+    acceptableStoryIds,
+  );
+  const located = locatedResult?.call;
+  const locatedCallLabel = `call #${(locatedResult?.index ?? listCareerStoriesIndex) + 1}`;
 
   const competencyViolation = competencyFilterViolation(
     located,
@@ -524,14 +600,19 @@ function scoreListCareerStories(
     acceptableStoryIds,
     trace,
   );
-  if (competencyViolation) return competencyViolation;
+  if (competencyViolation) {
+    return {
+      ...competencyViolation,
+      reason: `${competencyViolation.reason} (evaluated ${locatedCallLabel}.)`,
+    };
+  }
 
   if (citesUnreturnedStory(answer, located?.citations)) {
     return {
       score: clampScore(0),
       reason:
         "The final answer cites a story that the list-career-stories call's own returned " +
-        `citations do not include; tool-call trace was: ${trace}.`,
+        `citations do not include; tool-call trace was: ${trace} (evaluated ${locatedCallLabel}.)`,
     };
   }
 
@@ -560,13 +641,15 @@ function scoreListCareerStories(
       reason:
         "The list-career-stories call's own confirmed citations did not include an " +
         "acceptable story id that the final answer also cites; tool-call trace was: " +
-        `${trace}.`,
+        `${trace} (evaluated ${locatedCallLabel}.)`,
     };
   }
 
   return {
     score: clampScore(1),
-    reason: `list-career-stories was called first, ahead of search-career; tool-call trace was: ${trace}.`,
+    reason:
+      "list-career-stories was called first, ahead of search-career; tool-call trace was: " +
+      `${trace} (evaluated ${locatedCallLabel}.)`,
   };
 }
 
@@ -629,7 +712,12 @@ function scoreListCareerStoriesAsAlternate(
   const base = scoreListCareerStories(toolCalls, undefined, answer, acceptableStoryIds);
   if (base.score !== 1) return base;
 
-  const located = toolCalls.find((call) => call.toolName === "list-career-stories");
+  const located = locateListCareerStoriesCall(
+    toolCalls,
+    undefined,
+    answer,
+    acceptableStoryIds,
+  )?.call;
 
   // #307 owner-approved decision (issuecomment-5575463218): the mirror of
   // the own-route loosening above — the alternate route has no case-specific

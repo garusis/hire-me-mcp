@@ -1371,4 +1371,272 @@ describe("scoreToolRouting", () => {
       });
     });
   });
+
+  /**
+   * #307 assignment A (issuecomment-5591843129 / diagnosis issuecomment-5591743584,
+   * section (a) / C1): the scorer only ever evaluated the FIRST
+   * `list-career-stories` call in the trace (`located =
+   * toolCalls[listCareerStoriesIndex]` / `toolCalls.find(...)`). The saved
+   * X05 trace shows a first call whose args carried an unknown key
+   * (`query`), which Mastra's `.strict()` tool-input validation rejects
+   * before the tool runs — so that call's `citations` is `undefined`
+   * ("unavailable") — followed by a second, valid call that DID return and
+   * the answer DID cite. The scorer must recognize the later valid,
+   * evidenced call instead of failing solely because the first call carried
+   * no evidence.
+   */
+  describe("recovery: a later valid list-career-stories call that itself returns the acceptable, answer-cited story after an unavailable/empty first result (#307 assignment A)", () => {
+    const sapStoryId = "fullstack-labs-sap-migration";
+    const sapCitation: ReturnedCitation = { entityType: "story", entityId: sapStoryId };
+    const sapAnswer = `He caught a subtle financial-data discrepancy. [cite:story:${sapStoryId}]`;
+
+    it("reproduces the saved X05 trace: first call's citations are UNDEFINED (unavailable — unparseable tool-input-validation-failure result), second call is confirmed and cited — own route scores 1", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", {
+            competencies: ["problem-solving", "technical-judgment"],
+            query: "financial discrepancy data",
+          }),
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }, [
+            sapCitation,
+          ]),
+        ],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: sapAnswer,
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("same trace with the first call's citations CONFIRMED EMPTY ([]) instead of undefined — still recovers via the second call", () => {
+      const result = scoreToolRouting(
+        [
+          call(
+            "list-career-stories",
+            { competencies: ["problem-solving", "technical-judgment"] },
+            [],
+          ),
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }, [
+            sapCitation,
+          ]),
+        ],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: sapAnswer,
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("exact-match first call, unparseable (undefined-citations) result, valid supporting-match recovery call — scores 1", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["risk-management"] }),
+          call("list-career-stories", { competencies: ["technical-judgment"] }, [sapCitation]),
+        ],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: sapAnswer,
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("IMPORTANT correction: an EXACT-MATCH first call with no usable citations must NOT win over a later evidenced recovery call — the exact-match call alone would fail (no evidence), so the later call must be selected instead", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["risk-management"] }),
+          call("list-career-stories", { competencies: ["risk-management"] }, [sapCitation]),
+        ],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: sapAnswer,
+        },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("still scores 0 when the recovery call's competency filter is invalid (uncontrolled vocabulary), even though it retrieves and cites the acceptable story", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }),
+          call("list-career-stories", { competencies: ["SAP"] }, [sapCitation]),
+        ],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: sapAnswer,
+        },
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/competenc/i);
+    });
+
+    it("still scores 0 when the recovery call returns only a non-acceptable story", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }),
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }, [
+            { entityType: "story", entityId: "unrelated-story" },
+          ]),
+        ],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: sapAnswer,
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("still scores 0 when the final answer cites a story no call returned (citesUnreturnedStory guard survives recovery)", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }),
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }, [
+            sapCitation,
+          ]),
+        ],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: `${sapAnswer} [cite:story:unreturned-story]`,
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("still scores 0 when NEITHER call qualifies (no recovery available) — falls back to the first call's own failure", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }),
+          call(
+            "list-career-stories",
+            { competencies: ["problem-solving", "technical-judgment"] },
+            [],
+          ),
+        ],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: sapAnswer,
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("preserves the first-list-vs-search ordering guard: a search-career call before the FIRST list-career-stories call still fails, regardless of a later recovery call", () => {
+      const result = scoreToolRouting(
+        [
+          call("search-career", { query: "financial discrepancy" }),
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }),
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }, [
+            sapCitation,
+          ]),
+        ],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: sapAnswer,
+        },
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/precede|before|first|order/i);
+    });
+
+    it("still scores 0 when the final answer reaches a no-evidence/absence conclusion (list-only route cannot license absence, even with a recovered citation)", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }),
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }, [
+            sapCitation,
+          ]),
+        ],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: `There is no matching story for that. [cite:story:${sapStoryId}]`,
+        },
+      );
+      expect(result.score).toBe(0);
+    });
+
+    it("mirror on the alternate route (expected search-career-story-scoped, list-career-stories used as the alternate): recovers via the later valid call", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", {
+            competencies: ["problem-solving", "technical-judgment"],
+            query: "financial discrepancy data",
+          }),
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }, [
+            sapCitation,
+          ]),
+        ],
+        "search-career-story-scoped",
+        { acceptableStoryIds: [sapStoryId], answer: sapAnswer },
+      );
+      expect(result.score).toBe(1);
+    });
+
+    it("mirror on the alternate route: still scores 0 when the recovery call's filter is invalid", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }),
+          call("list-career-stories", { competencies: ["SAP"] }, [sapCitation]),
+        ],
+        "search-career-story-scoped",
+        { acceptableStoryIds: [sapStoryId], answer: sapAnswer },
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/competenc/i);
+    });
+
+    it("the pass/fail reason names the 1-based index of the call actually evaluated — the recovery call (#2), not the first one", () => {
+      const result = scoreToolRouting(
+        [
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }),
+          call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] }, [
+            sapCitation,
+          ]),
+        ],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: sapAnswer,
+        },
+      );
+      expect(result.score).toBe(1);
+      expect(result.reason).toMatch(/call #2|call 2|index 2|\(#2\)/i);
+    });
+
+    it("the failure reason names the 1-based index of the (first, no-recovery-available) call it evaluated", () => {
+      const result = scoreToolRouting(
+        [call("list-career-stories", { competencies: ["problem-solving", "technical-judgment"] })],
+        "list-career-stories",
+        {
+          expectedCompetencies: ["risk-management"],
+          acceptableStoryIds: [sapStoryId],
+          answer: sapAnswer,
+        },
+      );
+      expect(result.score).toBe(0);
+      expect(result.reason).toMatch(/call #1|call 1|index 1|\(#1\)/i);
+    });
+  });
 });
