@@ -388,6 +388,32 @@ describe("buildReport", () => {
   });
 
   /**
+   * #307 second independent-review correction, finding 4: a successful
+   * case's own attempt trace must survive into the final report unmodified
+   * when present, and default to an empty array (never `undefined`) when a
+   * case carries none.
+   */
+  it("carries each case's attempts through to the report, defaulting to [] when a case declares none", () => {
+    const caseWithAttempts: CaseReport = {
+      ...(baseCases[0] as CaseReport),
+      attempts: [
+        { attempt: 1, outcome: "retrying", durationMs: 5, statusCode: 503 },
+        { attempt: 2, outcome: "success", durationMs: 5 },
+      ],
+    };
+
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: [caseWithAttempts, baseCases[1] as CaseReport],
+      totals,
+    });
+
+    expect(report.cases[0]?.attempts).toEqual(caseWithAttempts.attempts);
+    expect(report.cases[1]?.attempts).toEqual([]);
+  });
+
+  /**
    * #307 C5 (retry/observability): a terminal provider failure stops the
    * suite mid-run rather than aborting with nothing to show for it — the
    * runner (`./runner.ts`) hands `buildReport` whatever cases DID complete,
@@ -465,6 +491,61 @@ describe("buildReport", () => {
       expect(report.verdict.passed).toBe(false);
       expect(report.verdict.failures.some((line) => line.includes("off-topic-2"))).toBe(true);
       expect(report.verdict.failures.some((line) => line.includes("off-topic-3"))).toBe(true);
+    });
+  });
+
+  /**
+   * #307 second independent-review correction, finding 5: a budget overage
+   * stops the suite mid-run the same way a terminal provider failure does —
+   * the report must surface it distinctly (never conflated with
+   * `failedCases`, which is specifically for a case's own provider call
+   * failing), mark itself incomplete, and fail the verdict outright.
+   */
+  describe("budget exceeded (#307 second correction, finding 5)", () => {
+    it("defaults budgetExceeded to null when the suite ran to completion", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+      });
+
+      expect(report.budgetExceeded).toBeNull();
+    });
+
+    it("carries budgetExceeded through, marks the report incomplete, and fails the verdict naming the overage message", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases.slice(0, 2),
+        totals,
+        thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.05 },
+        unexecutedCaseIds: ["off-topic-1"],
+        budgetExceeded: { message: "Eval token budget exceeded: 300000 total token(s) used" },
+      });
+
+      expect(report.budgetExceeded).toEqual({
+        message: "Eval token budget exceeded: 300000 total token(s) used",
+      });
+      expect(report.complete).toBe(false);
+      expect(report.verdict.passed).toBe(false);
+      expect(
+        report.verdict.failures.some((line) => line.includes("Eval token budget exceeded")),
+      ).toBe(true);
+    });
+
+    it("fails the verdict on a budget overage even when every completed case's aggregate clears its threshold and no case is unexecuted", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+        thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.05 },
+        budgetExceeded: { message: "Eval cost budget exceeded: $5.00 spent" },
+      });
+
+      expect(report.verdict.passed).toBe(false);
+      expect(report.complete).toBe(false);
     });
   });
 });

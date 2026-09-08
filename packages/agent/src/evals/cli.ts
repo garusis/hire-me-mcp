@@ -37,7 +37,13 @@ import {
   DEFAULT_EVAL_RPM_LIMIT,
   toLanguageModel,
 } from "./rate-limit.js";
-import { createRetryingModel, createRetryPolicy, type RetryAttemptRecord } from "./retry.js";
+import {
+  createRetryingModel,
+  createRetryPolicy,
+  type RetryAttemptRecord,
+  redactSecrets,
+  sumKnownUsage,
+} from "./retry.js";
 import { type CaseFailureInfo, type CaseRunResult, EvalCaseError, runEvalSuite } from "./runner.js";
 import type { ReturnedCitation } from "./scorers/types.js";
 import { EVAL_THRESHOLDS } from "./thresholds.js";
@@ -294,10 +300,16 @@ export function describeCaseFailure(
   attempts: readonly RetryAttemptRecord[],
 ): CaseFailureInfo {
   const statusCode = apiErrorStatusCode(error);
+  const rawMessage = error instanceof Error ? error.message : String(error);
   return {
     ...(statusCode !== undefined ? { statusCode } : {}),
     ...(error instanceof Error ? { errorName: error.name } : {}),
-    errorMessage: error instanceof Error ? error.message : String(error),
+    // #307 second independent-review correction, finding 3: never let a raw
+    // provider error message (which can embed a request URL's API key, or
+    // an echoed Authorization/bearer header) reach the report unredacted —
+    // see `./retry.js`'s `redactSecrets` module docs for the shared
+    // sanitization boundary `./retry.js`'s own `describeError` also uses.
+    errorMessage: redactSecrets(rawMessage),
     attempts: [...attempts],
   };
 }
@@ -334,11 +346,24 @@ export function createCaseAttemptTracker(): CaseAttemptTracker & {
   };
 }
 
-/** The slice of Mastra's `Agent` this module actually calls — `agent.generate(question, { maxRetries: 0 })`. Narrowed so {@link createRunCase} is testable with a fake, never a real `Agent`. */
+/**
+ * The slice of Mastra's `Agent` this module actually calls —
+ * `agent.generate(question, { modelSettings: { maxRetries: 0 } })`. Narrowed
+ * so {@link createRunCase} is testable with a fake, never a real `Agent`.
+ *
+ * #307 second independent-review correction, finding 2: the real
+ * `Agent.generate()` has NO top-level `maxRetries` option — it lives under
+ * `modelSettings` (confirmed against the real `@mastra/core` `Agent` type;
+ * `retry.test.ts`'s "nested-retry proof" suite wires one directly). The
+ * previous `{ maxRetries?: number }` shape here compiled (this interface
+ * was permissive enough to accept it) but meant nothing to a real `Agent` —
+ * Mastra's own nested per-step retry was NEVER actually disabled in
+ * production, only in this module's own fake-`generate` unit tests.
+ */
 export interface GenerateLike {
   generate: (
     question: string,
-    options?: { maxRetries?: number },
+    options?: { modelSettings?: { maxRetries?: number } },
   ) => Promise<{
     text: string;
     toolResults?: unknown[];
@@ -347,14 +372,39 @@ export interface GenerateLike {
 }
 
 /**
+ * Read `result.totalUsage` as a fully-known usage triple, or `undefined` if
+ * any field is missing — never partially trusted (#307 second
+ * independent-review correction, finding 4).
+ */
+function reportedUsageOf(
+  totalUsage: Awaited<ReturnType<GenerateLike["generate"]>>["totalUsage"],
+): { inputTokens: number; outputTokens: number; totalTokens: number } | undefined {
+  if (
+    typeof totalUsage?.inputTokens !== "number" ||
+    typeof totalUsage?.outputTokens !== "number" ||
+    typeof totalUsage?.totalTokens !== "number"
+  ) {
+    return undefined;
+  }
+  return {
+    inputTokens: totalUsage.inputTokens,
+    outputTokens: totalUsage.outputTokens,
+    totalTokens: totalUsage.totalTokens,
+  };
+}
+
+/**
  * Build the real `RunnerDeps.runCase` (#307 C5): calls `agent.generate`
- * with `maxRetries: 0` — Mastra's own nested per-generate retry disabled,
- * since `./retry.ts`'s `createRetryPolicy` (wrapping the model `agent` was
- * built with — see `main()`) is the single retry owner now. A rejection
- * that reaches here already exhausted every retry that policy would
- * attempt, so it is always terminal: wrapped in an `EvalCaseError` carrying
- * `tracker`'s recorded attempts, never retried again here and never used to
- * regenerate an answer.
+ * with `modelSettings: { maxRetries: 0 }` — Mastra's own nested
+ * per-generate retry actually disabled (#307 second independent-review
+ * correction, finding 2 — the prior top-level `maxRetries: 0` meant
+ * nothing to the real `Agent`), since `./retry.ts`'s `createRetryPolicy`
+ * (wrapping the model `agent` was built with — see `main()`) is the
+ * single retry owner now. A rejection that reaches here already
+ * exhausted every retry that policy would attempt, so it is always
+ * terminal: wrapped in an `EvalCaseError` carrying `tracker`'s recorded
+ * attempts, never retried again here and never used to regenerate an
+ * answer.
  */
 export function createRunCase(
   agent: GenerateLike,
@@ -364,22 +414,31 @@ export function createRunCase(
     tracker.reset();
     let result: Awaited<ReturnType<GenerateLike["generate"]>>;
     try {
-      result = await agent.generate(question, { maxRetries: 0 });
+      result = await agent.generate(question, { modelSettings: { maxRetries: 0 } });
     } catch (error) {
       throw new EvalCaseError(
         `Eval case failed: ${error instanceof Error ? error.message : String(error)}`,
         describeCaseFailure(error, tracker.attempts()),
       );
     }
+    const attempts = tracker.attempts();
+    // #307 second independent-review correction, finding 4: a missing/
+    // incomplete `totalUsage` must never silently become a fabricated
+    // "0 tokens spent" — fall back to the real per-attempt usage this
+    // module's own retry policy already collected, and only report the
+    // zero (explicitly flagged `usageKnown: false`) when THAT is also
+    // unknown.
+    const reportedUsage = reportedUsageOf(result.totalUsage);
+    const fallbackUsage = reportedUsage ? undefined : sumKnownUsage(attempts);
+    const usage =
+      reportedUsage ?? (fallbackUsage && fallbackUsage !== "unknown" ? fallbackUsage : undefined);
     return {
       answer: result.text,
       toolCitations: extractCitationsFromToolResults(result.toolResults ?? []),
       toolCalls: extractToolCallsFromToolResults(result.toolResults ?? []),
-      usage: {
-        inputTokens: result.totalUsage?.inputTokens ?? 0,
-        outputTokens: result.totalUsage?.outputTokens ?? 0,
-        totalTokens: result.totalUsage?.totalTokens ?? 0,
-      },
+      usage: usage ?? { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      usageKnown: usage !== undefined,
+      attempts,
     };
   };
 }
@@ -405,7 +464,9 @@ async function main(): Promise<void> {
   // #307 C5: `./retry.ts`'s `createRetryPolicy` is now the SINGLE retry
   // owner for eval provider calls — this limiter's own 429 retry is
   // disabled (`maxRetries: 0`) and so is Mastra's own per-generate retry
-  // (`createRunCase` passes `{ maxRetries: 0 }` to `agent.generate`), so
+  // (`createRunCase` passes `{ modelSettings: { maxRetries: 0 } }` to
+  // `agent.generate` — see finding 2's doc comment there for why the
+  // top-level shape used before #307's second correction did nothing), so
   // nothing retries underneath the policy. See `./retry.ts`'s module docs
   // for the full classification (429 stops immediately; 502/503/504/
   // timeout retry, bounded; everything else is permanent).

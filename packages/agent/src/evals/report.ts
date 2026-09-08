@@ -72,6 +72,15 @@ export interface CaseReport {
    * `undefined` — in the assembled report.
    */
   toolTrace?: ToolCall[];
+  /**
+   * Every attempt `./retry.ts`'s `onAttempt` recorded for this case's own
+   * request(s), in order (#307 second independent-review correction,
+   * finding 4) — persisted for a successful case too, not just a failed
+   * one (`FailedCaseReport.attempts` below already covered failures).
+   * Optional on input and always normalized to `[]` — never `undefined` —
+   * in the assembled report, the same treatment `toolTrace` gets above.
+   */
+  attempts?: RetryAttemptRecord[];
 }
 
 /**
@@ -90,6 +99,18 @@ export interface FailedCaseReport {
   errorName?: string;
   errorMessage: string;
   attempts: RetryAttemptRecord[];
+}
+
+/**
+ * A budget cap (case/token/cost) crossed mid-run, stopping the suite (#307
+ * second independent-review correction, finding 5) — `message` is
+ * `BudgetExceededError.message` (`./budget.ts`), already a safe, sanitized
+ * string (it names only configured caps and counted numbers, never a raw
+ * provider error). Distinct from {@link FailedCaseReport}: a budget overage
+ * is the RUNNER's own decision to stop, not a case's provider call failing.
+ */
+export interface BudgetStopInfo {
+  message: string;
 }
 
 /** A per-scorer aggregate: the mean score over every case the scorer applied to, and how many cases that was. */
@@ -140,12 +161,20 @@ export interface EvalReport {
    */
   unexecutedCaseIds: string[];
   /**
-   * `false` whenever `failedCases` or `unexecutedCaseIds` is non-empty —
-   * i.e. this report reflects a partial run, not the full selected case
-   * set. Deliberately top-level (not folded into `totals`) so existing
-   * totals-shape assertions aren't disturbed by this addition.
+   * `false` whenever `failedCases` or `unexecutedCaseIds` is non-empty, or
+   * `budgetExceeded` is set — i.e. this report reflects a partial run, not
+   * the full selected case set. Deliberately top-level (not folded into
+   * `totals`) so existing totals-shape assertions aren't disturbed by this
+   * addition.
    */
   complete: boolean;
+  /**
+   * Set when a configured case/token/cost budget was crossed mid-run,
+   * stopping the suite (#307 second independent-review correction, finding
+   * 5) — `null` on a completed run. Distinct from `failedCases`: this is
+   * the runner's own decision to stop, not a case's provider call failing.
+   */
+  budgetExceeded: BudgetStopInfo | null;
 }
 
 function mean(values: number[]): number {
@@ -170,10 +199,13 @@ export function buildReport(params: {
   failedCases?: FailedCaseReport[];
   /** See {@link EvalReport.unexecutedCaseIds}. Defaults to `[]` (a completed run). */
   unexecutedCaseIds?: string[];
+  /** See {@link EvalReport.budgetExceeded}. Defaults to `null` (a completed run). */
+  budgetExceeded?: BudgetStopInfo;
 }): EvalReport {
   const thresholds = params.thresholds ?? EVAL_THRESHOLDS;
   const failedCases = params.failedCases ?? [];
   const unexecutedCaseIds = params.unexecutedCaseIds ?? [];
+  const budgetExceeded = params.budgetExceeded ?? null;
   const aggregates = {
     groundedness: aggregate(params.cases.map((c) => c.scores.groundedness)),
     gapHonesty: aggregate(params.cases.map((c) => c.scores.gapHonesty)),
@@ -249,21 +281,36 @@ export function buildReport(params: {
         unexecutedCaseIds.join(", "),
     );
   }
+  // #307 second independent-review correction, finding 5: a budget overage
+  // blocks the verdict outright, the same "one violation blocks the whole
+  // run" treatment a terminal case failure already gets above.
+  if (budgetExceeded) {
+    failures.push(budgetExceeded.message);
+  }
 
   return {
     promptVersion: params.promptVersion,
     modelId: params.modelId,
     generatedAt: params.generatedAt ?? new Date().toISOString(),
-    cases: params.cases.map((c) => ({ ...c, toolTrace: c.toolTrace ?? [] })),
+    cases: params.cases.map((c) => ({
+      ...c,
+      toolTrace: c.toolTrace ?? [],
+      attempts: c.attempts ?? [],
+    })),
     aggregates,
     totals: { cases: params.cases.length, ...params.totals },
     thresholds,
     verdict: {
-      passed: scoreVerdict.passed && failedCases.length === 0 && unexecutedCaseIds.length === 0,
+      passed:
+        scoreVerdict.passed &&
+        failedCases.length === 0 &&
+        unexecutedCaseIds.length === 0 &&
+        budgetExceeded === null,
       failures,
     },
     failedCases,
     unexecutedCaseIds,
-    complete: failedCases.length === 0 && unexecutedCaseIds.length === 0,
+    complete: failedCases.length === 0 && unexecutedCaseIds.length === 0 && budgetExceeded === null,
+    budgetExceeded,
   };
 }

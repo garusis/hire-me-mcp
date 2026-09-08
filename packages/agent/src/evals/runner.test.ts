@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { BudgetExceededError } from "./budget.js";
 import type { EvalCase } from "./dataset/schema.js";
 import { EvalCaseError, runEvalSuite, selectCasesForBudget } from "./runner.js";
 
@@ -135,27 +134,36 @@ describe("runEvalSuite", () => {
     expect(selected.some((c) => c.id.startsWith("story-manifest-"))).toBe(true);
   });
 
-  it("aborts loudly with BudgetExceededError when the token budget is exceeded mid-run, without silently truncating", async () => {
+  /**
+   * #307 second independent-review correction, finding 5: stopping on a
+   * budget overage must still preserve every case that DID complete (and
+   * its known usage) in a resolved, partial report — not reject the whole
+   * run and lose it, the same "stop loudly, but never drop what already
+   * ran" treatment `EvalCaseError` gets. See the dedicated "budget exceeded
+   * preserves the partial report" suite below for the full report-shape
+   * assertions.
+   */
+  it("stops after the token budget is exceeded mid-run, without silently truncating or continuing to spend", async () => {
     const runCase = vi.fn().mockResolvedValue({
       answer: "He built things [cite:skill:aws].",
       toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
       usage: { inputTokens: 100_000, outputTokens: 100_000, totalTokens: 200_000 },
     });
-    await expect(
-      runEvalSuite(
-        {
-          cases: [groundedCase, gapCase, offTopicCase],
-          budget: { maxCases: 10, maxTotalTokens: 250_000, maxCostUsd: 100 },
-          promptVersion: "test-version",
-          modelId: "gemini-3.6-flash",
-        },
-        { runCase },
-      ),
-    ).rejects.toThrow(BudgetExceededError);
+    const report = await runEvalSuite(
+      {
+        cases: [groundedCase, gapCase, offTopicCase],
+        budget: { maxCases: 10, maxTotalTokens: 250_000, maxCostUsd: 100 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+      },
+      { runCase },
+    );
 
-    // Aborted after the second case pushed cumulative tokens past the cap —
+    // Stopped after the second case pushed cumulative tokens past the cap —
     // never reached the third.
     expect(runCase).toHaveBeenCalledTimes(2);
+    expect(report.complete).toBe(false);
+    expect(report.verdict.passed).toBe(false);
   });
 
   it("does not throttle between cases itself — rate limiting lives at the model boundary (#282)", async () => {
@@ -1005,23 +1013,177 @@ describe("runEvalSuite", () => {
       ).resolves.toMatchObject({ complete: false });
     });
 
-    it("still enforces the budget cap normally — an EvalCaseError doesn't interfere with BudgetExceededError propagation", async () => {
+    it("still enforces the budget cap normally — an EvalCaseError doesn't interfere with the budget stopping the suite", async () => {
       const runCase = vi.fn().mockResolvedValue({
         answer: "He built things [cite:skill:aws].",
         toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
         usage: { inputTokens: 100_000, outputTokens: 100_000, totalTokens: 200_000 },
       });
-      await expect(
-        runEvalSuite(
-          {
-            cases: [groundedCase, gapCase],
-            budget: { maxCases: 10, maxTotalTokens: 100_000, maxCostUsd: 100 },
-            promptVersion: "test-version",
-            modelId: "gemini-3.6-flash",
-          },
-          { runCase },
-        ),
-      ).rejects.toThrow(BudgetExceededError);
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase, gapCase],
+          budget: { maxCases: 10, maxTotalTokens: 100_000, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase },
+      );
+
+      expect(report.complete).toBe(false);
+      expect(report.budgetExceeded).not.toBeNull();
+    });
+
+    /**
+     * #307 second independent-review correction, finding 4: a case's own
+     * attempt trace (from `./retry.ts`'s `onAttempt`, threaded through
+     * `RunnerDeps.runCase`'s result) must persist onto `CaseReport` for a
+     * SUCCESSFUL case too, not just a failed one.
+     */
+    it("persists a successful case's own attempt trace onto CaseReport.attempts", async () => {
+      const runCase = vi.fn().mockResolvedValue({
+        answer: "He built things [cite:skill:aws].",
+        toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
+        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+        attempts: [
+          { attempt: 1, outcome: "retrying", durationMs: 5, statusCode: 503 },
+          { attempt: 2, outcome: "success", durationMs: 5 },
+        ],
+      });
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase],
+          budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase },
+      );
+
+      expect(report.cases[0]?.attempts).toEqual([
+        { attempt: 1, outcome: "retrying", durationMs: 5, statusCode: 503 },
+        { attempt: 2, outcome: "success", durationMs: 5 },
+      ]);
+    });
+
+    it("defaults CaseReport.attempts to an empty array when the run result carries none", async () => {
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase],
+          budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase: stubRunCase() },
+      );
+
+      expect(report.cases[0]?.attempts).toEqual([]);
+    });
+
+    /**
+     * #307 second independent-review correction, finding 4: a case that
+     * fails terminally can still have spent real, KNOWN tokens on earlier
+     * successful attempts within the same request (or earlier steps of the
+     * same `agent.generate()` turn) before the terminal rejection — that
+     * usage must be added to the report's totals, not silently discarded
+     * just because the case itself never produced a scored answer.
+     */
+    it("adds a failed case's known partial usage (from its attempt trace) to the report totals, instead of discarding it", async () => {
+      const runCase = vi
+        .fn()
+        .mockResolvedValueOnce({
+          answer: "He built things [cite:skill:aws].",
+          toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
+          usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+        })
+        .mockRejectedValueOnce(
+          new EvalCaseError("Eval case failed: Service Unavailable", {
+            statusCode: 503,
+            errorMessage: "Service Unavailable",
+            attempts: [
+              {
+                attempt: 1,
+                outcome: "success",
+                durationMs: 5,
+                usage: { inputTokens: 40, outputTokens: 10, totalTokens: 50 },
+              },
+              { attempt: 2, outcome: "stopped-retries-exhausted", durationMs: 5, statusCode: 503 },
+            ],
+          }),
+        );
+
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase, gapCase],
+          budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase },
+      );
+
+      // 150 from the completed case + 50 known from the failed case's own
+      // successful attempt — never just the 150 from completed cases alone.
+      expect(report.totals.totalTokens).toBe(200);
+    });
+  });
+
+  /**
+   * #307 second independent-review correction, finding 5: a budget overage
+   * must never lose the report the suite already built — `BudgetExceededError`
+   * previously propagated straight out of `runEvalSuite`, so `./cli.ts`'s
+   * `main()` never reached its `writeFile` call and every completed case's
+   * work was lost. The suite must instead resolve to a partial, failing
+   * report — same "preserve what ran, mark it incomplete, fail the verdict"
+   * treatment `EvalCaseError` already gets.
+   */
+  describe("budget exceeded preserves the partial report (#307 second correction, finding 5)", () => {
+    it("resolves to a partial report (never rejects) when the token budget is exceeded mid-run, preserving completed cases and their totals", async () => {
+      const runCase = vi.fn().mockResolvedValue({
+        answer: "He built things [cite:skill:aws].",
+        toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
+        usage: { inputTokens: 100_000, outputTokens: 100_000, totalTokens: 200_000 },
+      });
+
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase, gapCase, offTopicCase],
+          budget: { maxCases: 10, maxTotalTokens: 250_000, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase },
+      );
+
+      // Both cases that ran ARE preserved (the second is what crossed the
+      // cap) — never truncated to zero just because the run stopped.
+      expect(runCase).toHaveBeenCalledTimes(2);
+      expect(report.cases).toHaveLength(2);
+      expect(report.totals.totalTokens).toBe(400_000);
+      expect(report.unexecutedCaseIds).toEqual(["off-topic-1"]);
+      expect(report.complete).toBe(false);
+      expect(report.verdict.passed).toBe(false);
+      expect(report.budgetExceeded?.message).toMatch(/token budget exceeded/i);
+    });
+
+    it("marks the run's own thrown BudgetExceededError as the stop reason, distinguishable from a terminal provider failure", async () => {
+      const runCase = vi.fn().mockResolvedValue({
+        answer: "He built things [cite:skill:aws].",
+        toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
+        usage: { inputTokens: 1000, outputTokens: 0, totalTokens: 1000 },
+      });
+
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase],
+          budget: { maxCases: 10, maxTotalTokens: 500, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase },
+      );
+
+      expect(report.budgetExceeded).not.toBeNull();
+      expect(report.failedCases).toEqual([]);
     });
   });
 });

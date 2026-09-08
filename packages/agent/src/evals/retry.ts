@@ -95,6 +95,51 @@ export type RetryAttemptOutcome =
   | "stopped-retries-exhausted"
   | "stopped-deadline-exceeded";
 
+/**
+ * Thrown by {@link RetryPolicy.run} when a request's deadline is already
+ * past before it can start, or elapses while it's in flight (#307 second
+ * independent-review correction, finding 1). Distinct from a provider error
+ * so `run()`'s catch handler never runs it through {@link decideOnFailure}'s
+ * transient/permanent/429 classification — a deadline is never retried,
+ * period.
+ */
+export class DeadlineExceededError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DeadlineExceededError";
+  }
+}
+
+/**
+ * Redact secrets out of a raw error message before it is ever recorded in a
+ * {@link RetryAttemptRecord} or a `CaseFailureInfo` (#307 second
+ * independent-review correction, finding 3): a provider error's `.message`
+ * can embed the request URL (e.g. a `?key=...` API-key query param) or an
+ * echoed `Authorization`/bearer header. Pattern-based and conservative — it
+ * does not know what a "real" secret looks like, so it redacts the VALUE of
+ * every common secret-bearing key/header, whether or not that value happens
+ * to be real. Exported so `./cli.ts`'s `describeCaseFailure` (the same
+ * sanitization boundary for a case's terminal failure) shares one
+ * source of truth instead of drifting.
+ */
+const SECRET_QUERY_PARAM_PATTERN =
+  /([?&](?:key|token|api[_-]?key|access[_-]?token|secret|password|auth)=)[^&\s"')]+/gi;
+const SECRET_HEADER_PATTERN = /((?:authorization|x-api-key|x-goog-api-key)\s*[:=]\s*)\S+/gi;
+const BEARER_TOKEN_PATTERN = /(bearer\s+)\S+/gi;
+
+export function redactSecrets(text: string): string {
+  return (
+    text
+      .replace(SECRET_QUERY_PARAM_PATTERN, "$1[REDACTED]")
+      // Bearer-token redaction runs BEFORE the header pattern: "Authorization:
+      // Bearer <token>" would otherwise have its header pattern greedily
+      // consume only the word "Bearer" (its `\S+` stops at the space),
+      // leaving the actual token behind for a later pass to miss.
+      .replace(BEARER_TOKEN_PATTERN, "$1[REDACTED]")
+      .replace(SECRET_HEADER_PATTERN, "$1[REDACTED]")
+  );
+}
+
 /** Real token usage, or the explicit `"unknown"` sentinel — never a fabricated zero (see module docs). */
 export type AttemptUsage =
   | { inputTokens: number; outputTokens: number; totalTokens: number }
@@ -132,12 +177,21 @@ export interface RetryPolicyOptions {
 
 export interface RetryPolicy {
   /**
-   * Run `operation`, retrying it per this policy's rules. `extractUsage`
-   * (optional) reads real usage off a successful result for {@link
-   * RetryAttemptRecord.usage}; omit it when the operation's result carries
-   * no usage information (e.g. a stream's initial handle).
+   * Run `operation`, retrying it per this policy's rules. `operation`
+   * receives an `AbortSignal` that this policy aborts the instant the
+   * request/phase deadline elapses (#307 second independent-review
+   * correction, finding 1) — a cooperative real operation (e.g. an AI SDK
+   * `doGenerate` call given `abortSignal`) can stop promptly instead of
+   * running unbounded past the deadline; a fake operation that ignores the
+   * signal is unaffected (the policy still stops waiting on it and moves
+   * on). `extractUsage` (optional) reads real usage off a successful result
+   * for {@link RetryAttemptRecord.usage}; omit it when the operation's
+   * result carries no usage information (e.g. a stream's initial handle).
    */
-  run<T>(operation: () => PromiseLike<T>, extractUsage?: (result: T) => AttemptUsage): Promise<T>;
+  run<T>(
+    operation: (signal: AbortSignal) => PromiseLike<T>,
+    extractUsage?: (result: T) => AttemptUsage,
+  ): Promise<T>;
 }
 
 function defaultSleep(ms: number): Promise<void> {
@@ -164,20 +218,52 @@ function describeError(error: unknown): {
 } {
   const statusCode = apiErrorStatusCode(error);
   if (error instanceof Error) {
-    return { errorName: error.name, errorMessage: error.message, statusCode };
+    return { errorName: error.name, errorMessage: redactSecrets(error.message), statusCode };
   }
-  return { errorMessage: String(error), statusCode };
+  return { errorMessage: redactSecrets(String(error)), statusCode };
 }
 
-/** The provider's `Retry-After` hint, but only when honoring it still lands within `deadline` — otherwise `undefined`, so the caller falls back to its own bounded backoff. */
-function retryAfterWithinDeadline(
-  error: unknown,
-  now: () => number,
-  deadline: number,
-): number | undefined {
-  const hinted = parseRetryAfterMs(error, now);
-  if (hinted === undefined) return undefined;
-  return now() + hinted <= deadline ? hinted : undefined;
+/**
+ * Race `operation` (given an `AbortSignal`) against `remainingMs` of REAL
+ * wall clock (#307 second independent-review correction, finding 1) —
+ * deliberately NOT the injected virtual `now`/`sleep` seam used for backoff
+ * bookkeeping elsewhere in this module: that fake clock advances the moment
+ * `sleep()` is called (by design, so backoff-sequence tests don't wait in
+ * real time), which would corrupt every OTHER attempt's deadline math if
+ * this per-attempt timeout raced against it too. A real timer, cancelled via
+ * `clearTimeout` the instant `operation` settles on its own, has no such
+ * side effect — it only fires if the request genuinely runs past its
+ * budget. `retry.test.ts` proves the hang-abort path with `vi.useFakeTimers`
+ * (this module's timer, not the virtual clock), never a real wait.
+ *
+ * On a timeout, `operation`'s own signal is aborted (cooperative
+ * cancellation — a real `doGenerate` call given this signal, or a fake
+ * operation that reads it, can stop promptly) and the race rejects with
+ * {@link DeadlineExceededError}, which `run()`'s catch handler treats as an
+ * unconditional stop, never a candidate for retry classification.
+ */
+function raceWithDeadline<T>(
+  operation: (signal: AbortSignal) => PromiseLike<T>,
+  remainingMs: number,
+): Promise<T> {
+  const controller = new AbortController();
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      controller.abort();
+      reject(new DeadlineExceededError("Deadline exceeded while the request was in flight"));
+    }, remainingMs);
+    timer.unref?.();
+    Promise.resolve(operation(controller.signal)).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 /** Build the single retry-owner policy described in this module's docs. */
@@ -217,39 +303,84 @@ export function createRetryPolicy(options: RetryPolicyOptions = {}): RetryPolicy
     if (!isTransientProviderError(error)) return { outcome: "stopped-permanent-error" };
     if (attempt >= maxAttempts) return { outcome: "stopped-retries-exhausted" };
 
-    const delayMs = retryAfterWithinDeadline(error, now, deadline) ?? scheduledDelayMs(attempt);
+    // #307 second independent-review correction, finding 1: a provider's
+    // own Retry-After hint is a wait REQUIREMENT, not a suggestion. If
+    // honoring it would blow the deadline, stop — never substitute a
+    // shorter, arbitrary fallback backoff that retries earlier than the
+    // provider explicitly asked for. Only fall back to the fixed backoff
+    // schedule when the provider gave no hint at all.
+    const hinted = parseRetryAfterMs(error, now);
+    const delayMs = hinted ?? scheduledDelayMs(attempt);
     if (now() + delayMs > deadline) return { outcome: "stopped-deadline-exceeded" };
     return { outcome: "retrying", delayMs };
   }
 
+  /**
+   * Run exactly one attempt: either returns `{ done: true, value }` on
+   * success, or `{ done: false, delayMs }` when the caller should retry
+   * after `delayMs`. Every non-retrying stop is thrown directly (a
+   * `DeadlineExceededError` or the original provider error, already
+   * recorded via `onAttempt`) so `run()`'s loop only ever has to handle the
+   * "retry" case explicitly — split out purely to keep `run()`'s cognitive
+   * complexity under this repo's Biome limit, no behavior change from the
+   * single inline version this replaces.
+   */
+  async function attemptOnce<T>(
+    operation: (signal: AbortSignal) => PromiseLike<T>,
+    extractUsage: ((result: T) => AttemptUsage) | undefined,
+    attempt: number,
+    deadline: number,
+  ): Promise<{ done: true; value: T } | { done: false; delayMs: number }> {
+    const startedAt = now();
+    try {
+      const result = await raceWithDeadline(operation, deadline - now());
+      options.onAttempt?.({
+        attempt,
+        outcome: "success",
+        durationMs: now() - startedAt,
+        usage: extractUsage ? extractUsage(result) : "unknown",
+      });
+      return { done: true, value: result };
+    } catch (error) {
+      const durationMs = now() - startedAt;
+
+      if (error instanceof DeadlineExceededError) {
+        options.onAttempt?.({ attempt, outcome: "stopped-deadline-exceeded", durationMs });
+        throw error;
+      }
+
+      const info = describeError(error);
+      const decision = decideOnFailure(error, attempt, deadline);
+      options.onAttempt?.({ attempt, outcome: decision.outcome, durationMs, ...info });
+      if (decision.outcome !== "retrying") throw error;
+
+      return { done: false, delayMs: decision.delayMs ?? 0 };
+    }
+  }
+
   async function run<T>(
-    operation: () => PromiseLike<T>,
+    operation: (signal: AbortSignal) => PromiseLike<T>,
     extractUsage?: (result: T) => AttemptUsage,
   ): Promise<T> {
     const requestDeadline = now() + maxRequestMs;
     const deadline = Math.min(requestDeadline, phaseDeadline);
 
     for (let attempt = 1; ; attempt++) {
-      const startedAt = now();
-      try {
-        const result = await operation();
-        options.onAttempt?.({
-          attempt,
-          outcome: "success",
-          durationMs: now() - startedAt,
-          usage: extractUsage ? extractUsage(result) : "unknown",
-        });
-        return result;
-      } catch (error) {
-        const durationMs = now() - startedAt;
-        const info = describeError(error);
-        const decision = decideOnFailure(error, attempt, deadline);
-
-        options.onAttempt?.({ attempt, outcome: decision.outcome, durationMs, ...info });
-        if (decision.outcome !== "retrying") throw error;
-
-        await sleep(decision.delayMs ?? 0);
+      // #307 second independent-review correction, finding 1: recheck the
+      // deadline BEFORE issuing a request, every attempt — not just after a
+      // failure. A deadline already passed (e.g. a near-exhausted phase
+      // budget shared with earlier `run()` calls) must never let a first
+      // attempt through.
+      if (now() >= deadline) {
+        options.onAttempt?.({ attempt, outcome: "stopped-deadline-exceeded", durationMs: 0 });
+        throw new DeadlineExceededError(
+          `Deadline exceeded before attempt ${attempt} could start — no request issued`,
+        );
       }
+
+      const outcome = await attemptOnce(operation, extractUsage, attempt, deadline);
+      if (outcome.done) return outcome.value;
+      await sleep(outcome.delayMs);
     }
   }
 
@@ -315,8 +446,20 @@ export function createRetryingModel(options: RetryingModelOptions): RetryingLang
   return wrapLanguageModel({
     model,
     middleware: {
-      wrapGenerate: ({ doGenerate }) => retryPolicy.run(doGenerate, extractDoGenerateUsage),
-      wrapStream: ({ doStream }) => retryPolicy.run(doStream),
+      // #307 second independent-review correction, finding 1: call
+      // `model.doGenerate`/`doStream` directly with `params` plus this
+      // attempt's own `AbortSignal` (rather than the pre-bound `doGenerate`/
+      // `doStream` closures, which carry no way to inject one) so a real
+      // in-flight provider request is actually abortable when the retry
+      // policy's deadline elapses — not just abandoned locally while the
+      // real network call keeps running.
+      wrapGenerate: ({ params, model: innerModel }) =>
+        retryPolicy.run(
+          (signal) => innerModel.doGenerate({ ...params, abortSignal: signal }),
+          extractDoGenerateUsage,
+        ),
+      wrapStream: ({ params, model: innerModel }) =>
+        retryPolicy.run((signal) => innerModel.doStream({ ...params, abortSignal: signal })),
     },
   });
 }

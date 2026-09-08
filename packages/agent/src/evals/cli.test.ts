@@ -331,6 +331,28 @@ describe("describeCaseFailure", () => {
       attempts: [],
     });
   });
+
+  /**
+   * #307 second independent-review correction, finding 3: a raw provider
+   * error message can embed a secret (a `?key=...` query param on the
+   * request URL, or an echoed `Authorization`/bearer header) — this must
+   * never survive into the case-failure report `describeCaseFailure` builds.
+   * Reproduced with a fake token, never a real secret.
+   */
+  it("redacts a fake secret embedded in the error message rather than leaking it into the report", () => {
+    const error = new Error(
+      "request to https://generativelanguage.googleapis.com/v1?key=FAKE_SECRET_FOR_TEST failed",
+    );
+    const result = describeCaseFailure(error, []);
+    expect(result.errorMessage).not.toContain("FAKE_SECRET_FOR_TEST");
+    expect(result.errorMessage).toContain("[REDACTED]");
+  });
+
+  it("redacts a fake bearer token embedded in the error message", () => {
+    const error = new Error("upstream rejected: Authorization: Bearer FAKE_SECRET_FOR_TEST");
+    const result = describeCaseFailure(error, []);
+    expect(result.errorMessage).not.toContain("FAKE_SECRET_FOR_TEST");
+  });
 });
 
 describe("createCaseAttemptTracker", () => {
@@ -368,7 +390,18 @@ describe("createRunCase", () => {
     };
   }
 
-  it("calls agent.generate with maxRetries: 0 (Mastra's own nested retry disabled) and shapes a successful result", async () => {
+  /**
+   * #307 second independent-review correction, finding 2: the real Mastra
+   * `Agent.generate()` signature has no top-level `maxRetries` option — its
+   * OWN nested retry is disabled via `modelSettings: { maxRetries }`
+   * (confirmed by wiring a real `Agent` in `retry.test.ts`'s "nested-retry
+   * proof" suite, which fails to typecheck against the previous, wrong
+   * `{ maxRetries: 0 }` shape). The prior version of this test asserted the
+   * WRONG shape and passed only because `GenerateLike` was typed loosely
+   * enough to accept it — proving nothing about whether Mastra's real
+   * nested retry was actually disabled in production.
+   */
+  it("calls agent.generate with modelSettings.maxRetries: 0 (Mastra's own nested retry actually disabled) and shapes a successful result", async () => {
     const generate = vi.fn().mockResolvedValue({
       text: "He built things [cite:skill:aws].",
       toolResults: [{ payload: { toolName: "search-career", result: { citations: [] } } }],
@@ -378,7 +411,9 @@ describe("createRunCase", () => {
 
     const result = await runCase("What has he built?");
 
-    expect(generate).toHaveBeenCalledWith("What has he built?", { maxRetries: 0 });
+    expect(generate).toHaveBeenCalledWith("What has he built?", {
+      modelSettings: { maxRetries: 0 },
+    });
     expect(result.answer).toBe("He built things [cite:skill:aws].");
     expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 5, totalTokens: 15 });
   });
@@ -426,5 +461,76 @@ describe("createRunCase", () => {
       expect(caseError.failure.statusCode).toBe(503);
       expect(caseError.failure.attempts).toEqual(attempts);
     }
+  });
+
+  /**
+   * #307 second independent-review correction, finding 4: a successful
+   * case's own attempt trace was previously discarded — only a FAILED
+   * case's attempts reached the report. Persist it on every result so a
+   * report consumer can see how many real provider attempts a passing case
+   * actually took (retries included), not just failures.
+   */
+  it("persists the tracker's attempt trace onto a successful result too, not just a failed one", async () => {
+    const generate = vi.fn().mockResolvedValue({
+      text: "answer",
+      toolResults: [],
+      totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    });
+    const attempts: RetryAttemptRecord[] = [
+      { attempt: 1, outcome: "retrying", durationMs: 5, statusCode: 503 },
+      { attempt: 2, outcome: "success", durationMs: 5 },
+    ];
+    const tracker = makeTracker(attempts);
+    const runCase = createRunCase({ generate }, tracker);
+
+    const result = await runCase("question");
+
+    expect(result.attempts).toEqual(attempts);
+  });
+
+  /**
+   * #307 second independent-review correction, finding 4: when
+   * `agent.generate`'s result carries no `totalUsage` (or an incomplete
+   * one), falling back to a hard-coded `0` fabricates a false "zero tokens
+   * spent" — the case DID spend tokens, they're just not reported at this
+   * level. Fall back to the tracker's own known per-attempt usage instead,
+   * and only when THAT is also unknown, report the zero explicitly flagged
+   * via `usageKnown: false` rather than silently.
+   */
+  it("falls back to the tracker's known usage instead of fabricating a zero when agent.generate reports no totalUsage", async () => {
+    const generate = vi.fn().mockResolvedValue({ text: "answer", toolResults: [] });
+    const attempts: RetryAttemptRecord[] = [
+      {
+        attempt: 1,
+        outcome: "success",
+        durationMs: 5,
+        usage: { inputTokens: 7, outputTokens: 3, totalTokens: 10 },
+      },
+    ];
+    const tracker = makeTracker(attempts);
+    const runCase = createRunCase({ generate }, tracker);
+
+    const result = await runCase("question");
+
+    expect(result.usage).toEqual({ inputTokens: 7, outputTokens: 3, totalTokens: 10 });
+    expect(result.usageKnown).toBe(true);
+  });
+
+  it("marks usageKnown false rather than silently reporting a fabricated zero when neither totalUsage nor any attempt carries known usage", async () => {
+    const generate = vi.fn().mockResolvedValue({ text: "answer", toolResults: [] });
+    const tracker = makeTracker([{ attempt: 1, outcome: "success", durationMs: 5 }]);
+    const runCase = createRunCase({ generate }, tracker);
+
+    const result = await runCase("question");
+
+    expect(result.usage).toEqual({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
+    expect(result.usageKnown).toBe(false);
+    expect(result.attempts).toEqual([{ attempt: 1, outcome: "success", durationMs: 5 }]);
+
+    // A repeated call re-derives usageKnown from that call's own fresh
+    // tracker state, never carrying the prior unknown-usage flag forward.
+    const secondResult = await runCase("question");
+    expect(secondResult.usageKnown).toBe(false);
+    expect(secondResult.usage).toEqual({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
   });
 });

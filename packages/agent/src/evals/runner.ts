@@ -51,12 +51,13 @@
 import {
   assertWithinBudget,
   type BudgetConfig,
+  BudgetExceededError,
   estimateCostUsd,
   getModelPricing,
 } from "./budget.js";
 import type { EvalCase } from "./dataset/schema.js";
 import { buildReport, type CaseReport, type EvalReport, type FailedCaseReport } from "./report.js";
-import type { RetryAttemptRecord } from "./retry.js";
+import { type RetryAttemptRecord, sumKnownUsage } from "./retry.js";
 import {
   scoreAnswerAssertions,
   scoreFactualBoundaryCompliance,
@@ -89,6 +90,24 @@ export interface CaseRunResult {
    * `./cli.ts`'s real implementation always supplies it.
    */
   toolCalls?: ToolCall[];
+  /**
+   * `false` when `usage` had to fall back to an all-zero placeholder
+   * because neither `agent.generate`'s own `totalUsage` nor any collected
+   * attempt carried known usage (#307 second independent-review correction,
+   * finding 4) — distinguishes a genuine zero-token answer from "we don't
+   * actually know". Optional and defaults to `true` (known), so a stub
+   * written before this field existed keeps compiling and running
+   * unchanged; `./cli.ts`'s real implementation always supplies it.
+   */
+  usageKnown?: boolean;
+  /**
+   * Every attempt `./retry.ts`'s `onAttempt` recorded for this case's own
+   * request(s), in order (#307 second independent-review correction,
+   * finding 4) — persisted for a SUCCESSFUL case too, not just a failed
+   * one (`CaseFailureInfo.attempts` above already covered failures).
+   * Optional and defaults to `[]`.
+   */
+  attempts?: RetryAttemptRecord[];
 }
 
 /** Injected dependencies — the real-model-call seam. See module docs. */
@@ -291,6 +310,10 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
     // can distinguish a retrieval failure from the model ignoring a
     // returned result — see ./report.ts's CaseReport.toolTrace doc comment.
     toolTrace: run.toolCalls ?? [],
+    // #307 second independent-review correction, finding 4: a successful
+    // case's own attempt trace must reach the report too, not just a
+    // failed case's.
+    attempts: run.attempts ?? [],
   };
 }
 
@@ -355,11 +378,29 @@ export async function runEvalSuite(config: RunnerConfig, deps: RunnerDeps): Prom
       };
       const unexecutedCaseIds = casesToRun.slice(index + 1).map((c) => c.id);
 
+      // #307 second independent-review correction, finding 4: a case that
+      // failed terminally can still have spent real, KNOWN tokens on
+      // earlier successful attempts within the same request — add that
+      // known usage to the totals rather than discarding it just because
+      // the case itself produced no scored answer. `sumKnownUsage` never
+      // fabricates a number for an attempt with no known usage, so this
+      // never double-counts or invents spend that didn't happen.
+      const failedCaseUsage = sumKnownUsage(error.failure.attempts);
+      const finalTotals =
+        failedCaseUsage === "unknown"
+          ? { inputTokens, outputTokens, totalTokens, costUsd }
+          : {
+              inputTokens: inputTokens + failedCaseUsage.inputTokens,
+              outputTokens: outputTokens + failedCaseUsage.outputTokens,
+              totalTokens: totalTokens + failedCaseUsage.totalTokens,
+              costUsd: costUsd + estimateCostUsd(failedCaseUsage, pricing),
+            };
+
       return buildReport({
         promptVersion: config.promptVersion,
         modelId: config.modelId,
         cases: caseReports,
-        totals: { inputTokens, outputTokens, totalTokens, costUsd },
+        totals: finalTotals,
         thresholds: config.thresholds,
         failedCases: [failedCase],
         unexecutedCaseIds,
@@ -373,11 +414,31 @@ export async function runEvalSuite(config: RunnerConfig, deps: RunnerDeps): Prom
     totalTokens += run.usage.totalTokens;
     costUsd += estimateCostUsd(run.usage, pricing);
 
-    assertWithinBudget(config.budget, {
-      casesRun: index + 1,
-      totalTokens,
-      costUsd,
-    });
+    try {
+      assertWithinBudget(config.budget, {
+        casesRun: index + 1,
+        totalTokens,
+        costUsd,
+      });
+    } catch (error) {
+      if (!(error instanceof BudgetExceededError)) throw error;
+
+      // #307 second independent-review correction, finding 5: a budget
+      // overage must never lose the report already built — preserve every
+      // case that DID complete (this one included; its usage is already
+      // folded into the totals above) and list every case left unexecuted,
+      // the same partial-report treatment a terminal `EvalCaseError` gets.
+      // No further requests are issued once this branch is taken.
+      return buildReport({
+        promptVersion: config.promptVersion,
+        modelId: config.modelId,
+        cases: caseReports,
+        totals: { inputTokens, outputTokens, totalTokens, costUsd },
+        thresholds: config.thresholds,
+        unexecutedCaseIds: casesToRun.slice(index + 1).map((c) => c.id),
+        budgetExceeded: { message: error.message },
+      });
+    }
   }
 
   return buildReport({

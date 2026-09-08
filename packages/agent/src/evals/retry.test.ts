@@ -1,3 +1,4 @@
+import { Agent } from "@mastra/core/agent";
 import { APICallError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
@@ -7,9 +8,11 @@ import {
   DEFAULT_MAX_ATTEMPTS,
   DEFAULT_MAX_PHASE_MS,
   DEFAULT_MAX_REQUEST_MS,
+  DeadlineExceededError,
   isTransientProviderError,
   RETRY_BACKOFF_STEPS_MS,
   RETRY_JITTER_MAX_MS,
+  redactSecrets,
   sumKnownUsage,
 } from "./retry.js";
 
@@ -223,26 +226,32 @@ describe("createRetryPolicy", () => {
     expect(clock.now() - startedAt).toBe(5_000);
   });
 
-  it("ignores a Retry-After hint that would exceed the per-request deadline, falling back to bounded backoff", async () => {
+  /**
+   * #307 second independent-review correction, finding 1: a `Retry-After`
+   * hint that does not fit the remaining deadline must STOP the request, not
+   * fall back to a shorter, arbitrary backoff step — retrying at 10s when
+   * the provider explicitly asked for 3600s would retry earlier than the
+   * provider's own hint, which this policy must never do.
+   */
+  it("stops rather than retrying early when a Retry-After hint would exceed the per-request deadline — never substitutes a shorter arbitrary backoff", async () => {
     const clock = createFakeClock();
+    const onAttempt = vi.fn();
     const policy = createRetryPolicy({
       now: clock.now,
       sleep: clock.sleep,
       random: () => 0,
       maxRequestMs: 12_000,
+      onAttempt,
     });
-    const operation = vi
-      .fn()
-      .mockRejectedValueOnce(
-        apiError({ statusCode: 503, responseHeaders: { "retry-after": "3600" } }),
-      )
-      .mockResolvedValue("ok");
+    const error = apiError({ statusCode: 503, responseHeaders: { "retry-after": "3600" } });
+    const operation = vi.fn().mockRejectedValue(error);
 
-    const startedAt = clock.now();
-    await policy.run(operation);
+    await expect(policy.run(operation)).rejects.toBe(error);
 
-    // Falls back to the 10s scheduled step (which still fits in 12s), not the 3600s hint.
-    expect(clock.now() - startedAt).toBe(10_000);
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ attempt: 1, outcome: "stopped-deadline-exceeded" }),
+    );
   });
 
   it("stops rather than sleeping past the per-request deadline, even for the fallback backoff", async () => {
@@ -332,6 +341,145 @@ describe("createRetryPolicy", () => {
         errorMessage: "HTTP 429",
       }),
     );
+  });
+
+  /**
+   * #307 second independent-review correction, finding 1: a phase deadline
+   * already in the past when `run()` is invoked (not just crossed mid-run)
+   * must stop BEFORE issuing any request — reproduced directly: a policy
+   * built with a near-zero phase budget, invoked after the clock has moved
+   * past it, must never call `operation` at all.
+   */
+  it("never calls operation when the deadline has already passed before run() is invoked (preflight recheck)", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({
+      now: clock.now,
+      sleep: clock.sleep,
+      maxPhaseMs: 10,
+      maxRequestMs: 10,
+      onAttempt,
+    });
+    clock.advance(100);
+    const operation = vi.fn().mockResolvedValue("ok");
+
+    await expect(policy.run(operation)).rejects.toThrow(DeadlineExceededError);
+
+    expect(operation).not.toHaveBeenCalled();
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ attempt: 1, outcome: "stopped-deadline-exceeded" }),
+    );
+  });
+
+  /**
+   * #307 second independent-review correction, finding 1: an in-flight
+   * operation must be abortable and bounded — a hung request must not be
+   * allowed to run past the deadline. `run()` passes an `AbortSignal` to
+   * `operation` and aborts it once the deadline elapses mid-attempt, using
+   * only the injected fake clock (no real timers).
+   */
+  it("aborts and stops an in-flight operation once the deadline elapses mid-attempt, never waiting past it", async () => {
+    vi.useFakeTimers();
+    try {
+      const clock = createFakeClock();
+      const onAttempt = vi.fn();
+      const policy = createRetryPolicy({
+        now: clock.now,
+        sleep: clock.sleep,
+        maxRequestMs: 5_000,
+        onAttempt,
+      });
+      let receivedSignal: AbortSignal | undefined;
+      const operation = vi.fn((signal: AbortSignal) => {
+        receivedSignal = signal;
+        return new Promise<never>(() => {}); // a hung request that never resolves on its own
+      });
+
+      const runPromise = policy.run(operation);
+      const assertion = expect(runPromise).rejects.toThrow(DeadlineExceededError);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+
+      expect(receivedSignal?.aborted).toBe(true);
+      expect(onAttempt).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: "stopped-deadline-exceeded" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never retries after a deadline-exceeded stop", async () => {
+    vi.useFakeTimers();
+    try {
+      const clock = createFakeClock();
+      const policy = createRetryPolicy({
+        now: clock.now,
+        sleep: clock.sleep,
+        maxRequestMs: 1_000,
+      });
+      const operation = vi.fn(() => new Promise<never>(() => {}));
+
+      const runPromise = policy.run(operation);
+      const assertion = expect(runPromise).rejects.toThrow(DeadlineExceededError);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await assertion;
+
+      expect(operation).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * #307 second independent-review correction, finding 3: `describeError`
+   * (the sanitizer every `onAttempt` record goes through) must redact a
+   * secret embedded in a raw provider error message before it is ever
+   * reported — reproduced with a fake token that must never survive into a
+   * recorded attempt.
+   */
+  it("redacts a fake secret embedded in a query-string error message before recording the attempt", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
+    const error = new Error(
+      "request to https://api.example.test/v1/models?key=FAKE_SECRET_FOR_TEST failed",
+    );
+
+    await expect(policy.run(vi.fn().mockRejectedValue(error))).rejects.toBe(error);
+
+    const record = onAttempt.mock.calls[0]?.[0];
+    expect(record.errorMessage).not.toContain("FAKE_SECRET_FOR_TEST");
+    expect(record.errorMessage).toContain("[REDACTED]");
+  });
+
+  it("redacts a bearer/authorization token embedded in an error message before recording the attempt", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
+    const error = new Error("auth failed: Authorization: Bearer FAKE_SECRET_FOR_TEST");
+
+    await expect(policy.run(vi.fn().mockRejectedValue(error))).rejects.toBe(error);
+
+    const record = onAttempt.mock.calls[0]?.[0];
+    expect(record.errorMessage).not.toContain("FAKE_SECRET_FOR_TEST");
+  });
+});
+
+describe("redactSecrets", () => {
+  it("redacts key/token/secret/password query params, case-insensitively", () => {
+    expect(redactSecrets("https://x.test?api_key=FAKE_SECRET_FOR_TEST&foo=bar")).toBe(
+      "https://x.test?api_key=[REDACTED]&foo=bar",
+    );
+  });
+
+  it("redacts an Authorization header value and a bearer token", () => {
+    const redacted = redactSecrets("Authorization: Bearer FAKE_SECRET_FOR_TEST");
+    expect(redacted).not.toContain("FAKE_SECRET_FOR_TEST");
+  });
+
+  it("leaves ordinary error text untouched", () => {
+    expect(redactSecrets("Service Unavailable")).toBe("Service Unavailable");
   });
 });
 
@@ -471,6 +619,106 @@ describe("createRetryingModel", () => {
     const model = createRetryingModel({ model: inner, retryPolicy });
 
     await expect(model.doGenerate(callOptions)).rejects.toThrow("Too Many Requests");
+    expect(calls).toBe(1);
+  });
+});
+
+/**
+ * #307 second independent-review correction, finding 2: "Nested Mastra
+ * retries are not proven disabled" — the prior test suite only asserted
+ * that `createRunCase` calls `agent.generate(question, { modelSettings: { maxRetries: 0 } })`
+ * with a FAKE `generate` function, which proves nothing about whether the
+ * installed `@mastra/core` `Agent` (backed by the real AI SDK `generateText`
+ * call, which has its OWN `p-retry`-based retry reading `maxRetries`) still
+ * retries underneath this module's policy. This suite wires a REAL Mastra
+ * `Agent` around a `createRetryingModel`-wrapped `MockLanguageModelV4` — the
+ * exact composition `./cli.ts`'s `main()` builds — and counts the actual
+ * number of `doGenerate` calls the fake provider observed, proving there is
+ * no nested layer inflating it.
+ */
+describe("createRetryingModel wired into a real Mastra Agent — nested-retry proof (#307 second correction, finding 2)", () => {
+  function generateResult(text: string) {
+    return {
+      content: [{ type: "text" as const, text }],
+      finishReason: { unified: "stop" as const, raw: undefined },
+      usage: {
+        inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+        outputTokens: { total: 1, text: 1, reasoning: undefined },
+      },
+      warnings: [],
+    };
+  }
+
+  function buildAgent(doGenerate: () => Promise<unknown>) {
+    const clock = createFakeClock();
+    const retryPolicy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, random: () => 0 });
+    const inner = new MockLanguageModelV4({ doGenerate: doGenerate as never });
+    const model = createRetryingModel({ model: inner, retryPolicy });
+    const agent = new Agent({
+      id: "test-agent",
+      name: "Test Agent",
+      instructions: "test",
+      model,
+    });
+    return agent;
+  }
+
+  it("makes AT MOST 3 real provider requests for a 503 that recovers on the 3rd attempt — no nested retry layer inflates it", async () => {
+    let calls = 0;
+    const doGenerate = async () => {
+      calls += 1;
+      if (calls < 3) {
+        throw new APICallError({
+          message: "Service Unavailable",
+          url: "https://example.test",
+          requestBodyValues: {},
+          statusCode: 503,
+          isRetryable: true,
+        });
+      }
+      return generateResult("recovered");
+    };
+    const agent = buildAgent(doGenerate);
+
+    const result = await agent.generate("hello", { modelSettings: { maxRetries: 0 } });
+
+    expect(result.text).toBe("recovered");
+    expect(calls).toBe(3);
+  });
+
+  it("makes EXACTLY 1 real provider request for a 429 — never retried by any layer", async () => {
+    let calls = 0;
+    const doGenerate = async () => {
+      calls += 1;
+      throw new APICallError({
+        message: "Too Many Requests",
+        url: "https://example.test",
+        requestBodyValues: {},
+        statusCode: 429,
+        isRetryable: true,
+      });
+    };
+    const agent = buildAgent(doGenerate);
+
+    await expect(agent.generate("hello", { modelSettings: { maxRetries: 0 } })).rejects.toThrow();
+    expect(calls).toBe(1);
+  });
+
+  it("makes EXACTLY 1 real provider request for a permanent (400) error — never retried by any layer", async () => {
+    let calls = 0;
+    const doGenerate = async () => {
+      calls += 1;
+      throw new APICallError({
+        message: "Bad Request",
+        url: "https://example.test",
+        requestBodyValues: {},
+        statusCode: 400,
+        isRetryable: false,
+      });
+    };
+    const agent = buildAgent(doGenerate);
+
+    await expect(agent.generate("hello", { modelSettings: { maxRetries: 0 } })).rejects.toThrow();
     expect(calls).toBe(1);
   });
 });
