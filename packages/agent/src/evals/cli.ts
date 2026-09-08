@@ -28,20 +28,21 @@ import { writeFile } from "node:fs/promises";
 import { resolveChatModelConfig } from "../config.js";
 import { getInterviewAgent, PROMPT_VERSION } from "../index.js";
 import { createChatModel } from "../model-provider.js";
+import { BudgetExceededError, createBudgetGuard, getModelPricing } from "./budget.js";
 import { EVAL_CASES } from "./dataset/index.js";
 import type { EvalCase } from "./dataset/schema.js";
 import {
-  apiErrorStatusCode,
   createRateLimitedModel,
   createRequestRateLimiter,
   DEFAULT_EVAL_RPM_LIMIT,
   toLanguageModel,
 } from "./rate-limit.js";
 import {
+  classifyProviderError,
   createRetryingModel,
   createRetryPolicy,
   type RetryAttemptRecord,
-  redactSecrets,
+  type RetryPolicy,
   sumKnownUsage,
 } from "./retry.js";
 import { type CaseFailureInfo, type CaseRunResult, EvalCaseError, runEvalSuite } from "./runner.js";
@@ -290,26 +291,23 @@ export function extractToolCallsFromToolResults(toolResults: readonly unknown[])
 /**
  * Build the sanitized {@link CaseFailureInfo} a real `runCase` throws inside
  * an {@link EvalCaseError} when `agent.generate()` fails terminally (#307
- * C5) — the same `apiErrorStatusCode` cause-chain walk `./retry.ts` uses for
- * classification, plus whatever per-attempt trace `./retry.ts`'s
- * `onAttempt` collected for this case's own request(s). Never throws, and
- * never carries the raw error object itself into the report.
+ * C5) — `./retry.ts`'s `classifyProviderError` is the single classification
+ * boundary this shares with every `RetryAttemptRecord` (#307 second
+ * independent-review correction, 2nd round, finding 1): never the caught
+ * error's own raw `.name`/`.message` (which can embed a secret in a shape no
+ * redaction regex is guaranteed to catch), only a controlled classification
+ * and the numeric status code, plus whatever per-attempt trace `./retry.ts`'s
+ * `onAttempt` collected for this case's own request(s). Never throws.
  */
 export function describeCaseFailure(
   error: unknown,
   attempts: readonly RetryAttemptRecord[],
 ): CaseFailureInfo {
-  const statusCode = apiErrorStatusCode(error);
-  const rawMessage = error instanceof Error ? error.message : String(error);
+  const info = classifyProviderError(error);
   return {
-    ...(statusCode !== undefined ? { statusCode } : {}),
-    ...(error instanceof Error ? { errorName: error.name } : {}),
-    // #307 second independent-review correction, finding 3: never let a raw
-    // provider error message (which can embed a request URL's API key, or
-    // an echoed Authorization/bearer header) reach the report unredacted —
-    // see `./retry.js`'s `redactSecrets` module docs for the shared
-    // sanitization boundary `./retry.js`'s own `describeError` also uses.
-    errorMessage: redactSecrets(rawMessage),
+    ...(info.statusCode !== undefined ? { statusCode: info.statusCode } : {}),
+    errorName: info.errorName,
+    errorMessage: info.errorMessage,
     attempts: [...attempts],
   };
 }
@@ -335,13 +333,24 @@ export function createCaseAttemptTracker(): CaseAttemptTracker & {
   onAttempt: (record: RetryAttemptRecord) => void;
 } {
   let attempts: RetryAttemptRecord[] = [];
+  let requestIndex = 0;
   return {
     reset: () => {
       attempts = [];
+      requestIndex = 0;
     },
     attempts: () => attempts,
+    // #307 second independent-review correction, 2nd round, finding 3: a
+    // fresh `attempt: 1` always marks the start of a NEW logical request —
+    // attempts within one request are strictly sequential (cases run one at
+    // a time, `./retry.ts`'s `run()` loop awaits each attempt before the
+    // next), so `attempt` only ever resets back to 1 once the previous
+    // request's own `run()` call has already concluded. `requestIndex`
+    // turns that observation into a stable identity threaded onto every
+    // record this case's report carries.
     onAttempt: (record) => {
-      attempts.push(record);
+      if (record.attempt === 1) requestIndex += 1;
+      attempts.push({ ...record, requestIndex });
     },
   };
 }
@@ -416,9 +425,21 @@ export function createRunCase(
     try {
       result = await agent.generate(question, { modelSettings: { maxRetries: 0 } });
     } catch (error) {
+      // #307 second independent-review correction, 2nd round, finding 2: a
+      // BudgetExceededError (thrown by `./retry.ts`'s `beforeAttempt` hook
+      // before a request that would cross the shared budget) is the RUNNER's
+      // own decision to stop, not a case's provider call failing — it must
+      // propagate as-is so `./runner.ts` can tell the two apart, never
+      // wrapped in an EvalCaseError.
+      if (error instanceof BudgetExceededError) throw error;
+
+      const failure = describeCaseFailure(error, tracker.attempts());
+      // #307 second independent-review correction, 2nd round, finding 1:
+      // never interpolate the caught error's own raw message here — only
+      // `failure`'s already-controlled classification.
       throw new EvalCaseError(
-        `Eval case failed: ${error instanceof Error ? error.message : String(error)}`,
-        describeCaseFailure(error, tracker.attempts()),
+        `Eval case failed after ${failure.attempts.length} attempt(s): ${failure.errorName} (${failure.errorMessage})`,
+        failure,
       );
     }
     const attempts = tracker.attempts();
@@ -427,11 +448,14 @@ export function createRunCase(
     // "0 tokens spent" — fall back to the real per-attempt usage this
     // module's own retry policy already collected, and only report the
     // zero (explicitly flagged `usageKnown: false`) when THAT is also
-    // unknown.
+    // unknown. #307 second independent-review correction, 2nd round,
+    // finding 3: the fallback must not be treated as known unless it is
+    // COMPLETE (every attempt carried known usage), not just non-empty.
     const reportedUsage = reportedUsageOf(result.totalUsage);
-    const fallbackUsage = reportedUsage ? undefined : sumKnownUsage(attempts);
-    const usage =
-      reportedUsage ?? (fallbackUsage && fallbackUsage !== "unknown" ? fallbackUsage : undefined);
+    const fallback = reportedUsage ? undefined : sumKnownUsage(attempts);
+    const fallbackUsage =
+      fallback && fallback.usage !== "unknown" && fallback.complete ? fallback.usage : undefined;
+    const usage = reportedUsage ?? fallbackUsage;
     return {
       answer: result.text,
       toolCitations: extractCitationsFromToolResults(result.toolResults ?? []),
@@ -441,6 +465,49 @@ export function createRunCase(
       attempts,
     };
   };
+}
+
+/**
+ * Build the single shared retry policy `main()` wires the real model
+ * through (#307 second independent-review correction, 2nd round, finding
+ * 2): a `createBudgetGuard` fed by every attempt's own known usage
+ * (`onAttempt`), consulted via `beforeAttempt` BEFORE every request this
+ * policy makes — including a later step of the same case and the first
+ * request of the next one, since one instance is shared for the whole run.
+ * Extracted out of `main()` so this wiring is unit-testable with zero real
+ * model calls, the same "pure/testable piece pulled out of `main()`"
+ * pattern `createCaseAttemptTracker`/`createRunCase` already establish in
+ * this file.
+ */
+export function createEvalRetryPolicy(options: {
+  modelId: string;
+  maxTotalTokens: number;
+  maxCostUsd: number;
+  attemptTracker: CaseAttemptTracker & { onAttempt: (record: RetryAttemptRecord) => void };
+  onWarn?: (message: string) => void;
+}): RetryPolicy {
+  const pricing = getModelPricing(options.modelId);
+  const budgetGuard = createBudgetGuard({
+    maxTotalTokens: options.maxTotalTokens,
+    maxCostUsd: options.maxCostUsd,
+  });
+
+  return createRetryPolicy({
+    onAttempt: (record) => {
+      options.attemptTracker.onAttempt(record);
+      if (typeof record.usage === "object") {
+        budgetGuard.recordUsage(record.usage, pricing);
+      }
+      if (record.outcome !== "success") {
+        options.onWarn?.(
+          `[retry] attempt ${record.attempt} ${record.outcome}` +
+            (record.statusCode !== undefined ? ` (status ${record.statusCode})` : "") +
+            (record.errorMessage ? `: ${record.errorMessage}` : ""),
+        );
+      }
+    },
+    beforeAttempt: () => budgetGuard.assertNotExceeded(),
+  });
 }
 
 async function main(): Promise<void> {
@@ -476,17 +543,12 @@ async function main(): Promise<void> {
   });
 
   const attemptTracker = createCaseAttemptTracker();
-  const retryPolicy = createRetryPolicy({
-    onAttempt: (record) => {
-      attemptTracker.onAttempt(record);
-      if (record.outcome !== "success") {
-        console.warn(
-          `[retry] attempt ${record.attempt} ${record.outcome}` +
-            (record.statusCode !== undefined ? ` (status ${record.statusCode})` : "") +
-            (record.errorMessage ? `: ${record.errorMessage}` : ""),
-        );
-      }
-    },
+  const retryPolicy = createEvalRetryPolicy({
+    modelId,
+    maxTotalTokens: envConfig.maxTotalTokens,
+    maxCostUsd: envConfig.maxCostUsd,
+    attemptTracker,
+    onWarn: (message) => console.warn(message),
   });
   const model = createRetryingModel({
     model: createRateLimitedModel({ model: toLanguageModel(createChatModel()), limiter }),

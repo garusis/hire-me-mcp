@@ -93,7 +93,13 @@ export type RetryAttemptOutcome =
   | "stopped-rate-limited"
   | "stopped-permanent-error"
   | "stopped-retries-exhausted"
-  | "stopped-deadline-exceeded";
+  | "stopped-deadline-exceeded"
+  /**
+   * A caller-supplied {@link RetryPolicyOptions.beforeAttempt} budget check
+   * threw before this attempt was issued (#307 second independent-review
+   * correction, 2nd round, finding 2) — no provider request was made.
+   */
+  | "stopped-budget-exceeded";
 
 /**
  * Thrown by {@link RetryPolicy.run} when a request's deadline is already
@@ -111,16 +117,18 @@ export class DeadlineExceededError extends Error {
 }
 
 /**
- * Redact secrets out of a raw error message before it is ever recorded in a
- * {@link RetryAttemptRecord} or a `CaseFailureInfo` (#307 second
- * independent-review correction, finding 3): a provider error's `.message`
- * can embed the request URL (e.g. a `?key=...` API-key query param) or an
- * echoed `Authorization`/bearer header. Pattern-based and conservative — it
- * does not know what a "real" secret looks like, so it redacts the VALUE of
- * every common secret-bearing key/header, whether or not that value happens
- * to be real. Exported so `./cli.ts`'s `describeCaseFailure` (the same
- * sanitization boundary for a case's terminal failure) shares one
- * source of truth instead of drifting.
+ * Regex-redact secrets out of a raw error message. Kept as a general-purpose
+ * text utility (and its own `describe("redactSecrets", ...)` suite below
+ * keeps testing it directly) — but #307 second independent-review
+ * correction (2nd round), finding 1 established that this pattern-based
+ * approach is NOT a safe boundary for eval telemetry: it missed a fake
+ * secret embedded without a query-string/header shape (`token=...` with no
+ * leading `?`/`&`) and never touched `error.name` at all. Neither
+ * {@link classifyProviderError} below (the sanitization boundary every
+ * `RetryAttemptRecord`/`CaseFailureInfo`/`EvalCaseError` now goes through)
+ * nor `./cli.ts`'s `describeCaseFailure` call this anymore — they never let
+ * a provider's raw message/name reach persisted output at all, redacted or
+ * not.
  */
 const SECRET_QUERY_PARAM_PATTERN =
   /([?&](?:key|token|api[_-]?key|access[_-]?token|secret|password|auth)=)[^&\s"')]+/gi;
@@ -152,10 +160,30 @@ export interface RetryAttemptRecord {
   outcome: RetryAttemptOutcome;
   durationMs: number;
   statusCode?: number;
+  /**
+   * A controlled classification name (see {@link classifyProviderError}) —
+   * NEVER the caught error's own `.name` (#307 second independent-review
+   * correction, 2nd round, finding 1).
+   */
   errorName?: string;
+  /**
+   * A controlled, fixed-vocabulary description derived from `statusCode`/
+   * the classification — NEVER the caught error's own `.message` (same
+   * finding as `errorName` above).
+   */
   errorMessage?: string;
   /** Present only on a `"success"` attempt (or when the caller supplies `extractUsage`); `"unknown"` when usage genuinely cannot be determined. */
   usage?: AttemptUsage;
+  /**
+   * A stable identity distinguishing which logical provider REQUEST (one
+   * `run()` call — e.g. a multi-step case's 2nd model call) this attempt
+   * belongs to, separate from `attempt`'s within-request retry count (#307
+   * second independent-review correction, 2nd round, finding 3). This
+   * module never sets it — `createRetryPolicy` is model-boundary-generic and
+   * has no notion of "case" or "request" — it is stamped on by whoever owns
+   * that mapping (`./cli.ts`'s `createCaseAttemptTracker`).
+   */
+  requestIndex?: number;
 }
 
 /** Options for {@link createRetryPolicy}. `now`/`sleep`/`random` are the test seam. */
@@ -173,6 +201,16 @@ export interface RetryPolicyOptions {
   random?: () => number;
   /** Called after EVERY attempt (success, retry, or stop) — the sole place per-attempt telemetry is reported. */
   onAttempt?: (record: RetryAttemptRecord) => void;
+  /**
+   * Optional pre-flight check invoked before EVERY attempt this policy makes
+   * — the first attempt of a `run()` call AND every retry of it (#307
+   * second independent-review correction, 2nd round, finding 2: budget must
+   * be enforced before every provider request, not once per case after it
+   * completes). Throw to stop immediately without issuing the request; the
+   * throw is recorded as a `"stopped-budget-exceeded"` attempt and
+   * propagates out of `run()` unchanged, the same as any other stop.
+   */
+  beforeAttempt?: () => void;
 }
 
 export interface RetryPolicy {
@@ -211,16 +249,64 @@ export function isTransientProviderError(error: unknown): boolean {
   return isTimeoutError(error);
 }
 
-function describeError(error: unknown): {
-  errorName?: string;
+/** A small, fully controlled classification of a caught provider error — see {@link classifyProviderError}. */
+export type ErrorClassification =
+  | "rate-limited"
+  | "transient-provider-error"
+  | "timeout"
+  | "permanent-provider-error"
+  | "unknown-error";
+
+const ERROR_CLASSIFICATION_NAMES: Record<ErrorClassification, string> = {
+  "rate-limited": "RateLimitError",
+  "transient-provider-error": "TransientProviderError",
+  timeout: "TimeoutError",
+  "permanent-provider-error": "PermanentProviderError",
+  "unknown-error": "UnknownError",
+};
+
+function classifyStatusCode(statusCode: number | undefined): ErrorClassification | undefined {
+  if (statusCode === 429) return "rate-limited";
+  if (statusCode === 502 || statusCode === 503 || statusCode === 504)
+    return "transient-provider-error";
+  if (statusCode !== undefined) return "permanent-provider-error";
+  return undefined;
+}
+
+/**
+ * Classify a caught provider error into a small, fully controlled
+ * enumeration plus its numeric HTTP status code — never the error's own raw
+ * `.message`/`.name` (#307 second independent-review correction, 2nd round,
+ * finding 1). A provider error's free text can embed a secret in a shape no
+ * redaction regex is guaranteed to catch (see {@link redactSecrets}'s doc
+ * comment for the reproduction that motivated this); the safe fix is to
+ * never let that text reach a persisted/logged record in the first place —
+ * only this classification, `errorName`/`errorMessage` DERIVED from it (not
+ * quoted from the provider), and the plain numeric `statusCode` do. This is
+ * the single sanitization boundary every `RetryAttemptRecord` (below) and
+ * `./cli.ts`'s `describeCaseFailure`/`createRunCase` share.
+ */
+export function classifyProviderError(error: unknown): {
+  classification: ErrorClassification;
+  errorName: string;
   errorMessage: string;
   statusCode?: number;
 } {
   const statusCode = apiErrorStatusCode(error);
-  if (error instanceof Error) {
-    return { errorName: error.name, errorMessage: redactSecrets(error.message), statusCode };
-  }
-  return { errorMessage: redactSecrets(String(error)), statusCode };
+  const classification =
+    classifyStatusCode(statusCode) ?? (isTimeoutError(error) ? "timeout" : "unknown-error");
+  const errorMessage =
+    statusCode !== undefined
+      ? `HTTP ${statusCode}`
+      : classification === "timeout"
+        ? "Request timed out"
+        : "Non-provider error";
+  return {
+    classification,
+    errorName: ERROR_CLASSIFICATION_NAMES[classification],
+    errorMessage,
+    ...(statusCode !== undefined ? { statusCode } : {}),
+  };
 }
 
 /**
@@ -298,8 +384,8 @@ export function createRetryPolicy(options: RetryPolicyOptions = {}): RetryPolicy
     attempt: number,
     deadline: number,
   ): { outcome: RetryAttemptOutcome; delayMs?: number } {
-    const info = describeError(error);
-    if (info.statusCode === 429) return { outcome: "stopped-rate-limited" };
+    const statusCode = apiErrorStatusCode(error);
+    if (statusCode === 429) return { outcome: "stopped-rate-limited" };
     if (!isTransientProviderError(error)) return { outcome: "stopped-permanent-error" };
     if (attempt >= maxAttempts) return { outcome: "stopped-retries-exhausted" };
 
@@ -349,9 +435,16 @@ export function createRetryPolicy(options: RetryPolicyOptions = {}): RetryPolicy
         throw error;
       }
 
-      const info = describeError(error);
+      const info = classifyProviderError(error);
       const decision = decideOnFailure(error, attempt, deadline);
-      options.onAttempt?.({ attempt, outcome: decision.outcome, durationMs, ...info });
+      options.onAttempt?.({
+        attempt,
+        outcome: decision.outcome,
+        durationMs,
+        errorName: info.errorName,
+        errorMessage: info.errorMessage,
+        ...(info.statusCode !== undefined ? { statusCode: info.statusCode } : {}),
+      });
       if (decision.outcome !== "retrying") throw error;
 
       return { done: false, delayMs: decision.delayMs ?? 0 };
@@ -378,6 +471,15 @@ export function createRetryPolicy(options: RetryPolicyOptions = {}): RetryPolicy
         );
       }
 
+      if (options.beforeAttempt) {
+        try {
+          options.beforeAttempt();
+        } catch (error) {
+          options.onAttempt?.({ attempt, outcome: "stopped-budget-exceeded", durationMs: 0 });
+          throw error;
+        }
+      }
+
       const outcome = await attemptOnce(operation, extractUsage, attempt, deadline);
       if (outcome.done) return outcome.value;
       await sleep(outcome.delayMs);
@@ -387,22 +489,37 @@ export function createRetryPolicy(options: RetryPolicyOptions = {}): RetryPolicy
   return { run };
 }
 
-/** Sum every attempt's known usage; `"unknown"` when none of `attempts` carries one — never a fabricated zero (see module docs). */
-export function sumKnownUsage(
-  attempts: readonly RetryAttemptRecord[],
-): { inputTokens: number; outputTokens: number; totalTokens: number } | "unknown" {
+/**
+ * The result of {@link sumKnownUsage} — `usage` alone was previously
+ * returned, which let a partial-known sum (some attempts had no usage)
+ * silently pass as if it were the complete total (#307 second
+ * independent-review correction, 2nd round, finding 3). `complete` makes
+ * that distinction explicit: `true` only when EVERY attempt in the input
+ * carried known usage, so a caller can keep and report the known partial sum
+ * without presenting it as authoritative.
+ */
+export interface UsageSummary {
+  /** `"unknown"` only when NO attempt carried known usage — never a fabricated zero (see module docs). */
+  usage: { inputTokens: number; outputTokens: number; totalTokens: number } | "unknown";
+  /** `true` iff `attempts` was non-empty and every attempt in it carried known usage. */
+  complete: boolean;
+}
+
+/** Sum every attempt's known usage, and report whether that sum reflects EVERY attempt or only some of them — see {@link UsageSummary}. */
+export function sumKnownUsage(attempts: readonly RetryAttemptRecord[]): UsageSummary {
   const known = attempts
     .map((attempt) => attempt.usage)
     .filter((usage): usage is Exclude<AttemptUsage, "unknown"> => typeof usage === "object");
-  if (known.length === 0) return "unknown";
-  return known.reduce(
-    (total, usage) => ({
-      inputTokens: total.inputTokens + usage.inputTokens,
-      outputTokens: total.outputTokens + usage.outputTokens,
-      totalTokens: total.totalTokens + usage.totalTokens,
+  if (known.length === 0) return { usage: "unknown", complete: false };
+  const usage = known.reduce(
+    (total, u) => ({
+      inputTokens: total.inputTokens + u.inputTokens,
+      outputTokens: total.outputTokens + u.outputTokens,
+      totalTokens: total.totalTokens + u.totalTokens,
     }),
     { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
   );
+  return { usage, complete: known.length === attempts.length };
 }
 
 /**

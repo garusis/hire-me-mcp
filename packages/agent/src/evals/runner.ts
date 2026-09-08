@@ -54,9 +54,16 @@ import {
   BudgetExceededError,
   estimateCostUsd,
   getModelPricing,
+  type TokenPricing,
 } from "./budget.js";
 import type { EvalCase } from "./dataset/schema.js";
-import { buildReport, type CaseReport, type EvalReport, type FailedCaseReport } from "./report.js";
+import {
+  buildReport,
+  type CaseReport,
+  type EvalReport,
+  type EvalTotals,
+  type FailedCaseReport,
+} from "./report.js";
 import { type RetryAttemptRecord, sumKnownUsage } from "./retry.js";
 import {
   scoreAnswerAssertions,
@@ -314,6 +321,11 @@ function scoreCase(evalCase: EvalCase, run: CaseRunResult): CaseReport {
     // case's own attempt trace must reach the report too, not just a
     // failed case's.
     attempts: run.attempts ?? [],
+    // #307 second independent-review correction, 2nd round, finding 3:
+    // `run.usageKnown` was collected but previously dropped here — thread it
+    // through so `./report.ts`'s `buildReport` can compute
+    // `totals.usageComplete` honestly.
+    usageKnown: run.usageKnown ?? true,
   };
 }
 
@@ -348,6 +360,92 @@ function storyCompletenessRequirementOf(evalCase: EvalCase): {
 }
 
 /** Run the eval suite: execute up to `config.budget.maxCases` dataset cases against the real agent (via `deps.runCase`), score each, and assemble the final report. Throws `BudgetExceededError` (see `./budget.ts`) the instant the token or cost cap is crossed. */
+/**
+ * Build the partial report for a `deps.runCase` rejection — either a
+ * `BudgetExceededError` (#307 second independent-review correction, 2nd
+ * round, finding 2: the run's own shared-budget guard stopped a request
+ * before it was issued, mid-case) or an `EvalCaseError` (#307 C5: the
+ * case's provider call failed terminally after every retry was exhausted).
+ * Returns `null` for any OTHER error, which `runEvalSuite` rethrows
+ * unchanged. Split out of `runEvalSuite` purely to keep that function's
+ * cognitive complexity under this repo's Biome limit — no behavior change
+ * from the inline version this replaces (runner.test.ts's "terminal case
+ * failure"/"budget exceeded" suites cover every branch either way).
+ */
+function buildReportForRunCaseFailure(
+  error: unknown,
+  context: {
+    config: RunnerConfig;
+    casesToRun: readonly EvalCase[];
+    caseReports: CaseReport[];
+    index: number;
+    evalCase: EvalCase;
+    totals: EvalTotals;
+    pricing: TokenPricing;
+  },
+): EvalReport | null {
+  const { config, casesToRun, caseReports, index, evalCase, totals, pricing } = context;
+
+  if (error instanceof BudgetExceededError) {
+    // This aborted case produced no usable `CaseRunResult`, so — unlike the
+    // `EvalCaseError` branch below — its (unknowable) usage is never added
+    // to the totals, and the aborted case itself is marked unexecuted
+    // alongside every case after it, not scored as a failure.
+    return buildReport({
+      promptVersion: config.promptVersion,
+      modelId: config.modelId,
+      cases: caseReports,
+      totals,
+      thresholds: config.thresholds,
+      unexecutedCaseIds: casesToRun.slice(index).map((c) => c.id),
+      budgetExceeded: { message: error.message },
+    });
+  }
+
+  if (!(error instanceof EvalCaseError)) return null;
+
+  // Terminal failure (#307 C5): stop launching further requests AND
+  // cases — no continuing the suite, no regenerating this or any other
+  // completed answer. Preserve every case that DID complete (with its
+  // known usage) plus this failure and the ids of everything left
+  // unexecuted, rather than losing the whole run to one rejection.
+  const failedCase: FailedCaseReport = {
+    id: evalCase.id,
+    category: evalCase.category,
+    question: evalCase.question,
+    ...error.failure,
+  };
+  const unexecutedCaseIds = casesToRun.slice(index + 1).map((c) => c.id);
+
+  // #307 second independent-review correction, finding 4: a case that
+  // failed terminally can still have spent real, KNOWN tokens on earlier
+  // successful attempts within the same request — add that known usage to
+  // the totals rather than discarding it just because the case itself
+  // produced no scored answer. `sumKnownUsage` never fabricates a number
+  // for an attempt with no known usage, so this never double-counts or
+  // invents spend that didn't happen.
+  const failedCaseUsage = sumKnownUsage(error.failure.attempts);
+  const finalTotals =
+    failedCaseUsage.usage === "unknown"
+      ? totals
+      : {
+          inputTokens: totals.inputTokens + failedCaseUsage.usage.inputTokens,
+          outputTokens: totals.outputTokens + failedCaseUsage.usage.outputTokens,
+          totalTokens: totals.totalTokens + failedCaseUsage.usage.totalTokens,
+          costUsd: totals.costUsd + estimateCostUsd(failedCaseUsage.usage, pricing),
+        };
+
+  return buildReport({
+    promptVersion: config.promptVersion,
+    modelId: config.modelId,
+    cases: caseReports,
+    totals: finalTotals,
+    thresholds: config.thresholds,
+    failedCases: [failedCase],
+    unexecutedCaseIds,
+  });
+}
+
 export async function runEvalSuite(config: RunnerConfig, deps: RunnerDeps): Promise<EvalReport> {
   const pricing = getModelPricing(config.modelId);
 
@@ -363,48 +461,17 @@ export async function runEvalSuite(config: RunnerConfig, deps: RunnerDeps): Prom
     try {
       run = await deps.runCase(evalCase.question);
     } catch (error) {
-      if (!(error instanceof EvalCaseError)) throw error;
-
-      // Terminal failure (#307 C5): stop launching further requests AND
-      // cases — no continuing the suite, no regenerating this or any other
-      // completed answer. Preserve every case that DID complete (with its
-      // known usage) plus this failure and the ids of everything left
-      // unexecuted, rather than losing the whole run to one rejection.
-      const failedCase: FailedCaseReport = {
-        id: evalCase.id,
-        category: evalCase.category,
-        question: evalCase.question,
-        ...error.failure,
-      };
-      const unexecutedCaseIds = casesToRun.slice(index + 1).map((c) => c.id);
-
-      // #307 second independent-review correction, finding 4: a case that
-      // failed terminally can still have spent real, KNOWN tokens on
-      // earlier successful attempts within the same request — add that
-      // known usage to the totals rather than discarding it just because
-      // the case itself produced no scored answer. `sumKnownUsage` never
-      // fabricates a number for an attempt with no known usage, so this
-      // never double-counts or invents spend that didn't happen.
-      const failedCaseUsage = sumKnownUsage(error.failure.attempts);
-      const finalTotals =
-        failedCaseUsage === "unknown"
-          ? { inputTokens, outputTokens, totalTokens, costUsd }
-          : {
-              inputTokens: inputTokens + failedCaseUsage.inputTokens,
-              outputTokens: outputTokens + failedCaseUsage.outputTokens,
-              totalTokens: totalTokens + failedCaseUsage.totalTokens,
-              costUsd: costUsd + estimateCostUsd(failedCaseUsage, pricing),
-            };
-
-      return buildReport({
-        promptVersion: config.promptVersion,
-        modelId: config.modelId,
-        cases: caseReports,
-        totals: finalTotals,
-        thresholds: config.thresholds,
-        failedCases: [failedCase],
-        unexecutedCaseIds,
+      const partialReport = buildReportForRunCaseFailure(error, {
+        config,
+        casesToRun,
+        caseReports,
+        index,
+        evalCase,
+        totals: { inputTokens, outputTokens, totalTokens, costUsd },
+        pricing,
       });
+      if (partialReport) return partialReport;
+      throw error;
     }
 
     caseReports.push(scoreCase(evalCase, run));

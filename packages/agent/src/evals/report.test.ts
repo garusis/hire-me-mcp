@@ -72,7 +72,7 @@ describe("buildReport", () => {
     expect(report.aggregates.relevance.count).toBe(3);
   });
 
-  it("carries promptVersion, modelId, and totals through unmodified", () => {
+  it("carries promptVersion, modelId, and totals through unmodified, marking totals.usageComplete true when every case's usage was known", () => {
     const report = buildReport({
       promptVersion: "test-version",
       modelId: "gemini-3.6-flash",
@@ -81,7 +81,7 @@ describe("buildReport", () => {
     });
     expect(report.promptVersion).toBe("test-version");
     expect(report.modelId).toBe("gemini-3.6-flash");
-    expect(report.totals).toEqual({ cases: 3, ...totals });
+    expect(report.totals).toEqual({ cases: 3, usageComplete: true, ...totals });
   });
 
   it("produces a passing verdict when every aggregate clears its threshold", () => {
@@ -546,6 +546,121 @@ describe("buildReport", () => {
 
       expect(report.verdict.passed).toBe(false);
       expect(report.complete).toBe(false);
+    });
+  });
+
+  /**
+   * #307 second independent-review correction (2nd round), finding 3:
+   * `usageKnown` was collected per case (`createRunCase`'s
+   * `CaseRunResult.usageKnown`) but `scoreCase`/`buildReport` dropped it —
+   * a report consumer couldn't tell "this case's totals are a genuine zero"
+   * from "we don't actually know." `usageKnown` must persist per case, and
+   * `totals.usageComplete` must be `true` only when EVERY case's usage was
+   * known AND the run itself completed (no failed/unexecuted case, no
+   * budget stop) — distinct from the existing `complete` field, which is
+   * about case EXECUTION, not usage knowledge.
+   */
+  describe("usage completeness (#307 second correction, 2nd round, finding 3)", () => {
+    it("defaults a case's usageKnown to true when the run result carries no explicit flag", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+      });
+
+      expect(report.cases.every((c) => c.usageKnown === true)).toBe(true);
+      expect(report.totals.usageComplete).toBe(true);
+    });
+
+    it("marks totals.usageComplete false when even one case's usage was NOT known, while all-known cases stay true", () => {
+      const mixedCases: CaseReport[] = [
+        { ...(baseCases[0] as CaseReport), usageKnown: true },
+        { ...(baseCases[1] as CaseReport), usageKnown: false },
+      ];
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: mixedCases,
+        totals,
+      });
+
+      expect(report.cases[0]?.usageKnown).toBe(true);
+      expect(report.cases[1]?.usageKnown).toBe(false);
+      expect(report.totals.usageComplete).toBe(false);
+    });
+
+    it("marks totals.usageComplete false when every case's usage is unknown", () => {
+      const allUnknownCases: CaseReport[] = baseCases.map((c) => ({
+        ...(c as CaseReport),
+        usageKnown: false,
+      }));
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: allUnknownCases,
+        totals,
+      });
+
+      expect(report.cases.every((c) => c.usageKnown === false)).toBe(true);
+      expect(report.totals.usageComplete).toBe(false);
+    });
+
+    /**
+     * `complete` (case execution) and `usageComplete` (usage knowledge) must
+     * stay independently readable — a run can execute every case fully
+     * (`complete: true`) while still not knowing one case's true usage
+     * (`usageComplete: false`), and vice versa is NOT possible (a failed/
+     * unexecuted case's true usage can never be fully known), but the two
+     * fields must never be conflated into one.
+     */
+    it("keeps complete (case execution) and usageComplete (usage knowledge) as independent fields", () => {
+      const mixedCases: CaseReport[] = [{ ...(baseCases[0] as CaseReport), usageKnown: false }];
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: mixedCases,
+        totals,
+      });
+
+      expect(report.complete).toBe(true); // every selected case DID execute
+      expect(report.totals.usageComplete).toBe(false); // but its usage wasn't known
+    });
+
+    it("marks totals.usageComplete false whenever the run stopped on a terminal failure or budget overage, regardless of the completed cases' own usageKnown flags", () => {
+      const failedCase: FailedCaseReport = {
+        id: "grounded-2",
+        category: "grounded",
+        question: "What has he built with Kubernetes?",
+        statusCode: 503,
+        errorName: "TransientProviderError",
+        errorMessage: "HTTP 503",
+        attempts: [],
+      };
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases.slice(0, 1), // all-known
+        totals,
+        failedCases: [failedCase],
+      });
+
+      expect(report.totals.usageComplete).toBe(false);
+    });
+
+    it("marks totals.usageComplete false on a budget overage even when it hit on the LAST case (unexecutedCaseIds empty)", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases, // all-known
+        totals,
+        budgetExceeded: { message: "Eval token budget exceeded: stopping." },
+        // unexecutedCaseIds deliberately omitted/empty — the overage hit on
+        // the very last case, so nothing was left unrun.
+      });
+
+      expect(report.unexecutedCaseIds).toEqual([]);
+      expect(report.totals.usageComplete).toBe(false);
     });
   });
 });

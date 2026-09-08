@@ -81,6 +81,18 @@ export interface CaseReport {
    * in the assembled report, the same treatment `toolTrace` gets above.
    */
   attempts?: RetryAttemptRecord[];
+  /**
+   * Whether this case's own `usage` figures (summed into
+   * `EvalReport.totals` by the runner) are known to be a genuine number, not
+   * an all-zero placeholder standing in for "we don't actually know" (#307
+   * second independent-review correction, 2nd round, finding 3 —
+   * `./runner.ts`'s `CaseRunResult.usageKnown`, previously collected but
+   * dropped before it reached this report). Optional on input and always
+   * normalized to `true` — never `undefined` — in the assembled report, the
+   * same treatment `toolTrace`/`attempts` get above; feeds
+   * `EvalReport.totals.usageComplete`.
+   */
+  usageKnown?: boolean;
 }
 
 /**
@@ -143,7 +155,19 @@ export interface EvalReport {
     preferredSourceCompliance: ScorerAggregate;
     factualBoundaryCompliance: ScorerAggregate;
   };
-  totals: EvalTotals & { cases: number };
+  totals: EvalTotals & {
+    cases: number;
+    /**
+     * `true` only when EVERY case's `usageKnown` was true AND the run
+     * itself completed (no terminal case failure, no unexecuted case, no
+     * budget stop) — #307 second independent-review correction, 2nd round,
+     * finding 3. Deliberately distinct from the top-level `complete` field
+     * below: `complete` is about case EXECUTION, this is about USAGE
+     * KNOWLEDGE — a run can execute every case (`complete: true`) while
+     * still not knowing one case's true usage (`usageComplete: false`).
+     */
+    usageComplete: boolean;
+  };
   thresholds: ScorerThresholds;
   verdict: Verdict;
   /**
@@ -185,6 +209,30 @@ function mean(values: number[]): number {
 function aggregate(scores: Array<ScoreResult | null>): ScorerAggregate {
   const applicable = scores.filter((score): score is ScoreResult => score !== null);
   return { mean: mean(applicable.map((score) => score.score)), count: applicable.length };
+}
+
+/**
+ * #307 second independent-review correction, 2nd round, finding 3: `true`
+ * only when EVERY case's own usage was known AND the run itself completed
+ * (no terminal case failure, no unexecuted case, no budget stop) — a
+ * failed/unexecuted case's true usage can never be fully known. Split out of
+ * `buildReport` purely to keep that function's cognitive complexity under
+ * this repo's Biome limit — no behavior change from the inline version this
+ * replaces (report.test.ts's usage-completeness suite covers every branch
+ * either way).
+ */
+function computeUsageComplete(params: {
+  cases: readonly CaseReport[];
+  failedCases: readonly FailedCaseReport[];
+  unexecutedCaseIds: readonly string[];
+  budgetExceeded: BudgetStopInfo | null;
+}): boolean {
+  return (
+    params.cases.every((c) => c.usageKnown !== false) &&
+    params.failedCases.length === 0 &&
+    params.unexecutedCaseIds.length === 0 &&
+    params.budgetExceeded === null
+  );
 }
 
 /** Assemble the final {@link EvalReport} from collected per-case results and run totals. Pure — no model calls, no I/O. */
@@ -288,6 +336,13 @@ export function buildReport(params: {
     failures.push(budgetExceeded.message);
   }
 
+  const usageComplete = computeUsageComplete({
+    cases: params.cases,
+    failedCases,
+    unexecutedCaseIds,
+    budgetExceeded,
+  });
+
   return {
     promptVersion: params.promptVersion,
     modelId: params.modelId,
@@ -296,9 +351,10 @@ export function buildReport(params: {
       ...c,
       toolTrace: c.toolTrace ?? [],
       attempts: c.attempts ?? [],
+      usageKnown: c.usageKnown ?? true,
     })),
     aggregates,
-    totals: { cases: params.cases.length, ...params.totals },
+    totals: { cases: params.cases.length, usageComplete, ...params.totals },
     thresholds,
     verdict: {
       passed:

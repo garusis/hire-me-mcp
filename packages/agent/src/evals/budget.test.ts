@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertWithinBudget,
   BudgetExceededError,
+  createBudgetGuard,
   estimateCostUsd,
   getModelPricing,
 } from "./budget.js";
@@ -75,5 +76,56 @@ describe("getModelPricing", () => {
     const pricing = getModelPricing("gemini-3.5-flash-lite");
     expect(pricing.inputPerMillion).toBe(0);
     expect(pricing.outputPerMillion).toBe(0);
+  });
+});
+
+/**
+ * #307 second independent-review correction (2nd round), finding 2: budget
+ * enforcement was case-level only — checked once per case, AFTER
+ * `deps.runCase` fully returned. A multi-step case (model call -> tool call
+ * -> another model call) could issue further real provider requests after
+ * an earlier step already exhausted the known budget. `createBudgetGuard`
+ * accumulates KNOWN usage across every request/case sharing one instance and
+ * throws BEFORE the next request the instant either cap is already crossed
+ * — the guard `./retry.ts`'s `beforeAttempt` hook and `./cli.ts`'s `main()`
+ * wire together.
+ */
+describe("createBudgetGuard", () => {
+  const pricing = { inputPerMillion: 1, outputPerMillion: 1 };
+
+  it("does not throw before any usage is recorded, or while recorded usage stays within both caps", () => {
+    const guard = createBudgetGuard({ maxTotalTokens: 1_000, maxCostUsd: 1 });
+    expect(() => guard.assertNotExceeded()).not.toThrow();
+
+    guard.recordUsage({ inputTokens: 100, outputTokens: 100, totalTokens: 200 }, pricing);
+    expect(() => guard.assertNotExceeded()).not.toThrow();
+  });
+
+  it("throws BudgetExceededError once accumulated KNOWN tokens cross maxTotalTokens — before the next request, not after", () => {
+    const guard = createBudgetGuard({ maxTotalTokens: 100, maxCostUsd: 100 });
+    guard.recordUsage({ inputTokens: 60, outputTokens: 50, totalTokens: 110 }, pricing);
+
+    expect(() => guard.assertNotExceeded()).toThrow(BudgetExceededError);
+  });
+
+  it("throws BudgetExceededError once accumulated KNOWN cost crosses maxCostUsd", () => {
+    const guard = createBudgetGuard({ maxTotalTokens: 1_000_000, maxCostUsd: 0.0001 });
+    guard.recordUsage(
+      { inputTokens: 1_000_000, outputTokens: 0, totalTokens: 1_000_000 },
+      { inputPerMillion: 1, outputPerMillion: 0 },
+    );
+
+    expect(() => guard.assertNotExceeded()).toThrow(BudgetExceededError);
+  });
+
+  it("accumulates usage across multiple recordUsage calls sharing one instance — proving cross-request/cross-case consumption is shared, not per-call", () => {
+    const guard = createBudgetGuard({ maxTotalTokens: 150, maxCostUsd: 100 });
+    guard.recordUsage({ inputTokens: 50, outputTokens: 0, totalTokens: 50 }, pricing);
+    expect(() => guard.assertNotExceeded()).not.toThrow();
+    guard.recordUsage({ inputTokens: 50, outputTokens: 0, totalTokens: 50 }, pricing);
+    expect(() => guard.assertNotExceeded()).not.toThrow();
+    guard.recordUsage({ inputTokens: 51, outputTokens: 0, totalTokens: 51 }, pricing);
+
+    expect(() => guard.assertNotExceeded()).toThrow(BudgetExceededError);
   });
 });

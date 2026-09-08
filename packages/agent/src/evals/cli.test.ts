@@ -1,8 +1,12 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { APICallError } from "ai";
 import { describe, expect, it, vi } from "vitest";
+import { BudgetExceededError } from "./budget.js";
 import {
   type CaseAttemptTracker,
   createCaseAttemptTracker,
+  createEvalRetryPolicy,
   createRunCase,
   describeCaseFailure,
   extractCitationsFromToolResults,
@@ -301,7 +305,7 @@ describe("describeCaseFailure", () => {
     { attempt: 2, outcome: "stopped-retries-exhausted", durationMs: 5, statusCode: 503 },
   ];
 
-  it("reads the status code and error name/message off a wrapped APICallError", () => {
+  it("reads the status code and a controlled classification off a wrapped APICallError — never the raw error name/message", () => {
     const error = new APICallError({
       message: "Service Unavailable",
       url: "https://example.test",
@@ -310,48 +314,180 @@ describe("describeCaseFailure", () => {
     });
     expect(describeCaseFailure(error, attempts)).toEqual({
       statusCode: 503,
-      errorName: "AI_APICallError",
-      errorMessage: "Service Unavailable",
+      errorName: "TransientProviderError",
+      errorMessage: "HTTP 503",
       attempts,
     });
   });
 
-  it("omits statusCode/errorName for a plain non-API error, but still carries the message and attempts", () => {
+  it("classifies a plain non-API error with no statusCode, and carries the attempts", () => {
     const error = new Error("boom");
     expect(describeCaseFailure(error, [])).toEqual({
-      errorName: "Error",
-      errorMessage: "boom",
+      errorName: "UnknownError",
+      errorMessage: "Non-provider error",
       attempts: [],
     });
   });
 
-  it("stringifies a thrown non-Error value rather than throwing", () => {
+  it("classifies a thrown non-Error value the same way, rather than throwing", () => {
     expect(describeCaseFailure("just a string", [])).toEqual({
-      errorMessage: "just a string",
+      errorName: "UnknownError",
+      errorMessage: "Non-provider error",
       attempts: [],
     });
   });
 
   /**
-   * #307 second independent-review correction, finding 3: a raw provider
-   * error message can embed a secret (a `?key=...` query param on the
-   * request URL, or an echoed `Authorization`/bearer header) — this must
-   * never survive into the case-failure report `describeCaseFailure` builds.
-   * Reproduced with a fake token, never a real secret.
+   * #307 second independent-review correction (2nd round), finding 1: regex
+   * redaction of a free-text provider error message is an unsafe half
+   * measure — it missed a fake secret with no query-string/header shape and
+   * never touched `error.name` at all. The fix is to never let the raw
+   * message/name reach the report, redacted or not — only a controlled
+   * classification and the numeric status code. Reproduced with the
+   * reviewer's own adversarial example (issuecomment-5577124019).
    */
-  it("redacts a fake secret embedded in the error message rather than leaking it into the report", () => {
+  it("never persists the raw error message or name — only a controlled classification — for the reviewer's adversarial example", () => {
+    const error = new Error("token=FAKE_SECRET_FOR_TEST payload: PRIVATE_BODY_EXAMPLE");
+    error.name = "PRIVATE_NAME_EXAMPLE";
+    const result = describeCaseFailure(error, []);
+    expect(JSON.stringify(result)).not.toContain("FAKE_SECRET_FOR_TEST");
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_BODY_EXAMPLE");
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_NAME_EXAMPLE");
+    expect(result.errorName).toBe("UnknownError");
+    expect(result.errorMessage).toBe("Non-provider error");
+  });
+
+  it("classifies a query-string-shaped error message without leaking any of its text", () => {
     const error = new Error(
       "request to https://generativelanguage.googleapis.com/v1?key=FAKE_SECRET_FOR_TEST failed",
     );
     const result = describeCaseFailure(error, []);
     expect(result.errorMessage).not.toContain("FAKE_SECRET_FOR_TEST");
-    expect(result.errorMessage).toContain("[REDACTED]");
   });
 
-  it("redacts a fake bearer token embedded in the error message", () => {
+  it("classifies a bearer-token-shaped error message without leaking any of its text", () => {
     const error = new Error("upstream rejected: Authorization: Bearer FAKE_SECRET_FOR_TEST");
     const result = describeCaseFailure(error, []);
     expect(result.errorMessage).not.toContain("FAKE_SECRET_FOR_TEST");
+  });
+});
+
+/**
+ * #307 second independent-review correction (2nd round), finding 2: `main()`
+ * previously built the retry policy with only a logging `onAttempt` — no
+ * shared budget guard checked before every request. `createEvalRetryPolicy`
+ * is the extracted, unit-testable wiring `main()` now uses (the same
+ * "extract a pure/testable piece out of `main()`" pattern already
+ * established by `createCaseAttemptTracker`/`createRunCase` in this file):
+ * it builds a retry policy whose `beforeAttempt` consults a real
+ * `createBudgetGuard` fed by every attempt's own known usage.
+ */
+describe("createEvalRetryPolicy", () => {
+  function makeTracker(): CaseAttemptTracker & { onAttempt: (r: RetryAttemptRecord) => void } {
+    return createCaseAttemptTracker();
+  }
+
+  it("lets a request through when known usage is still within budget", async () => {
+    const tracker = makeTracker();
+    const policy = createEvalRetryPolicy({
+      modelId: "gemini-3.6-flash",
+      maxTotalTokens: 1_000,
+      maxCostUsd: 1,
+      attemptTracker: tracker,
+    });
+
+    await expect(policy.run(() => Promise.resolve("ok"))).resolves.toBe("ok");
+  });
+
+  /**
+   * Proves the shared-budget behavior end to end at the retry-policy
+   * boundary: after a first request's own known usage crosses the token
+   * cap, a SECOND request through the SAME policy instance must never reach
+   * `operation` at all — the exact "next provider call count remains zero"
+   * proof issuecomment-5577124019 asks for, without needing a full
+   * tool-calling Mastra Agent (the enforcement point is this shared
+   * model-boundary policy, which every one of an Agent's real steps goes
+   * through identically).
+   */
+  it("blocks the next request once a prior request's known usage crosses the token budget — the next provider call count stays at zero", async () => {
+    const tracker = makeTracker();
+    const policy = createEvalRetryPolicy({
+      modelId: "gemini-3.6-flash",
+      maxTotalTokens: 100,
+      maxCostUsd: 100,
+      attemptTracker: tracker,
+    });
+    const usage = { inputTokens: 60, outputTokens: 50, totalTokens: 110 };
+
+    await policy.run(
+      () => Promise.resolve({ text: "step 1" }),
+      () => usage,
+    );
+
+    const secondOperation = vi.fn().mockResolvedValue({ text: "step 2" });
+    await expect(policy.run(secondOperation)).rejects.toThrow(BudgetExceededError);
+    expect(secondOperation).not.toHaveBeenCalled();
+  });
+
+  it("blocks the next request once a prior request's known usage crosses the cost budget", async () => {
+    const tracker = makeTracker();
+    const policy = createEvalRetryPolicy({
+      modelId: "claude-haiku-4-5", // priced (non-zero) in ./budget.ts's MODEL_PRICING
+      maxTotalTokens: 1_000_000,
+      maxCostUsd: 0.0001,
+      attemptTracker: tracker,
+    });
+    const usage = { inputTokens: 1_000_000, outputTokens: 0, totalTokens: 1_000_000 };
+
+    await policy.run(
+      () => Promise.resolve({ text: "step 1" }),
+      () => usage,
+    );
+
+    const secondOperation = vi.fn().mockResolvedValue({ text: "step 2" });
+    await expect(policy.run(secondOperation)).rejects.toThrow(BudgetExceededError);
+    expect(secondOperation).not.toHaveBeenCalled();
+  });
+
+  it("shares consumption ACROSS separate createRunCase-style calls (cross-case), not just within one request", async () => {
+    const tracker = makeTracker();
+    const policy = createEvalRetryPolicy({
+      modelId: "gemini-3.6-flash",
+      maxTotalTokens: 100,
+      maxCostUsd: 100,
+      attemptTracker: tracker,
+    });
+    const usage = { inputTokens: 60, outputTokens: 50, totalTokens: 110 };
+
+    // Case 1's own request.
+    await policy.run(
+      () => Promise.resolve({ text: "case 1" }),
+      () => usage,
+    );
+
+    // Case 2's FIRST request must already be blocked — the guard is shared
+    // across cases, not reset per case (attemptTracker.reset() only clears
+    // the per-case attempt TRACE, never the budget guard).
+    tracker.reset();
+    const caseTwoOperation = vi.fn().mockResolvedValue({ text: "case 2" });
+    await expect(policy.run(caseTwoOperation)).rejects.toThrow(BudgetExceededError);
+    expect(caseTwoOperation).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #307 second independent-review correction (2nd round), finding 2: `main()`
+ * is deliberately outside this file's unit-tested surface (it makes real
+ * model calls) — this source-inspection check is the same pattern
+ * `runner.test.ts` already uses to pin a specific line of `main()`'s own
+ * wiring without executing it: `main()` must build its shared retry policy
+ * via `createEvalRetryPolicy` (which IS fully unit-tested above), not an
+ * inline `createRetryPolicy` call with no budget guard wired in.
+ */
+describe("main() wiring (source-inspection, #307 2nd correction finding 2)", () => {
+  it("builds its retry policy via createEvalRetryPolicy, not a bare createRetryPolicy call with no budget guard", () => {
+    const cliSource = readFileSync(fileURLToPath(new URL("./cli.ts", import.meta.url)), "utf8");
+    expect(cliSource).toMatch(/const retryPolicy = createEvalRetryPolicy\(/);
   });
 });
 
@@ -365,6 +501,39 @@ describe("createCaseAttemptTracker", () => {
 
     tracker.reset();
     expect(tracker.attempts()).toEqual([]);
+  });
+
+  /**
+   * #307 second independent-review correction (2nd round), finding 3:
+   * `attempt` alone restarts at 1 for every logical request (`./retry.ts`'s
+   * `run()` call), so a multi-step case's trace can't distinguish "attempt 1
+   * of request 2" from "attempt 1 of request 1". `requestIndex` stamps a
+   * stable, monotonically increasing request identity: a fresh `attempt: 1`
+   * record always starts a NEW request (attempts within one request are
+   * strictly sequential — `attempt` only resets when the previous request's
+   * `run()` call has already concluded).
+   */
+  it("stamps a monotonically increasing requestIndex, incrementing only when attempt restarts at 1 (a new request)", () => {
+    const tracker = createCaseAttemptTracker();
+
+    tracker.onAttempt({ attempt: 1, outcome: "retrying", durationMs: 5 }); // request 1, attempt 1
+    tracker.onAttempt({ attempt: 2, outcome: "success", durationMs: 5 }); // request 1, attempt 2
+    tracker.onAttempt({ attempt: 1, outcome: "success", durationMs: 5 }); // request 2, attempt 1
+
+    expect(tracker.attempts().map((a) => [a.requestIndex, a.attempt])).toEqual([
+      [1, 1],
+      [1, 2],
+      [2, 1],
+    ]);
+  });
+
+  it("resets requestIndex back to a fresh count on reset(), for the next case", () => {
+    const tracker = createCaseAttemptTracker();
+    tracker.onAttempt({ attempt: 1, outcome: "success", durationMs: 5 });
+    tracker.reset();
+
+    tracker.onAttempt({ attempt: 1, outcome: "success", durationMs: 5 });
+    expect(tracker.attempts()[0]?.requestIndex).toBe(1);
   });
 });
 
@@ -514,6 +683,48 @@ describe("createRunCase", () => {
 
     expect(result.usage).toEqual({ inputTokens: 7, outputTokens: 3, totalTokens: 10 });
     expect(result.usageKnown).toBe(true);
+  });
+
+  /**
+   * #307 second independent-review correction (2nd round), finding 1:
+   * `EvalCaseError`'s own thrown message previously interpolated the raw
+   * caught `error.message` directly — reproduced with the reviewer's
+   * adversarial example, this must never happen; the message is built only
+   * from `describeCaseFailure`'s already-controlled classification.
+   */
+  it("never embeds the raw caught error message in the thrown EvalCaseError's own message", async () => {
+    const providerError = new Error("token=FAKE_SECRET_FOR_TEST payload: PRIVATE_BODY_EXAMPLE");
+    providerError.name = "PRIVATE_NAME_EXAMPLE";
+    const generate = vi.fn().mockRejectedValue(providerError);
+    const runCase = createRunCase({ generate }, makeTracker());
+
+    try {
+      await runCase("question");
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(EvalCaseError);
+      const caseError = error as EvalCaseError;
+      expect(caseError.message).not.toContain("FAKE_SECRET_FOR_TEST");
+      expect(caseError.message).not.toContain("PRIVATE_BODY_EXAMPLE");
+      expect(caseError.message).not.toContain("PRIVATE_NAME_EXAMPLE");
+      expect(caseError.failure.errorName).toBe("UnknownError");
+    }
+  });
+
+  /**
+   * #307 second independent-review correction (2nd round), finding 2: a
+   * `BudgetExceededError` thrown from `./retry.ts`'s `beforeAttempt` hook
+   * (via `agent.generate`) must propagate as-is — distinguishable from an
+   * ordinary terminal provider failure — never wrapped in an `EvalCaseError`,
+   * so `./runner.ts` can tell "the run's own budget stopped it" apart from
+   * "a case's provider call failed."
+   */
+  it("propagates a BudgetExceededError from agent.generate unchanged, never wrapping it in an EvalCaseError", async () => {
+    const budgetError = new BudgetExceededError("Eval token budget exceeded: stopping.");
+    const generate = vi.fn().mockRejectedValue(budgetError);
+    const runCase = createRunCase({ generate }, makeTracker());
+
+    await expect(runCase("question")).rejects.toBe(budgetError);
   });
 
   it("marks usageKnown false rather than silently reporting a fabricated zero when neither totalUsage nor any attempt carries known usage", async () => {

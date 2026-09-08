@@ -326,7 +326,7 @@ describe("createRetryPolicy", () => {
     expect(onAttempt).toHaveBeenCalledWith(expect.objectContaining({ usage: "unknown" }));
   });
 
-  it("records the error name/message/statusCode on a stopped attempt, sanitized to plain fields", async () => {
+  it("records the statusCode plus a controlled classification on a stopped attempt — never the raw error's own name/message", async () => {
     const clock = createFakeClock();
     const onAttempt = vi.fn();
     const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
@@ -337,7 +337,7 @@ describe("createRetryPolicy", () => {
     expect(onAttempt).toHaveBeenCalledWith(
       expect.objectContaining({
         statusCode: 429,
-        errorName: "AI_APICallError",
+        errorName: "RateLimitError",
         errorMessage: "HTTP 429",
       }),
     );
@@ -432,13 +432,32 @@ describe("createRetryPolicy", () => {
   });
 
   /**
-   * #307 second independent-review correction, finding 3: `describeError`
-   * (the sanitizer every `onAttempt` record goes through) must redact a
-   * secret embedded in a raw provider error message before it is ever
-   * reported — reproduced with a fake token that must never survive into a
-   * recorded attempt.
+   * #307 second independent-review correction (2nd round), finding 1: regex
+   * redaction of a free-text provider error message is an unsafe allowlist —
+   * it missed a fake secret embedded WITHOUT a query-string/header context
+   * (e.g. `token=...` with no leading `?`/`&`) and never touched
+   * `error.name` at all. The fix is not "redact harder" — it's to never
+   * persist the raw text in the first place. Reproduced with the reviewer's
+   * own adversarial example.
    */
-  it("redacts a fake secret embedded in a query-string error message before recording the attempt", async () => {
+  it("never persists the raw error message or name — only a controlled classification and statusCode — even for text no redaction regex would catch", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
+    const error = new Error("token=FAKE_SECRET_FOR_TEST payload: PRIVATE_BODY_EXAMPLE");
+    error.name = "PRIVATE_NAME_EXAMPLE";
+
+    await expect(policy.run(vi.fn().mockRejectedValue(error))).rejects.toBe(error);
+
+    const record = onAttempt.mock.calls[0]?.[0];
+    expect(JSON.stringify(record)).not.toContain("FAKE_SECRET_FOR_TEST");
+    expect(JSON.stringify(record)).not.toContain("PRIVATE_BODY_EXAMPLE");
+    expect(JSON.stringify(record)).not.toContain("PRIVATE_NAME_EXAMPLE");
+    expect(record.errorName).toBe("UnknownError");
+    expect(record.errorMessage).toBe("Non-provider error");
+  });
+
+  it("classifies a query-string-shaped error message without leaking any of its text", async () => {
     const clock = createFakeClock();
     const onAttempt = vi.fn();
     const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
@@ -450,10 +469,10 @@ describe("createRetryPolicy", () => {
 
     const record = onAttempt.mock.calls[0]?.[0];
     expect(record.errorMessage).not.toContain("FAKE_SECRET_FOR_TEST");
-    expect(record.errorMessage).toContain("[REDACTED]");
+    expect(record.errorMessage).toBe("Non-provider error");
   });
 
-  it("redacts a bearer/authorization token embedded in an error message before recording the attempt", async () => {
+  it("classifies a bearer/authorization-shaped error message without leaking any of its text", async () => {
     const clock = createFakeClock();
     const onAttempt = vi.fn();
     const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
@@ -463,6 +482,45 @@ describe("createRetryPolicy", () => {
 
     const record = onAttempt.mock.calls[0]?.[0];
     expect(record.errorMessage).not.toContain("FAKE_SECRET_FOR_TEST");
+  });
+
+  /**
+   * #307 second independent-review correction (2nd round), finding 2:
+   * budget must be enforced BEFORE every provider request — including
+   * retries of the same logical request, not just once per case after it
+   * completes. `beforeAttempt` is the shared hook a caller (`./cli.ts`)
+   * wires to a budget tracker; once it throws, no further attempt is made
+   * and the throw is recorded as `"stopped-budget-exceeded"`.
+   */
+  it("checks beforeAttempt before every attempt and stops immediately, recording 'stopped-budget-exceeded', once it throws", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    let exhausted = false;
+    const policy = createRetryPolicy({
+      now: clock.now,
+      sleep: clock.sleep,
+      onAttempt,
+      beforeAttempt: () => {
+        if (exhausted) throw new Error("budget exceeded");
+      },
+    });
+    const operation = vi.fn().mockResolvedValue("ok");
+
+    await expect(policy.run(operation)).resolves.toBe("ok");
+    exhausted = true;
+    await expect(policy.run(operation)).rejects.toThrow("budget exceeded");
+
+    expect(operation).toHaveBeenCalledTimes(1); // never called for the second, budget-blocked run()
+    expect(onAttempt).toHaveBeenLastCalledWith(
+      expect.objectContaining({ attempt: 1, outcome: "stopped-budget-exceeded" }),
+    );
+  });
+
+  it("never calls beforeAttempt when it is not provided", async () => {
+    const clock = createFakeClock();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep });
+
+    await expect(policy.run(vi.fn().mockResolvedValue("ok"))).resolves.toBe("ok");
   });
 });
 
@@ -484,7 +542,35 @@ describe("redactSecrets", () => {
 });
 
 describe("sumKnownUsage", () => {
-  it("sums usage across attempts with known usage, ignoring 'unknown' ones", () => {
+  it("sums usage across attempts with known usage and marks it complete when EVERY attempt (ignoring 'unknown' ones is not enough) actually carried known usage", () => {
+    const total = sumKnownUsage([
+      {
+        attempt: 1,
+        outcome: "success",
+        durationMs: 1,
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      },
+      {
+        attempt: 2,
+        outcome: "success",
+        durationMs: 1,
+        usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
+      },
+    ]);
+
+    expect(total).toEqual({
+      usage: { inputTokens: 12, outputTokens: 6, totalTokens: 18 },
+      complete: true,
+    });
+  });
+
+  /**
+   * #307 second independent-review correction (2nd round), finding 3: the
+   * prior `sumKnownUsage` silently summed only the known attempts and
+   * returned that sum as if it were the whole truth — a partial-known sum
+   * must never be presented as complete.
+   */
+  it("marks the sum as INCOMPLETE (not authoritative) when some attempts carry no known usage, while still returning the known partial sum", () => {
     const total = sumKnownUsage([
       { attempt: 1, outcome: "success", durationMs: 1, usage: "unknown" },
       {
@@ -493,25 +579,22 @@ describe("sumKnownUsage", () => {
         durationMs: 1,
         usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
       },
-      {
-        attempt: 3,
-        outcome: "success",
-        durationMs: 1,
-        usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
-      },
     ]);
 
-    expect(total).toEqual({ inputTokens: 12, outputTokens: 6, totalTokens: 18 });
+    expect(total).toEqual({
+      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      complete: false,
+    });
   });
 
-  it("returns 'unknown' when no attempt carries known usage", () => {
-    expect(sumKnownUsage([{ attempt: 1, outcome: "stopped-permanent-error", durationMs: 1 }])).toBe(
-      "unknown",
-    );
+  it("returns 'unknown' usage and complete:false when no attempt carries known usage", () => {
+    expect(
+      sumKnownUsage([{ attempt: 1, outcome: "stopped-permanent-error", durationMs: 1 }]),
+    ).toEqual({ usage: "unknown", complete: false });
   });
 
-  it("returns 'unknown' for an empty attempts list", () => {
-    expect(sumKnownUsage([])).toBe("unknown");
+  it("returns 'unknown' usage and complete:false for an empty attempts list", () => {
+    expect(sumKnownUsage([])).toEqual({ usage: "unknown", complete: false });
   });
 });
 

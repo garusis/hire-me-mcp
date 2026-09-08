@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
+import { BudgetExceededError } from "./budget.js";
 import type { EvalCase } from "./dataset/schema.js";
 import { EvalCaseError, runEvalSuite, selectCasesForBudget } from "./runner.js";
 
@@ -1065,6 +1066,48 @@ describe("runEvalSuite", () => {
       ]);
     });
 
+    /**
+     * #307 second independent-review correction (2nd round), finding 3:
+     * `scoreCase` previously dropped `run.usageKnown` — it never reached
+     * `CaseReport`, so a report consumer couldn't tell a genuine zero-token
+     * answer from "we don't actually know."
+     */
+    it("threads usageKnown from the run result onto CaseReport, feeding totals.usageComplete", async () => {
+      const runCase = vi.fn().mockResolvedValue({
+        answer: "He built things [cite:skill:aws].",
+        toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        usageKnown: false,
+      });
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase],
+          budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase },
+      );
+
+      expect(report.cases[0]?.usageKnown).toBe(false);
+      expect(report.totals.usageComplete).toBe(false);
+    });
+
+    it("defaults CaseReport.usageKnown to true when the run result carries no explicit flag", async () => {
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase],
+          budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase: stubRunCase() },
+      );
+
+      expect(report.cases[0]?.usageKnown).toBe(true);
+      expect(report.totals.usageComplete).toBe(true);
+    });
+
     it("defaults CaseReport.attempts to an empty array when the run result carries none", async () => {
       const report = await runEvalSuite(
         {
@@ -1124,6 +1167,52 @@ describe("runEvalSuite", () => {
       // 150 from the completed case + 50 known from the failed case's own
       // successful attempt — never just the 150 from completed cases alone.
       expect(report.totals.totalTokens).toBe(200);
+    });
+
+    /**
+     * #307 second independent-review correction (2nd round), finding 2: a
+     * `BudgetExceededError` can now be thrown from INSIDE `deps.runCase`
+     * itself (`./retry.ts`'s `beforeAttempt` hook stopping a request before
+     * it's issued, mid-case) — distinct from an `EvalCaseError` (a case's
+     * provider call failing) and from the EXISTING after-case
+     * `assertWithinBudget` check below. It must resolve to a partial report
+     * (never reject), preserving every case that DID fully complete, never
+     * double-counting the aborted case's own (unknowable) usage, and
+     * marking the aborted case itself — not just the ones after it — as
+     * unexecuted.
+     */
+    it("resolves to a partial report when deps.runCase itself rejects with BudgetExceededError, marking the aborted case (and every case after it) unexecuted without double-counting", async () => {
+      const budgetError = new BudgetExceededError("Eval token budget exceeded: stopping.");
+      const runCase = vi
+        .fn()
+        .mockResolvedValueOnce({
+          answer: "He built things [cite:skill:aws].",
+          toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
+          usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+        })
+        .mockRejectedValueOnce(budgetError);
+
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase, gapCase, offTopicCase],
+          budget: { maxCases: 10, maxTotalTokens: 1_000_000, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase },
+      );
+
+      // Never called for the case after the budget-aborted one.
+      expect(runCase).toHaveBeenCalledTimes(2);
+      // The one case that DID complete is preserved, with its usage intact.
+      expect(report.cases).toHaveLength(1);
+      expect(report.cases[0]?.id).toBe("grounded-1");
+      expect(report.totals.totalTokens).toBe(150); // never guesses at the aborted case's usage
+      expect(report.failedCases).toEqual([]); // this is a budget stop, not a case failure
+      expect(report.unexecutedCaseIds).toEqual(["gap-1", "off-topic-1"]);
+      expect(report.complete).toBe(false);
+      expect(report.budgetExceeded).toEqual({ message: budgetError.message });
+      expect(report.verdict.passed).toBe(false);
     });
   });
 
