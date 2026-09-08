@@ -13,10 +13,13 @@ import {
   extractToolCallsFromToolResults,
   extractToolNamesFromToolResults,
   filterCasesByIds,
+  printReportSummary,
   resolveRunnerEnvConfig,
+  summarizeReportForCli,
 } from "./cli.js";
 import type { EvalCase } from "./dataset/schema.js";
 import { DEFAULT_EVAL_RPM_LIMIT, FREE_TIER_RPM_CEILING } from "./rate-limit.js";
+import { buildReport, type CaseReport } from "./report.js";
 import type { RetryAttemptRecord } from "./retry.js";
 import { EvalCaseError } from "./runner.js";
 
@@ -858,5 +861,231 @@ describe("createRunCase", () => {
 
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50, totalTokens: 150 });
     expect(result.usageKnown).toBe(false);
+  });
+});
+
+/**
+ * #307 issuecomment-5591843129 assignment B / diagnosis 5591743584 (c):
+ * `main()`'s report-summary console output previously (1) labeled EVERY
+ * incomplete run "STOPPED early after a terminal provider failure", even a
+ * budget stop that never failed a provider call, and (2) buried the budget
+ * message inside "FAILED threshold checks", so a run that ALSO had genuine
+ * scorer failures (e.g. a real assertion/completeness miss) read as if the
+ * only problem was the budget — the genuine failures were still technically
+ * printed (folded into the same list) but never distinguished from the
+ * execution-stop reason. `summarizeReportForCli` is the pure, testable piece
+ * `main()` now defers to for this labeling, split out for exactly the
+ * "main() itself is not unit-tested, its pure helpers are" reason this
+ * module's other exports already follow (see this file's other suites).
+ */
+describe("summarizeReportForCli", () => {
+  const totals = { inputTokens: 100, outputTokens: 50, totalTokens: 150, costUsd: 0 };
+
+  const groundedCase: CaseReport = {
+    id: "grounded-1",
+    category: "grounded",
+    question: "What has he built with AWS?",
+    answer: "He built things with AWS [cite:skill:aws].",
+    scores: {
+      groundedness: { score: 1, reason: "fully cited" },
+      gapHonesty: { score: 1, reason: "n/a for this case" },
+      relevance: { score: 0.95, reason: "addresses AWS" },
+      toolRouting: null,
+      answerAssertions: null,
+      storyCompleteness: null,
+      preferredSourceCompliance: null,
+      factualBoundaryCompliance: null,
+    },
+  };
+
+  const weakRelevanceCase: CaseReport = {
+    ...groundedCase,
+    id: "weak-relevance-1",
+    scores: { ...groundedCase.scores, relevance: { score: 0.1, reason: "off target" } },
+  };
+
+  it("reports a passing, complete run with no execution or threshold failure lines", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: [groundedCase],
+      totals,
+      thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.5 },
+    });
+
+    const summary = summarizeReportForCli(report);
+
+    expect(summary.passed).toBe(true);
+    expect(summary.executionFailureLines).toEqual([]);
+    expect(summary.thresholdFailureLines).toEqual([]);
+  });
+
+  it("reports a genuine scorer threshold miss as a threshold failure line, with no execution failure line, on an otherwise-complete run", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: [weakRelevanceCase],
+      totals,
+      thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.9 },
+    });
+
+    const summary = summarizeReportForCli(report);
+
+    expect(summary.passed).toBe(false);
+    expect(summary.executionFailureLines).toEqual([]);
+    expect(summary.thresholdFailureLines.some((line) => /relevance/i.test(line))).toBe(true);
+  });
+
+  it("labels a budget stop distinctly from a terminal provider failure, and keeps the budget message out of the threshold-failure lines", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: [groundedCase],
+      totals,
+      thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.5 },
+      unexecutedCaseIds: ["never-ran-1"],
+      budgetExceeded: {
+        message:
+          "Eval token budget exceeded: 1000 total token(s) used, max is 500. Aborting rather than spending further.",
+      },
+    });
+
+    const summary = summarizeReportForCli(report);
+
+    expect(summary.passed).toBe(false);
+    expect(summary.executionFailureLines.some((line) => /budget/i.test(line))).toBe(true);
+    expect(
+      summary.executionFailureLines.some((line) => /terminal provider failure/i.test(line)),
+    ).toBe(false);
+    expect(summary.executionFailureLines.some((line) => line.includes("never-ran-1"))).toBe(true);
+    expect(summary.thresholdFailureLines.some((line) => /budget/i.test(line))).toBe(false);
+  });
+
+  it("labels a terminal provider failure distinctly from a budget stop", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: [groundedCase],
+      totals,
+      thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.5 },
+      failedCases: [
+        {
+          id: "failed-1",
+          category: "grounded",
+          question: "q",
+          errorMessage: "quota exceeded",
+          attempts: [],
+        },
+      ],
+      unexecutedCaseIds: ["never-ran-2"],
+    });
+
+    const summary = summarizeReportForCli(report);
+
+    expect(summary.passed).toBe(false);
+    expect(
+      summary.executionFailureLines.some((line) => /terminal provider failure/i.test(line)),
+    ).toBe(true);
+    expect(summary.executionFailureLines.some((line) => /budget/i.test(line))).toBe(false);
+    expect(summary.executionFailureLines.some((line) => line.includes("never-ran-2"))).toBe(true);
+  });
+
+  /**
+   * The core diagnosed defect: a run can be stopped on budget AND still have
+   * genuine, real threshold failures (assertion/completeness misses) among
+   * the cases that DID complete — the summary must never suppress or
+   * misrepresent those as "no threshold failures" just because the run also
+   * stopped on budget.
+   */
+  it("represents simultaneous causes correctly: a budget stop AND a genuine threshold failure both surface, distinctly", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: [weakRelevanceCase],
+      totals,
+      thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.9 },
+      budgetExceeded: {
+        message:
+          "Eval token budget exceeded: 1000 total token(s) used, max is 500. Aborting rather than spending further.",
+      },
+    });
+
+    const summary = summarizeReportForCli(report);
+
+    expect(summary.passed).toBe(false);
+    expect(summary.executionFailureLines.some((line) => /budget/i.test(line))).toBe(true);
+    expect(summary.thresholdFailureLines.some((line) => /relevance/i.test(line))).toBe(true);
+    expect(summary.thresholdFailureLines.some((line) => /budget/i.test(line))).toBe(false);
+  });
+});
+
+/**
+ * #307 issuecomment-5591843129 assignment B / diagnosis 5591743584 (c):
+ * `printReportSummary` is `main()`'s own console-output glue around
+ * {@link summarizeReportForCli} — kept as its own injectable-io function
+ * (the same dependency-injection seam `createRunCase`/`runEvalSuite`
+ * already use in this package) specifically so `main()`'s printing and
+ * exit-status decision is unit-testable without a real model call, even
+ * though `main()` itself stays untested per this module's docs.
+ */
+describe("printReportSummary", () => {
+  const totals = { inputTokens: 100, outputTokens: 50, totalTokens: 150, costUsd: 0 };
+  const groundedCase: CaseReport = {
+    id: "grounded-1",
+    category: "grounded",
+    question: "What has he built with AWS?",
+    answer: "He built things with AWS [cite:skill:aws].",
+    scores: {
+      groundedness: { score: 1, reason: "fully cited" },
+      gapHonesty: { score: 1, reason: "n/a for this case" },
+      relevance: { score: 0.95, reason: "addresses AWS" },
+      toolRouting: null,
+      answerAssertions: null,
+      storyCompleteness: null,
+      preferredSourceCompliance: null,
+      factualBoundaryCompliance: null,
+    },
+  };
+
+  it("returns true and logs a passing message when the report is complete and every threshold cleared", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: [groundedCase],
+      totals,
+      thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.5 },
+    });
+    const log = vi.fn();
+    const error = vi.fn();
+
+    const passed = printReportSummary(report, { log, error });
+
+    expect(passed).toBe(true);
+    expect(error).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/passed every threshold/i));
+  });
+
+  it("returns false and logs the budget-stop line via error, never the generic terminal-provider-failure label, when only the budget stopped the run", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: [groundedCase],
+      totals,
+      thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.5 },
+      budgetExceeded: {
+        message:
+          "Eval token budget exceeded: 1000 total token(s) used, max is 500. Aborting rather than spending further.",
+      },
+    });
+    const log = vi.fn();
+    const error = vi.fn();
+
+    const passed = printReportSummary(report, { log, error });
+
+    expect(passed).toBe(false);
+    const errorLines = error.mock.calls.map((call) => String(call[0]));
+    expect(errorLines.some((line) => /budget/i.test(line))).toBe(true);
+    expect(errorLines.some((line) => /terminal provider failure/i.test(line))).toBe(false);
+    expect(errorLines.some((line) => /FAILED threshold checks/i.test(line))).toBe(false);
   });
 });

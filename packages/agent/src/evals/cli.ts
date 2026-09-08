@@ -37,6 +37,7 @@ import {
   DEFAULT_EVAL_RPM_LIMIT,
   toLanguageModel,
 } from "./rate-limit.js";
+import type { EvalReport } from "./report.js";
 import {
   classifyProviderError,
   createRetryingModel,
@@ -555,6 +556,125 @@ export function createEvalRetryPolicy(options: {
   });
 }
 
+/** The pure, testable pieces of `main()`'s report-summary console output — see {@link summarizeReportForCli}. */
+export interface ReportCliSummary {
+  /**
+   * Lines describing WHY the run stopped short of every selected case, if
+   * at all — empty when `report.complete` is `true`. Distinguishes a budget
+   * stop from a terminal provider failure (#307 issuecomment-5591843129
+   * assignment B / diagnosis 5591743584 (c)) rather than labeling every
+   * incomplete run "a terminal provider failure" the way `main()` did
+   * before this fix.
+   */
+  executionFailureLines: string[];
+  /**
+   * The genuine scorer/threshold failure messages — `report.verdict.failures`
+   * with the execution-cause messages (budget/provider-failure/unexecuted)
+   * that already appear in `executionFailureLines` removed, so a run that
+   * ALSO has a real assertion/completeness miss never reads as if the only
+   * problem were the execution stop. Relies on `./report.ts`'s own,
+   * documented ordering — `collectExecutionFailures`' entries are always
+   * appended AFTER the score-threshold failures — rather than re-deriving or
+   * duplicating that formatting here.
+   */
+  thresholdFailureLines: string[];
+  /** Mirrors `report.verdict.passed` — whether `main()` should exit non-zero. */
+  passed: boolean;
+}
+
+/**
+ * Build the human-readable, execution-vs-threshold-labeled summary `main()`
+ * prints for a finished eval run (#307 issuecomment-5591843129 assignment B
+ * / diagnosis 5591743584 (c)). Pure and exported so it's unit-testable
+ * without a real model call — the same "pure/testable piece pulled out of
+ * `main()`" pattern the rest of this module already follows (see this
+ * file's module docs).
+ */
+export function summarizeReportForCli(report: EvalReport): ReportCliSummary {
+  const executionFailureLines: string[] = [];
+
+  // A budget stop is the RUNNER's own decision to stop, never a provider
+  // call failing — labeled and printed distinctly from a terminal provider
+  // failure below, never folded into "FAILED threshold checks".
+  if (report.budgetExceeded) {
+    executionFailureLines.push(`Eval suite stopped on budget: ${report.budgetExceeded.message}`);
+    for (const partialCase of report.partialCases) {
+      executionFailureLines.push(
+        `  - ${partialCase.id} was aborted mid-flight after ${partialCase.attempts.length} attempt(s)`,
+      );
+    }
+  }
+
+  if (report.failedCases.length > 0) {
+    executionFailureLines.push("Eval suite stopped early after a terminal provider failure:");
+    for (const failedCase of report.failedCases) {
+      executionFailureLines.push(
+        `  - ${failedCase.id} failed after ${failedCase.attempts.length} attempt(s)` +
+          (failedCase.statusCode !== undefined ? ` (status ${failedCase.statusCode})` : "") +
+          `: ${failedCase.errorMessage}`,
+      );
+    }
+  }
+
+  if (report.unexecutedCaseIds.length > 0) {
+    executionFailureLines.push(`  - never ran: ${report.unexecutedCaseIds.join(", ")}`);
+  }
+
+  // `./report.ts`'s `buildReport` always appends the execution-cause
+  // failures (in this same failedCases -> unexecutedCaseIds -> partialCases
+  // -> budgetExceeded order) AFTER the genuine score-threshold failures, so
+  // the genuine ones are always the leading slice of this exact length —
+  // counting them (from the same fields used above) tells them apart
+  // without re-deriving or duplicating `./report.ts`'s own message text.
+  const executionFailureCount =
+    report.failedCases.length +
+    (report.unexecutedCaseIds.length > 0 ? 1 : 0) +
+    report.partialCases.length +
+    (report.budgetExceeded ? 1 : 0);
+  const thresholdFailureLines = report.verdict.failures.slice(
+    0,
+    report.verdict.failures.length - executionFailureCount,
+  );
+
+  return { executionFailureLines, thresholdFailureLines, passed: report.verdict.passed };
+}
+
+/** The console-like methods {@link printReportSummary} writes through — matches `console.log`/`console.error`'s call shape closely enough for a test double. */
+export interface ReportSummaryIo {
+  log: (message: string) => void;
+  error: (message: string) => void;
+}
+
+/**
+ * Print {@link summarizeReportForCli}'s labeled summary for `report` through
+ * the injected `io` (real `console.log`/`console.error` from `main()`, a
+ * `vi.fn()` spy pair from `cli.test.ts`) and return whether the run passed —
+ * the same dependency-injection seam `createRunCase`/`runEvalSuite` already
+ * use in this package, so `main()`'s own printing/exit-status decision is
+ * unit-testable without a real model call even though `main()` itself stays
+ * untested per this module's docs.
+ */
+export function printReportSummary(report: EvalReport, io: ReportSummaryIo): boolean {
+  const summary = summarizeReportForCli(report);
+
+  for (const line of summary.executionFailureLines) {
+    io.error(line);
+  }
+
+  if (summary.thresholdFailureLines.length > 0) {
+    io.error("Eval suite FAILED threshold checks:");
+    for (const failure of summary.thresholdFailureLines) {
+      io.error(`  - ${failure}`);
+    }
+  }
+
+  if (summary.passed) {
+    io.log("Eval suite passed every threshold.");
+  }
+
+  return summary.passed;
+}
+
 async function main(): Promise<void> {
   const envConfig = resolveRunnerEnvConfig();
   const modelId = resolveChatModelConfig().modelId;
@@ -628,36 +748,22 @@ async function main(): Promise<void> {
     `Total tokens: ${report.totals.totalTokens}, estimated cost: $${report.totals.costUsd.toFixed(4)}.`,
   );
 
-  // #307 C5: a terminal case failure no longer throws — it comes back as an
-  // incomplete report (failedCases/unexecutedCaseIds populated,
-  // verdict.passed false). Surface that distinctly from an ordinary
-  // threshold miss so a CI log doesn't read "eval failed" without saying
-  // WHY: the suite ran to completion but scored poorly, versus the suite
-  // was cut short by a provider failure.
-  if (!report.complete) {
-    console.error("Eval suite STOPPED early after a terminal provider failure:");
-    for (const failedCase of report.failedCases) {
-      console.error(
-        `  - ${failedCase.id} failed after ${failedCase.attempts.length} attempt(s)` +
-          (failedCase.statusCode !== undefined ? ` (status ${failedCase.statusCode})` : "") +
-          `: ${failedCase.errorMessage}`,
-      );
-    }
-    if (report.unexecutedCaseIds.length > 0) {
-      console.error(`  - never ran: ${report.unexecutedCaseIds.join(", ")}`);
-    }
-  }
-
-  if (!report.verdict.passed) {
-    console.error("Eval suite FAILED threshold checks:");
-    for (const failure of report.verdict.failures) {
-      console.error(`  - ${failure}`);
-    }
+  // #307 C5 / #307 issuecomment-5591843129 assignment B / diagnosis
+  // 5591743584 (c): a terminal case failure no longer throws — it comes
+  // back as an incomplete report (failedCases/unexecutedCaseIds populated,
+  // verdict.passed false). `printReportSummary` labels a budget stop
+  // distinctly from a terminal provider failure (both used to print as
+  // "STOPPED early after a terminal provider failure" here, even when the
+  // run never made a failing provider call) and keeps the execution-cause
+  // message out of "FAILED threshold checks" — while still printing any
+  // GENUINE scorer/threshold failure that also occurred, so a run stopped
+  // on budget that also had a real assertion/completeness miss never reads
+  // as if the budget were the only problem.
+  const passed = printReportSummary(report, { log: console.log, error: console.error });
+  if (!passed) {
     process.exitCode = 1;
     return;
   }
-
-  console.log("Eval suite passed every threshold.");
 }
 
 const isDirectInvocation =

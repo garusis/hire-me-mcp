@@ -1365,6 +1365,57 @@ describe("runEvalSuite", () => {
       expect(report.budgetExceeded).not.toBeNull();
       expect(report.failedCases).toEqual([]);
     });
+
+    /**
+     * #307 issuecomment-5591843129 assignment B / diagnosis 5591743584 (c):
+     * a post-case overrun detected right after the LAST case ran is not a
+     * mid-run abort — nothing further was ever going to be spent, since no
+     * further case or request existed. The generic "Aborting rather than
+     * spending further" wording (`./budget.ts`) reads as if the run cut
+     * itself off early; the report's own message must say plainly this was
+     * detected after the final case completed.
+     */
+    it("gives a distinct message for an overrun detected after the FINAL case, not the generic mid-run wording", async () => {
+      const runCase = vi.fn().mockResolvedValue({
+        answer: "He built things [cite:skill:aws].",
+        toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
+        usage: { inputTokens: 1000, outputTokens: 0, totalTokens: 1000 },
+      });
+
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase],
+          budget: { maxCases: 10, maxTotalTokens: 500, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase },
+      );
+
+      expect(report.budgetExceeded?.message).toMatch(/final case/i);
+      expect(report.unexecutedCaseIds).toEqual([]);
+    });
+
+    it("keeps the ordinary overrun message when the overrun is not on the final case", async () => {
+      const runCase = vi.fn().mockResolvedValue({
+        answer: "He built things [cite:skill:aws].",
+        toolCitations: [{ entityType: "skill" as const, entityId: "aws" }],
+        usage: { inputTokens: 100_000, outputTokens: 100_000, totalTokens: 200_000 },
+      });
+
+      const report = await runEvalSuite(
+        {
+          cases: [groundedCase, gapCase, offTopicCase],
+          budget: { maxCases: 10, maxTotalTokens: 250_000, maxCostUsd: 100 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.6-flash",
+        },
+        { runCase },
+      );
+
+      expect(report.budgetExceeded?.message).not.toMatch(/final case/i);
+      expect(report.unexecutedCaseIds).toEqual(["off-topic-1"]);
+    });
   });
 });
 

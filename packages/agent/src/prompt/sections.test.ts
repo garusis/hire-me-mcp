@@ -280,6 +280,44 @@ describe("PROMPT_SECTIONS", () => {
     );
   });
 
+  /**
+   * #307 issuecomment-5591843129 assignment B / diagnosis 5591743584 (b),
+   * X05: the answer relayed the situation and the investigation, then
+   * stopped — the story's recorded results never appeared, even though the
+   * prior prompt already said a behavioral answer must relay all three STAR
+   * parts. The rule must say the relay is STRUCTURAL — situation, then
+   * actions, then results, in that order — and that the answer must close
+   * with the story's own results sentence even when the question named only
+   * an earlier part, not just that all three "get relayed" somewhere.
+   */
+  it("requires closing a behavioral answer with the story's own recorded results as its own sentence, even when the question named only an earlier part (#307 diagnosis 5591743584 b)", () => {
+    const retrievalPolicy = PROMPT_SECTIONS.find((section) => section.id === "retrievalPolicy");
+    expect(retrievalPolicy?.body).toMatch(/situation.*then.*actions.*then.*results?/is);
+    expect(retrievalPolicy?.body).toMatch(
+      /close\w*\s+(?:the\s+answer\s+)?with\s+the\s+story'?s?\s+(?:own\s+)?(?:recorded\s+)?results?/i,
+    );
+  });
+
+  /**
+   * #307 issuecomment-5591843129 assignment B / diagnosis 5591743584 (b),
+   * A04: a question phrased with "a practice" or "a tool ... introduced" is
+   * grammatically singular but didn't trip the one-story rule, which only
+   * named "one example, one time, or one instance" — so the model answered
+   * with two stories in short form. General intent (singular phrasing), no
+   * fixed case strings or eval question text.
+   */
+  it("extends the one-story rule to singular phrasing like 'a practice' or 'a tool he introduced', cross-referenced with the behavioral-routing rule above (#307 diagnosis 5591743584 b)", () => {
+    const retrievalPolicy = PROMPT_SECTIONS.find((section) => section.id === "retrievalPolicy");
+    expect(retrievalPolicy?.body).toMatch(/a\s+practice/i);
+    expect(retrievalPolicy?.body).toMatch(/a\s+tool\s+(?:he\s+)?introduced/i);
+    // Cross-reference: the singular-phrasing rule must point back at (or be
+    // pointed at by) the same "what tool/practice ... adopted" sentence the
+    // behavioral-routing paragraph above already uses (#307 bounded
+    // correction), so the two rules read the question's grammatical number
+    // the same way rather than drifting independently.
+    expect(retrievalPolicy?.body).toMatch(/what\s+tool\/practice/i);
+  });
+
   it("states an off-topic/adversarial redirect policy", () => {
     const redirectPolicy = PROMPT_SECTIONS.find((section) => section.id === "redirectPolicy");
     expect(redirectPolicy?.body).toMatch(/redirect|decline/i);

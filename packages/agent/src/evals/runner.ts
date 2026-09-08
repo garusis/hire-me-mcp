@@ -526,6 +526,18 @@ export async function runEvalSuite(config: RunnerConfig, deps: RunnerDeps): Prom
       // folded into the totals above) and list every case left unexecuted,
       // the same partial-report treatment a terminal `EvalCaseError` gets.
       // No further requests are issued once this branch is taken.
+      //
+      // #307 issuecomment-5591843129 assignment B / diagnosis 5591743584
+      // (c): `./budget.ts`'s "Aborting rather than spending further"
+      // wording is accurate for an overrun mid-run, but misleading when the
+      // overrun is only detected AFTER the last selected case already ran
+      // to completion — there was no further case or request to abort.
+      // Rewrite the message for exactly that case; every other overrun
+      // keeps the budget guard's own wording unchanged.
+      const isFinalCaseOverrun = index === casesToRun.length - 1;
+      const message = isFinalCaseOverrun
+        ? `${error.message} This was detected after the final case had already completed — no further case or request remained to abort.`
+        : error.message;
       return buildReport({
         promptVersion: config.promptVersion,
         modelId: config.modelId,
@@ -533,7 +545,7 @@ export async function runEvalSuite(config: RunnerConfig, deps: RunnerDeps): Prom
         totals: { inputTokens, outputTokens, totalTokens, costUsd },
         thresholds: config.thresholds,
         unexecutedCaseIds: casesToRun.slice(index + 1).map((c) => c.id),
-        budgetExceeded: { message: error.message },
+        budgetExceeded: { message },
       });
     }
   }
