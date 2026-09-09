@@ -10,11 +10,45 @@
  */
 
 import type { EvalCaseCategory } from "./dataset/schema.js";
+import type { RequestObservabilityRecord } from "./rate-limit.js";
 import type { RetryAttemptRecord } from "./retry.js";
 import type { ToolCall } from "./scorers/tool-routing.js";
 import type { ScoreResult } from "./scorers/types.js";
 import type { ScorerThresholds, Verdict } from "./thresholds.js";
 import { EVAL_THRESHOLDS, evaluateVerdict } from "./thresholds.js";
+
+/**
+ * One real admitted provider request's sanitized limiter telemetry
+ * (`./rate-limit.ts`'s {@link RequestObservabilityRecord}), enriched with
+ * WHICH case/logical-request it belongs to (#307 Codex review, finding 4:
+ * "case/logical-request/attempt correlation so events can be attributed").
+ * `./cli.ts`'s `createObservabilityCollector` stamps these two fields —
+ * `./rate-limit.ts` itself stays model-boundary-generic with no notion of
+ * "case", the same division of responsibility `RetryAttemptRecord.requestIndex`
+ * already establishes for `./retry.ts`/`./cli.ts`.
+ */
+export interface CorrelatedObservabilityRecord extends RequestObservabilityRecord {
+  /** The eval case this request was made for, or `null` for a request admitted before any case started (should not happen in practice, but never silently mislabeled). */
+  caseId: string | null;
+  /** 1-based sequence of this request within its case (resets to 1 at the case's first request) — `null` exactly when `caseId` is `null`. Distinguishes this run's Nth vs. (N+1)th call to the provider for the SAME case, e.g. a case's tool-call step vs. its composing step. */
+  caseRequestSequence: number | null;
+}
+
+/** Run/model identity and the limiter's CONFIGURED knobs (#307 Codex review, finding 4 — "configured RPM/window duration separately from observed count") — fixed once per run, not per request. */
+export interface ObservabilityLogMeta {
+  /** A fresh identifier per `pnpm eval:agent` invocation, so records from two different runs (e.g. two report files) are never confused as belonging to the same run. */
+  runId: string;
+  modelId: string;
+  configuredRpmLimit: number;
+  configuredWindowMs: number;
+}
+
+/** The durable, JSON-serializable observability shape persisted inside {@link EvalReport} (#307 Codex review, finding 4 — embedded in the report artifact both `agent-evals.yml` and `release-readiness.yml` already upload, rather than a separate `eval-observability.json` no workflow retains). */
+export interface ObservabilityLog extends ObservabilityLogMeta {
+  generatedAt: string;
+  requestCount: number;
+  requests: CorrelatedObservabilityRecord[];
+}
 
 /**
  * One case's scored result — `gapHonesty` is `null` for categories that
@@ -227,6 +261,15 @@ export interface EvalReport {
    * the runner's own decision to stop, not a case's provider call failing.
    */
   budgetExceeded: BudgetStopInfo | null;
+  /**
+   * The whole run's limiter telemetry (#307 Codex review, finding 4) — `null`
+   * only when the caller doesn't supply one (e.g. an older report fixture, or
+   * a `buildReport` call that never wired a limiter). Embedded here rather
+   * than a separate `eval-observability.json` so it survives in the SAME
+   * artifact both `agent-evals.yml` and `release-readiness.yml` already
+   * upload, with no workflow/.gitignore edit required.
+   */
+  observability: ObservabilityLog | null;
 }
 
 function mean(values: number[]): number {
@@ -325,6 +368,8 @@ export function buildReport(params: {
   partialCases?: AbortedCaseReport[];
   /** See {@link EvalReport.budgetExceeded}. Defaults to `null` (a completed run). */
   budgetExceeded?: BudgetStopInfo;
+  /** See {@link EvalReport.observability}. Defaults to `null`. */
+  observability?: ObservabilityLog;
 }): EvalReport {
   const thresholds = params.thresholds ?? EVAL_THRESHOLDS;
   const failedCases = params.failedCases ?? [];
@@ -438,5 +483,6 @@ export function buildReport(params: {
       partialCases.length === 0 &&
       budgetExceeded === null,
     budgetExceeded,
+    observability: params.observability ?? null,
   };
 }

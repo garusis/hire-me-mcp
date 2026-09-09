@@ -24,6 +24,7 @@
  * `cli.test.ts` imports its pure helpers).
  */
 
+import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { resolveChatModelConfig } from "../config.js";
 import { getInterviewAgent, PROMPT_VERSION } from "../index.js";
@@ -35,10 +36,16 @@ import {
   createRateLimitedModel,
   createRequestRateLimiter,
   DEFAULT_EVAL_RPM_LIMIT,
+  RATE_LIMIT_WINDOW_MS,
   type RequestObservabilityRecord,
   toLanguageModel,
 } from "./rate-limit.js";
-import type { EvalReport } from "./report.js";
+import type {
+  CorrelatedObservabilityRecord,
+  EvalReport,
+  ObservabilityLog,
+  ObservabilityLogMeta,
+} from "./report.js";
 import {
   classifyProviderError,
   createRetryingModel,
@@ -156,35 +163,42 @@ export function filterCasesByIds(
   return found;
 }
 
-/** The durable, JSON-serializable shape {@link buildObservabilityLog} produces — see {@link RunnerEnvConfig.observabilityPath}. */
-export interface ObservabilityLog {
-  generatedAt: string;
-  requestCount: number;
-  requests: RequestObservabilityRecord[];
-}
-
 /**
- * Wrap the limiter's own already-sanitized {@link RequestObservabilityRecord}s
- * (#307 options 1+2) with a generation timestamp and count — pure and
- * exported so it's unit-testable with zero real model calls, the same
- * "pure/testable piece pulled out of `main()`" pattern this file already
- * follows. Never transforms/redacts anything itself: `./rate-limit.ts`'s
- * `onRequest` records are already safe to persist as-is (no raw error body,
- * header, or credential).
+ * Wrap the limiter's own already-sanitized, per-case-correlated
+ * {@link CorrelatedObservabilityRecord}s with the run's identity/configured
+ * knobs, a generation timestamp and count (#307 options 1+2 / #307 Codex
+ * review, finding 4: "configured RPM/window duration separately from
+ * observed count; model/run and case/logical-request/attempt correlation so
+ * events can be attributed") — pure and exported so it's unit-testable with
+ * zero real model calls, the same "pure/testable piece pulled out of
+ * `main()`" pattern this file already follows. Never transforms/redacts a
+ * record's own fields: `./rate-limit.ts`'s `onRequest` records are already
+ * safe to persist as-is (no raw error body, header, or credential); only the
+ * case correlation fields and this function's own `meta`/timestamp/count
+ * wrapping are added.
  */
 export function buildObservabilityLog(
-  requests: readonly RequestObservabilityRecord[],
+  requests: readonly CorrelatedObservabilityRecord[],
+  meta: ObservabilityLogMeta,
   now: () => string = () => new Date().toISOString(),
 ): ObservabilityLog {
-  return { generatedAt: now(), requestCount: requests.length, requests: [...requests] };
+  return { ...meta, generatedAt: now(), requestCount: requests.length, requests: [...requests] };
 }
 
 /** Mutable per-run scratch space `main()` shares with the limiter's `onRequest` hook — see {@link createObservabilityCollector}. */
 export interface ObservabilityCollector {
-  /** Passed as `./rate-limit.ts`'s `RateLimiterOptions.onRequest`. */
+  /** Passed as `./rate-limit.ts`'s `RateLimiterOptions.onRequest` — stamps the record with whichever case's requests are currently in flight (per the most recent {@link startCase} call), per #307 Codex review, finding 4. */
   onRequest: (record: RequestObservabilityRecord) => void;
+  /**
+   * Mark that a new eval case's requests are about to start — every
+   * subsequent `onRequest` record is stamped with `caseId` and a fresh
+   * 1-based `caseRequestSequence` until the next call (#307 Codex review,
+   * finding 4). `./cli.ts`'s `createRunCase` calls this via its
+   * `onCaseStart` option, once per case, before `agent.generate` runs.
+   */
+  startCase: (caseId: string) => void;
   /** Build the durable {@link ObservabilityLog} from every record collected so far. */
-  log: (now?: () => string) => ObservabilityLog;
+  log: (meta: ObservabilityLogMeta, now?: () => string) => ObservabilityLog;
 }
 
 /**
@@ -193,13 +207,30 @@ export interface ObservabilityCollector {
  * pattern `createCaseAttemptTracker` already establishes in this file.
  * Collects every real admitted request for the whole run (not per-case),
  * since the limiter/window is shared across the entire run rather than
- * scoped to one case.
+ * scoped to one case; each record is still stamped with WHICH case it
+ * belongs to (#307 Codex review, finding 4) via {@link
+ * ObservabilityCollector.startCase}. A record admitted before any case has
+ * started (should not happen in a real run) is stamped `caseId: null` rather
+ * than silently attributed to the wrong case.
  */
 export function createObservabilityCollector(): ObservabilityCollector {
-  const requests: RequestObservabilityRecord[] = [];
+  const requests: CorrelatedObservabilityRecord[] = [];
+  let currentCaseId: string | null = null;
+  let caseRequestSequence = 0;
   return {
-    onRequest: (record) => requests.push(record),
-    log: (now) => buildObservabilityLog(requests, now),
+    startCase: (caseId) => {
+      currentCaseId = caseId;
+      caseRequestSequence = 0;
+    },
+    onRequest: (record) => {
+      if (currentCaseId !== null) caseRequestSequence += 1;
+      requests.push({
+        ...record,
+        caseId: currentCaseId,
+        caseRequestSequence: currentCaseId !== null ? caseRequestSequence : null,
+      });
+    },
+    log: (meta, now) => buildObservabilityLog(requests, meta, now),
   };
 }
 
@@ -518,8 +549,19 @@ function resolveCaseUsage(
 export function createRunCase(
   agent: GenerateLike,
   tracker: CaseAttemptTracker,
+  options: {
+    /**
+     * Called with the case's `question` BEFORE `agent.generate` runs (#307
+     * Codex review, finding 4) — `main()` wires this to
+     * `observability.startCase(caseId)` so every provider request the
+     * limiter admits while this case runs is correlated to it. Optional so
+     * every existing `createRunCase` caller/test keeps working unchanged.
+     */
+    onCaseStart?: (question: string) => void;
+  } = {},
 ): (question: string) => Promise<CaseRunResult> {
   return async (question) => {
+    options.onCaseStart?.(question);
     tracker.reset();
     let result: Awaited<ReturnType<GenerateLike["generate"]>>;
     try {
@@ -759,13 +801,30 @@ async function main(): Promise<void> {
   // `agent.generate` — see finding 2's doc comment there for why the
   // top-level shape used before #307's second correction did nothing), so
   // nothing retries underneath the policy. See `./retry.ts`'s module docs
-  // for the full classification (429 stops immediately; 502/503/504/
-  // timeout retry, bounded; everything else is permanent).
-  // #307 options 1+2: every real admitted request's sanitized timing — never
-  // a raw error body/header/credential — is collected here and written to
-  // `envConfig.observabilityPath` after the run, regardless of how the run
-  // ends (success, budget stop, or terminal failure).
+  // for the full classification (#307 Codex review, finding 4 — corrected
+  // this stale summary: a 429 is retried ONLY when the provider's own
+  // structured evidence unambiguously names a per-minute quota AND carries a
+  // trustworthy Retry-After/RetryInfo hint; every other 429 — daily, mixed,
+  // unknown, malformed, or one with no usable hint — stops immediately.
+  // 502/503/504/timeout retry, bounded; everything else is permanent).
+  // #307 options 1+2 / #307 Codex review, finding 4: every real admitted
+  // request's sanitized timing — never a raw error body/header/credential —
+  // is collected here, correlated to whichever case is currently running
+  // (`observability.startCase`, wired into `createRunCase` below), and
+  // embedded in `envConfig.reportPath` (the SAME artifact both
+  // `agent-evals.yml` and `release-readiness.yml` already upload — a
+  // separate `eval-observability.json` is never retained by either
+  // workflow) after the run, regardless of how the run ends (success,
+  // budget stop, or terminal failure). Still ALSO written to its own file
+  // for convenient local inspection without parsing the full report.
   const observability = createObservabilityCollector();
+  const runId = randomUUID();
+  const observabilityMeta: ObservabilityLogMeta = {
+    runId,
+    modelId,
+    configuredRpmLimit: envConfig.rpmLimit,
+    configuredWindowMs: RATE_LIMIT_WINDOW_MS,
+  };
   const limiter = createRequestRateLimiter({
     rpmLimit: envConfig.rpmLimit,
     maxRetries: 0,
@@ -787,6 +846,7 @@ async function main(): Promise<void> {
   const agent = getInterviewAgent({ model });
 
   let report: EvalReport;
+  let observabilityLog: ObservabilityLog;
   try {
     report = await runEvalSuite(
       {
@@ -800,14 +860,21 @@ async function main(): Promise<void> {
         modelId,
         thresholds: EVAL_THRESHOLDS,
       },
-      { runCase: createRunCase(agent, attemptTracker) },
+      {
+        runCase: createRunCase(agent, attemptTracker, {
+          onCaseStart: (question) => {
+            const caseId = cases.find((evalCase) => evalCase.question === question)?.id ?? question;
+            observability.startCase(caseId);
+          },
+        }),
+      },
     );
   } finally {
     // #307 options 1+2: written regardless of how the run ends (success,
     // budget stop, or a terminal error propagating out of runEvalSuite) —
     // the observability log is about what the limiter actually did, not
     // about the run's own outcome.
-    const observabilityLog = observability.log();
+    observabilityLog = observability.log(observabilityMeta);
     await writeFile(
       envConfig.observabilityPath,
       `${JSON.stringify(observabilityLog, null, 2)}\n`,
@@ -818,6 +885,12 @@ async function main(): Promise<void> {
         `(${observabilityLog.requestCount} request(s)).`,
     );
   }
+
+  // #307 Codex review, finding 4: embed the SAME observability log into the
+  // durable report artifact — `report` only exists once `runEvalSuite`
+  // returns without throwing, so this merge happens here rather than inside
+  // the `finally` above.
+  report = { ...report, observability: observabilityLog };
 
   await writeFile(envConfig.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 

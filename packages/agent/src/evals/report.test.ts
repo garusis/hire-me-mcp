@@ -741,4 +741,52 @@ describe("buildReport", () => {
       expect(report.totals.usageComplete).toBe(false);
     });
   });
+
+  describe("observability (#307 Codex review, finding 4)", () => {
+    const observabilityLog = {
+      runId: "run-1",
+      modelId: "gemini-3.6-flash",
+      configuredRpmLimit: 10,
+      configuredWindowMs: 60_000,
+      generatedAt: "2026-01-01T00:00:01.000Z",
+      requestCount: 1,
+      requests: [
+        {
+          requestId: 0,
+          admittedAt: "2026-01-01T00:00:00.000Z",
+          sendAt: "2026-01-01T00:00:00.000Z",
+          completedAt: "2026-01-01T00:00:00.050Z",
+          waitMs: 0,
+          windowCount: 1,
+          effectiveRpm: 1,
+          outcome: "success" as const,
+          caseId: "grounded-1",
+          caseRequestSequence: 1,
+        },
+      ],
+    };
+
+    it("embeds the durable observability log unmodified when provided — the artifact both agent-evals.yml and release-readiness.yml already upload, not a separate untracked file", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+        observability: observabilityLog,
+      });
+
+      expect(report.observability).toEqual(observabilityLog);
+    });
+
+    it("defaults observability to null when the caller doesn't supply one — never a fabricated empty log", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+      });
+
+      expect(report.observability).toBeNull();
+    });
+  });
 });

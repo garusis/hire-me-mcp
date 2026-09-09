@@ -125,6 +125,67 @@ const UNKNOWN_QUOTA_BODY = JSON.stringify({
   },
 });
 
+/**
+ * A real-shaped response carrying TWO SEPARATE `QuotaFailure` details in the
+ * same `details` array (not two violations inside ONE detail, like
+ * `MIXED_QUOTA_BODY` above) — a minute violation in the first detail, a daily
+ * violation in the second. Codex's independent review of abcb16b (#307,
+ * issuecomment-5608211564, finding 2) reproduced this offline against
+ * `quotaViolationsFromBody`'s `details.find(...)`, which stops at the FIRST
+ * matching `QuotaFailure` detail and silently ignores every other one — so
+ * this classified as `"per-minute"` even though the daily cap was ALSO named,
+ * violating the mixed-terminal contract just as badly as
+ * `MIXED_QUOTA_BODY`'s single-detail case.
+ */
+const MULTI_DETAIL_MIXED_QUOTA_BODY = JSON.stringify({
+  error: {
+    code: 429,
+    status: "RESOURCE_EXHAUSTED",
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" }],
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier" }],
+      },
+    ],
+  },
+});
+
+/**
+ * A violation whose `quotaId` merely CONTAINS the substring "perminute" as
+ * part of an unrelated/unknown identifier — never a real Gemini quota id.
+ * `classifyQuotaEvidence` must not treat a substring match as evidence.
+ */
+const SUBSTRING_LOOKALIKE_QUOTA_BODY = JSON.stringify({
+  error: {
+    code: 429,
+    status: "RESOURCE_EXHAUSTED",
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaId: "SomeCustomPerMinuteLookalikeQuota-Enterprise" }],
+      },
+    ],
+  },
+});
+
+/** A violation with a non-string `quotaId`/`quotaMetric` — malformed, never trustworthy evidence. */
+const MALFORMED_VIOLATION_TYPE_BODY = JSON.stringify({
+  error: {
+    code: 429,
+    status: "RESOURCE_EXHAUSTED",
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaId: 12345, quotaMetric: null }],
+      },
+    ],
+  },
+});
+
 describe("rate-limit constants", () => {
   it("derives the eval RPM default from the documented free-tier ceiling, with a real margin", () => {
     expect(FREE_TIER_RPM_CEILING).toBe(15);
@@ -178,19 +239,30 @@ describe("createRequestRateLimiter", () => {
 
   it("serializes concurrent acquisitions so parallel callers cannot slip past the window", async () => {
     const clock = createFakeClock();
-    const limiter = createRequestRateLimiter({ rpmLimit: 5, now: clock.now, sleep: clock.sleep });
-    const startedAt: number[] = [];
+    // Admission time is read from `onRequest`'s own `admittedAt` (captured
+    // atomically by `acquire()` at the exact moment a slot is granted — see
+    // `./rate-limit.ts`'s `acquire` doc comment) rather than from a
+    // `clock.now()` call made lazily inside `operation()` itself: once
+    // pacing (#307 Codex review, finding 1) makes nearly every admission
+    // wait on a real `await`, twelve genuinely concurrent callers can have
+    // their `operation()` continuations resumed in an order that doesn't
+    // match admission order, which would make a `clock.now()` read INSIDE
+    // `operation()` describe a later caller's admission, not this one's — a
+    // fake-clock/microtask-ordering artifact of concurrent testing, not a
+    // real defect (production `Date.now()` doesn't observably move between
+    // admission and `operation()` starting).
+    const admittedAt: number[] = [];
+    const limiter = createRequestRateLimiter({
+      rpmLimit: 5,
+      now: clock.now,
+      sleep: clock.sleep,
+      onRequest: (record) => admittedAt.push(Date.parse(record.admittedAt)),
+    });
 
-    await Promise.all(
-      Array.from({ length: 12 }, () =>
-        limiter.run(async () => {
-          startedAt.push(clock.now());
-        }),
-      ),
-    );
+    await Promise.all(Array.from({ length: 12 }, () => limiter.run(async () => undefined)));
 
-    expect(startedAt).toHaveLength(12);
-    expectWithinRollingWindow(startedAt, 5);
+    expect(admittedAt).toHaveLength(12);
+    expectWithinRollingWindow(admittedAt, 5);
   });
 
   it("lets a request through immediately once the oldest one has aged out of the window", async () => {
@@ -226,7 +298,13 @@ describe("createRequestRateLimiter", () => {
     await expect(limiter.run(operation)).resolves.toBe("ok");
 
     expect(operation).toHaveBeenCalledTimes(2);
-    expect(clock.now() - startedAt).toBe(1_500);
+    // The retry-after HINT honored before re-attempting is still exactly
+    // 1_500ms (see `onRetry` below) — but the retry must also REACQUIRE an
+    // admission slot (#307 Codex review, finding 1: "retries must reacquire
+    // admission"), and at rpmLimit 10 the minimum inter-admission spacing is
+    // windowMs / rpmLimit = 6_000ms, wider than the 1_500ms hint. The total
+    // elapsed time is therefore the spacing wait, not the hint alone.
+    expect(clock.now() - startedAt).toBe(RATE_LIMIT_WINDOW_MS / 10);
     expect(onRetry).toHaveBeenCalledWith(expect.objectContaining({ attempt: 1, delayMs: 1_500 }));
   });
 
@@ -241,7 +319,10 @@ describe("createRequestRateLimiter", () => {
     const startedAt = clock.now();
     await expect(limiter.run(operation)).resolves.toBe("ok");
 
-    expect(clock.now() - startedAt).toBe(1_500);
+    // Same pacing effect as the test above: the 1_500ms hint is honored, but
+    // the retry's own reacquired slot is still bound by the 6_000ms minimum
+    // spacing at rpmLimit 10.
+    expect(clock.now() - startedAt).toBe(RATE_LIMIT_WINDOW_MS / 10);
   });
 
   it("falls back to bounded exponential backoff when the 429 carries no retry hint", async () => {
@@ -298,6 +379,31 @@ describe("createRequestRateLimiter", () => {
 
     await expect(limiter.run(operation)).rejects.toThrow("tool blew up");
     expect(operation).toHaveBeenCalledTimes(1);
+  });
+
+  it("paces admissions smoothly instead of bursting every window-room request instantly (#307 Codex review, finding 1)", async () => {
+    // Codex's offline reproduction against abcb16b: ten sequential instant
+    // operations against `createRequestRateLimiter({ rpmLimit: 10, ... })`
+    // all admitted at send-time [0,0,0,0,0,0,0,0,0,0] — the rolling window
+    // alone allows an entire window's worth of requests through in one
+    // burst. A minimum inter-admission spacing (windowMs / rpmLimit) must
+    // smooth that burst out while still respecting the rolling cap.
+    const clock = createFakeClock();
+    const rpmLimit = 10;
+    const limiter = createRequestRateLimiter({ rpmLimit, now: clock.now, sleep: clock.sleep });
+    const startedAt: number[] = [];
+
+    for (let i = 0; i < rpmLimit; i++) {
+      await limiter.run(async () => {
+        startedAt.push(clock.now());
+      });
+    }
+
+    expect(new Set(startedAt).size).toBeGreaterThan(1);
+    const minSpacingMs = RATE_LIMIT_WINDOW_MS / rpmLimit;
+    for (let i = 1; i < startedAt.length; i++) {
+      expect((startedAt[i] ?? 0) - (startedAt[i - 1] ?? 0)).toBeGreaterThanOrEqual(minSpacingMs);
+    }
   });
 
   it("counts a 429'd attempt against the window — a retry takes its own slot", async () => {
@@ -392,6 +498,43 @@ describe("parseRetryAfterMs", () => {
     expect(parseRetryAfterMs(rateLimitError({ responseBody: "not json" }))).toBeUndefined();
     expect(parseRetryAfterMs(new Error("plain"))).toBeUndefined();
   });
+
+  it("does NOT treat an empty or whitespace-only retry-after header as a zero-second hint (#307 Codex review, finding 3)", () => {
+    // Codex's offline reproduction against abcb16b: `Number("")` is `0`, so
+    // an empty/whitespace header was previously parsed as a trustworthy
+    // "retry in 0ms" hint — an early retry the provider never actually
+    // suggested.
+    expect(
+      parseRetryAfterMs(rateLimitError({ responseHeaders: { "retry-after": "" } })),
+    ).toBeUndefined();
+    expect(
+      parseRetryAfterMs(rateLimitError({ responseHeaders: { "retry-after": "   " } })),
+    ).toBeUndefined();
+  });
+
+  it("does NOT read a retryDelay off a detail whose @type is not google.rpc.RetryInfo (#307 Codex review, finding 3)", () => {
+    // Codex's offline reproduction: a body carrying an unrelated detail that
+    // happens to also have a `retryDelay`-shaped field was previously
+    // accepted as a trustworthy hint. Only the real `RetryInfo` type may
+    // supply one.
+    const unrelatedDetailBody = JSON.stringify({
+      error: {
+        details: [{ "@type": "type.googleapis.com/some.other.Type", retryDelay: "1s" }],
+      },
+    });
+    expect(
+      parseRetryAfterMs(rateLimitError({ responseBody: unrelatedDetailBody })),
+    ).toBeUndefined();
+  });
+
+  it("rejects a malformed/negative/non-finite retry-after header rather than fabricating a hint", () => {
+    expect(
+      parseRetryAfterMs(rateLimitError({ responseHeaders: { "retry-after": "-5" } })),
+    ).toBeUndefined();
+    expect(
+      parseRetryAfterMs(rateLimitError({ responseHeaders: { "retry-after": "not-a-number" } })),
+    ).toBeUndefined();
+  });
 });
 
 describe("classifyQuotaEvidence (#307 options 1+2)", () => {
@@ -427,6 +570,28 @@ describe("classifyQuotaEvidence (#307 options 1+2)", () => {
       ),
     ).toBe("malformed");
     expect(classifyQuotaEvidence(new Error("plain"))).toBe("malformed");
+  });
+
+  it("aggregates violations across MULTIPLE separate QuotaFailure details, not only the first (#307 Codex review, finding 1)", () => {
+    // Codex's offline reproduction against abcb16b: `details.find(...)`
+    // stopped at the first QuotaFailure detail and silently ignored a
+    // second one naming the daily cap, misclassifying a mixed response as
+    // "per-minute". Every QuotaFailure detail's violations must be read.
+    expect(
+      classifyQuotaEvidence(rateLimitError({ responseBody: MULTI_DETAIL_MIXED_QUOTA_BODY })),
+    ).toBe("mixed");
+  });
+
+  it("never treats a quotaId that merely CONTAINS a minute/daily substring as real evidence (#307 Codex review, finding 1)", () => {
+    expect(
+      classifyQuotaEvidence(rateLimitError({ responseBody: SUBSTRING_LOOKALIKE_QUOTA_BODY })),
+    ).toBe("unknown");
+  });
+
+  it("classifies a violation with a non-string quotaId as malformed rather than guessing", () => {
+    expect(
+      classifyQuotaEvidence(rateLimitError({ responseBody: MALFORMED_VIOLATION_TYPE_BODY })),
+    ).toBe("malformed");
   });
 });
 
@@ -502,7 +667,13 @@ describe("createRequestRateLimiter observability (onRequest, #307 options 1+2)",
     expect(first.requestId).not.toBe(retried.requestId);
     expect(first.outcome).toBe("error");
     expect(retried.outcome).toBe("success");
-    expect(Date.parse(retried.admittedAt) - Date.parse(first.admittedAt)).toBe(1_000);
+    // The 1_000ms retry-after hint is honored, but the retry's own
+    // reacquired slot is still bound by the 6_000ms minimum spacing at
+    // rpmLimit 10 (#307 Codex review, finding 1) — so the actual gap between
+    // the two admissions is the wider spacing wait, not the hint alone.
+    expect(Date.parse(retried.admittedAt) - Date.parse(first.admittedAt)).toBe(
+      RATE_LIMIT_WINDOW_MS / 10,
+    );
   });
 
   it("captures a sanitized quota classification and provider retry hint on a 429, never the raw body/header", async () => {

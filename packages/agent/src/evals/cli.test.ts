@@ -105,12 +105,31 @@ function record(overrides: Partial<RequestObservabilityRecord> = {}): RequestObs
   };
 }
 
-describe("buildObservabilityLog (#307 options 1+2)", () => {
-  it("wraps the limiter's own request records with a generatedAt timestamp and count, unmodified", () => {
-    const requests = [record({ requestId: 0 }), record({ requestId: 1, outcome: "error" })];
-    const log = buildObservabilityLog(requests, () => "2026-01-01T00:00:01.000Z");
+const observabilityMeta = {
+  runId: "run-1",
+  modelId: "gemini-3.6-flash",
+  configuredRpmLimit: 10,
+  configuredWindowMs: 60_000,
+};
+
+describe("buildObservabilityLog (#307 options 1+2 / #307 Codex review, finding 4)", () => {
+  it("wraps the limiter's own request records with run/model identity, configured knobs, a generatedAt timestamp and count", () => {
+    const requests = [
+      { ...record({ requestId: 0 }), caseId: "case-a", caseRequestSequence: 1 },
+      {
+        ...record({ requestId: 1, outcome: "error" as const }),
+        caseId: "case-a",
+        caseRequestSequence: 2,
+      },
+    ];
+    const log = buildObservabilityLog(
+      requests,
+      observabilityMeta,
+      () => "2026-01-01T00:00:01.000Z",
+    );
 
     expect(log).toEqual({
+      ...observabilityMeta,
       generatedAt: "2026-01-01T00:00:01.000Z",
       requestCount: 2,
       requests,
@@ -118,8 +137,9 @@ describe("buildObservabilityLog (#307 options 1+2)", () => {
   });
 
   it("produces a durable, safe-to-persist shape for zero requests (a run stopped before any admission)", () => {
-    const log = buildObservabilityLog([], () => "2026-01-01T00:00:01.000Z");
+    const log = buildObservabilityLog([], observabilityMeta, () => "2026-01-01T00:00:01.000Z");
     expect(log).toEqual({
+      ...observabilityMeta,
       generatedAt: "2026-01-01T00:00:01.000Z",
       requestCount: 0,
       requests: [],
@@ -127,14 +147,22 @@ describe("buildObservabilityLog (#307 options 1+2)", () => {
   });
 
   it("never persists a raw error body/header — every record is already the limiter's own sanitized shape", () => {
-    const withQuota = record({
-      requestId: 2,
-      outcome: "error",
-      statusCode: 429,
-      quotaClassification: "daily",
-      retryHintMs: 9_000,
-    });
-    const log = buildObservabilityLog([withQuota], () => "2026-01-01T00:00:01.000Z");
+    const withQuota = {
+      ...record({
+        requestId: 2,
+        outcome: "error" as const,
+        statusCode: 429,
+        quotaClassification: "daily" as const,
+        retryHintMs: 9_000,
+      }),
+      caseId: "case-a",
+      caseRequestSequence: 1,
+    };
+    const log = buildObservabilityLog(
+      [withQuota],
+      observabilityMeta,
+      () => "2026-01-01T00:00:01.000Z",
+    );
     const serialized = JSON.stringify(log);
     expect(serialized).toContain('"quotaClassification":"daily"');
     expect(serialized).toContain('"retryHintMs":9000');
@@ -142,30 +170,52 @@ describe("buildObservabilityLog (#307 options 1+2)", () => {
   });
 });
 
-describe("createObservabilityCollector (#307 options 1+2)", () => {
-  it("collects onRequest records in order and wraps them via buildObservabilityLog on log()", () => {
+describe("createObservabilityCollector (#307 options 1+2 / #307 Codex review, finding 4)", () => {
+  it("collects onRequest records in order and wraps them via buildObservabilityLog on log(), stamping every record with a null case correlation before startCase is ever called", () => {
     const collector = createObservabilityCollector();
     const first = record({ requestId: 0 });
     const second = record({ requestId: 1, outcome: "error", statusCode: 502 });
 
     collector.onRequest(first);
     collector.onRequest(second);
-    const log = collector.log(() => "2026-01-01T00:00:02.000Z");
+    const log = collector.log(observabilityMeta, () => "2026-01-01T00:00:02.000Z");
 
     expect(log).toEqual({
+      ...observabilityMeta,
       generatedAt: "2026-01-01T00:00:02.000Z",
       requestCount: 2,
-      requests: [first, second],
+      requests: [
+        { ...first, caseId: null, caseRequestSequence: null },
+        { ...second, caseId: null, caseRequestSequence: null },
+      ],
     });
   });
 
   it("logs an empty request list when main() never wires onRequest, or the run admits nothing", () => {
     const collector = createObservabilityCollector();
-    expect(collector.log(() => "2026-01-01T00:00:02.000Z")).toEqual({
+    expect(collector.log(observabilityMeta, () => "2026-01-01T00:00:02.000Z")).toEqual({
+      ...observabilityMeta,
       generatedAt: "2026-01-01T00:00:02.000Z",
       requestCount: 0,
       requests: [],
     });
+  });
+
+  it("stamps every subsequent request with the case id set via startCase, and a per-case 1-based sequence (#307 Codex review, finding 4)", () => {
+    const collector = createObservabilityCollector();
+
+    collector.startCase("case-a");
+    collector.onRequest(record({ requestId: 0 }));
+    collector.onRequest(record({ requestId: 1 }));
+    collector.startCase("case-b");
+    collector.onRequest(record({ requestId: 2 }));
+
+    const log = collector.log(observabilityMeta, () => "2026-01-01T00:00:02.000Z");
+    expect(log.requests.map((r) => [r.caseId, r.caseRequestSequence])).toEqual([
+      ["case-a", 1],
+      ["case-a", 2],
+      ["case-b", 1],
+    ]);
   });
 });
 
@@ -590,7 +640,18 @@ describe("main() wiring (source-inspection, #307 2nd correction finding 2)", () 
     expect(cliSource).toMatch(/onRequest:\s*observability\.onRequest/);
     // Must be an ACTUAL write call, not merely mentioned in a comment.
     expect(cliSource).toMatch(/writeFile\(\s*\n?\s*envConfig\.observabilityPath/);
-    expect(cliSource).toMatch(/observability\.log\(\)/);
+    expect(cliSource).toMatch(/observability\.log\(/);
+  });
+
+  it("folds the observability log into the durable eval-report.json artifact, not only the separate untracked file (#307 Codex review, finding 4 — neither agent-evals.yml nor release-readiness.yml retains eval-observability.json)", () => {
+    const cliSource = readFileSync(fileURLToPath(new URL("./cli.ts", import.meta.url)), "utf8");
+    expect(cliSource).toMatch(/observability:\s*observabilityLog/);
+    expect(cliSource).toMatch(/observability\.startCase\(/);
+  });
+
+  it("never claims a 429 stops immediately, unconditionally — the actual policy retries an unambiguous per-minute quota with a trustworthy hint (#307 Codex review, finding 4)", () => {
+    const cliSource = readFileSync(fileURLToPath(new URL("./cli.ts", import.meta.url)), "utf8");
+    expect(cliSource).not.toMatch(/429 stops immediately/);
   });
 });
 
@@ -688,6 +749,25 @@ describe("createRunCase", () => {
     });
     expect(result.answer).toBe("He built things [cite:skill:aws].");
     expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 5, totalTokens: 15 });
+  });
+
+  it("invokes options.onCaseStart with the question BEFORE calling agent.generate, so observability can correlate this case's requests (#307 Codex review, finding 4)", async () => {
+    const callOrder: string[] = [];
+    const generate = vi.fn().mockImplementation(async () => {
+      callOrder.push("generate");
+      return {
+        text: "answer",
+        toolResults: [],
+        totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      };
+    });
+    const onCaseStart = vi.fn().mockImplementation(() => callOrder.push("onCaseStart"));
+    const runCase = createRunCase({ generate }, makeTracker(), { onCaseStart });
+
+    await runCase("What has he built?");
+
+    expect(onCaseStart).toHaveBeenCalledWith("What has he built?");
+    expect(callOrder).toEqual(["onCaseStart", "generate"]);
   });
 
   it("resets the tracker before calling agent.generate, for a fresh per-case attempt trace", async () => {

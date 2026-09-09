@@ -178,24 +178,44 @@ function parseDurationMs(value: unknown): number | undefined {
   return Math.round(Number(match[1]) * 1_000);
 }
 
-/** Read a `retry-after` response header (numeric seconds, or an HTTP date) as milliseconds. */
+/**
+ * Read a `retry-after` response header (numeric seconds, or an HTTP date) as
+ * milliseconds. `undefined` — never `0` — for anything that isn't a real,
+ * trustworthy hint: missing, empty/whitespace-only (#307 Codex review,
+ * finding 3 — `Number("")` is `0`, which previously parsed as an innocuous
+ * "retry in 0ms" hint the provider never actually sent), negative, or
+ * non-finite.
+ */
 function retryAfterFromHeaders(
   headers: Record<string, string> | undefined,
   now: () => number,
 ): number | undefined {
   const raw = headers?.["retry-after"] ?? headers?.["Retry-After"];
-  if (raw === undefined) return undefined;
-  const seconds = Number(raw);
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1_000);
-  const asDate = Date.parse(raw);
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+  const seconds = Number(trimmed);
+  // A trimmed value that parses as a finite number is a NUMERIC-seconds
+  // header, full stop — negative or otherwise invalid, it is rejected here
+  // rather than falling through to `Date.parse`, which can misinterpret a
+  // bare negative numeral (e.g. "-5") as an extended-year date far in the
+  // past, silently producing a bogus near-zero delay (#307 Codex review,
+  // finding 3's offline reproduction).
+  if (Number.isFinite(seconds)) return seconds >= 0 ? Math.round(seconds * 1_000) : undefined;
+  const asDate = Date.parse(trimmed);
   return Number.isNaN(asDate) ? undefined : Math.max(0, asDate - now());
 }
+
+/** The exact `@type` Google's structured error details use for a retry hint — nothing else may supply one. */
+const RETRY_INFO_TYPE = "type.googleapis.com/google.rpc.RetryInfo";
 
 /**
  * Pull Google's `RetryInfo.retryDelay` out of a 429 body — the shape a real
  * Gemini rate-limit response carries:
  * `{ error: { details: [{ "@type": ".../google.rpc.RetryInfo", retryDelay: "1.5s" }] } }`.
- * Tolerant by design: an unparseable or differently-shaped body yields
+ * Only a detail whose `@type` is EXACTLY {@link RETRY_INFO_TYPE} may supply a
+ * hint (#307 Codex review, finding 3) — an unrelated detail that happens to
+ * carry a `retryDelay`-shaped field is not trustworthy evidence. Tolerant by
+ * design otherwise: an unparseable or differently-shaped body yields
  * `undefined` (the caller falls back to backoff), never a throw.
  */
 function retryDelayFromBody(body: string | undefined): number | undefined {
@@ -210,7 +230,9 @@ function retryDelayFromBody(body: string | undefined): number | undefined {
   const details = error?.details;
   if (!Array.isArray(details)) return undefined;
   for (const detail of details) {
-    const delayMs = parseDurationMs((detail as { retryDelay?: unknown } | null)?.retryDelay);
+    const record = detail as { "@type"?: unknown; retryDelay?: unknown } | null;
+    if (record?.["@type"] !== RETRY_INFO_TYPE) continue;
+    const delayMs = parseDurationMs(record.retryDelay);
     if (delayMs !== undefined) return delayMs;
   }
   return undefined;
@@ -276,7 +298,29 @@ function backoffMs(retryIndex: number): number {
  */
 export type QuotaClassification = "per-minute" | "daily" | "mixed" | "unknown" | "malformed";
 
-/** Pull the `QuotaFailure` detail's `violations` array out of a 429 body, or `undefined` if the shape doesn't match. */
+/** A single `QuotaFailure` detail's own `@type`, verbatim — the exact prefix real Gemini responses use. */
+const QUOTA_FAILURE_TYPE_MARKER = "QuotaFailure";
+
+/** Pull one `QuotaFailure`-typed detail's `violations` array, or `undefined` if `detail` isn't a `QuotaFailure` at all (distinct from an empty array, which means "no violations named"). */
+function violationsFromQuotaFailureDetail(detail: unknown): unknown[] | undefined {
+  const record = detail as { "@type"?: unknown; violations?: unknown } | null;
+  const type = record?.["@type"];
+  if (typeof type !== "string" || !type.includes(QUOTA_FAILURE_TYPE_MARKER)) return undefined;
+  return Array.isArray(record?.violations) ? record.violations : [];
+}
+
+/**
+ * Pull EVERY `QuotaFailure` detail's `violations` out of a 429 body,
+ * aggregated across all of them — not just the first one (#307 Codex review
+ * of abcb16b, finding 1: `details.find(...)` stopped at the first matching
+ * detail and silently dropped every other `QuotaFailure` in the same
+ * response, so a real response naming a minute violation in one detail and a
+ * daily violation in a SEPARATE detail misclassified as `"per-minute"`).
+ * `undefined` only when the body is missing/unparseable/malformed-shaped or
+ * names NO `QuotaFailure` detail at all — a `QuotaFailure` detail with an
+ * empty `violations` array still counts as "found", just with nothing to
+ * classify.
+ */
 function quotaViolationsFromBody(body: string | undefined): unknown[] | undefined {
   if (!body) return undefined;
   let parsed: unknown;
@@ -287,42 +331,62 @@ function quotaViolationsFromBody(body: string | undefined): unknown[] | undefine
   }
   const details = (parsed as { error?: { details?: unknown } } | null)?.error?.details;
   if (!Array.isArray(details)) return undefined;
-  const quotaFailure = details.find((detail) => {
-    const type = (detail as { "@type"?: unknown } | null)?.["@type"];
-    return typeof type === "string" && type.includes("QuotaFailure");
-  }) as { violations?: unknown } | undefined;
-  return Array.isArray(quotaFailure?.violations) ? quotaFailure.violations : undefined;
+  const quotaFailureViolationLists = details
+    .map(violationsFromQuotaFailureDetail)
+    .filter((violations): violations is unknown[] => violations !== undefined);
+  if (quotaFailureViolationLists.length === 0) return undefined;
+  return quotaFailureViolationLists.flat();
 }
 
-const MINUTE_QUOTA_PATTERN = /perminute/i;
-const DAILY_QUOTA_PATTERN = /perday|daily/i;
+/**
+ * The exact, anchored real-Gemini request-quota id prefixes this module
+ * trusts — see `packages/agent/README.md`'s quota-rationale table. Anchored
+ * with `^`/`(-|$)` so a lookalike id that merely CONTAINS "PerMinute"/
+ * "PerDay" as a substring of an unrelated identifier (#307 Codex review,
+ * finding 1) never matches, and so a TOKEN-quota id (e.g.
+ * `GenerateContentInputTokensPerModelPerMinute-FreeTier`, a different quota
+ * family entirely — Codex's "request-vs-token quota" requirement) never
+ * matches either: only the real REQUEST-count quota ids do.
+ */
+const MINUTE_REQUEST_QUOTA_ID = /^GenerateRequestsPerMinutePerProjectPerModel(-|$)/i;
+const DAILY_REQUEST_QUOTA_ID = /^GenerateRequestsPerDayPerProjectPerModel(-|$)/i;
+
+type ViolationCategory = "minute" | "daily" | "other";
+
+/**
+ * Categorize one violation by its `quotaId` — `undefined` when the entry
+ * itself is malformed (a non-string `quotaId`, #307 Codex review, finding
+ * 1's "validate string IDs/metrics" requirement), which {@link
+ * classifyQuotaEvidence} treats as untrustworthy evidence overall rather
+ * than silently ignoring the one bad entry and guessing from the rest.
+ */
+function categorizeViolation(violation: unknown): ViolationCategory | undefined {
+  const record = violation as { quotaId?: unknown } | null;
+  const quotaId = record?.quotaId;
+  if (typeof quotaId !== "string") return undefined;
+  if (MINUTE_REQUEST_QUOTA_ID.test(quotaId)) return "minute";
+  if (DAILY_REQUEST_QUOTA_ID.test(quotaId)) return "daily";
+  return "other";
+}
 
 /**
  * Classify a caught 429's structured evidence (see {@link QuotaClassification}
- * for what each value means) by reading `quotaId`/`quotaMetric` off every
- * violation the provider's own `QuotaFailure` detail lists — the same
- * `GenerateRequestsPerMinutePerProjectPerModel-FreeTier` /
- * `GenerateRequestsPerDayPerProjectPerModel-FreeTier` naming this module's
- * docs and `packages/agent/README.md`'s quota table already document. Never
- * throws; a missing/unparseable body or an error that isn't even an
- * `APICallError` yields `"malformed"`, the same "stop, don't guess" outcome
- * as any other non-`"per-minute"` classification.
+ * for what each value means) by reading `quotaId` off every violation across
+ * EVERY `QuotaFailure` detail the provider's response lists (#307 Codex
+ * review, finding 1). Never throws; a missing/unparseable body, a body
+ * naming no `QuotaFailure` detail at all, or any violation with a malformed
+ * (non-string) `quotaId` yields `"malformed"` — the same "stop, don't guess"
+ * outcome as any other non-`"per-minute"` classification.
  */
-function violationIdentity(violation: unknown): string {
-  const record = violation as { quotaId?: unknown; quotaMetric?: unknown } | null;
-  return `${record?.quotaId ?? ""} ${record?.quotaMetric ?? ""}`;
-}
-
 export function classifyQuotaEvidence(error: unknown): QuotaClassification {
   const apiError = findApiCallError(error);
   const violations = quotaViolationsFromBody(apiError?.responseBody);
-  if (violations === undefined) return "malformed";
-  const identities = violations.map(violationIdentity);
-  const sawMinute = identities.some((identity) => MINUTE_QUOTA_PATTERN.test(identity));
-  const sawDaily = identities.some((identity) => DAILY_QUOTA_PATTERN.test(identity));
-  const sawOther = identities.some(
-    (identity) => !MINUTE_QUOTA_PATTERN.test(identity) && !DAILY_QUOTA_PATTERN.test(identity),
-  );
+  if (violations === undefined || violations.length === 0) return "malformed";
+  const categories = violations.map(categorizeViolation);
+  if (categories.some((category) => category === undefined)) return "malformed";
+  const sawMinute = categories.includes("minute");
+  const sawDaily = categories.includes("daily");
+  const sawOther = categories.includes("other");
   if (sawMinute && sawDaily) return "mixed";
   if (sawMinute && !sawOther) return "per-minute";
   if (sawDaily) return "daily";
@@ -366,6 +430,13 @@ export interface RequestObservabilityRecord {
   retryHintMs?: number;
 }
 
+/** What {@link createRequestRateLimiter}'s internal `takeSlot` hands back the instant a slot is granted — read once, by the same synchronous continuation that granted it, never re-derived from `now()` later (see `acquire`'s doc comment inside that function for why). */
+interface AdmittedSlot {
+  admittedAt: number;
+  /** `admitted.length` at the moment this slot was granted, including this request. */
+  windowCount: number;
+}
+
 /**
  * Build a sliding-window limiter. Requests are admitted at most `rpmLimit`
  * per rolling `windowMs`; see the module docs for the full rationale.
@@ -383,6 +454,22 @@ export function createRequestRateLimiter(options: RateLimiterOptions = {}): Requ
   let queue: Promise<void> = Promise.resolve();
   /** Request identity counter (#307 options 1+2) — a fresh id every time `operation()` actually runs, including a retry re-acquiring its own slot. */
   let nextRequestId = 0;
+  /** When the most recently admitted request was let through, or `undefined` before the first admission — drives {@link MIN_ADMISSION_SPACING_MS} below. */
+  let lastAdmittedAt: number | undefined;
+
+  /**
+   * Minimum gap enforced between two successive admissions (#307 Codex
+   * review, finding 1). The rolling-window cap alone permits an entire
+   * window's worth of requests to be admitted in a single instant as long as
+   * the window has room — Codex's offline reproduction against abcb16b
+   * showed ten sequential instant operations against `rpmLimit: 10` all
+   * admitted at send-time `[0,0,0,0,0,0,0,0,0,0]`. Evenly spacing admissions
+   * across the window (`windowMs / rpmLimit`) smooths that burst out while
+   * the rolling-cap check below remains the authoritative invariant (a
+   * belt-and-braces bound, not replaced by spacing) — see
+   * `expectWithinRollingWindow` in `rate-limit.test.ts`.
+   */
+  const minAdmissionSpacingMs = windowMs / rpmLimit;
 
   function dropExpired(cutoff: number): void {
     while (admitted.length > 0 && (admitted[0] ?? 0) <= cutoff) {
@@ -390,21 +477,42 @@ export function createRequestRateLimiter(options: RateLimiterOptions = {}): Requ
     }
   }
 
-  /** Block until the rolling window has room, then record this request's timestamp. */
-  async function takeSlot(): Promise<void> {
+  /**
+   * Block until the rolling window has room AND the minimum inter-admission
+   * spacing has elapsed since the last admission, then record this request's
+   * timestamp (#307 Codex review, finding 1 — a retry reacquiring a slot
+   * goes through this exact same path, so it is paced identically to a first
+   * attempt).
+   */
+  async function takeSlot(): Promise<AdmittedSlot> {
     for (;;) {
-      const cutoff = now() - windowMs;
+      const nowMs = now();
+      const cutoff = nowMs - windowMs;
       dropExpired(cutoff);
-      if (admitted.length < rpmLimit) {
-        admitted.push(now());
-        return;
+      const spacingReadyAt =
+        lastAdmittedAt === undefined ? nowMs : lastAdmittedAt + minAdmissionSpacingMs;
+      if (admitted.length < rpmLimit && nowMs >= spacingReadyAt) {
+        admitted.push(nowMs);
+        lastAdmittedAt = nowMs;
+        return { admittedAt: nowMs, windowCount: admitted.length };
       }
-      // Wait exactly until the oldest admitted request leaves the window.
-      await sleep(Math.max(1, (admitted[0] ?? cutoff) - cutoff));
+      const windowWaitMs = admitted.length >= rpmLimit ? (admitted[0] ?? cutoff) - cutoff : 0;
+      const spacingWaitMs = Math.max(0, spacingReadyAt - nowMs);
+      await sleep(Math.max(1, Math.max(windowWaitMs, spacingWaitMs)));
     }
   }
 
-  async function acquire(): Promise<void> {
+  /**
+   * Wait for a slot and return exactly when/how full the window was AT THE
+   * MOMENT this caller was admitted — the caller must use THIS return value,
+   * never a fresh `now()`/`admitted.length` read afterward (#307 Codex
+   * review, finding 1's fake-clock proof surfaced this: once pacing added a
+   * real await between one caller's admission and the next, a concurrently
+   * unblocked waiter's own `sleep()` could advance the shared virtual clock
+   * before this caller's continuation resumed, making a later `now()` read
+   * describe a DIFFERENT request's admission instant, not this one's).
+   */
+  async function acquire(): Promise<AdmittedSlot> {
     const previous = queue;
     let release = (): void => undefined;
     queue = new Promise<void>((resolve) => {
@@ -412,7 +520,7 @@ export function createRequestRateLimiter(options: RateLimiterOptions = {}): Requ
     });
     await previous;
     try {
-      await takeSlot();
+      return await takeSlot();
     } finally {
       release();
     }
@@ -464,15 +572,21 @@ export function createRequestRateLimiter(options: RateLimiterOptions = {}): Requ
     for (let retry = 0; ; retry++) {
       const requestId = nextRequestId++;
       const waitStart = now();
-      await acquire();
-      // #307 options 1+2: `admittedAt` IS the real provider send time — this
-      // limiter starts `operation()` the instant a slot is granted, never
-      // labeling an outer retry loop's own attempt-start bookkeeping (which
-      // begins BEFORE the admission wait) as the send time.
-      const admittedAt = now();
+      // #307 options 1+2 / #307 Codex review, finding 1: `admittedAt` IS the
+      // real provider send time — this limiter starts `operation()` the
+      // instant a slot is granted, never labeling an outer retry loop's own
+      // attempt-start bookkeeping (which begins BEFORE the admission wait)
+      // as the send time. `acquire()`'s OWN return value is used here —
+      // never a fresh `now()` call after it resolves — because pacing added
+      // a real await between one caller's admission and the next; a
+      // concurrently unblocked waiter's own wait can advance the (virtual,
+      // in tests) clock before this continuation resumes, so re-reading
+      // `now()` here could describe a LATER request's admission instant, not
+      // this one's (see `acquire`'s own doc comment).
+      const { admittedAt, windowCount } = await acquire();
       const waitMs = admittedAt - waitStart;
       const admittedAtIso = new Date(admittedAt).toISOString();
-      const base = admissionBase(requestId, admittedAtIso, waitMs, admitted.length);
+      const base = admissionBase(requestId, admittedAtIso, waitMs, windowCount);
 
       try {
         const result = await operation();

@@ -448,10 +448,14 @@ project: 15 requests/minute, 500 requests/day.
 
 The isolation is a provisioning decision, not something the code can enforce: if two slots are ever
 pointed at the same Google project, one surface's spend eats the other's allowance and the symptom
-is two of the rows below reporting `rate_limited` in lockstep. #264 confirmed Preview and
-Production are genuinely separate — the Preview deployment returned `rate_limited` for a whole day
-while production answered the same questions normally. To check a slot, read the key's project in
-[Google AI Studio](https://ai.dev/rate-limit) and compare.
+is two of the rows below reporting `rate_limited` in lockstep. On one specific day, #264 observed
+Preview and Production reporting `rate_limited` independently rather than in lockstep — the Preview
+deployment returned `rate_limited` for a whole day while production answered the same questions
+normally — which is evidence consistent with the two projects being separate, not proof (#307 Codex
+review, finding 4: correlated/uncorrelated `rate_limited` timing is a live signal, never a
+definitive identity check — see "Verifying quota-slot isolation without secrets or provider calls"
+below for what this kind of observation can and can't establish). To check a slot with certainty,
+read the key's project directly in [Google AI Studio](https://ai.dev/rate-limit) and compare.
 
 A `rate_limited` failure means the *project behind that surface* is out of allowance for the day
 (it resets around 07:00 UTC) — not that the chat is broken. Concretely:
@@ -474,11 +478,11 @@ See `packages/agent/README.md`'s quota-rationale table for the per-run call budg
 
 The three-slots table above states the isolation as a **provisioning decision, not something the
 code can enforce**. That claim has never been independently verified for all three slots at once —
-#264 confirmed Preview and Production are genuinely separate on one specific day by observing
-`rate_limited` on one and not the other, which is evidence, not proof, and says nothing about the
-CI slot. This section exists because item 4 of the #307 options 1+2 owner-approved scope asked for
-a safe verification approach to be documented, explicitly WITHOUT touching secrets or making a live
-provider call to check.
+on one specific day, #264 observed Preview and Production reporting `rate_limited` independently
+(one, not the other), which is evidence consistent with the two being separate projects, never
+proof, and it says nothing about the CI slot. This section exists because item 4 of the #307
+options 1+2 owner-approved scope asked for a safe verification approach to be documented,
+explicitly WITHOUT touching secrets or making a live provider call to check.
 
 **What would NOT prove isolation.** The three slots having different *names* (Production, Preview,
 CI) or living in different credential stores (Vercel env vars vs. a GitHub Actions secret) proves
