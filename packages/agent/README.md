@@ -391,15 +391,37 @@ default `EVAL_RPM_LIMIT` — `src/evals/rate-limit.ts` exports it, `src/evals/cl
 test asserts the config default equals it, so this document, the config and the limiter cannot
 drift apart.
 
-**429s are retried, not fatal.** A rate-limit 429 waits out the provider's own hint (a
-`retry-after` header, or Gemini's `RetryInfo.retryDelay` — ~1.5s in practice) and retries, up to 3
-times, falling back to bounded exponential backoff when the error carries no hint. Only HTTP 429 is
-retried: any other failure (a 500, a tool error, a malformed response) propagates immediately and
-unchanged, and a persistently exhausted quota — a *daily* cap, say — still fails the run loudly
-instead of spinning. The retried attempt takes its own slot in the window, because the provider
-counted it too. Budget accounting is untouched: a 429 returns no usage, every attempt that does
-return usage is aggregated into the turn's `totalUsage`, and `assertWithinBudget` still runs after
-every case.
+**429s are retried ONLY for an unambiguous per-minute quota (#307 options 1+2) — this section was
+previously stale.** The single retry owner is `src/evals/retry.ts`'s `createRetryPolicy`, not this
+limiter (this limiter's own 429 retry loop still exists and is still tested directly, but is
+disabled in production via `maxRetries: 0` — see `./cli.ts`'s `main()`). `createRetryPolicy` reads
+the provider's own structured `QuotaFailure` evidence (`classifyQuotaEvidence`, below) and retries
+a 429 only when it unambiguously names a **per-minute** quota (`quotaId`/`quotaMetric` containing
+`PerMinute`) AND the error carries a trustworthy `Retry-After`/`RetryInfo` hint — never an invented
+fallback backoff for a rate limit. A **daily** cap, a response naming both a daily and a minute
+violation together (`mixed`), evidence naming neither (`unknown`), or a missing/unparseable body
+(`malformed`) all stop the run immediately, same as any other 429 — retrying against a
+daily/ambiguous/unknown quota cannot succeed within the run's own deadlines and only spends more of
+a free-tier allowance production chat and Preview depend on. Any other failure (a 500, a tool
+error, a malformed response) propagates immediately and unchanged. A retried attempt re-acquires
+its own slot in this limiter's window, because the provider counted it too. Budget accounting is
+untouched: a 429 returns no usage, every attempt that does return usage is aggregated into the
+turn's `totalUsage`, and `assertWithinBudget` still runs after every case.
+
+**Observability (#307 options 1+2).** Every real admitted request — the first attempt AND every
+retry — is recorded with sanitized, durable telemetry: UTC admission/send/completion timestamps
+(admission and send are the same instant, since this limiter starts the real provider call the
+moment a slot is granted — never mislabeling an outer retry loop's own attempt-start as the send
+time), how long the request waited for a slot, the window's request count at admission
+(`effectiveRpm`), a per-limiter request identity, and — only on a 429 — the sanitized quota
+classification and the parsed retry hint in milliseconds. **Never** a raw error body, header, or
+credential. `./cli.ts`'s `main()` writes this log to `EVAL_OBSERVABILITY_PATH` (default
+`eval-observability.json`) after every run, regardless of how it ends. **Known gap:** unlike
+`eval-report.json`, this path is not yet added to `.gitignore` — out of scope for this change per
+the owner-approved boundaries (#307 options 1+2 explicitly excluded `.gitignore` edits); a locally
+generated file will show as untracked until that follow-up lands. The same sanitized quota
+classification/retry hint are also recorded per-attempt on `RetryAttemptRecord` and so already flow
+into the case-level `attempts` in the main report.
 
 ### Thresholds and verdict (`src/evals/thresholds.ts`)
 
@@ -622,6 +644,7 @@ failing score.
 | `EVAL_MAX_COST_USD`      | Max estimated USD cost before the run aborts.         | `0.5`                     |
 | `EVAL_RPM_LIMIT`         | Real provider REQUESTS per rolling minute (not cases — see "Request rate limiting" above). | `10` (`FREE_TIER_RPM_CEILING` 15 − `RPM_SAFETY_MARGIN` 5) |
 | `EVAL_REPORT_PATH`       | Where the JSON report is written.                     | `eval-report.json`        |
+| `EVAL_OBSERVABILITY_PATH` | Where the limiter's per-request observability log is written (#307 options 1+2 — see "Request rate limiting" above). | `eval-observability.json` |
 | `EVAL_CASE_IDS`          | Comma-separated dataset case ids to run instead of the full/sliced dataset (#143 — cheap single-case reproduction while debugging). | unset (runs the normal `budget.maxCases`-sliced dataset) |
 
 ## Running evals in CI (#73)

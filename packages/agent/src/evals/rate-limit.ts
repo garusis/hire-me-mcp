@@ -53,6 +53,31 @@
  * the `totalUsage` the runner tallies, so `assertWithinBudget`
  * (`./budget.ts`) still sees every token a case actually spent.
  *
+ * In production (`./cli.ts`) this limiter's own 429 retry above is disabled
+ * (`maxRetries: 0`) — `./retry.ts`'s `createRetryPolicy` is the single retry
+ * owner (#307 C5), and it applies a STRICTER 429 policy than the one
+ * described above: it retries a 429 only when {@link classifyQuotaEvidence}
+ * unambiguously identifies a per-minute quota violation AND a trustworthy
+ * hint is present, never a daily/mixed/unknown/malformed one and never an
+ * invented fallback backoff. See `./retry.ts`'s module docs for that policy.
+ * This module's own bounded-backoff 429 retry above still exists (and is
+ * still tested directly in `rate-limit.test.ts`) for any future caller that
+ * constructs a limiter without a `./retry.ts` policy in front of it.
+ *
+ * ## Observability (#307 options 1+2)
+ *
+ * `onRequest` fires once per real admitted request — the first attempt AND
+ * every retry, each getting its own slot — with a sanitized
+ * {@link RequestObservabilityRecord}: UTC admission/send/completion
+ * timestamps (admission and send are the same instant here: this limiter
+ * starts `operation()` the moment a slot is granted, never mislabeling an
+ * outer retry loop's own attempt-start as the send time), how long the
+ * request waited for a slot, the window's request count at admission
+ * (`effectiveRpm`, since the window IS 60s), a per-limiter request identity,
+ * and — only on a 429 — the sanitized {@link classifyQuotaEvidence}
+ * classification and the parsed retry hint in milliseconds. It never
+ * receives a raw error body, header, or credential.
+ *
  * ## Testing
  *
  * `now`/`sleep` are injected (`rate-limit.test.ts` drives both from a fake
@@ -122,6 +147,13 @@ export interface RateLimiterOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Called just before each 429 retry wait — used by `./cli.ts` to log the pause. */
   onRetry?: (info: RateLimitRetryInfo) => void;
+  /**
+   * Called once per real admitted request — the first attempt AND every
+   * retry, each with its own {@link RequestObservabilityRecord} (#307
+   * options 1+2). The safe, durable observability hook: never receives a raw
+   * error body, header, or credential, only sanitized fields.
+   */
+  onRequest?: (record: RequestObservabilityRecord) => void;
 }
 
 /** A sliding-window request limiter. Every real provider request goes through {@link RequestRateLimiter.run}. */
@@ -233,6 +265,108 @@ function backoffMs(retryIndex: number): number {
 }
 
 /**
+ * How confidently a 429's structured evidence identifies WHICH quota was
+ * exhausted (#307 options 1+2). `"per-minute"` is the ONLY classification a
+ * caller may treat as retryable — everything else (a daily cap, a mix of
+ * daily+minute violations in the same response, evidence that names neither,
+ * or a body that carries no parseable `QuotaFailure` detail at all) must
+ * stop, because retrying against a daily/unknown/ambiguous quota cannot
+ * possibly help within the run's own deadlines and wastes the shared
+ * free-tier allowance other surfaces depend on.
+ */
+export type QuotaClassification = "per-minute" | "daily" | "mixed" | "unknown" | "malformed";
+
+/** Pull the `QuotaFailure` detail's `violations` array out of a 429 body, or `undefined` if the shape doesn't match. */
+function quotaViolationsFromBody(body: string | undefined): unknown[] | undefined {
+  if (!body) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  const details = (parsed as { error?: { details?: unknown } } | null)?.error?.details;
+  if (!Array.isArray(details)) return undefined;
+  const quotaFailure = details.find((detail) => {
+    const type = (detail as { "@type"?: unknown } | null)?.["@type"];
+    return typeof type === "string" && type.includes("QuotaFailure");
+  }) as { violations?: unknown } | undefined;
+  return Array.isArray(quotaFailure?.violations) ? quotaFailure.violations : undefined;
+}
+
+const MINUTE_QUOTA_PATTERN = /perminute/i;
+const DAILY_QUOTA_PATTERN = /perday|daily/i;
+
+/**
+ * Classify a caught 429's structured evidence (see {@link QuotaClassification}
+ * for what each value means) by reading `quotaId`/`quotaMetric` off every
+ * violation the provider's own `QuotaFailure` detail lists — the same
+ * `GenerateRequestsPerMinutePerProjectPerModel-FreeTier` /
+ * `GenerateRequestsPerDayPerProjectPerModel-FreeTier` naming this module's
+ * docs and `packages/agent/README.md`'s quota table already document. Never
+ * throws; a missing/unparseable body or an error that isn't even an
+ * `APICallError` yields `"malformed"`, the same "stop, don't guess" outcome
+ * as any other non-`"per-minute"` classification.
+ */
+function violationIdentity(violation: unknown): string {
+  const record = violation as { quotaId?: unknown; quotaMetric?: unknown } | null;
+  return `${record?.quotaId ?? ""} ${record?.quotaMetric ?? ""}`;
+}
+
+export function classifyQuotaEvidence(error: unknown): QuotaClassification {
+  const apiError = findApiCallError(error);
+  const violations = quotaViolationsFromBody(apiError?.responseBody);
+  if (violations === undefined) return "malformed";
+  const identities = violations.map(violationIdentity);
+  const sawMinute = identities.some((identity) => MINUTE_QUOTA_PATTERN.test(identity));
+  const sawDaily = identities.some((identity) => DAILY_QUOTA_PATTERN.test(identity));
+  const sawOther = identities.some(
+    (identity) => !MINUTE_QUOTA_PATTERN.test(identity) && !DAILY_QUOTA_PATTERN.test(identity),
+  );
+  if (sawMinute && sawDaily) return "mixed";
+  if (sawMinute && !sawOther) return "per-minute";
+  if (sawDaily) return "daily";
+  return "unknown";
+}
+
+/**
+ * One real admitted request's sanitized timing/telemetry (#307 options
+ * 1+2) — reported by {@link RateLimiterOptions.onRequest} once per actual
+ * `operation()` invocation, whether it's a request's first attempt or a
+ * retried one re-acquiring its own slot. Deliberately carries NO raw error
+ * body, header value, or credential — only a numeric `statusCode`, the
+ * controlled {@link QuotaClassification} enum, and a parsed hint in
+ * milliseconds. `admittedAt` is also `sendAt`: this limiter starts
+ * `operation()` (the real provider send) the instant a window slot is
+ * granted, so the two are always equal here — kept as separate fields so a
+ * caller never has to guess which timestamp a given consumer means, and so
+ * this shape stays stable if a future change ever separates them.
+ */
+export interface RequestObservabilityRecord {
+  /** Stable per-limiter-instance counter — a fresh request identity every time `operation()` runs, including a retry. */
+  requestId: number;
+  /** UTC ISO-8601 timestamp: when this request was admitted a window slot. */
+  admittedAt: string;
+  /** UTC ISO-8601 timestamp: when the real provider send actually started — distinct from an outer retry loop's own attempt-start bookkeeping (#307 options 1+2). */
+  sendAt: string;
+  /** UTC ISO-8601 timestamp: when `operation()` settled, success or failure. */
+  completedAt: string;
+  /** How long this request waited for a window slot before being admitted. */
+  waitMs: number;
+  /** Requests (including this one) inside the trailing window at the moment of admission. */
+  windowCount: number;
+  /** The window's request count expressed as an effective requests-per-minute rate — `windowCount` itself, since the window IS 60s. */
+  effectiveRpm: number;
+  outcome: "success" | "error";
+  /** The provider's own HTTP status code, when `operation()` failed with an `APICallError`. */
+  statusCode?: number;
+  /** Present only when `statusCode` is 429 — see {@link classifyQuotaEvidence}. */
+  quotaClassification?: QuotaClassification;
+  /** The provider's own parsed "come back in N ms" hint, when present on a 429 — never the raw header/body it was read from. */
+  retryHintMs?: number;
+}
+
+/**
  * Build a sliding-window limiter. Requests are admitted at most `rpmLimit`
  * per rolling `windowMs`; see the module docs for the full rationale.
  */
@@ -247,6 +381,8 @@ export function createRequestRateLimiter(options: RateLimiterOptions = {}): Requ
   const admitted: number[] = [];
   /** Serializes acquisitions: each caller waits for the previous one to finish acquiring. */
   let queue: Promise<void> = Promise.resolve();
+  /** Request identity counter (#307 options 1+2) — a fresh id every time `operation()` actually runs, including a retry re-acquiring its own slot. */
+  let nextRequestId = 0;
 
   function dropExpired(cutoff: number): void {
     while (admitted.length > 0 && (admitted[0] ?? 0) <= cutoff) {
@@ -282,14 +418,75 @@ export function createRequestRateLimiter(options: RateLimiterOptions = {}): Requ
     }
   }
 
+  /** Base admission fields shared by the success/error observability records for one admitted request — split out purely to keep `run()`'s cognitive complexity under this repo's Biome limit. */
+  function admissionBase(
+    requestId: number,
+    admittedAtIso: string,
+    waitMs: number,
+    windowCount: number,
+  ): Omit<RequestObservabilityRecord, "outcome" | "completedAt"> {
+    return {
+      requestId,
+      admittedAt: admittedAtIso,
+      sendAt: admittedAtIso,
+      waitMs,
+      windowCount,
+      effectiveRpm: windowCount,
+    };
+  }
+
+  /**
+   * Report a failed admitted request's sanitized observability record and
+   * classify it for the retry decision below — split out of `run()` purely
+   * to keep its cognitive complexity under this repo's Biome limit, no
+   * behavior change from the single inline version this replaces.
+   */
+  function reportFailedRequest(
+    base: Omit<RequestObservabilityRecord, "outcome" | "completedAt">,
+    error: unknown,
+  ): { rateLimited: boolean; retryHintMs: number | undefined } {
+    const rateLimited = isRateLimitError(error);
+    const statusCode = apiErrorStatusCode(error);
+    const quotaClassification = rateLimited ? classifyQuotaEvidence(error) : undefined;
+    const retryHintMs = rateLimited ? parseRetryAfterMs(error, now) : undefined;
+    options.onRequest?.({
+      ...base,
+      completedAt: new Date(now()).toISOString(),
+      outcome: "error",
+      ...(statusCode !== undefined ? { statusCode } : {}),
+      ...(quotaClassification !== undefined ? { quotaClassification } : {}),
+      ...(retryHintMs !== undefined ? { retryHintMs } : {}),
+    });
+    return { rateLimited, retryHintMs };
+  }
+
   async function run<T>(operation: () => PromiseLike<T>): Promise<T> {
     for (let retry = 0; ; retry++) {
+      const requestId = nextRequestId++;
+      const waitStart = now();
       await acquire();
+      // #307 options 1+2: `admittedAt` IS the real provider send time — this
+      // limiter starts `operation()` the instant a slot is granted, never
+      // labeling an outer retry loop's own attempt-start bookkeeping (which
+      // begins BEFORE the admission wait) as the send time.
+      const admittedAt = now();
+      const waitMs = admittedAt - waitStart;
+      const admittedAtIso = new Date(admittedAt).toISOString();
+      const base = admissionBase(requestId, admittedAtIso, waitMs, admitted.length);
+
       try {
-        return await operation();
+        const result = await operation();
+        options.onRequest?.({
+          ...base,
+          completedAt: new Date(now()).toISOString(),
+          outcome: "success",
+        });
+        return result;
       } catch (error) {
-        if (retry >= maxRetries || !isRateLimitError(error)) throw error;
-        const hinted = parseRetryAfterMs(error, now) ?? backoffMs(retry);
+        const { rateLimited, retryHintMs } = reportFailedRequest(base, error);
+
+        if (retry >= maxRetries || !rateLimited) throw error;
+        const hinted = retryHintMs ?? backoffMs(retry);
         const delayMs = Math.min(hinted, MAX_RETRY_DELAY_MS);
         options.onRetry?.({
           attempt: retry + 1,

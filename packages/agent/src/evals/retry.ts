@@ -20,11 +20,22 @@
  *
  * ## What is retried, and what stops immediately
  *
- * - **429 (rate limit):** stopped immediately, never retried by this
- *   policy. The prior nested design retried 429s (up to 3x inner, up to 3x
- *   outer — 12 requests worst case for one logical call); this policy's
- *   contract is simpler and safer for a free-tier shared key: a rate limit
- *   means stop, not spend more requests hoping the quota clears mid-run.
+ * - **429 (rate limit):** retried ONLY when {@link classifyQuotaEvidence}
+ *   reads the provider's own structured `QuotaFailure` evidence and finds an
+ *   UNAMBIGUOUS per-minute quota violation — and even then, only when a
+ *   trustworthy `Retry-After`/`RetryInfo` hint is present; a per-minute 429
+ *   with no hint stops conservatively rather than inventing a fallback
+ *   backoff (#307 options 1+2). A daily cap, a response naming both a daily
+ *   and a minute violation together, evidence that names neither, or a
+ *   malformed/missing body all stop immediately, exactly like before this
+ *   change — retrying against a daily/ambiguous/unknown quota cannot
+ *   possibly help within this policy's own deadlines and only spends more of
+ *   a free-tier allowance other surfaces (production chat, Preview) depend
+ *   on. The prior, even simpler design stopped on EVERY 429 unconditionally;
+ *   this is a deliberate, narrower carve-out for the one case that is both
+ *   safe and likely to actually succeed — never a return to the old nested
+ *   design that retried 429s from two uncoordinated layers (up to 3x inner,
+ *   up to 3x outer — 12 requests worst case for one logical call).
  * - **502/503/504, or a timeout-named error:** genuinely transient —
  *   retried up to {@link DEFAULT_MAX_ATTEMPTS} total attempts (so at most 2
  *   retries), with a FIXED backoff schedule ({@link RETRY_BACKOFF_STEPS_MS}
@@ -69,7 +80,12 @@
  */
 
 import { APICallError, wrapLanguageModel } from "ai";
-import { apiErrorStatusCode, parseRetryAfterMs } from "./rate-limit.js";
+import {
+  apiErrorStatusCode,
+  classifyQuotaEvidence,
+  parseRetryAfterMs,
+  type QuotaClassification,
+} from "./rate-limit.js";
 
 /** Max attempts per logical model request (the initial try plus retries). */
 export const DEFAULT_MAX_ATTEMPTS = 3;
@@ -174,6 +190,21 @@ export interface RetryAttemptRecord {
   errorMessage?: string;
   /** Present only on a `"success"` attempt (or when the caller supplies `extractUsage`); `"unknown"` when usage genuinely cannot be determined. */
   usage?: AttemptUsage;
+  /**
+   * Present only when `statusCode` is 429 — the sanitized classification
+   * {@link classifyQuotaEvidence} derived from the provider's own structured
+   * evidence (#307 options 1+2). The single fact `decideOnFailure` uses to
+   * decide whether this 429 may be retried: `"per-minute"` only.
+   */
+  quotaClassification?: QuotaClassification;
+  /**
+   * Present only when `statusCode` is 429 and the provider gave a
+   * `Retry-After`/`RetryInfo` hint — the parsed value in milliseconds, NEVER
+   * the raw header/body it was read from (#307 options 1+2). Recorded on
+   * every 429 attempt (retried or stopped), not only a retried one, so a
+   * persisted report always shows what hint (if any) the provider gave.
+   */
+  retryHintMs?: number;
   /**
    * A stable identity distinguishing which logical provider REQUEST (one
    * `run()` call — e.g. a multi-step case's 2nd model call) this attempt
@@ -379,13 +410,52 @@ export function createRetryPolicy(options: RetryPolicyOptions = {}): RetryPolicy
    * from the single inline version this replaces (`retry.test.ts` covers
    * every branch either way).
    */
-  function decideOnFailure(
-    error: unknown,
-    attempt: number,
-    deadline: number,
-  ): { outcome: RetryAttemptOutcome; delayMs?: number } {
+  type FailureDecision = {
+    outcome: RetryAttemptOutcome;
+    delayMs?: number;
+    quotaClassification?: QuotaClassification;
+    retryHintMs?: number;
+  };
+
+  /**
+   * The 429-specific branch of {@link decideOnFailure} — split out purely to
+   * keep that function's cognitive complexity under this repo's Biome
+   * limit, no behavior change from the single inline version this replaces
+   * (`retry.test.ts` covers every branch either way). See #307 options 1+2:
+   * retry a 429 ONLY when the provider's own structured evidence
+   * unambiguously names a per-minute quota — never a daily cap, a mix of
+   * daily+minute in the same response, evidence that names neither, or a
+   * malformed/missing body. See `classifyQuotaEvidence`'s doc comment for
+   * the full enumeration.
+   */
+  function decideOn429Failure(error: unknown, attempt: number, deadline: number): FailureDecision {
+    const quotaClassification = classifyQuotaEvidence(error);
+    // Recorded on every 429 attempt regardless of outcome, not only a
+    // retried one, so a persisted report always shows what hint (if any)
+    // the provider gave.
+    const retryHintMs = parseRetryAfterMs(error, now);
+    if (quotaClassification !== "per-minute") {
+      return { outcome: "stopped-rate-limited", quotaClassification, retryHintMs };
+    }
+    if (attempt >= maxAttempts) {
+      return { outcome: "stopped-retries-exhausted", quotaClassification, retryHintMs };
+    }
+    // Unlike the transient-error path in `decideOnFailure`, a 429 gets NO
+    // fallback backoff: without a trustworthy Retry-After/RetryInfo hint,
+    // stop conservatively rather than inventing a wait the provider never
+    // suggested.
+    if (retryHintMs === undefined) {
+      return { outcome: "stopped-rate-limited", quotaClassification };
+    }
+    if (now() + retryHintMs > deadline) {
+      return { outcome: "stopped-deadline-exceeded", quotaClassification, retryHintMs };
+    }
+    return { outcome: "retrying", delayMs: retryHintMs, quotaClassification, retryHintMs };
+  }
+
+  function decideOnFailure(error: unknown, attempt: number, deadline: number): FailureDecision {
     const statusCode = apiErrorStatusCode(error);
-    if (statusCode === 429) return { outcome: "stopped-rate-limited" };
+    if (statusCode === 429) return decideOn429Failure(error, attempt, deadline);
     if (!isTransientProviderError(error)) return { outcome: "stopped-permanent-error" };
     if (attempt >= maxAttempts) return { outcome: "stopped-retries-exhausted" };
 
@@ -411,6 +481,45 @@ export function createRetryPolicy(options: RetryPolicyOptions = {}): RetryPolicy
    * complexity under this repo's Biome limit, no behavior change from the
    * single inline version this replaces.
    */
+  /**
+   * Handle one attempt's failure: record its sanitized `onAttempt` telemetry
+   * and either return the retry instruction or throw (the caller's catch
+   * already has `error` in scope via the outer try/catch, so re-throwing it
+   * here surfaces unchanged). Split out of `attemptOnce` purely to keep that
+   * function's cognitive complexity under this repo's Biome limit — no
+   * behavior change from the single inline version this replaces
+   * (`retry.test.ts` covers every branch either way).
+   */
+  function handleAttemptFailure(
+    error: unknown,
+    attempt: number,
+    deadline: number,
+    durationMs: number,
+  ): { done: false; delayMs: number } {
+    if (error instanceof DeadlineExceededError) {
+      options.onAttempt?.({ attempt, outcome: "stopped-deadline-exceeded", durationMs });
+      throw error;
+    }
+
+    const info = classifyProviderError(error);
+    const decision = decideOnFailure(error, attempt, deadline);
+    options.onAttempt?.({
+      attempt,
+      outcome: decision.outcome,
+      durationMs,
+      errorName: info.errorName,
+      errorMessage: info.errorMessage,
+      ...(info.statusCode !== undefined ? { statusCode: info.statusCode } : {}),
+      ...(decision.quotaClassification !== undefined
+        ? { quotaClassification: decision.quotaClassification }
+        : {}),
+      ...(decision.retryHintMs !== undefined ? { retryHintMs: decision.retryHintMs } : {}),
+    });
+    if (decision.outcome !== "retrying") throw error;
+
+    return { done: false, delayMs: decision.delayMs ?? 0 };
+  }
+
   async function attemptOnce<T>(
     operation: (signal: AbortSignal) => PromiseLike<T>,
     extractUsage: ((result: T) => AttemptUsage) | undefined,
@@ -428,26 +537,7 @@ export function createRetryPolicy(options: RetryPolicyOptions = {}): RetryPolicy
       });
       return { done: true, value: result };
     } catch (error) {
-      const durationMs = now() - startedAt;
-
-      if (error instanceof DeadlineExceededError) {
-        options.onAttempt?.({ attempt, outcome: "stopped-deadline-exceeded", durationMs });
-        throw error;
-      }
-
-      const info = classifyProviderError(error);
-      const decision = decideOnFailure(error, attempt, deadline);
-      options.onAttempt?.({
-        attempt,
-        outcome: decision.outcome,
-        durationMs,
-        errorName: info.errorName,
-        errorMessage: info.errorMessage,
-        ...(info.statusCode !== undefined ? { statusCode: info.statusCode } : {}),
-      });
-      if (decision.outcome !== "retrying") throw error;
-
-      return { done: false, delayMs: decision.delayMs ?? 0 };
+      return handleAttemptFailure(error, attempt, deadline, now() - startedAt);
     }
   }
 

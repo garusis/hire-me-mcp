@@ -2,6 +2,7 @@ import { Agent } from "@mastra/core/agent";
 import { APICallError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
+import { createRateLimitedModel, createRequestRateLimiter } from "./rate-limit.js";
 import {
   createRetryingModel,
   createRetryPolicy,
@@ -34,6 +35,7 @@ function createFakeClock(start = 1_000_000) {
 function apiError(options: {
   statusCode: number;
   responseHeaders?: Record<string, string>;
+  responseBody?: string;
 }): APICallError {
   return new APICallError({
     message: `HTTP ${options.statusCode}`,
@@ -42,8 +44,60 @@ function apiError(options: {
     statusCode: options.statusCode,
     isRetryable: true,
     responseHeaders: options.responseHeaders,
+    responseBody: options.responseBody,
   });
 }
+
+/** A real per-minute-quota 429 body (#307 options 1+2) — the ONLY classification this policy may retry. */
+const MINUTE_QUOTA_BODY = JSON.stringify({
+  error: {
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" }],
+      },
+    ],
+  },
+});
+
+/** A real daily-quota 429 body (#141's documented real quotaId) — never retried. */
+const DAILY_QUOTA_BODY = JSON.stringify({
+  error: {
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier" }],
+      },
+    ],
+  },
+});
+
+/** Ambiguous: both a minute and a daily violation in the same response — never retried. */
+const MIXED_QUOTA_BODY = JSON.stringify({
+  error: {
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [
+          { quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" },
+          { quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier" },
+        ],
+      },
+    ],
+  },
+});
+
+/** A QuotaFailure whose violation names neither a minute nor a daily quota — never retried. */
+const UNKNOWN_QUOTA_BODY = JSON.stringify({
+  error: {
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaId: "SomeOtherQuota-FreeTier" }],
+      },
+    ],
+  },
+});
 
 function timeoutError(message = "The operation timed out"): Error {
   const error = new Error(message);
@@ -143,7 +197,7 @@ describe("createRetryPolicy", () => {
     expect(clock.now() - startedAt).toBe(10_000 + 0.5 * 5_000);
   });
 
-  it("stops immediately on a 429 without retrying — this policy never retries a rate limit", async () => {
+  it("stops immediately on a 429 with no structured quota evidence at all — this policy never guesses", async () => {
     const clock = createFakeClock();
     const onAttempt = vi.fn();
     const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
@@ -154,7 +208,194 @@ describe("createRetryPolicy", () => {
 
     expect(operation).toHaveBeenCalledTimes(1);
     expect(onAttempt).toHaveBeenCalledWith(
-      expect.objectContaining({ attempt: 1, outcome: "stopped-rate-limited", statusCode: 429 }),
+      expect.objectContaining({
+        attempt: 1,
+        outcome: "stopped-rate-limited",
+        statusCode: 429,
+        quotaClassification: "malformed",
+      }),
+    );
+  });
+
+  it("retries a 429 whose structured evidence unambiguously names a per-minute quota, honoring the Retry-After hint (#307 options 1+2)", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
+    const error = apiError({
+      statusCode: 429,
+      responseHeaders: { "retry-after": "2" },
+      responseBody: MINUTE_QUOTA_BODY,
+    });
+    const operation = vi.fn().mockRejectedValueOnce(error).mockResolvedValue("ok");
+
+    const startedAt = clock.now();
+    await expect(policy.run(operation)).resolves.toBe("ok");
+
+    expect(operation).toHaveBeenCalledTimes(2);
+    expect(clock.now() - startedAt).toBe(2_000);
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attempt: 1,
+        outcome: "retrying",
+        quotaClassification: "per-minute",
+        retryHintMs: 2_000,
+      }),
+    );
+  });
+
+  it("records the sanitized provider retry hint on a 429 attempt even when the attempt stops (never just on a retried one)", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
+    const error = apiError({
+      statusCode: 429,
+      responseHeaders: { "retry-after": "9" },
+      responseBody: DAILY_QUOTA_BODY,
+    });
+    const operation = vi.fn().mockRejectedValue(error);
+
+    await expect(policy.run(operation)).rejects.toBe(error);
+
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "stopped-rate-limited", retryHintMs: 9_000 }),
+    );
+  });
+
+  it("omits retryHintMs on a 429 with no trustworthy hint", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
+    const error = apiError({ statusCode: 429, responseBody: MINUTE_QUOTA_BODY });
+    const operation = vi.fn().mockRejectedValue(error);
+
+    await expect(policy.run(operation)).rejects.toBe(error);
+
+    const record = onAttempt.mock.calls[0]?.[0];
+    expect(record.retryHintMs).toBeUndefined();
+  });
+
+  it("stops immediately on a 429 with daily quota evidence, even though a Retry-After hint is present", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
+    const error = apiError({
+      statusCode: 429,
+      responseHeaders: { "retry-after": "2" },
+      responseBody: DAILY_QUOTA_BODY,
+    });
+    const operation = vi.fn().mockRejectedValue(error);
+
+    await expect(policy.run(operation)).rejects.toBe(error);
+
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "stopped-rate-limited", quotaClassification: "daily" }),
+    );
+  });
+
+  it("stops immediately on a 429 with mixed daily+minute quota evidence — never treated as unambiguous", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
+    const error = apiError({
+      statusCode: 429,
+      responseHeaders: { "retry-after": "2" },
+      responseBody: MIXED_QUOTA_BODY,
+    });
+    const operation = vi.fn().mockRejectedValue(error);
+
+    await expect(policy.run(operation)).rejects.toBe(error);
+
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "stopped-rate-limited", quotaClassification: "mixed" }),
+    );
+  });
+
+  it("stops immediately on a 429 whose quota evidence names neither a minute nor a daily quota (unknown)", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
+    const error = apiError({
+      statusCode: 429,
+      responseHeaders: { "retry-after": "2" },
+      responseBody: UNKNOWN_QUOTA_BODY,
+    });
+    const operation = vi.fn().mockRejectedValue(error);
+
+    await expect(policy.run(operation)).rejects.toBe(error);
+
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "stopped-rate-limited", quotaClassification: "unknown" }),
+    );
+  });
+
+  it("stops a per-minute 429 rather than inventing a fallback backoff when no Retry-After/RetryInfo hint is present", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
+    const error = apiError({ statusCode: 429, responseBody: MINUTE_QUOTA_BODY });
+    const operation = vi.fn().mockRejectedValue(error);
+
+    await expect(policy.run(operation)).rejects.toBe(error);
+
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "stopped-rate-limited",
+        quotaClassification: "per-minute",
+      }),
+    );
+  });
+
+  it("stops a per-minute 429 at the existing maxAttempts bound, same as any other retried error", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
+    const error = apiError({
+      statusCode: 429,
+      responseHeaders: { "retry-after": "1" },
+      responseBody: MINUTE_QUOTA_BODY,
+    });
+    const operation = vi.fn().mockRejectedValue(error);
+
+    await expect(policy.run(operation)).rejects.toBe(error);
+
+    expect(operation).toHaveBeenCalledTimes(DEFAULT_MAX_ATTEMPTS);
+    expect(onAttempt).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        attempt: DEFAULT_MAX_ATTEMPTS,
+        outcome: "stopped-retries-exhausted",
+        quotaClassification: "per-minute",
+      }),
+    );
+  });
+
+  it("stops a per-minute 429 when honoring the hint would exceed the deadline — never retries earlier than the hint", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({
+      now: clock.now,
+      sleep: clock.sleep,
+      maxRequestMs: 1_000,
+      onAttempt,
+    });
+    const error = apiError({
+      statusCode: 429,
+      responseHeaders: { "retry-after": "5" },
+      responseBody: MINUTE_QUOTA_BODY,
+    });
+    const operation = vi.fn().mockRejectedValue(error);
+
+    await expect(policy.run(operation)).rejects.toBe(error);
+
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "stopped-deadline-exceeded",
+        quotaClassification: "per-minute",
+      }),
     );
   });
 
@@ -703,6 +944,86 @@ describe("createRetryingModel", () => {
 
     await expect(model.doGenerate(callOptions)).rejects.toThrow("Too Many Requests");
     expect(calls).toBe(1);
+  });
+});
+
+/**
+ * #307 options 1+2, item 1: "Retries must reacquire admission." Proves the
+ * real composition `./cli.ts`'s `main()` builds —
+ * `createRetryingModel({ model: createRateLimitedModel({ model, limiter }),
+ * retryPolicy })` — actually sends a retried per-minute-429 attempt back
+ * through the SAME shared limiter for its own window slot, rather than
+ * bypassing it, using the limiter's own `onRequest` observability hook to
+ * count real admissions.
+ */
+describe("retry re-acquires the shared limiter's admission on every attempt (#307 options 1+2)", () => {
+  const callOptions = {
+    prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "hello" }] }],
+  };
+
+  function generateResult(text: string) {
+    return {
+      content: [{ type: "text" as const, text }],
+      finishReason: { unified: "stop" as const, raw: undefined },
+      usage: {
+        inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+        outputTokens: { total: 1, text: 1, reasoning: undefined },
+      },
+      warnings: [],
+    };
+  }
+
+  it("admits the failed attempt AND the retried attempt as two separate limiter requests", async () => {
+    const clock = createFakeClock();
+    const admittedRequestIds: number[] = [];
+    const limiter = createRequestRateLimiter({
+      rpmLimit: 10,
+      maxRetries: 0,
+      now: clock.now,
+      sleep: clock.sleep,
+      onRequest: (record) => admittedRequestIds.push(record.requestId),
+    });
+    const retryPolicy = createRetryPolicy({ now: clock.now, sleep: clock.sleep });
+
+    let calls = 0;
+    const inner = new MockLanguageModelV4({
+      doGenerate: async () => {
+        calls += 1;
+        if (calls === 1) {
+          throw new APICallError({
+            message: "Too Many Requests",
+            url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite",
+            requestBodyValues: {},
+            statusCode: 429,
+            isRetryable: true,
+            responseHeaders: { "retry-after": "1" },
+            responseBody: JSON.stringify({
+              error: {
+                details: [
+                  {
+                    "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                    violations: [
+                      { quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" },
+                    ],
+                  },
+                ],
+              },
+            }),
+          });
+        }
+        return generateResult("recovered");
+      },
+    });
+    const rateLimited = createRateLimitedModel({ model: inner, limiter });
+    const model = createRetryingModel({ model: rateLimited, retryPolicy });
+
+    const result = await model.doGenerate(callOptions);
+
+    expect(calls).toBe(2);
+    expect(result.content).toEqual([{ type: "text", text: "recovered" }]);
+    // Two distinct real requests were admitted through the limiter — the
+    // retry did not bypass it and reuse the first attempt's slot.
+    expect(admittedRequestIds).toEqual([0, 1]);
   });
 });
 

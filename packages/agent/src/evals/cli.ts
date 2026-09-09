@@ -35,6 +35,7 @@ import {
   createRateLimitedModel,
   createRequestRateLimiter,
   DEFAULT_EVAL_RPM_LIMIT,
+  type RequestObservabilityRecord,
   toLanguageModel,
 } from "./rate-limit.js";
 import type { EvalReport } from "./report.js";
@@ -65,6 +66,15 @@ export interface RunnerEnvConfig {
   rpmLimit: number;
   reportPath: string;
   /**
+   * Where the limiter's own safe, durable per-request observability log is
+   * written (#307 options 1+2) — admission/send/completion timestamps, wait
+   * duration, window count/effective RPM, request identity, and (on a 429)
+   * sanitized quota classification/retry hint. A SEPARATE file from
+   * `reportPath`: this is request/limiter-boundary telemetry for the whole
+   * run, not part of any one case's scored result.
+   */
+  observabilityPath: string;
+  /**
    * Optional dataset-case-id filter (`EVAL_CASE_IDS`, comma-separated) — the
    * `--case` seam this module didn't have before #143: reproducing a single
    * failing case (e.g. `grounded-nodejs-experience`) a few times to check
@@ -89,6 +99,7 @@ const DEFAULTS: RunnerEnvConfig = {
   // the single source of truth this, the limiter and the README share.
   rpmLimit: DEFAULT_EVAL_RPM_LIMIT,
   reportPath: "eval-report.json",
+  observabilityPath: "eval-observability.json",
 };
 
 function readPositiveNumber(env: RunnerEnv, name: string, fallback: number): number {
@@ -118,6 +129,7 @@ export function resolveRunnerEnvConfig(env: RunnerEnv = process.env): RunnerEnvC
     maxCostUsd: readPositiveNumber(env, "EVAL_MAX_COST_USD", DEFAULTS.maxCostUsd),
     rpmLimit: readPositiveNumber(env, "EVAL_RPM_LIMIT", DEFAULTS.rpmLimit),
     reportPath: env.EVAL_REPORT_PATH?.trim() || DEFAULTS.reportPath,
+    observabilityPath: env.EVAL_OBSERVABILITY_PATH?.trim() || DEFAULTS.observabilityPath,
     ...(caseIds ? { caseIds } : {}),
   };
 }
@@ -142,6 +154,53 @@ export function filterCasesByIds(
     throw new Error(`Unknown eval case id(s): ${missing.join(", ")}`);
   }
   return found;
+}
+
+/** The durable, JSON-serializable shape {@link buildObservabilityLog} produces — see {@link RunnerEnvConfig.observabilityPath}. */
+export interface ObservabilityLog {
+  generatedAt: string;
+  requestCount: number;
+  requests: RequestObservabilityRecord[];
+}
+
+/**
+ * Wrap the limiter's own already-sanitized {@link RequestObservabilityRecord}s
+ * (#307 options 1+2) with a generation timestamp and count — pure and
+ * exported so it's unit-testable with zero real model calls, the same
+ * "pure/testable piece pulled out of `main()`" pattern this file already
+ * follows. Never transforms/redacts anything itself: `./rate-limit.ts`'s
+ * `onRequest` records are already safe to persist as-is (no raw error body,
+ * header, or credential).
+ */
+export function buildObservabilityLog(
+  requests: readonly RequestObservabilityRecord[],
+  now: () => string = () => new Date().toISOString(),
+): ObservabilityLog {
+  return { generatedAt: now(), requestCount: requests.length, requests: [...requests] };
+}
+
+/** Mutable per-run scratch space `main()` shares with the limiter's `onRequest` hook — see {@link createObservabilityCollector}. */
+export interface ObservabilityCollector {
+  /** Passed as `./rate-limit.ts`'s `RateLimiterOptions.onRequest`. */
+  onRequest: (record: RequestObservabilityRecord) => void;
+  /** Build the durable {@link ObservabilityLog} from every record collected so far. */
+  log: (now?: () => string) => ObservabilityLog;
+}
+
+/**
+ * Build the mutable collector `main()` wires the shared limiter's
+ * `onRequest` hook through (#307 options 1+2) — the same closure-over-array
+ * pattern `createCaseAttemptTracker` already establishes in this file.
+ * Collects every real admitted request for the whole run (not per-case),
+ * since the limiter/window is shared across the entire run rather than
+ * scoped to one case.
+ */
+export function createObservabilityCollector(): ObservabilityCollector {
+  const requests: RequestObservabilityRecord[] = [];
+  return {
+    onRequest: (record) => requests.push(record),
+    log: (now) => buildObservabilityLog(requests, now),
+  };
 }
 
 function isReturnedCitation(value: unknown): value is ReturnedCitation {
@@ -702,9 +761,15 @@ async function main(): Promise<void> {
   // nothing retries underneath the policy. See `./retry.ts`'s module docs
   // for the full classification (429 stops immediately; 502/503/504/
   // timeout retry, bounded; everything else is permanent).
+  // #307 options 1+2: every real admitted request's sanitized timing — never
+  // a raw error body/header/credential — is collected here and written to
+  // `envConfig.observabilityPath` after the run, regardless of how the run
+  // ends (success, budget stop, or terminal failure).
+  const observability = createObservabilityCollector();
   const limiter = createRequestRateLimiter({
     rpmLimit: envConfig.rpmLimit,
     maxRetries: 0,
+    onRequest: observability.onRequest,
   });
 
   const attemptTracker = createCaseAttemptTracker();
@@ -721,20 +786,38 @@ async function main(): Promise<void> {
   });
   const agent = getInterviewAgent({ model });
 
-  const report = await runEvalSuite(
-    {
-      cases,
-      budget: {
-        maxCases: envConfig.maxCases,
-        maxTotalTokens: envConfig.maxTotalTokens,
-        maxCostUsd: envConfig.maxCostUsd,
+  let report: EvalReport;
+  try {
+    report = await runEvalSuite(
+      {
+        cases,
+        budget: {
+          maxCases: envConfig.maxCases,
+          maxTotalTokens: envConfig.maxTotalTokens,
+          maxCostUsd: envConfig.maxCostUsd,
+        },
+        promptVersion: PROMPT_VERSION,
+        modelId,
+        thresholds: EVAL_THRESHOLDS,
       },
-      promptVersion: PROMPT_VERSION,
-      modelId,
-      thresholds: EVAL_THRESHOLDS,
-    },
-    { runCase: createRunCase(agent, attemptTracker) },
-  );
+      { runCase: createRunCase(agent, attemptTracker) },
+    );
+  } finally {
+    // #307 options 1+2: written regardless of how the run ends (success,
+    // budget stop, or a terminal error propagating out of runEvalSuite) —
+    // the observability log is about what the limiter actually did, not
+    // about the run's own outcome.
+    const observabilityLog = observability.log();
+    await writeFile(
+      envConfig.observabilityPath,
+      `${JSON.stringify(observabilityLog, null, 2)}\n`,
+      "utf8",
+    );
+    console.log(
+      `Observability log written to ${envConfig.observabilityPath} ` +
+        `(${observabilityLog.requestCount} request(s)).`,
+    );
+  }
 
   await writeFile(envConfig.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 

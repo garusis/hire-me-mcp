@@ -4,9 +4,11 @@ import { APICallError } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { BudgetExceededError } from "./budget.js";
 import {
+  buildObservabilityLog,
   type CaseAttemptTracker,
   createCaseAttemptTracker,
   createEvalRetryPolicy,
+  createObservabilityCollector,
   createRunCase,
   describeCaseFailure,
   extractCitationsFromToolResults,
@@ -18,7 +20,11 @@ import {
   summarizeReportForCli,
 } from "./cli.js";
 import type { EvalCase } from "./dataset/schema.js";
-import { DEFAULT_EVAL_RPM_LIMIT, FREE_TIER_RPM_CEILING } from "./rate-limit.js";
+import {
+  DEFAULT_EVAL_RPM_LIMIT,
+  FREE_TIER_RPM_CEILING,
+  type RequestObservabilityRecord,
+} from "./rate-limit.js";
 import { buildReport, type CaseReport } from "./report.js";
 import type { RetryAttemptRecord } from "./retry.js";
 import { EvalCaseError } from "./runner.js";
@@ -31,6 +37,7 @@ describe("resolveRunnerEnvConfig", () => {
     expect(config.maxCostUsd).toBeGreaterThan(0);
     expect(config.rpmLimit).toBeGreaterThan(0);
     expect(config.reportPath.length).toBeGreaterThan(0);
+    expect(config.observabilityPath.length).toBeGreaterThan(0);
     expect(config.caseIds).toBeUndefined();
   });
 
@@ -41,6 +48,7 @@ describe("resolveRunnerEnvConfig", () => {
       EVAL_MAX_COST_USD: "0.02",
       EVAL_RPM_LIMIT: "5",
       EVAL_REPORT_PATH: "custom-report.json",
+      EVAL_OBSERVABILITY_PATH: "custom-observability.json",
       EVAL_CASE_IDS: "grounded-nodejs-experience,gap-golang",
     });
     expect(config).toEqual({
@@ -49,8 +57,13 @@ describe("resolveRunnerEnvConfig", () => {
       maxCostUsd: 0.02,
       rpmLimit: 5,
       reportPath: "custom-report.json",
+      observabilityPath: "custom-observability.json",
       caseIds: ["grounded-nodejs-experience", "gap-golang"],
     });
+  });
+
+  it("defaults observabilityPath to a documented, gitignored sibling of the report path (#307 options 1+2)", () => {
+    expect(resolveRunnerEnvConfig({}).observabilityPath).toBe("eval-observability.json");
   });
 
   it("takes EVAL_RPM_LIMIT's default from the single documented quota source, not a literal (#282)", () => {
@@ -75,6 +88,84 @@ describe("resolveRunnerEnvConfig", () => {
   it("leaves caseIds undefined when EVAL_CASE_IDS is unset or blank", () => {
     expect(resolveRunnerEnvConfig({}).caseIds).toBeUndefined();
     expect(resolveRunnerEnvConfig({ EVAL_CASE_IDS: "   " }).caseIds).toBeUndefined();
+  });
+});
+
+function record(overrides: Partial<RequestObservabilityRecord> = {}): RequestObservabilityRecord {
+  return {
+    requestId: 0,
+    admittedAt: "2026-01-01T00:00:00.000Z",
+    sendAt: "2026-01-01T00:00:00.000Z",
+    completedAt: "2026-01-01T00:00:00.050Z",
+    waitMs: 0,
+    windowCount: 1,
+    effectiveRpm: 1,
+    outcome: "success",
+    ...overrides,
+  };
+}
+
+describe("buildObservabilityLog (#307 options 1+2)", () => {
+  it("wraps the limiter's own request records with a generatedAt timestamp and count, unmodified", () => {
+    const requests = [record({ requestId: 0 }), record({ requestId: 1, outcome: "error" })];
+    const log = buildObservabilityLog(requests, () => "2026-01-01T00:00:01.000Z");
+
+    expect(log).toEqual({
+      generatedAt: "2026-01-01T00:00:01.000Z",
+      requestCount: 2,
+      requests,
+    });
+  });
+
+  it("produces a durable, safe-to-persist shape for zero requests (a run stopped before any admission)", () => {
+    const log = buildObservabilityLog([], () => "2026-01-01T00:00:01.000Z");
+    expect(log).toEqual({
+      generatedAt: "2026-01-01T00:00:01.000Z",
+      requestCount: 0,
+      requests: [],
+    });
+  });
+
+  it("never persists a raw error body/header — every record is already the limiter's own sanitized shape", () => {
+    const withQuota = record({
+      requestId: 2,
+      outcome: "error",
+      statusCode: 429,
+      quotaClassification: "daily",
+      retryHintMs: 9_000,
+    });
+    const log = buildObservabilityLog([withQuota], () => "2026-01-01T00:00:01.000Z");
+    const serialized = JSON.stringify(log);
+    expect(serialized).toContain('"quotaClassification":"daily"');
+    expect(serialized).toContain('"retryHintMs":9000');
+    expect(serialized).not.toMatch(/GOOGLE_GENERATIVE_AI_API_KEY|Bearer |x-goog-api-key/i);
+  });
+});
+
+describe("createObservabilityCollector (#307 options 1+2)", () => {
+  it("collects onRequest records in order and wraps them via buildObservabilityLog on log()", () => {
+    const collector = createObservabilityCollector();
+    const first = record({ requestId: 0 });
+    const second = record({ requestId: 1, outcome: "error", statusCode: 502 });
+
+    collector.onRequest(first);
+    collector.onRequest(second);
+    const log = collector.log(() => "2026-01-01T00:00:02.000Z");
+
+    expect(log).toEqual({
+      generatedAt: "2026-01-01T00:00:02.000Z",
+      requestCount: 2,
+      requests: [first, second],
+    });
+  });
+
+  it("logs an empty request list when main() never wires onRequest, or the run admits nothing", () => {
+    const collector = createObservabilityCollector();
+    expect(collector.log(() => "2026-01-01T00:00:02.000Z")).toEqual({
+      generatedAt: "2026-01-01T00:00:02.000Z",
+      requestCount: 0,
+      requests: [],
+    });
   });
 });
 
@@ -491,6 +582,15 @@ describe("main() wiring (source-inspection, #307 2nd correction finding 2)", () 
   it("builds its retry policy via createEvalRetryPolicy, not a bare createRetryPolicy call with no budget guard", () => {
     const cliSource = readFileSync(fileURLToPath(new URL("./cli.ts", import.meta.url)), "utf8");
     expect(cliSource).toMatch(/const retryPolicy = createEvalRetryPolicy\(/);
+  });
+
+  it("wires the limiter's onRequest into an observability collector and persists its log (#307 options 1+2)", () => {
+    const cliSource = readFileSync(fileURLToPath(new URL("./cli.ts", import.meta.url)), "utf8");
+    expect(cliSource).toMatch(/const observability = createObservabilityCollector\(\)/);
+    expect(cliSource).toMatch(/onRequest:\s*observability\.onRequest/);
+    // Must be an ACTUAL write call, not merely mentioned in a comment.
+    expect(cliSource).toMatch(/writeFile\(\s*\n?\s*envConfig\.observabilityPath/);
+    expect(cliSource).toMatch(/observability\.log\(\)/);
   });
 });
 

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ChatModel } from "../model-provider.js";
 import {
   apiErrorStatusCode,
+  classifyQuotaEvidence,
   createRateLimitedModel,
   createRequestRateLimiter,
   DEFAULT_EVAL_RPM_LIMIT,
@@ -75,6 +76,51 @@ const GEMINI_429_BODY = JSON.stringify({
         violations: [{ quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" }],
       },
       { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "1.5s" },
+    ],
+  },
+});
+
+/** A real DAILY-cap 429 body (#141's documented real quotaId) — never retried by policy. */
+const DAILY_QUOTA_BODY = JSON.stringify({
+  error: {
+    code: 429,
+    status: "RESOURCE_EXHAUSTED",
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier" }],
+      },
+    ],
+  },
+});
+
+/** Ambiguous: both a minute and a daily violation named in the same response. */
+const MIXED_QUOTA_BODY = JSON.stringify({
+  error: {
+    code: 429,
+    status: "RESOURCE_EXHAUSTED",
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [
+          { quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" },
+          { quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier" },
+        ],
+      },
+    ],
+  },
+});
+
+/** A QuotaFailure whose violation names neither a minute nor a daily quota. */
+const UNKNOWN_QUOTA_BODY = JSON.stringify({
+  error: {
+    code: 429,
+    status: "RESOURCE_EXHAUSTED",
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaId: "SomeOtherQuota-FreeTier" }],
+      },
     ],
   },
 });
@@ -345,6 +391,144 @@ describe("parseRetryAfterMs", () => {
     expect(parseRetryAfterMs(rateLimitError({}))).toBeUndefined();
     expect(parseRetryAfterMs(rateLimitError({ responseBody: "not json" }))).toBeUndefined();
     expect(parseRetryAfterMs(new Error("plain"))).toBeUndefined();
+  });
+});
+
+describe("classifyQuotaEvidence (#307 options 1+2)", () => {
+  it("identifies an unambiguous per-minute quota violation", () => {
+    expect(classifyQuotaEvidence(rateLimitError({ responseBody: GEMINI_429_BODY }))).toBe(
+      "per-minute",
+    );
+  });
+
+  it("identifies a daily quota violation", () => {
+    expect(classifyQuotaEvidence(rateLimitError({ responseBody: DAILY_QUOTA_BODY }))).toBe("daily");
+  });
+
+  it("classifies a response naming both a minute and a daily violation as mixed — never retryable", () => {
+    expect(classifyQuotaEvidence(rateLimitError({ responseBody: MIXED_QUOTA_BODY }))).toBe("mixed");
+  });
+
+  it("classifies a QuotaFailure whose violation names neither quota as unknown", () => {
+    expect(classifyQuotaEvidence(rateLimitError({ responseBody: UNKNOWN_QUOTA_BODY }))).toBe(
+      "unknown",
+    );
+  });
+
+  it("classifies a body with no QuotaFailure detail, an unparseable body, no body at all, or a non-API error as malformed", () => {
+    expect(classifyQuotaEvidence(rateLimitError({}))).toBe("malformed");
+    expect(classifyQuotaEvidence(rateLimitError({ responseBody: "not json" }))).toBe("malformed");
+    expect(
+      classifyQuotaEvidence(rateLimitError({ responseBody: JSON.stringify({ error: {} }) })),
+    ).toBe("malformed");
+    expect(
+      classifyQuotaEvidence(
+        rateLimitError({ responseBody: JSON.stringify({ error: { details: [] } }) }),
+      ),
+    ).toBe("malformed");
+    expect(classifyQuotaEvidence(new Error("plain"))).toBe("malformed");
+  });
+});
+
+describe("createRequestRateLimiter observability (onRequest, #307 options 1+2)", () => {
+  it("reports admission/send/completion UTC timestamps, wait duration, window count and a request identity for a successful request", async () => {
+    const clock = createFakeClock();
+    const onRequest = vi.fn();
+    const limiter = createRequestRateLimiter({
+      rpmLimit: 2,
+      now: clock.now,
+      sleep: clock.sleep,
+      onRequest,
+    });
+
+    await limiter.run(async () => {
+      clock.advance(50);
+      return "ok";
+    });
+
+    expect(onRequest).toHaveBeenCalledTimes(1);
+    const record = onRequest.mock.calls[0]?.[0];
+    expect(record).toMatchObject({
+      requestId: 0,
+      outcome: "success",
+      waitMs: 0,
+      windowCount: 1,
+      effectiveRpm: 1,
+    });
+    expect(record.admittedAt).toBe(new Date(1_000_000).toISOString());
+    expect(record.sendAt).toBe(record.admittedAt);
+    expect(record.completedAt).toBe(new Date(1_000_050).toISOString());
+  });
+
+  it("reports a positive waitMs, a distinct requestId and windowCount when a second request has to wait for a slot", async () => {
+    const clock = createFakeClock();
+    const onRequest = vi.fn();
+    const limiter = createRequestRateLimiter({
+      rpmLimit: 1,
+      now: clock.now,
+      sleep: clock.sleep,
+      onRequest,
+    });
+
+    await limiter.run(async () => "first");
+    await limiter.run(async () => "second");
+
+    expect(onRequest).toHaveBeenCalledTimes(2);
+    const second = onRequest.mock.calls[1]?.[0];
+    expect(second.requestId).toBe(1);
+    expect(second.waitMs).toBeGreaterThan(0);
+    expect(second.windowCount).toBe(1);
+  });
+
+  it("gives a retried attempt its own requestId and its own admission timing — never mislabels the retry's wait as the first attempt's send time", async () => {
+    const clock = createFakeClock();
+    const onRequest = vi.fn();
+    const limiter = createRequestRateLimiter({
+      rpmLimit: 10,
+      maxRetries: 1,
+      now: clock.now,
+      sleep: clock.sleep,
+      onRequest,
+    });
+    const operation = vi
+      .fn()
+      .mockRejectedValueOnce(rateLimitError({ responseHeaders: { "retry-after": "1" } }))
+      .mockResolvedValue("ok");
+
+    await limiter.run(operation);
+
+    expect(onRequest).toHaveBeenCalledTimes(2);
+    const [first, retried] = onRequest.mock.calls.map((call) => call[0]);
+    expect(first.requestId).not.toBe(retried.requestId);
+    expect(first.outcome).toBe("error");
+    expect(retried.outcome).toBe("success");
+    expect(Date.parse(retried.admittedAt) - Date.parse(first.admittedAt)).toBe(1_000);
+  });
+
+  it("captures a sanitized quota classification and provider retry hint on a 429, never the raw body/header", async () => {
+    const clock = createFakeClock();
+    const onRequest = vi.fn();
+    const limiter = createRequestRateLimiter({
+      rpmLimit: 10,
+      maxRetries: 0,
+      now: clock.now,
+      sleep: clock.sleep,
+      onRequest,
+    });
+    const error = rateLimitError({ responseBody: GEMINI_429_BODY });
+
+    await expect(limiter.run(vi.fn().mockRejectedValue(error))).rejects.toThrow();
+
+    const record = onRequest.mock.calls[0]?.[0];
+    expect(record).toMatchObject({
+      outcome: "error",
+      statusCode: 429,
+      quotaClassification: "per-minute",
+      retryHintMs: 1_500,
+    });
+    const serialized = JSON.stringify(record);
+    expect(serialized).not.toContain("GenerateRequestsPerMinute");
+    expect(serialized).not.toContain(GEMINI_429_BODY);
   });
 });
 
