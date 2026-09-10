@@ -34,7 +34,7 @@ import {
   type RequestObservabilityRecord,
 } from "./rate-limit.js";
 import { buildReport, type CaseReport, type ObservabilityLogMeta } from "./report.js";
-import { createRetryingModel, type RetryAttemptRecord } from "./retry.js";
+import { createRetryingModel, DeadlineExceededError, type RetryAttemptRecord } from "./retry.js";
 import { EvalCaseError, runEvalSuite } from "./runner.js";
 
 describe("resolveRunnerEnvConfig", () => {
@@ -55,6 +55,7 @@ describe("resolveRunnerEnvConfig", () => {
       EVAL_MAX_TOTAL_TOKENS: "1000",
       EVAL_MAX_COST_USD: "0.02",
       EVAL_RPM_LIMIT: "5",
+      EVAL_MAX_RUN_MS: "1800000",
       EVAL_REPORT_PATH: "custom-report.json",
       EVAL_OBSERVABILITY_PATH: "custom-observability.json",
       EVAL_CASE_IDS: "grounded-nodejs-experience,gap-golang",
@@ -64,10 +65,29 @@ describe("resolveRunnerEnvConfig", () => {
       maxTotalTokens: 1000,
       maxCostUsd: 0.02,
       rpmLimit: 5,
+      maxRunMs: 1_800_000,
       reportPath: "custom-report.json",
       observabilityPath: "custom-observability.json",
       caseIds: ["grounded-nodejs-experience", "gap-golang"],
     });
+  });
+
+  /**
+   * #307 eval-deadline correction (Track A): issuecomment-5622472018's CI
+   * evidence showed the eval CLI's shared retry-policy phase deadline
+   * defaulting to `./retry.ts`'s generic `DEFAULT_MAX_PHASE_MS` (10 minutes)
+   * — a value never intended as a whole-66-case-suite budget — which killed
+   * a real 66-case run at 19/66 cases. `EVAL_MAX_RUN_MS` is the explicit,
+   * eval-suite-specific full-run budget knob that replaces it; the default
+   * must be well above the accidental 10-minute cutoff (so a real run isn't
+   * silently capped there again) while still resolving to a genuine,
+   * positive, finite number a caller can pass straight to
+   * `createRetryPolicy`'s `maxPhaseMs`.
+   */
+  it("defaults maxRunMs to an explicit full-run budget well above the old accidental 10-minute (600000ms) cutoff", () => {
+    const config = resolveRunnerEnvConfig({});
+    expect(config.maxRunMs).toBeGreaterThan(600_000);
+    expect(Number.isFinite(config.maxRunMs)).toBe(true);
   });
 
   it("defaults observabilityPath to a documented, gitignored sibling of the report path (#307 options 1+2)", () => {
@@ -584,6 +604,40 @@ describe("describeCaseFailure", () => {
     const result = describeCaseFailure(error, []);
     expect(result.errorMessage).not.toContain("FAKE_SECRET_FOR_TEST");
   });
+
+  /**
+   * #307 eval-deadline correction (Track A): issuecomment-5622472018's CI
+   * evidence showed a real `DeadlineExceededError` (the run's own shared
+   * 10-minute phase deadline elapsing mid-flight, never a provider response)
+   * being reported as `UnknownError` / "Non-provider error" — the exact same
+   * label a genuinely unclassifiable error gets — so a reviewer reading the
+   * report could not tell "our own run/request timeout stopped this" from
+   * "the provider rejected the request for an unknown reason". This case
+   * must classify distinctly, never falling through to the generic
+   * `UnknownError` bucket above.
+   */
+  it("classifies a DeadlineExceededError as a local run/request timeout — never as UnknownError/Non-provider error", () => {
+    const error = new DeadlineExceededError("Deadline exceeded while the request was in flight");
+    const result = describeCaseFailure(error, []);
+    expect(result.errorName).toBe("DeadlineExceededError");
+    expect(result.errorMessage).not.toBe("Non-provider error");
+    expect(result.statusCode).toBeUndefined();
+  });
+
+  /**
+   * "including wrapped errors" (Track A scope): a `DeadlineExceededError`
+   * that reaches `agent.generate()`'s catch wrapped inside another error's
+   * `.cause` (e.g. a framework rethrow) must still be recognized — the same
+   * bounded cause-chain walk `apiErrorStatusCode` already uses for
+   * `APICallError`.
+   */
+  it("classifies a DeadlineExceededError wrapped in another error's .cause the same way", () => {
+    const inner = new DeadlineExceededError("Deadline exceeded before attempt 1 could start");
+    const outer = new Error("wrapped", { cause: inner });
+    const result = describeCaseFailure(outer, []);
+    expect(result.errorName).toBe("DeadlineExceededError");
+    expect(result.errorMessage).not.toBe("Non-provider error");
+  });
 });
 
 /**
@@ -849,6 +903,56 @@ describe("createEvalRetryPolicy", () => {
       minuteQuota429WithFarHint,
     );
     expect(sleepCalls).toEqual([]);
+  });
+
+  /**
+   * #307 eval-deadline correction (Track A): the whole point of passing an
+   * explicit `maxPhaseMs` (`main()`'s `EVAL_MAX_RUN_MS`-derived full-run
+   * budget) instead of relying on `./retry.ts`'s generic 10-minute
+   * `DEFAULT_MAX_PHASE_MS` default is that a real run must be able to keep
+   * making requests PAST the 10-minute mark — issuecomment-5622472018's CI
+   * evidence is exactly a run that could not, stopping at 19/66 cases. This
+   * proves, through the injected virtual clock (zero real waits), that (a) a
+   * request issued after 10 virtual minutes have already elapsed still
+   * succeeds when `maxPhaseMs` is the larger, explicit full-run bound, and
+   * (b) the policy still stops cleanly — a genuine `DeadlineExceededError`,
+   * never a hang — once virtual time actually reaches that configured
+   * bound.
+   */
+  it("keeps admitting requests past the old 10-minute (600000ms) mark under an explicit larger maxPhaseMs, then stops cleanly exactly at the configured full-run bound", async () => {
+    const tracker = makeTracker();
+    let currentTime = 0;
+    const now = () => currentTime;
+    const sleep = async (ms: number) => {
+      currentTime += ms;
+    };
+    const FULL_RUN_BUDGET_MS = 30 * 60_000; // 30 minutes — larger than the old 10-minute default.
+    const policy = createEvalRetryPolicy({
+      modelId: "gemini-3.6-flash",
+      maxTotalTokens: 1_000_000,
+      maxCostUsd: 1_000,
+      attemptTracker: tracker,
+      now,
+      sleep,
+      maxPhaseMs: FULL_RUN_BUDGET_MS,
+    });
+
+    // Simulate wall-clock elapsing well past the old accidental 10-minute
+    // cutoff between two "cases" — under the pre-fix default this second
+    // request would already be past `phaseDeadline` and stop instantly.
+    currentTime = 11 * 60_000; // 11 minutes — already past the old DEFAULT_MAX_PHASE_MS.
+    tracker.reset();
+    await expect(policy.run(() => Promise.resolve("still running at 11 minutes"))).resolves.toBe(
+      "still running at 11 minutes",
+    );
+
+    // Jump to (and past) the CONFIGURED full-run bound — the policy must
+    // still stop here, cleanly, rather than admitting an unbounded run.
+    currentTime = FULL_RUN_BUDGET_MS;
+    tracker.reset();
+    await expect(policy.run(() => Promise.resolve("never reached"))).rejects.toThrow(
+      DeadlineExceededError,
+    );
   });
 });
 
@@ -1466,6 +1570,48 @@ describe("summarizeReportForCli", () => {
     ).toBe(true);
     expect(summary.executionFailureLines.some((line) => /budget/i.test(line))).toBe(false);
     expect(summary.executionFailureLines.some((line) => line.includes("never-ran-2"))).toBe(true);
+  });
+
+  /**
+   * #307 eval-deadline correction (Track A): issuecomment-5622472018's CI
+   * evidence showed a run's own local `DeadlineExceededError` (the shared
+   * full-run/request deadline elapsing, never a provider response) printed
+   * through the SAME "terminal provider failure" header as a genuine 429 or
+   * 5xx — misattributing "our own run/request timeout stopped this" to the
+   * provider. `describeCaseFailure`'s classification (`errorName:
+   * "DeadlineExceededError"`) must drive a distinctly worded header here,
+   * never folded into the provider-failure wording.
+   */
+  it("labels a local run/request deadline distinctly from a terminal provider failure", () => {
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: [groundedCase],
+      totals,
+      thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.5 },
+      failedCases: [
+        {
+          id: "deadline-1",
+          category: "grounded",
+          question: "q",
+          errorName: "DeadlineExceededError",
+          errorMessage: "Local request/run deadline exceeded before completion",
+          attempts: [],
+        },
+      ],
+      unexecutedCaseIds: ["never-ran-3"],
+    });
+
+    const summary = summarizeReportForCli(report);
+
+    expect(summary.passed).toBe(false);
+    expect(
+      summary.executionFailureLines.some((line) => /terminal provider failure/i.test(line)),
+    ).toBe(false);
+    expect(
+      summary.executionFailureLines.some((line) => /deadline|local.*timeout/i.test(line)),
+    ).toBe(true);
+    expect(summary.executionFailureLines.some((line) => line.includes("never-ran-3"))).toBe(true);
   });
 
   /**
@@ -2181,4 +2327,127 @@ describe("composed offline wiring — multi-step logical requests and a deadline
     expect(persistedCaseCFailure.attempts[0].outcome).toBe("stopped-deadline-exceeded");
     expect(persisted.observability.requestCount).toBe(5);
   }, 4_000);
+});
+
+/**
+ * #307 eval-deadline correction (Track A): a GENUINE `DeadlineExceededError`
+ * — thrown by `./retry.ts`'s real, timer-based `raceWithDeadline` abort path
+ * when an in-flight request outlives the shared phase deadline, distinct
+ * from the composed suite above's 429-hint-exceeds-deadline scenario (which
+ * re-throws the original provider error, never a `DeadlineExceededError`) —
+ * proved end to end: `createEvalRetryPolicy` -> `createRunCase` ->
+ * `runEvalSuite` -> `buildReport` -> a real `JSON.stringify`/`JSON.parse`
+ * round trip (the same serialization `main()` performs before persisting)
+ * -> `summarizeReportForCli`. Confirms (a) truthful classification survives
+ * every layer (never degrading to "UnknownError"/"Non-provider error"), (b)
+ * a case's known usage/attempt identity from a request BEFORE the deadline
+ * stop is preserved, not discarded just because a LATER request in the same
+ * case hit the deadline, and (c) the CLI's own summary header is honest
+ * about the cause. `vi.useFakeTimers()` is required here (unlike the rest of
+ * this file's virtual-clock tests): `raceWithDeadline`'s abort timer is a
+ * REAL `setTimeout`, deliberately not driven by the injected `now`/`sleep`
+ * seam (see its own doc comment in `./retry.ts`).
+ */
+describe("composed offline wiring — a genuine DeadlineExceededError case failure survives report/CLI truthfully (#307 eval-deadline correction, Track A)", () => {
+  it("classifies the case as DeadlineExceededError (not UnknownError), preserves the earlier request's known usage/attempt identity, and labels the CLI summary honestly — surviving a real JSON round trip", async () => {
+    vi.useFakeTimers();
+    try {
+      const tracker = createCaseAttemptTracker();
+      const FULL_RUN_BUDGET_MS = 5_000;
+      let currentTime = 0;
+      const now = () => currentTime;
+      const sleep = async (ms: number) => {
+        currentTime += ms;
+      };
+      const retryPolicy = createEvalRetryPolicy({
+        modelId: "gemini-3.5-flash-lite",
+        maxTotalTokens: 1_000_000,
+        maxCostUsd: 1_000,
+        attemptTracker: tracker,
+        now,
+        sleep,
+        maxPhaseMs: FULL_RUN_BUDGET_MS,
+      });
+
+      const knownUsage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
+      const agent = {
+        generate: async () => {
+          // Request #1: succeeds, with known usage — this must survive into
+          // the failed case's report even though request #2 (below) is what
+          // actually stops the case.
+          await retryPolicy.run(
+            () => Promise.resolve({ text: "step 1" }),
+            () => knownUsage,
+          );
+          // Request #2: hangs forever — the phase deadline (5s, all of it
+          // still remaining) aborts it via a REAL timer, never resolving on
+          // its own.
+          await retryPolicy.run(() => new Promise<never>(() => {}));
+          return { text: "unreachable" };
+        },
+      };
+
+      const runCase = createRunCase(agent, tracker, {});
+      const runPromise = runEvalSuite(
+        {
+          cases: [
+            {
+              id: "deadline-case",
+              category: "grounded",
+              question: "Question D",
+              gapHonestyDirection: "claimed",
+            },
+          ],
+          budget: { maxCases: 1, maxTotalTokens: 1_000_000, maxCostUsd: 1_000 },
+          promptVersion: "test-version",
+          modelId: "gemini-3.5-flash-lite",
+        },
+        { runCase },
+      );
+      await vi.advanceTimersByTimeAsync(FULL_RUN_BUDGET_MS);
+      const report = await runPromise;
+
+      expect(report.failedCases).toHaveLength(1);
+      const failure = report.failedCases[0];
+      expect(failure?.id).toBe("deadline-case");
+      // The core defect: never "UnknownError"/"Non-provider error" — a local
+      // deadline stop must be distinguishable from an unclassifiable
+      // provider failure.
+      expect(failure?.errorName).toBe("DeadlineExceededError");
+      expect(failure?.errorMessage).not.toBe("Non-provider error");
+      expect(failure?.statusCode).toBeUndefined();
+
+      // Attempt identity and the earlier request's known usage survive —
+      // never discarded just because a LATER request in the same case hit
+      // the deadline.
+      expect(failure?.attempts).toHaveLength(2);
+      expect(failure?.attempts[0]?.outcome).toBe("success");
+      expect(failure?.attempts[0]?.usage).toEqual(knownUsage);
+      expect(failure?.attempts[0]?.requestIndex).toBe(1);
+      expect(failure?.attempts[1]?.outcome).toBe("stopped-deadline-exceeded");
+      expect(failure?.attempts[1]?.requestIndex).toBe(2);
+
+      // Survives the exact serialization `main()` performs before
+      // persisting `eval-report.json`.
+      const persisted = JSON.parse(JSON.stringify(report));
+      const persistedFailure = persisted.failedCases[0];
+      expect(persistedFailure.errorName).toBe("DeadlineExceededError");
+      expect(persistedFailure.attempts[0].usage).toEqual(knownUsage);
+
+      // The CLI's own summary must be honest about the cause — never the
+      // generic "terminal provider failure" header a real 429/5xx gets.
+      const summary = summarizeReportForCli(report);
+      expect(summary.passed).toBe(false);
+      expect(
+        summary.executionFailureLines.some((line) => /terminal provider failure/i.test(line)),
+      ).toBe(false);
+      expect(
+        summary.executionFailureLines.some((line) =>
+          /full-run deadline was exceeded.*local request\/run timeout/i.test(line),
+        ),
+      ).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

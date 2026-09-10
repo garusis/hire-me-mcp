@@ -71,6 +71,21 @@ export interface RunnerEnvConfig {
    * Enforced at the model boundary by `./rate-limit.ts`.
    */
   rpmLimit: number;
+  /**
+   * The whole SUITE's wall-clock budget (`EVAL_MAX_RUN_MS`), passed straight
+   * through to `./retry.ts`'s `createRetryPolicy` as `maxPhaseMs` (#307
+   * eval-deadline correction, Track A — see {@link DEFAULT_EVAL_SUITE_MAX_RUN_MS}
+   * for the full rationale). Deliberately a SEPARATE, eval-suite-specific
+   * knob from `./retry.ts`'s own generic `DEFAULT_MAX_PHASE_MS` (10 minutes,
+   * unchanged — still a reasonable generic default for an arbitrary caller
+   * of that module): `main()` previously never overrode it, so every real
+   * CI run's single shared retry-policy instance silently inherited that
+   * 10-minute default as an ACCIDENTAL whole-66-case-suite cutoff —
+   * issuecomment-5622472018's CI evidence is exactly that failure (19/66
+   * cases completed, 46 never ran, stopped by `DeadlineExceededError` at
+   * precisely 600,000ms of wall clock).
+   */
+  maxRunMs: number;
   reportPath: string;
   /**
    * Where the limiter's own safe, durable per-request observability log is
@@ -94,6 +109,41 @@ export interface RunnerEnvConfig {
 }
 
 /**
+ * The eval suite's whole-run wall-clock budget default (#307 eval-deadline
+ * correction, Track A) — replaces the ACCIDENTAL 10-minute suite cutoff
+ * documented on {@link RunnerEnvConfig.maxRunMs}. Derived from real CI
+ * evidence (issuecomment-5622472018), never guessed:
+ *
+ * - The evidenced run completed 19 of the 28 BASE dataset cases (none of
+ *   the 38 heavier story-manifest cases, which sort later) in exactly
+ *   600,000ms, via 40 admitted provider requests — ~31.6s/case and ~2.1
+ *   requests/case for that subset, at the limiter's configured 10 RPM
+ *   pacing (`agent-evals.yml`'s own documented 6s/request minimum gap).
+ * - The story-manifest cases make MORE requests per case than the base
+ *   subset (`list-career-stories`/`search-career` tool round-trips before
+ *   the final answer — `agent-evals.yml`'s own module docs estimate "2-3
+ *   requests per case" for the full 66-case dataset, above this subset's
+ *   observed ~2.1); scaling the observed base-case rate by that gives a
+ *   central estimate of roughly 40-55 minutes for a genuine full 66-case
+ *   run, NOT a number this budget can guarantee — a real run may still take
+ *   longer (provider latency, retry backoff, quota waits are all real and
+ *   variable). This budget is a bounded stop, not a completion promise —
+ *   `EvalReport.complete`/`unexecutedCaseIds` already report the truth when
+ *   it isn't reached in time.
+ * - `agent-evals.yml`'s own job `timeout-minutes: 60` (and
+ *   `release-readiness.yml`'s mirrored ~60-minute budget for this same
+ *   step, inside its own larger job) is the hard ceiling this must fit
+ *   under, WITH room left over for checkout/install/build/relevance-
+ *   detection/the Gemini slot wait before the eval step even starts, and
+ *   for the report/observability artifact-persistence, summary-render, and
+ *   upload steps that run after it — a budget equal to (or too close to)
+ *   the job timeout risks GitHub hard-killing the job mid-persist, losing
+ *   the very report this exists to write. 45 minutes leaves roughly a
+ *   quarter of the 60-minute job timeout as margin for all of that.
+ */
+export const DEFAULT_EVAL_SUITE_MAX_RUN_MS = 45 * 60_000;
+
+/**
  * Conservative defaults for an UNCONFIGURED real run: small enough that a
  * default invocation costs a handful of Gemini free-tier calls, not the
  * whole dataset. Override via env for a fuller run.
@@ -105,6 +155,7 @@ const DEFAULTS: RunnerEnvConfig = {
   // Derived from the documented free-tier ceiling — see `./rate-limit.ts`,
   // the single source of truth this, the limiter and the README share.
   rpmLimit: DEFAULT_EVAL_RPM_LIMIT,
+  maxRunMs: DEFAULT_EVAL_SUITE_MAX_RUN_MS,
   reportPath: "eval-report.json",
   observabilityPath: "eval-observability.json",
 };
@@ -135,6 +186,7 @@ export function resolveRunnerEnvConfig(env: RunnerEnv = process.env): RunnerEnvC
     maxTotalTokens: readPositiveNumber(env, "EVAL_MAX_TOTAL_TOKENS", DEFAULTS.maxTotalTokens),
     maxCostUsd: readPositiveNumber(env, "EVAL_MAX_COST_USD", DEFAULTS.maxCostUsd),
     rpmLimit: readPositiveNumber(env, "EVAL_RPM_LIMIT", DEFAULTS.rpmLimit),
+    maxRunMs: readPositiveNumber(env, "EVAL_MAX_RUN_MS", DEFAULTS.maxRunMs),
     reportPath: env.EVAL_REPORT_PATH?.trim() || DEFAULTS.reportPath,
     observabilityPath: env.EVAL_OBSERVABILITY_PATH?.trim() || DEFAULTS.observabilityPath,
     ...(caseIds ? { caseIds } : {}),
@@ -822,7 +874,27 @@ export function summarizeReportForCli(report: EvalReport): ReportCliSummary {
   }
 
   if (report.failedCases.length > 0) {
-    executionFailureLines.push("Eval suite stopped early after a terminal provider failure:");
+    // #307 eval-deadline correction (Track A): issuecomment-5622472018's CI
+    // evidence showed a local `DeadlineExceededError` (the run's own
+    // request/phase deadline elapsing, never a provider response) printed
+    // through this SAME "terminal provider failure" header a genuine 429 or
+    // 5xx gets — misattributing "our own timeout stopped this" to the
+    // provider. `./retry.ts`'s `classifyProviderError` now gives a
+    // DeadlineExceededError its own distinct `errorName`; every entry here
+    // shares that classification only when EVERY failed case is a local
+    // deadline stop (mixing labels for a genuine mixed cause would be its
+    // own misrepresentation) — today there is at most one entry
+    // (`./runner.ts` stops at the first terminal failure), so this is exact,
+    // not approximate.
+    const allDeadlineExceeded = report.failedCases.every(
+      (failedCase) => failedCase.errorName === "DeadlineExceededError",
+    );
+    executionFailureLines.push(
+      allDeadlineExceeded
+        ? "Eval suite stopped early after the configured full-run deadline was exceeded " +
+            "(a local request/run timeout — not a provider error or quota):"
+        : "Eval suite stopped early after a terminal provider failure:",
+    );
     for (const failedCase of report.failedCases) {
       executionFailureLines.push(
         `  - ${failedCase.id} failed after ${failedCase.attempts.length} attempt(s)` +
@@ -1008,6 +1080,13 @@ async function main(): Promise<void> {
     maxTotalTokens: envConfig.maxTotalTokens,
     maxCostUsd: envConfig.maxCostUsd,
     attemptTracker,
+    // #307 eval-deadline correction (Track A): the explicit, eval-suite-
+    // specific full-run budget (see `RunnerEnvConfig.maxRunMs`'s doc
+    // comment) — never omitted, so this shared policy instance never
+    // silently falls back to `./retry.ts`'s generic 10-minute
+    // `DEFAULT_MAX_PHASE_MS`, which is what accidentally capped a real
+    // 66-case run at 19 cases (issuecomment-5622472018).
+    maxPhaseMs: envConfig.maxRunMs,
     onWarn: (message) => console.warn(message),
     // Second independent Codex review (issuecomment-5608823305), finding 3:
     // hand the limiter's own observability collector the SAME

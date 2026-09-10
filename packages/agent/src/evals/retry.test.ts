@@ -4,6 +4,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import { createRateLimitedModel, createRequestRateLimiter } from "./rate-limit.js";
 import {
+  classifyProviderError,
   createRetryingModel,
   createRetryPolicy,
   DEFAULT_MAX_ATTEMPTS,
@@ -195,6 +196,49 @@ describe("isTransientProviderError", () => {
 
   it("treats an ordinary non-timeout Error as permanent", () => {
     expect(isTransientProviderError(new Error("tool blew up"))).toBe(false);
+  });
+});
+
+/**
+ * #307 eval-deadline correction (Track A): issuecomment-5622472018's CI
+ * evidence showed a real `DeadlineExceededError` (this run's own shared
+ * deadline elapsing, never a provider response) reaching
+ * `classifyProviderError` and falling into the SAME `"unknown-error"` /
+ * `UnknownError` / "Non-provider error" bucket a genuinely unclassifiable
+ * error gets — misattributing "our own run/request timeout stopped this" to
+ * an unknown provider failure. Direct unit coverage of the classifier
+ * itself, distinct from `cli.test.ts`'s `describeCaseFailure` coverage of
+ * the same boundary at the case-report layer.
+ */
+describe("classifyProviderError", () => {
+  it("classifies a bare DeadlineExceededError as its own distinct classification — never unknown-error", () => {
+    const error = new DeadlineExceededError("Deadline exceeded while the request was in flight");
+    const result = classifyProviderError(error);
+    expect(result.classification).toBe("local-deadline-exceeded");
+    expect(result.errorName).toBe("DeadlineExceededError");
+    expect(result.errorMessage).not.toBe("Non-provider error");
+    expect(result.statusCode).toBeUndefined();
+  });
+
+  it("classifies a DeadlineExceededError wrapped in another error's .cause the same way ('including wrapped errors')", () => {
+    const inner = new DeadlineExceededError("Deadline exceeded before attempt 1 could start");
+    const outer = new Error("wrapped", { cause: inner });
+    const result = classifyProviderError(outer);
+    expect(result.classification).toBe("local-deadline-exceeded");
+    expect(result.errorName).toBe("DeadlineExceededError");
+  });
+
+  it("still classifies a genuine provider status code normally — the deadline check never shadows a real API error", () => {
+    const result = classifyProviderError(apiError({ statusCode: 503 }));
+    expect(result.classification).toBe("transient-provider-error");
+    expect(result.errorName).toBe("TransientProviderError");
+  });
+
+  it("still falls back to unknown-error for a plain, non-deadline, non-API error", () => {
+    const result = classifyProviderError(new Error("boom"));
+    expect(result.classification).toBe("unknown-error");
+    expect(result.errorName).toBe("UnknownError");
+    expect(result.errorMessage).toBe("Non-provider error");
   });
 });
 

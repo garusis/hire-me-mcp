@@ -290,6 +290,7 @@ export type ErrorClassification =
   | "transient-provider-error"
   | "timeout"
   | "permanent-provider-error"
+  | "local-deadline-exceeded"
   | "unknown-error";
 
 const ERROR_CLASSIFICATION_NAMES: Record<ErrorClassification, string> = {
@@ -297,6 +298,7 @@ const ERROR_CLASSIFICATION_NAMES: Record<ErrorClassification, string> = {
   "transient-provider-error": "TransientProviderError",
   timeout: "TimeoutError",
   "permanent-provider-error": "PermanentProviderError",
+  "local-deadline-exceeded": "DeadlineExceededError",
   "unknown-error": "UnknownError",
 };
 
@@ -305,6 +307,30 @@ function classifyStatusCode(statusCode: number | undefined): ErrorClassification
   if (statusCode === 502 || statusCode === 503 || statusCode === 504)
     return "transient-provider-error";
   if (statusCode !== undefined) return "permanent-provider-error";
+  return undefined;
+}
+
+/**
+ * Walk an error's `cause` chain (bounded, same depth as `./rate-limit.ts`'s
+ * `findApiCallError`) looking for a {@link DeadlineExceededError} — this
+ * module's own signal that a REQUEST or PHASE deadline elapsed locally,
+ * never a provider response. #307 eval-deadline correction (Track A):
+ * issuecomment-5622472018's CI evidence showed a real deadline stop reach
+ * `classifyProviderError` as a bare `DeadlineExceededError` (thrown directly
+ * by `handleAttemptFailure` above) and get classified `"unknown-error"` —
+ * the exact same bucket a genuinely unclassifiable provider error falls
+ * into — so a report/CLI reader could not tell "our own run/request timeout
+ * stopped this" from "the provider rejected the request for an unknown
+ * reason". Checking for a WRAPPED instance too (not just a direct one) means
+ * this survives a caller (e.g. a framework) rethrowing it inside another
+ * error's `.cause`.
+ */
+function findDeadlineExceededError(error: unknown): DeadlineExceededError | undefined {
+  let current = error;
+  for (let depth = 0; depth < 5 && current !== undefined && current !== null; depth++) {
+    if (current instanceof DeadlineExceededError) return current;
+    current = (current as { cause?: unknown }).cause;
+  }
   return undefined;
 }
 
@@ -320,6 +346,13 @@ function classifyStatusCode(statusCode: number | undefined): ErrorClassification
  * quoted from the provider), and the plain numeric `statusCode` do. This is
  * the single sanitization boundary every `RetryAttemptRecord` (below) and
  * `./cli.ts`'s `describeCaseFailure`/`createRunCase` share.
+ *
+ * A {@link DeadlineExceededError} (direct or wrapped in `.cause`) is checked
+ * FIRST, ahead of the statusCode/timeout branches below: it is never an
+ * `APICallError` and never carries a `statusCode`, so without this check it
+ * always fell through to `"unknown-error"` — see
+ * {@link findDeadlineExceededError}'s doc comment (#307 eval-deadline
+ * correction, Track A).
  */
 export function classifyProviderError(error: unknown): {
   classification: ErrorClassification;
@@ -327,6 +360,14 @@ export function classifyProviderError(error: unknown): {
   errorMessage: string;
   statusCode?: number;
 } {
+  if (findDeadlineExceededError(error) !== undefined) {
+    return {
+      classification: "local-deadline-exceeded",
+      errorName: ERROR_CLASSIFICATION_NAMES["local-deadline-exceeded"],
+      errorMessage:
+        "Local request/run deadline exceeded before completion (not a provider error or quota)",
+    };
+  }
   const statusCode = apiErrorStatusCode(error);
   const classification =
     classifyStatusCode(statusCode) ?? (isTimeoutError(error) ? "timeout" : "unknown-error");
