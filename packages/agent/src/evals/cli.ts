@@ -177,13 +177,28 @@ export function filterCasesByIds(
  * case correlation fields and this function's own `meta`/timestamp/count
  * wrapping are added.
  */
-export function buildObservabilityLog(
-  requests: readonly CorrelatedObservabilityRecord[],
+export function buildObservabilityLog<R extends CorrelatedObservabilityRecord>(
+  requests: readonly R[],
   meta: ObservabilityLogMeta,
   now: () => string = () => new Date().toISOString(),
-): ObservabilityLog {
+): Omit<ObservabilityLog, "requests"> & { requests: R[] } {
   return { ...meta, generatedAt: now(), requestCount: requests.length, requests: [...requests] };
 }
+
+/**
+ * A {@link CorrelatedObservabilityRecord} plus the explicit retry identity
+ * {@link ObservabilityCollector.beginRequest} supplies (second independent
+ * Codex review, issuecomment-5608823305, finding 3) — `attempt` is kept
+ * local to this collector rather than added to `./report.ts`'s own
+ * `CorrelatedObservabilityRecord` interface, since it is genuinely optional
+ * (a record admitted without a matching `beginRequest` call never carries
+ * it) and `./report.ts`'s `buildReport` already persists whatever shape its
+ * caller hands it (`params.observability ?? null`, no field-level
+ * reconstruction) — the key still lands in the real, persisted
+ * `eval-report.json`/`eval-observability.json` JSON exactly as any other
+ * field would.
+ */
+type ObservabilityRequestRecord = CorrelatedObservabilityRecord & { attempt?: number };
 
 /** Mutable per-run scratch space `main()` shares with the limiter's `onRequest` hook — see {@link createObservabilityCollector}. */
 export interface ObservabilityCollector {
@@ -197,8 +212,24 @@ export interface ObservabilityCollector {
    * `onCaseStart` option, once per case, before `agent.generate` runs.
    */
   startCase: (caseId: string) => void;
+  /**
+   * Stamp the identity the NEXT `onRequest` record must carry — the same
+   * `requestIndex`/`attempt` `./retry.ts`'s own attempt tracker
+   * (`createCaseAttemptTracker.beginAttempt`) already computed for it,
+   * captured BEFORE `operation()` runs (second independent Codex review,
+   * issuecomment-5608823305, finding 3). `main()` wires this to
+   * `createEvalRetryPolicy`'s `onBeforeAttempt` hook. Consumed exactly once
+   * by the next `onRequest` call, then cleared — a request admitted without
+   * a matching `beginRequest` call (should not happen in real wiring) falls
+   * back to the previous per-case auto-incrementing `caseRequestSequence`
+   * and carries no `attempt` at all, rather than reusing a stale stamp.
+   */
+  beginRequest: (requestIndex: number, attempt: number) => void;
   /** Build the durable {@link ObservabilityLog} from every record collected so far. */
-  log: (meta: ObservabilityLogMeta, now?: () => string) => ObservabilityLog;
+  log: (
+    meta: ObservabilityLogMeta,
+    now?: () => string,
+  ) => Omit<ObservabilityLog, "requests"> & { requests: ObservabilityRequestRecord[] };
 }
 
 /**
@@ -214,20 +245,33 @@ export interface ObservabilityCollector {
  * than silently attributed to the wrong case.
  */
 export function createObservabilityCollector(): ObservabilityCollector {
-  const requests: CorrelatedObservabilityRecord[] = [];
+  const requests: ObservabilityRequestRecord[] = [];
   let currentCaseId: string | null = null;
   let caseRequestSequence = 0;
+  let pendingRequestIndex: number | null = null;
+  let pendingAttempt: number | null = null;
   return {
     startCase: (caseId) => {
       currentCaseId = caseId;
       caseRequestSequence = 0;
+      pendingRequestIndex = null;
+      pendingAttempt = null;
+    },
+    beginRequest: (requestIndex, attempt) => {
+      pendingRequestIndex = requestIndex;
+      pendingAttempt = attempt;
     },
     onRequest: (record) => {
       if (currentCaseId !== null) caseRequestSequence += 1;
+      const sequence = pendingRequestIndex ?? (currentCaseId !== null ? caseRequestSequence : null);
+      const attempt = pendingAttempt;
+      pendingRequestIndex = null;
+      pendingAttempt = null;
       requests.push({
         ...record,
         caseId: currentCaseId,
-        caseRequestSequence: currentCaseId !== null ? caseRequestSequence : null,
+        caseRequestSequence: sequence,
+        ...(attempt !== null ? { attempt } : {}),
       });
     },
     log: (meta, now) => buildObservabilityLog(requests, meta, now),
@@ -422,15 +466,33 @@ export interface CaseAttemptTracker {
  */
 export function createCaseAttemptTracker(): CaseAttemptTracker & {
   onAttempt: (record: RetryAttemptRecord) => void;
+  /**
+   * Compute (and reserve) the `requestIndex` the attempt about to run WILL
+   * get, BEFORE `operation()` runs (second independent Codex review,
+   * issuecomment-5608823305, finding 3) — `./cli.ts`'s
+   * `createEvalRetryPolicy` calls this from `./retry.ts`'s `beforeAttempt`
+   * hook, which fires strictly before every attempt including a retry, and
+   * hands the returned value to the limiter's own observability collector
+   * (`ObservabilityCollector.beginRequest`) so that request's persisted
+   * telemetry carries the SAME identity this tracker's own `onAttempt`
+   * records for it afterward — explicit linkage, not merely matching
+   * ordering. Uses the exact same "a fresh `attempt: 1` starts a new
+   * request" rule `onAttempt` falls back to when called without a matching
+   * `beginAttempt` (e.g. a direct unit test of `onAttempt` alone), so
+   * calling both for the same attempt never double-increments.
+   */
+  beginAttempt: (attempt: number) => number;
 } {
   let attempts: RetryAttemptRecord[] = [];
   let requestIndex = 0;
-  return {
-    reset: () => {
-      attempts = [];
-      requestIndex = 0;
-    },
-    attempts: () => attempts,
+  let pendingRequestIndex: number | null = null;
+
+  function requestIndexFor(attempt: number): number {
+    if (pendingRequestIndex !== null) {
+      const value = pendingRequestIndex;
+      pendingRequestIndex = null;
+      return value;
+    }
     // #307 second independent-review correction, 2nd round, finding 3: a
     // fresh `attempt: 1` always marks the start of a NEW logical request —
     // attempts within one request are strictly sequential (cases run one at
@@ -439,9 +501,24 @@ export function createCaseAttemptTracker(): CaseAttemptTracker & {
     // request's own `run()` call has already concluded. `requestIndex`
     // turns that observation into a stable identity threaded onto every
     // record this case's report carries.
+    if (attempt === 1) requestIndex += 1;
+    return requestIndex;
+  }
+
+  return {
+    reset: () => {
+      attempts = [];
+      requestIndex = 0;
+      pendingRequestIndex = null;
+    },
+    attempts: () => attempts,
+    beginAttempt: (attempt) => {
+      if (attempt === 1) requestIndex += 1;
+      pendingRequestIndex = requestIndex;
+      return requestIndex;
+    },
     onAttempt: (record) => {
-      if (record.attempt === 1) requestIndex += 1;
-      attempts.push({ ...record, requestIndex });
+      attempts.push({ ...record, requestIndex: requestIndexFor(record.attempt) });
     },
   };
 }
@@ -630,8 +707,21 @@ export function createEvalRetryPolicy(options: {
   modelId: string;
   maxTotalTokens: number;
   maxCostUsd: number;
-  attemptTracker: CaseAttemptTracker & { onAttempt: (record: RetryAttemptRecord) => void };
+  attemptTracker: CaseAttemptTracker & {
+    onAttempt: (record: RetryAttemptRecord) => void;
+    beginAttempt: (attempt: number) => number;
+  };
   onWarn?: (message: string) => void;
+  /**
+   * Called with `{requestIndex, attempt}` right before this attempt's
+   * `operation()` runs — never when the budget guard blocks it first
+   * (second independent Codex review, issuecomment-5608823305, finding 3).
+   * `main()` wires this to `ObservabilityCollector.beginRequest` so the
+   * limiter's own record for this exact attempt carries the SAME identity
+   * `attemptTracker`'s own trace does, joinable deterministically instead
+   * of merely by matching completion order.
+   */
+  onBeforeAttempt?: (requestIndex: number, attempt: number) => void;
 }): RetryPolicy {
   const pricing = getModelPricing(options.modelId);
   const budgetGuard = createBudgetGuard({
@@ -653,7 +743,15 @@ export function createEvalRetryPolicy(options: {
         );
       }
     },
-    beforeAttempt: () => budgetGuard.assertNotExceeded(),
+    beforeAttempt: (attempt) => {
+      // Budget first: a request the guard is about to block never gets a
+      // requestIndex reserved or an `onBeforeAttempt` call — it's not going
+      // to reach the limiter at all (see the doc comment on
+      // `onBeforeAttempt` above).
+      budgetGuard.assertNotExceeded();
+      const requestIndex = options.attemptTracker.beginAttempt(attempt);
+      options.onBeforeAttempt?.(requestIndex, attempt);
+    },
   });
 }
 
@@ -838,6 +936,12 @@ async function main(): Promise<void> {
     maxCostUsd: envConfig.maxCostUsd,
     attemptTracker,
     onWarn: (message) => console.warn(message),
+    // Second independent Codex review (issuecomment-5608823305), finding 3:
+    // hand the limiter's own observability collector the SAME
+    // requestIndex/attempt identity `attemptTracker` computed for this
+    // exact attempt, before it runs — explicit correlation instead of two
+    // separately-derived counters that merely happen to march in lockstep.
+    onBeforeAttempt: (requestIndex, attempt) => observability.beginRequest(requestIndex, attempt),
   });
   const model = createRetryingModel({
     model: createRateLimitedModel({ model: toLanguageModel(createChatModel()), limiter }),
@@ -875,15 +979,30 @@ async function main(): Promise<void> {
     // the observability log is about what the limiter actually did, not
     // about the run's own outcome.
     observabilityLog = observability.log(observabilityMeta);
-    await writeFile(
-      envConfig.observabilityPath,
-      `${JSON.stringify(observabilityLog, null, 2)}\n`,
-      "utf8",
-    );
-    console.log(
-      `Observability log written to ${envConfig.observabilityPath} ` +
-        `(${observabilityLog.requestCount} request(s)).`,
-    );
+    // Second independent Codex review (issuecomment-5608823305), finding
+    // 3's tail: this standalone sidecar is a DUPLICATE of the exact same
+    // data embedded in `report.observability` below — a failure writing it
+    // (disk full, permission error) must never prevent the DURABLE report
+    // artifact from being written. Left uncaught, a throw here would
+    // propagate out of this `finally` block and skip every statement after
+    // it, including the report write below.
+    try {
+      await writeFile(
+        envConfig.observabilityPath,
+        `${JSON.stringify(observabilityLog, null, 2)}\n`,
+        "utf8",
+      );
+      console.log(
+        `Observability log written to ${envConfig.observabilityPath} ` +
+          `(${observabilityLog.requestCount} request(s)).`,
+      );
+    } catch (error) {
+      console.error(
+        `Failed to write observability sidecar ${envConfig.observabilityPath} ` +
+          `(non-fatal — the same data is still embedded in ${envConfig.reportPath}): ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   // #307 Codex review, finding 4: embed the SAME observability log into the

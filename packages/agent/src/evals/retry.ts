@@ -240,8 +240,12 @@ export interface RetryPolicyOptions {
    * completes). Throw to stop immediately without issuing the request; the
    * throw is recorded as a `"stopped-budget-exceeded"` attempt and
    * propagates out of `run()` unchanged, the same as any other stop.
+   * Receives the 1-based `attempt` number it's about to gate (second
+   * independent Codex review, issuecomment-5608823305, finding 3) — read
+   * BEFORE `operation()` runs, so a caller can stamp a request/attempt
+   * identity ahead of the actual provider send.
    */
-  beforeAttempt?: () => void;
+  beforeAttempt?: (attempt: number) => void;
 }
 
 export interface RetryPolicy {
@@ -563,7 +567,7 @@ export function createRetryPolicy(options: RetryPolicyOptions = {}): RetryPolicy
 
       if (options.beforeAttempt) {
         try {
-          options.beforeAttempt();
+          options.beforeAttempt(attempt);
         } catch (error) {
           options.onAttempt?.({ attempt, outcome: "stopped-budget-exceeded", durationMs: 0 });
           throw error;

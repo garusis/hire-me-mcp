@@ -170,12 +170,21 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Parse a protobuf duration string (`"1.5s"`, `"30s"`) into milliseconds, or `undefined` if it isn't one. */
+/**
+ * Parse a protobuf duration string (`"1.5s"`, `"30s"`) into milliseconds, or
+ * `undefined` if it isn't one — including a numerically valid-looking
+ * duration whose seconds value is so large it overflows to a non-finite
+ * millisecond figure (second independent Codex review, issuecomment-
+ * 5608823305, finding 2's "overflow" requirement): never a trustworthy hint.
+ */
 function parseDurationMs(value: unknown): number | undefined {
   if (typeof value !== "string") return undefined;
   const match = /^(\d+(?:\.\d+)?)s$/.exec(value.trim());
   if (!match?.[1]) return undefined;
-  return Math.round(Number(match[1]) * 1_000);
+  const seconds = Number(match[1]);
+  if (!Number.isFinite(seconds)) return undefined;
+  const delayMs = Math.round(seconds * 1_000);
+  return Number.isFinite(delayMs) ? delayMs : undefined;
 }
 
 /**
@@ -209,16 +218,24 @@ function retryAfterFromHeaders(
 const RETRY_INFO_TYPE = "type.googleapis.com/google.rpc.RetryInfo";
 
 /**
- * Pull Google's `RetryInfo.retryDelay` out of a 429 body — the shape a real
- * Gemini rate-limit response carries:
+ * Pull EVERY `google.rpc.RetryInfo` detail's `retryDelay` out of a 429 body
+ * — the shape a real Gemini rate-limit response carries:
  * `{ error: { details: [{ "@type": ".../google.rpc.RetryInfo", retryDelay: "1.5s" }] } }`.
  * Only a detail whose `@type` is EXACTLY {@link RETRY_INFO_TYPE} may supply a
  * hint (#307 Codex review, finding 3) — an unrelated detail that happens to
- * carry a `retryDelay`-shaped field is not trustworthy evidence. Tolerant by
- * design otherwise: an unparseable or differently-shaped body yields
- * `undefined` (the caller falls back to backoff), never a throw.
+ * carry a `retryDelay`-shaped field is not trustworthy evidence.
+ *
+ * Second independent Codex review (issuecomment-5608823305), finding 2: a
+ * response may carry more than one `RetryInfo` detail (or the body's own
+ * `RetryInfo` may simply be malformed), and the caller must never silently
+ * pick one over another or drop a malformed one in favor of a valid
+ * sibling — the same "one bad entry taints the whole" treatment
+ * {@link classifyQuotaEvidence} already applies to `QuotaFailure` details.
+ * Returns every valid delay found, or `undefined` when the body carries NO
+ * `RetryInfo` detail at all, or when ANY `RetryInfo`-typed detail present
+ * fails to parse — never a partial list that quietly excludes the bad one.
  */
-function retryDelayFromBody(body: string | undefined): number | undefined {
+function retryDelaysFromBody(body: string | undefined): number[] | undefined {
   if (!body) return undefined;
   let parsed: unknown;
   try {
@@ -229,13 +246,15 @@ function retryDelayFromBody(body: string | undefined): number | undefined {
   const error = (parsed as { error?: { details?: unknown } } | null)?.error;
   const details = error?.details;
   if (!Array.isArray(details)) return undefined;
-  for (const detail of details) {
-    const record = detail as { "@type"?: unknown; retryDelay?: unknown } | null;
-    if (record?.["@type"] !== RETRY_INFO_TYPE) continue;
-    const delayMs = parseDurationMs(record.retryDelay);
-    if (delayMs !== undefined) return delayMs;
-  }
-  return undefined;
+  const retryInfoDetails = details.filter(
+    (detail) => (detail as { "@type"?: unknown } | null)?.["@type"] === RETRY_INFO_TYPE,
+  );
+  if (retryInfoDetails.length === 0) return undefined;
+  const delays = retryInfoDetails.map((detail) =>
+    parseDurationMs((detail as { retryDelay?: unknown }).retryDelay),
+  );
+  if (delays.some((delay) => delay === undefined)) return undefined;
+  return delays as number[];
 }
 
 /** Walk an error's `cause` chain (bounded) looking for the provider's own `APICallError`. */
@@ -265,10 +284,18 @@ export function apiErrorStatusCode(error: unknown): number | undefined {
 }
 
 /**
- * The provider's own "come back in N ms" hint for a rate-limit error: the
- * `retry-after` header first, then Gemini's `RetryInfo.retryDelay` in the
- * response body. `undefined` when the error carries no hint (or isn't an
- * API error at all) — callers fall back to bounded exponential backoff.
+ * The provider's own "come back in N ms" hint for a rate-limit error,
+ * resolved from EVERY relevant piece of evidence — the `retry-after`
+ * header AND every `RetryInfo` detail in the response body — never just the
+ * first one found (second independent Codex review, issuecomment-
+ * 5608823305, finding 2). When more than one source supplies a valid hint
+ * and they disagree, this returns the CONSERVATIVE maximum, never a shorter
+ * one: honoring the shortest of two conflicting hints risks retrying before
+ * the provider is actually willing to accept another request, whichever
+ * source said so. `undefined` when the error carries no hint at all (or
+ * isn't an API error), or when the only body evidence present is malformed
+ * (see {@link retryDelaysFromBody}) — callers must stop conservatively
+ * rather than inventing a fallback in either case.
  */
 export function parseRetryAfterMs(
   error: unknown,
@@ -276,10 +303,10 @@ export function parseRetryAfterMs(
 ): number | undefined {
   const apiError = findApiCallError(error);
   if (!apiError) return undefined;
-  return (
-    retryAfterFromHeaders(apiError.responseHeaders, now) ??
-    retryDelayFromBody(apiError.responseBody)
-  );
+  const headerMs = retryAfterFromHeaders(apiError.responseHeaders, now);
+  const bodyDelaysMs = retryDelaysFromBody(apiError.responseBody);
+  const candidates = [...(headerMs !== undefined ? [headerMs] : []), ...(bodyDelaysMs ?? [])];
+  return candidates.length > 0 ? Math.max(...candidates) : undefined;
 }
 
 function backoffMs(retryIndex: number): number {
@@ -298,15 +325,31 @@ function backoffMs(retryIndex: number): number {
  */
 export type QuotaClassification = "per-minute" | "daily" | "mixed" | "unknown" | "malformed";
 
-/** A single `QuotaFailure` detail's own `@type`, verbatim — the exact prefix real Gemini responses use. */
-const QUOTA_FAILURE_TYPE_MARKER = "QuotaFailure";
+/** The exact `@type` real Gemini `QuotaFailure` details use — anchored, never a substring match. */
+const QUOTA_FAILURE_TYPE = "type.googleapis.com/google.rpc.QuotaFailure";
 
-/** Pull one `QuotaFailure`-typed detail's `violations` array, or `undefined` if `detail` isn't a `QuotaFailure` at all (distinct from an empty array, which means "no violations named"). */
-function violationsFromQuotaFailureDetail(detail: unknown): unknown[] | undefined {
+/** Sentinel distinguishing "this detail IS an exact-type QuotaFailure, but its `violations` field doesn't parse" from "this detail isn't a QuotaFailure at all" (`undefined`) — see {@link quotaViolationsFromBody}. */
+const MALFORMED_QUOTA_FAILURE_DETAIL = Symbol("malformed-quota-failure-detail");
+
+/**
+ * Pull one `QuotaFailure`-typed detail's `violations` array. `undefined`
+ * when `detail`'s `@type` isn't EXACTLY {@link QUOTA_FAILURE_TYPE} — second
+ * independent Codex review (issuecomment-5608823305), finding 1's first
+ * repro: a `.includes()`-style substring match previously accepted an
+ * unrelated `@type` (e.g. `"...unrelatedQuotaFailure"`) that merely
+ * contained the marker, even when it named a real minute quotaId.
+ * {@link MALFORMED_QUOTA_FAILURE_DETAIL} when the `@type` DOES match exactly
+ * but `violations` isn't an array at all — finding 1's second repro: this
+ * used to fall back to `[]` and silently disappear rather than being
+ * treated as untrustworthy evidence. A genuinely empty `violations` array
+ * (the detail exists, names nothing) is returned as-is, distinct from both.
+ */
+function violationsFromQuotaFailureDetail(
+  detail: unknown,
+): unknown[] | typeof MALFORMED_QUOTA_FAILURE_DETAIL | undefined {
   const record = detail as { "@type"?: unknown; violations?: unknown } | null;
-  const type = record?.["@type"];
-  if (typeof type !== "string" || !type.includes(QUOTA_FAILURE_TYPE_MARKER)) return undefined;
-  return Array.isArray(record?.violations) ? record.violations : [];
+  if (record?.["@type"] !== QUOTA_FAILURE_TYPE) return undefined;
+  return Array.isArray(record.violations) ? record.violations : MALFORMED_QUOTA_FAILURE_DETAIL;
 }
 
 /**
@@ -316,10 +359,13 @@ function violationsFromQuotaFailureDetail(detail: unknown): unknown[] | undefine
  * detail and silently dropped every other `QuotaFailure` in the same
  * response, so a real response naming a minute violation in one detail and a
  * daily violation in a SEPARATE detail misclassified as `"per-minute"`).
- * `undefined` only when the body is missing/unparseable/malformed-shaped or
- * names NO `QuotaFailure` detail at all — a `QuotaFailure` detail with an
- * empty `violations` array still counts as "found", just with nothing to
- * classify.
+ * `undefined` when the body is missing/unparseable/malformed-shaped, names
+ * NO `QuotaFailure` detail at all, OR when ANY exact-type `QuotaFailure`
+ * detail present has a malformed `violations` field (second independent
+ * Codex review, finding 1: a malformed relevant detail must taint the WHOLE
+ * response rather than being dropped in favor of another, valid detail that
+ * does parse) — a `QuotaFailure` detail with a genuinely empty `violations`
+ * array still counts as "found", just with nothing to classify.
  */
 function quotaViolationsFromBody(body: string | undefined): unknown[] | undefined {
   if (!body) return undefined;
@@ -331,11 +377,14 @@ function quotaViolationsFromBody(body: string | undefined): unknown[] | undefine
   }
   const details = (parsed as { error?: { details?: unknown } } | null)?.error?.details;
   if (!Array.isArray(details)) return undefined;
-  const quotaFailureViolationLists = details
+  const results = details
     .map(violationsFromQuotaFailureDetail)
-    .filter((violations): violations is unknown[] => violations !== undefined);
-  if (quotaFailureViolationLists.length === 0) return undefined;
-  return quotaFailureViolationLists.flat();
+    .filter(
+      (result): result is unknown[] | typeof MALFORMED_QUOTA_FAILURE_DETAIL => result !== undefined,
+    );
+  if (results.some((result) => result === MALFORMED_QUOTA_FAILURE_DETAIL)) return undefined;
+  if (results.length === 0) return undefined;
+  return (results as unknown[][]).flat();
 }
 
 /**
@@ -530,13 +579,14 @@ export function createRequestRateLimiter(options: RateLimiterOptions = {}): Requ
   function admissionBase(
     requestId: number,
     admittedAtIso: string,
+    sendAtIso: string,
     waitMs: number,
     windowCount: number,
   ): Omit<RequestObservabilityRecord, "outcome" | "completedAt"> {
     return {
       requestId,
       admittedAt: admittedAtIso,
-      sendAt: admittedAtIso,
+      sendAt: sendAtIso,
       waitMs,
       windowCount,
       effectiveRpm: windowCount,
@@ -586,7 +636,17 @@ export function createRequestRateLimiter(options: RateLimiterOptions = {}): Requ
       const { admittedAt, windowCount } = await acquire();
       const waitMs = admittedAt - waitStart;
       const admittedAtIso = new Date(admittedAt).toISOString();
-      const base = admissionBase(requestId, admittedAtIso, waitMs, windowCount);
+      // Second independent Codex review (issuecomment-5608823305), finding
+      // 3: `sendAt` is its OWN `now()` read, taken right before `operation()`
+      // is actually invoked below — never a copy-by-assignment of
+      // `admittedAtIso` (which describes the moment a slot was GRANTED, a
+      // distinct, atomically-captured instant `acquire()`'s own doc comment
+      // explains). In production the two are ordinarily a fraction of a
+      // millisecond apart; this still reads a fresh timestamp rather than
+      // fabricating one by reuse, so a future change that adds real work
+      // between admission and send is reflected automatically.
+      const sendAtIso = new Date(now()).toISOString();
+      const base = admissionBase(requestId, admittedAtIso, sendAtIso, waitMs, windowCount);
 
       try {
         const result = await operation();

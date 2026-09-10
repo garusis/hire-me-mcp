@@ -66,6 +66,23 @@ describe("resolveRunnerEnvConfig", () => {
     expect(resolveRunnerEnvConfig({}).observabilityPath).toBe("eval-observability.json");
   });
 
+  /**
+   * Second independent Codex review (issuecomment-5608823305), finding 3's
+   * tail: the test above claimed "gitignored" but only ever asserted the
+   * filename string — the root `.gitignore` never actually listed it, so
+   * `git status` would show `packages/agent/eval-observability.json` as an
+   * untracked file after every real run, unlike `eval-report.json`
+   * (`.gitignore` line "packages/agent/eval-report.json"). This proves the
+   * claim directly against the real file instead.
+   */
+  it("is actually listed in the repo's root .gitignore — not just claimed by a test title", () => {
+    const gitignore = readFileSync(
+      fileURLToPath(new URL("../../../../.gitignore", import.meta.url)),
+      "utf8",
+    );
+    expect(gitignore).toMatch(/^packages\/agent\/eval-observability\.json$/m);
+  });
+
   it("takes EVAL_RPM_LIMIT's default from the single documented quota source, not a literal (#282)", () => {
     // The limiter, this config and the README quota table all read the same
     // constant, so they cannot drift apart.
@@ -216,6 +233,51 @@ describe("createObservabilityCollector (#307 options 1+2 / #307 Codex review, fi
       ["case-a", 2],
       ["case-b", 1],
     ]);
+  });
+
+  /**
+   * Second independent Codex review (issuecomment-5608823305), finding 3:
+   * the previous `caseRequestSequence` was a completion-callback count —
+   * incremented inside `onRequest` itself, after `operation()` already
+   * settled — never explicitly tied to `./retry.ts`'s own `requestIndex`/
+   * `attempt` tracking. `beginRequest` lets `main()` stamp the EXACT
+   * identity `./cli.ts`'s `createCaseAttemptTracker.beginAttempt` already
+   * computed for this same attempt, captured BEFORE `operation()` runs, so
+   * the persisted record is explicitly joinable to the retry trace rather
+   * than merely happening to march in lockstep with it.
+   */
+  it("stamps caseRequestSequence/attempt from the explicit beginRequest identity, not the auto-incrementing fallback, when beginRequest was called", () => {
+    const collector = createObservabilityCollector();
+
+    collector.startCase("case-a");
+    collector.beginRequest(1, 1);
+    collector.onRequest(record({ requestId: 0 }));
+    collector.beginRequest(1, 2); // same logical request, retried once
+    collector.onRequest(record({ requestId: 1, outcome: "error", statusCode: 429 }));
+    collector.beginRequest(2, 1); // next logical request
+    collector.onRequest(record({ requestId: 2 }));
+
+    const log = collector.log(observabilityMeta, () => "2026-01-01T00:00:02.000Z");
+    expect(log.requests.map((r) => [r.caseRequestSequence, r.attempt])).toEqual([
+      [1, 1],
+      [1, 2],
+      [2, 1],
+    ]);
+  });
+
+  it("consumes each beginRequest identity exactly once — a request admitted without its own beginRequest call falls back to the auto-incrementing sequence and carries no attempt field", () => {
+    const collector = createObservabilityCollector();
+
+    collector.startCase("case-a");
+    collector.beginRequest(5, 1);
+    collector.onRequest(record({ requestId: 0 }));
+    collector.onRequest(record({ requestId: 1 })); // no matching beginRequest call
+
+    const log = collector.log(observabilityMeta, () => "2026-01-01T00:00:02.000Z");
+    expect(log.requests[0]?.caseRequestSequence).toBe(5);
+    expect(log.requests[0]?.attempt).toBe(1);
+    expect(log.requests[1]?.caseRequestSequence).toBe(2);
+    expect(log.requests[1]).not.toHaveProperty("attempt");
   });
 });
 
@@ -527,7 +589,10 @@ describe("describeCaseFailure", () => {
  * `createBudgetGuard` fed by every attempt's own known usage.
  */
 describe("createEvalRetryPolicy", () => {
-  function makeTracker(): CaseAttemptTracker & { onAttempt: (r: RetryAttemptRecord) => void } {
+  function makeTracker(): CaseAttemptTracker & {
+    onAttempt: (r: RetryAttemptRecord) => void;
+    beginAttempt: (attempt: number) => number;
+  } {
     return createCaseAttemptTracker();
   }
 
@@ -617,6 +682,58 @@ describe("createEvalRetryPolicy", () => {
     await expect(policy.run(caseTwoOperation)).rejects.toThrow(BudgetExceededError);
     expect(caseTwoOperation).not.toHaveBeenCalled();
   });
+
+  /**
+   * Second independent Codex review (issuecomment-5608823305), finding 3:
+   * `onBeforeAttempt` fires with the tracker's own `requestIndex`/`attempt`
+   * BEFORE `operation` runs — `main()` wires this to the observability
+   * collector's `beginRequest` so the limiter's record for this exact
+   * attempt is explicitly, not coincidentally, correlated to the same
+   * identity `./retry.ts`'s attempt trace carries.
+   */
+  it("calls onBeforeAttempt with the requestIndex/attempt about to run, before operation, for a fresh request and a second one after it", async () => {
+    const tracker = makeTracker();
+    const seen: Array<[number, number]> = [];
+    const policy = createEvalRetryPolicy({
+      modelId: "gemini-3.6-flash",
+      maxTotalTokens: 1_000,
+      maxCostUsd: 1,
+      attemptTracker: tracker,
+      onBeforeAttempt: (requestIndex, attempt) => seen.push([requestIndex, attempt]),
+    });
+
+    await expect(policy.run(() => Promise.resolve("ok"))).resolves.toBe("ok");
+    tracker.reset();
+    await expect(policy.run(() => Promise.resolve("ok"))).resolves.toBe("ok");
+
+    expect(seen).toEqual([
+      [1, 1],
+      [1, 1],
+    ]);
+  });
+
+  it("never calls onBeforeAttempt once the shared budget already blocks the request", async () => {
+    const tracker = makeTracker();
+    const onBeforeAttempt = vi.fn();
+    const policy = createEvalRetryPolicy({
+      modelId: "gemini-3.6-flash",
+      maxTotalTokens: 100,
+      maxCostUsd: 100,
+      attemptTracker: tracker,
+      onBeforeAttempt,
+    });
+    const usage = { inputTokens: 60, outputTokens: 50, totalTokens: 110 };
+    await policy.run(
+      () => Promise.resolve({ text: "step 1" }),
+      () => usage,
+    );
+    onBeforeAttempt.mockClear();
+
+    await expect(policy.run(() => Promise.resolve({ text: "step 2" }))).rejects.toThrow(
+      BudgetExceededError,
+    );
+    expect(onBeforeAttempt).not.toHaveBeenCalled();
+  });
 });
 
 /**
@@ -652,6 +769,26 @@ describe("main() wiring (source-inspection, #307 2nd correction finding 2)", () 
   it("never claims a 429 stops immediately, unconditionally — the actual policy retries an unambiguous per-minute quota with a trustworthy hint (#307 Codex review, finding 4)", () => {
     const cliSource = readFileSync(fileURLToPath(new URL("./cli.ts", import.meta.url)), "utf8");
     expect(cliSource).not.toMatch(/429 stops immediately/);
+  });
+
+  /**
+   * Second independent Codex review (issuecomment-5608823305), finding 3's
+   * tail: the standalone `eval-observability.json` sidecar is a DUPLICATE
+   * of the same data already embedded in `report.observability` below it.
+   * Both writes previously lived in the SAME `finally` block with no
+   * try/catch — a sidecar write failure (disk full, permission error) would
+   * throw out of `finally`, skipping every statement after it, including
+   * the durable `eval-report.json` write. The sidecar write must be
+   * fault-tolerant so it can never block the report it duplicates.
+   */
+  it("wraps the observability sidecar write in a try/catch that cannot prevent the report write below it from running", () => {
+    const cliSource = readFileSync(fileURLToPath(new URL("./cli.ts", import.meta.url)), "utf8");
+    const sidecarWriteIndex = cliSource.indexOf("envConfig.observabilityPath,");
+    const reportWriteIndex = cliSource.indexOf("envConfig.reportPath,");
+    expect(sidecarWriteIndex).toBeGreaterThan(-1);
+    expect(reportWriteIndex).toBeGreaterThan(sidecarWriteIndex);
+    const between = cliSource.slice(sidecarWriteIndex, reportWriteIndex);
+    expect(between).toMatch(/catch/);
   });
 });
 
@@ -698,6 +835,34 @@ describe("createCaseAttemptTracker", () => {
 
     tracker.onAttempt({ attempt: 1, outcome: "success", durationMs: 5 });
     expect(tracker.attempts()[0]?.requestIndex).toBe(1);
+  });
+
+  /**
+   * Second independent Codex review (issuecomment-5608823305), finding 3:
+   * `beginAttempt` computes the SAME requestIndex `onAttempt` would derive,
+   * but BEFORE `operation()` runs — called from `./retry.ts`'s
+   * `beforeAttempt(attempt)` hook — so a caller (`./cli.ts`'s `main()`) can
+   * hand that identity to the limiter's own observability collector ahead
+   * of the real provider send, rather than only being able to compute it
+   * after the fact from `onAttempt`.
+   */
+  it("beginAttempt returns the requestIndex an attempt WILL get, matching what onAttempt records for it afterward", () => {
+    const tracker = createCaseAttemptTracker();
+
+    expect(tracker.beginAttempt(1)).toBe(1); // request 1, attempt 1
+    tracker.onAttempt({ attempt: 1, outcome: "retrying", durationMs: 5 });
+    expect(tracker.beginAttempt(2)).toBe(1); // request 1, attempt 2 (retry)
+    tracker.onAttempt({ attempt: 2, outcome: "success", durationMs: 5 });
+    expect(tracker.beginAttempt(1)).toBe(2); // request 2, attempt 1
+    tracker.onAttempt({ attempt: 1, outcome: "success", durationMs: 5 });
+
+    expect(tracker.attempts().map((a) => a.requestIndex)).toEqual([1, 1, 2]);
+  });
+
+  it("beginAttempt's requestIndex survives even when onAttempt is never called for that attempt (e.g. a deadline stop before the outer loop's own onAttempt fires)", () => {
+    const tracker = createCaseAttemptTracker();
+    expect(tracker.beginAttempt(1)).toBe(1);
+    expect(tracker.beginAttempt(1)).toBe(2); // a fresh request 2, no request 1 onAttempt ever recorded
   });
 });
 

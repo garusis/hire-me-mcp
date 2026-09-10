@@ -80,6 +80,22 @@ const GEMINI_429_BODY = JSON.stringify({
   },
 });
 
+/** Same shape as {@link GEMINI_429_BODY}, but the `RetryInfo` names a much longer delay (47s) than a conflicting header would — used to prove the conservative-max resolution (second independent Codex review, finding 2). */
+const GEMINI_429_BODY_47S = JSON.stringify({
+  error: {
+    code: 429,
+    status: "RESOURCE_EXHAUSTED",
+    message: "You exceeded your current quota",
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" }],
+      },
+      { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "47s" },
+    ],
+  },
+});
+
 /** A real DAILY-cap 429 body (#141's documented real quotaId) — never retried by policy. */
 const DAILY_QUOTA_BODY = JSON.stringify({
   error: {
@@ -182,6 +198,97 @@ const MALFORMED_VIOLATION_TYPE_BODY = JSON.stringify({
         "@type": "type.googleapis.com/google.rpc.QuotaFailure",
         violations: [{ quotaId: 12345, quotaMetric: null }],
       },
+    ],
+  },
+});
+
+/**
+ * A detail whose `@type` merely CONTAINS "QuotaFailure" as a substring of an
+ * unrelated type name, naming a real minute quotaId — second independent
+ * Codex review (issuecomment-5608823305), finding 1's first offline
+ * reproduction: `violationsFromQuotaFailureDetail`'s `.includes()` check
+ * accepted this as a real `QuotaFailure` detail. Only the EXACT type
+ * `type.googleapis.com/google.rpc.QuotaFailure` may ever supply evidence —
+ * this detail must be ignored entirely (no `QuotaFailure` detail present at
+ * all), classifying as `"malformed"`, never `"per-minute"`.
+ */
+const UNRELATED_TYPE_LOOKALIKE_QUOTA_BODY = JSON.stringify({
+  error: {
+    code: 429,
+    status: "RESOURCE_EXHAUSTED",
+    details: [
+      {
+        "@type": "type.googleapis.com/some.unrelatedQuotaFailure",
+        violations: [{ quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" }],
+      },
+    ],
+  },
+});
+
+/**
+ * A real minute `QuotaFailure` detail alongside a SECOND, exact-type
+ * `QuotaFailure` detail whose `violations` field is not an array at all
+ * (`"bad"`, a string) — second independent Codex review
+ * (issuecomment-5608823305), finding 1's second offline reproduction:
+ * `violationsFromQuotaFailureDetail` fell back to `[]` for the malformed
+ * detail, so its "evidence" silently disappeared and the response
+ * classified as `"per-minute"` off the other, valid detail alone. A
+ * malformed relevant detail must taint the WHOLE response as `"malformed"`,
+ * never be dropped in favor of the detail that does parse.
+ */
+const MINUTE_PLUS_MALFORMED_VIOLATIONS_BODY = JSON.stringify({
+  error: {
+    code: 429,
+    status: "RESOURCE_EXHAUSTED",
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" }],
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: "bad",
+      },
+    ],
+  },
+});
+
+/**
+ * Two SEPARATE valid `RetryInfo` details in the same response, naming
+ * different delays — second independent Codex review
+ * (issuecomment-5608823305), finding 2's "twoRetryInfo" repro.
+ */
+const TWO_RETRY_INFO_BODY = JSON.stringify({
+  error: {
+    details: [
+      { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "3s" },
+      { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "47s" },
+    ],
+  },
+});
+
+/** A `RetryInfo` detail whose `retryDelay` doesn't parse as a duration at all. */
+const MALFORMED_RETRY_INFO_BODY = JSON.stringify({
+  error: {
+    details: [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "soon" }],
+  },
+});
+
+/** A valid `RetryInfo` detail alongside a malformed one — the malformed entry must taint the whole body, not just be skipped in favor of the valid one. */
+const VALID_PLUS_MALFORMED_RETRY_INFO_BODY = JSON.stringify({
+  error: {
+    details: [
+      { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "5s" },
+      { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "soon" },
+    ],
+  },
+});
+
+/** A `retryDelay` whose numeric seconds overflow to a non-finite millisecond value — never a trustworthy hint. */
+const OVERFLOW_RETRY_INFO_BODY = JSON.stringify({
+  error: {
+    details: [
+      { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: `${"9".repeat(320)}s` },
     ],
   },
 });
@@ -535,6 +642,45 @@ describe("parseRetryAfterMs", () => {
       parseRetryAfterMs(rateLimitError({ responseHeaders: { "retry-after": "not-a-number" } })),
     ).toBeUndefined();
   });
+
+  it("never picks a header hint shorter than a conflicting, equally valid body RetryInfo hint — takes the conservative max (second independent Codex review, finding 2)", () => {
+    // The exact repro named in the review: a valid minute response with
+    // `Retry-After: 1` and an exact `RetryInfo retryDelay: 47s` in the same
+    // body previously resolved to 1000ms (the header, via `??`), violating
+    // the "never earlier than the provider actually asked" contract. The
+    // correct resolution inspects every relevant piece of evidence and never
+    // returns less than the largest trustworthy hint found.
+    expect(
+      parseRetryAfterMs(
+        rateLimitError({
+          responseHeaders: { "retry-after": "1" },
+          responseBody: GEMINI_429_BODY_47S,
+        }),
+      ),
+    ).toBe(47_000);
+  });
+
+  it("resolves two separate, differing RetryInfo details to their conservative max, never the shorter one", () => {
+    expect(parseRetryAfterMs(rateLimitError({ responseBody: TWO_RETRY_INFO_BODY }))).toBe(47_000);
+  });
+
+  it("treats a malformed RetryInfo detail as tainting ALL body evidence, not just skipping that one entry", () => {
+    expect(
+      parseRetryAfterMs(rateLimitError({ responseBody: MALFORMED_RETRY_INFO_BODY })),
+    ).toBeUndefined();
+    // A valid RetryInfo detail alongside a malformed one in the SAME body:
+    // the malformed entry makes the whole body's evidence untrustworthy, so
+    // this must not silently resolve to the one that does parse (5s).
+    expect(
+      parseRetryAfterMs(rateLimitError({ responseBody: VALID_PLUS_MALFORMED_RETRY_INFO_BODY })),
+    ).toBeUndefined();
+  });
+
+  it("rejects a retryDelay whose numeric value overflows to a non-finite duration", () => {
+    expect(
+      parseRetryAfterMs(rateLimitError({ responseBody: OVERFLOW_RETRY_INFO_BODY })),
+    ).toBeUndefined();
+  });
 });
 
 describe("classifyQuotaEvidence (#307 options 1+2)", () => {
@@ -593,6 +739,20 @@ describe("classifyQuotaEvidence (#307 options 1+2)", () => {
       classifyQuotaEvidence(rateLimitError({ responseBody: MALFORMED_VIOLATION_TYPE_BODY })),
     ).toBe("malformed");
   });
+
+  it("requires the EXACT QuotaFailure @type, never a substring/lookalike match, even when the violation names a real minute quotaId (second independent Codex review, finding 1)", () => {
+    expect(
+      classifyQuotaEvidence(rateLimitError({ responseBody: UNRELATED_TYPE_LOOKALIKE_QUOTA_BODY })),
+    ).toBe("malformed");
+  });
+
+  it("treats a malformed relevant QuotaFailure detail (violations not an array) as tainting the WHOLE response, never silently dropped in favor of another valid detail (second independent Codex review, finding 1)", () => {
+    expect(
+      classifyQuotaEvidence(
+        rateLimitError({ responseBody: MINUTE_PLUS_MALFORMED_VIOLATIONS_BODY }),
+      ),
+    ).toBe("malformed");
+  });
 });
 
 describe("createRequestRateLimiter observability (onRequest, #307 options 1+2)", () => {
@@ -623,6 +783,27 @@ describe("createRequestRateLimiter observability (onRequest, #307 options 1+2)",
     expect(record.admittedAt).toBe(new Date(1_000_000).toISOString());
     expect(record.sendAt).toBe(record.admittedAt);
     expect(record.completedAt).toBe(new Date(1_000_050).toISOString());
+  });
+
+  it("captures sendAt as its OWN now() read taken right before operation() starts — never a copy of the atomic admittedAt slot-grant timestamp — so real wall-clock movement between admission and send is reflected (second independent Codex review, finding 3)", async () => {
+    const clock = createFakeClock();
+    let calls = 0;
+    // Simulate real Date.now() ticking a few ms of genuine synchronous work
+    // between the instant a window slot is granted (inside `takeSlot`) and
+    // the instant `run()` reads "now" again to timestamp the actual
+    // provider send — something a single shared timestamp can never show.
+    const now = () => {
+      calls += 1;
+      if (calls === 3) clock.advance(7);
+      return clock.now();
+    };
+    const onRequest = vi.fn();
+    const limiter = createRequestRateLimiter({ rpmLimit: 10, now, sleep: clock.sleep, onRequest });
+
+    await limiter.run(async () => "ok");
+
+    const record = onRequest.mock.calls[0]?.[0];
+    expect(Date.parse(record.sendAt) - Date.parse(record.admittedAt)).toBe(7);
   });
 
   it("reports a positive waitMs, a distinct requestId and windowCount when a second request has to wait for a slot", async () => {

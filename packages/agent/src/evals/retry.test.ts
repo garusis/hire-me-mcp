@@ -99,6 +99,32 @@ const UNKNOWN_QUOTA_BODY = JSON.stringify({
   },
 });
 
+/**
+ * A real minute quotaId named under a detail whose `@type` merely CONTAINS
+ * "QuotaFailure" as a substring of an unrelated type name, plus a SECOND,
+ * exact-type `QuotaFailure` detail whose `violations` field isn't an array
+ * (`"bad"`) — second independent Codex review (issuecomment-5608823305),
+ * finding 1's full-policy repro: neither the lookalike `@type` nor the
+ * malformed sibling detail may let this resolve to `"per-minute"`; the
+ * whole response must classify as `"malformed"` and stop, all the way
+ * through `createRetryPolicy`, not only `classifyQuotaEvidence` in
+ * isolation.
+ */
+const LOOKALIKE_PLUS_MALFORMED_QUOTA_BODY = JSON.stringify({
+  error: {
+    details: [
+      {
+        "@type": "type.googleapis.com/some.unrelatedQuotaFailure",
+        violations: [{ quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" }],
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: "bad",
+      },
+    ],
+  },
+});
+
 function timeoutError(message = "The operation timed out"): Error {
   const error = new Error(message);
   error.name = "TimeoutError";
@@ -328,6 +354,28 @@ describe("createRetryPolicy", () => {
     expect(operation).toHaveBeenCalledTimes(1);
     expect(onAttempt).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "stopped-rate-limited", quotaClassification: "unknown" }),
+    );
+  });
+
+  it("stops immediately, through the FULL policy (not only the classifier), on a 429 whose quota evidence is a lookalike @type plus a malformed sibling detail (second independent Codex review, finding 1)", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
+    const error = apiError({
+      statusCode: 429,
+      responseHeaders: { "retry-after": "2" },
+      responseBody: LOOKALIKE_PLUS_MALFORMED_QUOTA_BODY,
+    });
+    const operation = vi.fn().mockRejectedValue(error);
+
+    await expect(policy.run(operation)).rejects.toBe(error);
+
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "stopped-rate-limited",
+        quotaClassification: "malformed",
+      }),
     );
   });
 
@@ -762,6 +810,32 @@ describe("createRetryPolicy", () => {
     const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep });
 
     await expect(policy.run(vi.fn().mockResolvedValue("ok"))).resolves.toBe("ok");
+  });
+
+  /**
+   * Second independent Codex review (issuecomment-5608823305), finding 3:
+   * `beforeAttempt` must receive the attempt number it's about to gate —
+   * captured BEFORE `operation()` runs — so a caller (`./cli.ts`) can stamp
+   * a request/attempt identity ahead of the actual provider send, letting
+   * that identity join deterministically against the limiter's own
+   * admission telemetry recorded once the request goes through.
+   */
+  it("passes the current attempt number to beforeAttempt, before every attempt including retries", async () => {
+    const clock = createFakeClock();
+    const seenAttempts: number[] = [];
+    const policy = createRetryPolicy({
+      now: clock.now,
+      sleep: clock.sleep,
+      beforeAttempt: (attempt) => seenAttempts.push(attempt),
+    });
+    const operation = vi
+      .fn()
+      .mockRejectedValueOnce(apiError({ statusCode: 503 }))
+      .mockResolvedValue("ok");
+
+    await policy.run(operation);
+
+    expect(seenAttempts).toEqual([1, 2]);
   });
 });
 
