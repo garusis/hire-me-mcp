@@ -254,6 +254,58 @@ const MINUTE_PLUS_MALFORMED_VIOLATIONS_BODY = JSON.stringify({
 });
 
 /**
+ * A real minute `quotaId` alongside a `quotaMetric` field that isn't a
+ * string at all — third independent Codex review (issuecomment-5620134895),
+ * finding 1's first offline reproduction: `categorizeViolation` ignored
+ * `quotaMetric` entirely, so this classified as `"per-minute"` even though
+ * the supplied metric is untrustworthy evidence (wrong type) rather than
+ * simply absent.
+ */
+const MINUTE_QUOTA_ID_NUMERIC_METRIC_BODY = JSON.stringify({
+  error: {
+    code: 429,
+    status: "RESOURCE_EXHAUSTED",
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [
+          { quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier", quotaMetric: 123 },
+        ],
+      },
+    ],
+  },
+});
+
+/**
+ * A real minute `quotaId` alongside a `quotaMetric` naming the TOKEN-count
+ * metric (`generate_content_free_tier_input_token_count`) — a different
+ * quota family entirely from the real request-count metric
+ * (`generate_content_free_tier_requests`, `packages/agent/README.md`).
+ * Third independent Codex review (issuecomment-5620134895), finding 1's
+ * second offline reproduction: this is internally inconsistent evidence (a
+ * request-quota id paired with a token-quota metric) that must not silently
+ * classify as `"per-minute"`.
+ */
+const MINUTE_QUOTA_ID_TOKEN_METRIC_BODY = JSON.stringify({
+  error: {
+    code: 429,
+    status: "RESOURCE_EXHAUSTED",
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [
+          {
+            quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier",
+            quotaMetric:
+              "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count",
+          },
+        ],
+      },
+    ],
+  },
+});
+
+/**
  * Two SEPARATE valid `RetryInfo` details in the same response, naming
  * different delays — second independent Codex review
  * (issuecomment-5608823305), finding 2's "twoRetryInfo" repro.
@@ -681,6 +733,56 @@ describe("parseRetryAfterMs", () => {
       parseRetryAfterMs(rateLimitError({ responseBody: OVERFLOW_RETRY_INFO_BODY })),
     ).toBeUndefined();
   });
+
+  it("rejects a retry-after header whose numeric seconds value overflows to a non-finite millisecond duration on multiplication (third independent Codex review, finding 2)", () => {
+    // `Number("1e307")` is itself finite, but `1e307 * 1_000` overflows to
+    // `Infinity` — the header-side counterpart to `OVERFLOW_RETRY_INFO_BODY`
+    // above; `retryAfterFromHeaders` must validate the MULTIPLIED result,
+    // not just the parsed seconds value.
+    expect(
+      parseRetryAfterMs(rateLimitError({ responseHeaders: { "retry-after": "1e307" } })),
+    ).toBeUndefined();
+  });
+
+  it("distinguishes MISSING from INVALID evidence: a malformed body RetryInfo must NOT be rescued by a valid sibling retry-after header (third independent Codex review, finding 2)", () => {
+    // The exact first repro named in the review: a valid minute response
+    // with an exact `RetryInfo retryDelay: "bad"` (malformed) plus a valid
+    // `Retry-After: 1` header previously resolved to 1000ms — the malformed
+    // body detail was collapsed to `undefined` and silently excluded from
+    // the candidate list, letting the header alone "rescue" untrustworthy
+    // evidence. A malformed detail must taint the WHOLE result, exactly like
+    // it already taints body-only evidence when no header is present.
+    const body = JSON.stringify({
+      error: {
+        details: [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "bad" }],
+      },
+    });
+    expect(
+      parseRetryAfterMs(
+        rateLimitError({ responseHeaders: { "retry-after": "1" }, responseBody: body }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("distinguishes MISSING from INVALID evidence: a malformed retry-after header must NOT be rescued by a valid sibling RetryInfo body detail (third independent Codex review, finding 2)", () => {
+    // The exact second repro named in the review: a malformed
+    // `Retry-After: bad` header plus a valid, exact `RetryInfo
+    // retryDelay: "47s"` body detail previously resolved to 47000ms — the
+    // malformed header collapsed to `undefined` and was silently excluded,
+    // exactly like the body-side case above but on the other source.
+    expect(
+      parseRetryAfterMs(
+        rateLimitError({
+          responseHeaders: { "retry-after": "bad" },
+          responseBody: GEMINI_429_BODY_47S,
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("still ignores a genuinely ABSENT header and honors a valid body RetryInfo hint — missing evidence is not the same as invalid evidence", () => {
+    expect(parseRetryAfterMs(rateLimitError({ responseBody: GEMINI_429_BODY_47S }))).toBe(47_000);
+  });
 });
 
 describe("classifyQuotaEvidence (#307 options 1+2)", () => {
@@ -752,6 +854,38 @@ describe("classifyQuotaEvidence (#307 options 1+2)", () => {
         rateLimitError({ responseBody: MINUTE_PLUS_MALFORMED_VIOLATIONS_BODY }),
       ),
     ).toBe("malformed");
+  });
+
+  it("classifies a real minute quotaId paired with a non-string quotaMetric as malformed, never per-minute (third independent Codex review, finding 1)", () => {
+    expect(
+      classifyQuotaEvidence(rateLimitError({ responseBody: MINUTE_QUOTA_ID_NUMERIC_METRIC_BODY })),
+    ).toBe("malformed");
+  });
+
+  it("classifies a real minute quotaId paired with the TOKEN-quota metric string as malformed — inconsistent evidence, never per-minute (third independent Codex review, finding 1)", () => {
+    expect(
+      classifyQuotaEvidence(rateLimitError({ responseBody: MINUTE_QUOTA_ID_TOKEN_METRIC_BODY })),
+    ).toBe("malformed");
+  });
+
+  it("still classifies as per-minute when quotaMetric is present and matches the real request-count metric", () => {
+    const body = JSON.stringify({
+      error: {
+        details: [
+          {
+            "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+            violations: [
+              {
+                quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier",
+                quotaMetric:
+                  "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(classifyQuotaEvidence(rateLimitError({ responseBody: body }))).toBe("per-minute");
   });
 });
 

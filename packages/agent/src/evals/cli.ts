@@ -874,6 +874,62 @@ export function printReportSummary(report: EvalReport, io: ReportSummaryIo): boo
   return summary.passed;
 }
 
+/** The console-like methods {@link persistEvalArtifacts} writes through — the real `console.log`/`console.error` from `main()`, or a `vi.fn()` spy pair from `cli.test.ts`. */
+export interface PersistEvalArtifactsIo {
+  log: (message: string) => void;
+  error: (message: string) => void;
+}
+
+/**
+ * Write the observability sidecar (best-effort, non-fatal on failure) and,
+ * when `report` is supplied, the durable report artifact — extracted out of
+ * `main()` (third independent Codex review, issuecomment-5620134895,
+ * finding 3) so the "a sidecar write failure must never prevent the durable
+ * report from persisting" contract (second independent Codex review,
+ * issuecomment-5608823305, finding 3's tail) is unit-testable through the
+ * SAME wiring `main()` actually calls, rather than a reimplementation of
+ * this logic hand-simulated inside a test. `report` is omitted when
+ * `runEvalSuite` itself threw before producing one — the sidecar is still
+ * written (the limiter's own observability data is never lost just because
+ * the run failed), but there is no report to persist. The `writeFile`/`io`
+ * dependency-injection seam matches every other testable piece in this
+ * module (`createRunCase`, `printReportSummary`, ...).
+ */
+export async function persistEvalArtifacts(params: {
+  report?: EvalReport;
+  observabilityLog: ObservabilityLog;
+  reportPath: string;
+  observabilityPath: string;
+  writeFile: (path: string, data: string) => Promise<void>;
+  io: PersistEvalArtifactsIo;
+}): Promise<void> {
+  // Second independent Codex review (issuecomment-5608823305), finding 3's
+  // tail: this standalone sidecar is a DUPLICATE of the exact same data
+  // embedded in `report.observability` — a failure writing it (disk full,
+  // permission error) must never prevent the DURABLE report artifact from
+  // being written. Caught here so a throw can never propagate past this
+  // function and skip the report write below.
+  try {
+    await params.writeFile(
+      params.observabilityPath,
+      `${JSON.stringify(params.observabilityLog, null, 2)}\n`,
+    );
+    params.io.log(
+      `Observability log written to ${params.observabilityPath} ` +
+        `(${params.observabilityLog.requestCount} request(s)).`,
+    );
+  } catch (error) {
+    params.io.error(
+      `Failed to write observability sidecar ${params.observabilityPath} ` +
+        `(non-fatal — the same data is still embedded in ${params.reportPath}): ` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (params.report) {
+    await params.writeFile(params.reportPath, `${JSON.stringify(params.report, null, 2)}\n`);
+  }
+}
+
 async function main(): Promise<void> {
   const envConfig = resolveRunnerEnvConfig();
   const modelId = resolveChatModelConfig().modelId;
@@ -949,7 +1005,7 @@ async function main(): Promise<void> {
   });
   const agent = getInterviewAgent({ model });
 
-  let report: EvalReport;
+  let report: EvalReport | undefined;
   let observabilityLog: ObservabilityLog;
   try {
     report = await runEvalSuite(
@@ -973,45 +1029,31 @@ async function main(): Promise<void> {
         }),
       },
     );
+    // #307 Codex review, finding 4: embed the SAME observability log into
+    // the durable report artifact. Only reachable once `runEvalSuite`
+    // returns without throwing — see `persistEvalArtifacts` below for what
+    // happens when it doesn't.
+    report = { ...report, observability: observability.log(observabilityMeta) };
   } finally {
     // #307 options 1+2: written regardless of how the run ends (success,
     // budget stop, or a terminal error propagating out of runEvalSuite) —
     // the observability log is about what the limiter actually did, not
-    // about the run's own outcome.
+    // about the run's own outcome. `report` stays `undefined` here when
+    // `runEvalSuite` threw before this `finally` reassigned it above, so
+    // `persistEvalArtifacts` writes only the sidecar in that case — third
+    // independent Codex review (issuecomment-5620134895), finding 3: this is
+    // the ACTUAL wiring `cli.test.ts`'s composed suite exercises, not a
+    // reimplementation of it.
     observabilityLog = observability.log(observabilityMeta);
-    // Second independent Codex review (issuecomment-5608823305), finding
-    // 3's tail: this standalone sidecar is a DUPLICATE of the exact same
-    // data embedded in `report.observability` below — a failure writing it
-    // (disk full, permission error) must never prevent the DURABLE report
-    // artifact from being written. Left uncaught, a throw here would
-    // propagate out of this `finally` block and skip every statement after
-    // it, including the report write below.
-    try {
-      await writeFile(
-        envConfig.observabilityPath,
-        `${JSON.stringify(observabilityLog, null, 2)}\n`,
-        "utf8",
-      );
-      console.log(
-        `Observability log written to ${envConfig.observabilityPath} ` +
-          `(${observabilityLog.requestCount} request(s)).`,
-      );
-    } catch (error) {
-      console.error(
-        `Failed to write observability sidecar ${envConfig.observabilityPath} ` +
-          `(non-fatal — the same data is still embedded in ${envConfig.reportPath}): ` +
-          `${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    await persistEvalArtifacts({
+      report,
+      observabilityLog,
+      reportPath: envConfig.reportPath,
+      observabilityPath: envConfig.observabilityPath,
+      writeFile: (path, data) => writeFile(path, data, "utf8"),
+      io: { log: console.log, error: console.error },
+    });
   }
-
-  // #307 Codex review, finding 4: embed the SAME observability log into the
-  // durable report artifact — `report` only exists once `runEvalSuite`
-  // returns without throwing, so this merge happens here rather than inside
-  // the `finally` above.
-  report = { ...report, observability: observabilityLog };
-
-  await writeFile(envConfig.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 
   console.log(`Report written to ${envConfig.reportPath}`);
   console.log(

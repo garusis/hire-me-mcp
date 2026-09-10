@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { APICallError } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
+import { getInterviewAgent } from "../index.js";
 import { BudgetExceededError } from "./budget.js";
 import {
   buildObservabilityLog,
@@ -15,19 +17,22 @@ import {
   extractToolCallsFromToolResults,
   extractToolNamesFromToolResults,
   filterCasesByIds,
+  persistEvalArtifacts,
   printReportSummary,
   resolveRunnerEnvConfig,
   summarizeReportForCli,
 } from "./cli.js";
 import type { EvalCase } from "./dataset/schema.js";
 import {
+  createRateLimitedModel,
+  createRequestRateLimiter,
   DEFAULT_EVAL_RPM_LIMIT,
   FREE_TIER_RPM_CEILING,
   type RequestObservabilityRecord,
 } from "./rate-limit.js";
-import { buildReport, type CaseReport } from "./report.js";
-import type { RetryAttemptRecord } from "./retry.js";
-import { EvalCaseError } from "./runner.js";
+import { buildReport, type CaseReport, type ObservabilityLogMeta } from "./report.js";
+import { createRetryingModel, type RetryAttemptRecord } from "./retry.js";
+import { EvalCaseError, runEvalSuite } from "./runner.js";
 
 describe("resolveRunnerEnvConfig", () => {
   it("falls back to conservative defaults when env is empty", () => {
@@ -751,18 +756,19 @@ describe("main() wiring (source-inspection, #307 2nd correction finding 2)", () 
     expect(cliSource).toMatch(/const retryPolicy = createEvalRetryPolicy\(/);
   });
 
-  it("wires the limiter's onRequest into an observability collector and persists its log (#307 options 1+2)", () => {
+  it("wires the limiter's onRequest into an observability collector and persists its log via persistEvalArtifacts (#307 options 1+2 / third independent Codex review, finding 3)", () => {
     const cliSource = readFileSync(fileURLToPath(new URL("./cli.ts", import.meta.url)), "utf8");
     expect(cliSource).toMatch(/const observability = createObservabilityCollector\(\)/);
     expect(cliSource).toMatch(/onRequest:\s*observability\.onRequest/);
-    // Must be an ACTUAL write call, not merely mentioned in a comment.
-    expect(cliSource).toMatch(/writeFile\(\s*\n?\s*envConfig\.observabilityPath/);
+    // Must pass the ACTUAL configured path into the real write helper, not
+    // merely mention it in a comment.
+    expect(cliSource).toMatch(/observabilityPath:\s*envConfig\.observabilityPath/);
     expect(cliSource).toMatch(/observability\.log\(/);
   });
 
   it("folds the observability log into the durable eval-report.json artifact, not only the separate untracked file (#307 Codex review, finding 4 — neither agent-evals.yml nor release-readiness.yml retains eval-observability.json)", () => {
     const cliSource = readFileSync(fileURLToPath(new URL("./cli.ts", import.meta.url)), "utf8");
-    expect(cliSource).toMatch(/observability:\s*observabilityLog/);
+    expect(cliSource).toMatch(/observability:\s*observability\.log\(/);
     expect(cliSource).toMatch(/observability\.startCase\(/);
   });
 
@@ -780,14 +786,30 @@ describe("main() wiring (source-inspection, #307 2nd correction finding 2)", () 
    * throw out of `finally`, skipping every statement after it, including
    * the durable `eval-report.json` write. The sidecar write must be
    * fault-tolerant so it can never block the report it duplicates.
+   *
+   * Third independent Codex review (issuecomment-5620134895), finding 3:
+   * this fault-tolerance logic now lives in the dedicated, exported
+   * `persistEvalArtifacts` function (proven directly, with real behavior —
+   * not source-regex alone — by the "composed offline wiring" suite below)
+   * rather than inline in `main()`. This test now proves the structural half
+   * of that same contract that a purely behavioral test cannot: `main()`
+   * itself actually calls `persistEvalArtifacts` (never reverts to
+   * reimplementing the two writes inline), and `persistEvalArtifacts`'s own
+   * source still wraps the sidecar write in a try/catch positioned BEFORE
+   * the report write.
    */
-  it("wraps the observability sidecar write in a try/catch that cannot prevent the report write below it from running", () => {
+  it("delegates to persistEvalArtifacts, which wraps the observability sidecar write in a try/catch that cannot prevent the report write below it from running", () => {
     const cliSource = readFileSync(fileURLToPath(new URL("./cli.ts", import.meta.url)), "utf8");
-    const sidecarWriteIndex = cliSource.indexOf("envConfig.observabilityPath,");
-    const reportWriteIndex = cliSource.indexOf("envConfig.reportPath,");
+    expect(cliSource).toMatch(/await persistEvalArtifacts\(/);
+
+    const fnStart = cliSource.indexOf("export async function persistEvalArtifacts(");
+    expect(fnStart).toBeGreaterThan(-1);
+    const fnBody = cliSource.slice(fnStart);
+    const sidecarWriteIndex = fnBody.indexOf("params.observabilityPath,");
+    const reportWriteIndex = fnBody.indexOf("params.reportPath,");
     expect(sidecarWriteIndex).toBeGreaterThan(-1);
     expect(reportWriteIndex).toBeGreaterThan(sidecarWriteIndex);
-    const between = cliSource.slice(sidecarWriteIndex, reportWriteIndex);
+    const between = fnBody.slice(sidecarWriteIndex, reportWriteIndex);
     expect(between).toMatch(/catch/);
   });
 });
@@ -1432,5 +1454,219 @@ describe("printReportSummary", () => {
     expect(errorLines.some((line) => /budget/i.test(line))).toBe(true);
     expect(errorLines.some((line) => /terminal provider failure/i.test(line))).toBe(false);
     expect(errorLines.some((line) => /FAILED threshold checks/i.test(line))).toBe(false);
+  });
+});
+
+/**
+ * #307 third independent Codex review (issuecomment-5620134895), finding 3:
+ * the review flagged that the only existing "sidecar write failure" test was
+ * a source-regex assertion (`cli.ts` contains a `catch` between the two
+ * writes), and that the case/logical-request/attempt correlation
+ * (`./report.ts`'s `CorrelatedObservabilityRecord`, `ObservabilityCollector`)
+ * was only ever proven by hand-calling the collector/tracker separately from
+ * their own unit tests — never through the REAL composed wiring `main()`
+ * builds (limiter -> observability collector -> attempt tracker -> retry
+ * policy -> retrying model -> a real Mastra `Agent` -> `createRunCase` ->
+ * `runEvalSuite` -> `buildReport`). This suite composes those exact pieces
+ * against a fake `MockLanguageModelV4` — zero real network calls, zero real
+ * timers — proves the join in the FINAL SERIALIZED report/observability log,
+ * and separately proves a sidecar write failure cannot prevent the durable
+ * report from persisting, through the real `persistEvalArtifacts` helper
+ * `main()` itself calls (not a reimplementation of its logic in the test).
+ */
+describe("composed offline wiring — case/logical-request/attempt correlation end to end (#307 third independent Codex review, finding 3)", () => {
+  function generateResult(text: string) {
+    return {
+      content: [{ type: "text" as const, text }],
+      finishReason: { unified: "stop" as const, raw: undefined },
+      usage: {
+        inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+        outputTokens: { total: 5, text: 5, reasoning: undefined },
+      },
+      warnings: [],
+    };
+  }
+
+  /** A real per-minute-quota 429 with a trustworthy but near-instant hint, so the composed suite retries without a real wait. */
+  function minuteQuota429(): APICallError {
+    return new APICallError({
+      message: "Too Many Requests",
+      url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite",
+      requestBodyValues: {},
+      statusCode: 429,
+      isRetryable: true,
+      responseHeaders: { "retry-after": "0" },
+      responseBody: JSON.stringify({
+        error: {
+          details: [
+            {
+              "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+              violations: [{ quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" }],
+            },
+          ],
+        },
+      }),
+    });
+  }
+
+  async function runComposedSuite() {
+    // Call #1 -> case-a's only request (success). Call #2 -> case-b's first
+    // attempt (429, retried). Call #3 -> case-b's second attempt (success).
+    let calls = 0;
+    const doGenerate = vi.fn(async () => {
+      calls += 1;
+      if (calls === 2) throw minuteQuota429();
+      return generateResult(`answer ${calls}`);
+    });
+    const inner = new MockLanguageModelV4({ doGenerate: doGenerate as never });
+
+    // The exact composition `./cli.ts`'s `main()` builds — see its own
+    // module docs — assembled here directly from the same exported pieces,
+    // never hand-calling the collector/tracker in isolation from a fake
+    // record shape.
+    const observability = createObservabilityCollector();
+    const limiter = createRequestRateLimiter({
+      rpmLimit: 100,
+      maxRetries: 0,
+      onRequest: observability.onRequest,
+    });
+    const attemptTracker = createCaseAttemptTracker();
+    const retryPolicy = createEvalRetryPolicy({
+      modelId: "gemini-3.5-flash-lite",
+      maxTotalTokens: 1_000_000,
+      maxCostUsd: 1_000,
+      attemptTracker,
+      onBeforeAttempt: (requestIndex, attempt) => observability.beginRequest(requestIndex, attempt),
+    });
+    const model = createRetryingModel({
+      model: createRateLimitedModel({ model: inner, limiter }),
+      retryPolicy,
+    });
+    const agent = getInterviewAgent({ model });
+
+    const cases: EvalCase[] = [
+      {
+        id: "case-a",
+        category: "grounded",
+        question: "Question A",
+        gapHonestyDirection: "claimed",
+      },
+      {
+        id: "case-b",
+        category: "grounded",
+        question: "Question B",
+        gapHonestyDirection: "claimed",
+      },
+    ];
+
+    const report = await runEvalSuite(
+      {
+        cases,
+        budget: { maxCases: cases.length, maxTotalTokens: 1_000_000, maxCostUsd: 1_000 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.5-flash-lite",
+      },
+      {
+        runCase: createRunCase(agent, attemptTracker, {
+          onCaseStart: (question) => {
+            const caseId = cases.find((c) => c.question === question)?.id ?? question;
+            observability.startCase(caseId);
+          },
+        }),
+      },
+    );
+
+    const meta: ObservabilityLogMeta = {
+      runId: "test-run",
+      modelId: "gemini-3.5-flash-lite",
+      configuredRpmLimit: 100,
+      configuredWindowMs: 60_000,
+    };
+    const observabilityLog = observability.log(meta);
+    const fullReport = { ...report, observability: observabilityLog };
+    return { fullReport, observabilityLog };
+  }
+
+  it("joins case/logical-request/attempt identity between the retry policy's own per-case attempt trace and the limiter's observability log, in the final serialized report", async () => {
+    const { fullReport, observabilityLog } = await runComposedSuite();
+
+    // The run completed both cases with no terminal failure — the retried
+    // 429 recovered, so this is a normal, passing execution shape.
+    expect(fullReport.failedCases).toEqual([]);
+    expect(fullReport.cases.map((c) => c.id)).toEqual(["case-a", "case-b"]);
+
+    const caseA = fullReport.cases.find((c) => c.id === "case-a");
+    const caseB = fullReport.cases.find((c) => c.id === "case-b");
+    expect(caseA?.attempts).toHaveLength(1);
+    expect(caseB?.attempts).toHaveLength(2);
+    expect(caseB?.attempts?.[0]?.outcome).toBe("retrying");
+    expect(caseB?.attempts?.[0]?.quotaClassification).toBe("per-minute");
+    expect(caseB?.attempts?.[1]?.outcome).toBe("success");
+
+    // Three real admitted requests total: 1 for case-a, 2 for case-b (the
+    // 429 attempt and its retry) — proves every request, including the
+    // retry, took its own limiter slot and was observed.
+    expect(observabilityLog.requestCount).toBe(3);
+    const caseARequests = observabilityLog.requests.filter((r) => r.caseId === "case-a");
+    const caseBRequests = observabilityLog.requests.filter((r) => r.caseId === "case-b");
+    expect(caseARequests).toHaveLength(1);
+    expect(caseBRequests).toHaveLength(2);
+
+    // The explicit join: `./cli.ts`'s `ObservabilityCollector.beginRequest`
+    // stamps each observability record's `caseRequestSequence` with the SAME
+    // `requestIndex` the attempt tracker computed for that exact attempt,
+    // and `attempt` with the same 1-based attempt number — not merely
+    // matching completion order.
+    for (const record of caseBRequests) {
+      const matchingAttempt = caseB?.attempts?.find((a) => a.attempt === record.attempt);
+      expect(matchingAttempt).toBeDefined();
+      expect(record.caseRequestSequence).toBe(matchingAttempt?.requestIndex);
+    }
+    // Both of case-b's requests belong to the SAME logical request (the
+    // retry re-acquired a slot but never started a new logical request).
+    expect(new Set(caseBRequests.map((r) => r.caseRequestSequence)).size).toBe(1);
+    expect(caseBRequests.map((r) => r.attempt).sort()).toEqual([1, 2]);
+    // The 429 attempt is recorded as an "error" outcome; the retry that
+    // recovered is "success" — the observability log's own outcome field
+    // must agree with the attempt trace's outcome for the same attempt.
+    const firstAttemptRecord = caseBRequests.find((r) => r.attempt === 1);
+    const secondAttemptRecord = caseBRequests.find((r) => r.attempt === 2);
+    expect(firstAttemptRecord?.outcome).toBe("error");
+    expect(firstAttemptRecord?.quotaClassification).toBe("per-minute");
+    expect(secondAttemptRecord?.outcome).toBe("success");
+  });
+
+  it("persists the durable report through the real persistEvalArtifacts wiring even when the observability sidecar write fails — never hand-simulated", async () => {
+    const { fullReport, observabilityLog } = await runComposedSuite();
+    const writeFile = vi.fn(async (path: string, _data: string) => {
+      if (path === "eval-observability.json") {
+        throw new Error("ENOSPC: no space left on device");
+      }
+    });
+    const log = vi.fn();
+    const error = vi.fn();
+
+    await persistEvalArtifacts({
+      report: fullReport,
+      observabilityLog,
+      reportPath: "eval-report.json",
+      observabilityPath: "eval-observability.json",
+      writeFile,
+      io: { log, error },
+    });
+
+    // The sidecar write was attempted and failed, logged as non-fatal...
+    expect(writeFile).toHaveBeenCalledWith(
+      "eval-observability.json",
+      expect.stringContaining('"requestCount": 3'),
+    );
+    expect(error.mock.calls.some((call) => /sidecar/i.test(String(call[0])))).toBe(true);
+    // ...but the durable report write still happened, with the SAME
+    // correlated data embedded in it.
+    const reportCall = writeFile.mock.calls.find(([path]) => path === "eval-report.json");
+    expect(reportCall).toBeDefined();
+    const persistedReport = JSON.parse(String(reportCall?.[1]));
+    expect(persistedReport.observability.requestCount).toBe(3);
+    expect(persistedReport.cases.map((c: { id: string }) => c.id)).toEqual(["case-a", "case-b"]);
   });
 });

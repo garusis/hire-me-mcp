@@ -125,6 +125,38 @@ const LOOKALIKE_PLUS_MALFORMED_QUOTA_BODY = JSON.stringify({
   },
 });
 
+/** A real minute quotaId paired with a non-string quotaMetric — third independent Codex review (issuecomment-5620134895), finding 1: malformed/untrustworthy evidence, never per-minute. */
+const MINUTE_QUOTA_ID_NUMERIC_METRIC_BODY = JSON.stringify({
+  error: {
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [
+          { quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier", quotaMetric: 123 },
+        ],
+      },
+    ],
+  },
+});
+
+/** A real minute quotaId paired with the TOKEN-quota metric string — inconsistent evidence (third independent Codex review, finding 1), never per-minute. */
+const MINUTE_QUOTA_ID_TOKEN_METRIC_BODY = JSON.stringify({
+  error: {
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [
+          {
+            quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier",
+            quotaMetric:
+              "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count",
+          },
+        ],
+      },
+    ],
+  },
+});
+
 function timeoutError(message = "The operation timed out"): Error {
   const error = new Error(message);
   error.name = "TimeoutError";
@@ -375,6 +407,54 @@ describe("createRetryPolicy", () => {
       expect.objectContaining({
         outcome: "stopped-rate-limited",
         quotaClassification: "malformed",
+      }),
+    );
+  });
+
+  it("stops immediately, through the FULL policy, on a real minute quotaId paired with a non-string quotaMetric — never retried even with a valid retry hint present (third independent Codex review, finding 1)", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
+    const error = apiError({
+      statusCode: 429,
+      responseHeaders: { "retry-after": "2" },
+      responseBody: MINUTE_QUOTA_ID_NUMERIC_METRIC_BODY,
+    });
+    const operation = vi.fn().mockRejectedValue(error);
+
+    await expect(policy.run(operation)).rejects.toBe(error);
+
+    // A valid Retry-After hint (2s) is present, proving the stop is driven
+    // by the malformed quotaMetric evidence, not by a missing hint.
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "stopped-rate-limited",
+        quotaClassification: "malformed",
+        retryHintMs: 2_000,
+      }),
+    );
+  });
+
+  it("stops immediately, through the FULL policy, on a real minute quotaId paired with the TOKEN-quota metric string — never retried even with a valid retry hint present (third independent Codex review, finding 1)", async () => {
+    const clock = createFakeClock();
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({ now: clock.now, sleep: clock.sleep, onAttempt });
+    const error = apiError({
+      statusCode: 429,
+      responseHeaders: { "retry-after": "2" },
+      responseBody: MINUTE_QUOTA_ID_TOKEN_METRIC_BODY,
+    });
+    const operation = vi.fn().mockRejectedValue(error);
+
+    await expect(policy.run(operation)).rejects.toBe(error);
+
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "stopped-rate-limited",
+        quotaClassification: "malformed",
+        retryHintMs: 2_000,
       }),
     );
   });

@@ -188,20 +188,41 @@ function parseDurationMs(value: unknown): number | undefined {
 }
 
 /**
+ * One source's retry-hint evidence: genuinely {@link RETRY_EVIDENCE_ABSENT}
+ * (the field wasn't supplied at all), {@link RETRY_EVIDENCE_INVALID} (the
+ * field WAS supplied but doesn't parse into a trustworthy delay), or a valid
+ * millisecond delay. Third independent Codex review (issuecomment-
+ * 5620134895), finding 2: a caller combining two sources (the `retry-after`
+ * header and the response body's `RetryInfo`) must never let a VALID hint
+ * from one source rescue an INVALID one from the other — that previously
+ * happened because both cases collapsed to the same `undefined` and were
+ * silently excluded from the candidate list, indistinguishable from the
+ * source simply being absent. Absence is fine to ignore; a present-but-
+ * malformed value must poison the combined result instead.
+ */
+const RETRY_EVIDENCE_ABSENT = "absent";
+const RETRY_EVIDENCE_INVALID = "invalid";
+type RetryEvidence = number | typeof RETRY_EVIDENCE_ABSENT | typeof RETRY_EVIDENCE_INVALID;
+
+/**
  * Read a `retry-after` response header (numeric seconds, or an HTTP date) as
- * milliseconds. `undefined` — never `0` — for anything that isn't a real,
- * trustworthy hint: missing, empty/whitespace-only (#307 Codex review,
- * finding 3 — `Number("")` is `0`, which previously parsed as an innocuous
- * "retry in 0ms" hint the provider never actually sent), negative, or
- * non-finite.
+ * {@link RetryEvidence}. {@link RETRY_EVIDENCE_ABSENT} for missing or
+ * empty/whitespace-only (#307 Codex review, finding 3 — `Number("")` is `0`,
+ * which previously parsed as an innocuous "retry in 0ms" hint the provider
+ * never actually sent). {@link RETRY_EVIDENCE_INVALID} for a header that WAS
+ * supplied but is negative, non-finite, an unparseable date, or a numeric
+ * value whose multiplication into milliseconds overflows to a non-finite
+ * figure (third independent Codex review, finding 2's "header numeric
+ * multiplication needs finite overflow validation" — a finite `seconds`
+ * value like `1e307` still overflows once multiplied by 1000).
  */
 function retryAfterFromHeaders(
   headers: Record<string, string> | undefined,
   now: () => number,
-): number | undefined {
+): RetryEvidence {
   const raw = headers?.["retry-after"] ?? headers?.["Retry-After"];
   const trimmed = raw?.trim();
-  if (!trimmed) return undefined;
+  if (!trimmed) return RETRY_EVIDENCE_ABSENT;
   const seconds = Number(trimmed);
   // A trimmed value that parses as a finite number is a NUMERIC-seconds
   // header, full stop — negative or otherwise invalid, it is rejected here
@@ -209,9 +230,13 @@ function retryAfterFromHeaders(
   // bare negative numeral (e.g. "-5") as an extended-year date far in the
   // past, silently producing a bogus near-zero delay (#307 Codex review,
   // finding 3's offline reproduction).
-  if (Number.isFinite(seconds)) return seconds >= 0 ? Math.round(seconds * 1_000) : undefined;
+  if (Number.isFinite(seconds)) {
+    if (seconds < 0) return RETRY_EVIDENCE_INVALID;
+    const delayMs = Math.round(seconds * 1_000);
+    return Number.isFinite(delayMs) ? delayMs : RETRY_EVIDENCE_INVALID;
+  }
   const asDate = Date.parse(trimmed);
-  return Number.isNaN(asDate) ? undefined : Math.max(0, asDate - now());
+  return Number.isNaN(asDate) ? RETRY_EVIDENCE_INVALID : Math.max(0, asDate - now());
 }
 
 /** The exact `@type` Google's structured error details use for a retry hint — nothing else may supply one. */
@@ -231,29 +256,34 @@ const RETRY_INFO_TYPE = "type.googleapis.com/google.rpc.RetryInfo";
  * pick one over another or drop a malformed one in favor of a valid
  * sibling — the same "one bad entry taints the whole" treatment
  * {@link classifyQuotaEvidence} already applies to `QuotaFailure` details.
- * Returns every valid delay found, or `undefined` when the body carries NO
- * `RetryInfo` detail at all, or when ANY `RetryInfo`-typed detail present
- * fails to parse — never a partial list that quietly excludes the bad one.
+ * Returns every valid delay found, {@link RETRY_EVIDENCE_ABSENT} when the
+ * body carries NO `RetryInfo` detail at all (missing/unparseable body
+ * included), or {@link RETRY_EVIDENCE_INVALID} when the body DOES carry a
+ * `RetryInfo` detail but ANY one present fails to parse (third independent
+ * Codex review, finding 2 — distinct from "absent" so a caller combining
+ * this with the header's own evidence never lets a valid header rescue this
+ * malformed body evidence) — never a partial list that quietly excludes the
+ * bad one.
  */
-function retryDelaysFromBody(body: string | undefined): number[] | undefined {
-  if (!body) return undefined;
+function retryDelaysFromBody(body: string | undefined): number[] | RetryEvidence {
+  if (!body) return RETRY_EVIDENCE_ABSENT;
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
   } catch {
-    return undefined;
+    return RETRY_EVIDENCE_ABSENT;
   }
   const error = (parsed as { error?: { details?: unknown } } | null)?.error;
   const details = error?.details;
-  if (!Array.isArray(details)) return undefined;
+  if (!Array.isArray(details)) return RETRY_EVIDENCE_ABSENT;
   const retryInfoDetails = details.filter(
     (detail) => (detail as { "@type"?: unknown } | null)?.["@type"] === RETRY_INFO_TYPE,
   );
-  if (retryInfoDetails.length === 0) return undefined;
+  if (retryInfoDetails.length === 0) return RETRY_EVIDENCE_ABSENT;
   const delays = retryInfoDetails.map((detail) =>
     parseDurationMs((detail as { retryDelay?: unknown }).retryDelay),
   );
-  if (delays.some((delay) => delay === undefined)) return undefined;
+  if (delays.some((delay) => delay === undefined)) return RETRY_EVIDENCE_INVALID;
   return delays as number[];
 }
 
@@ -293,9 +323,16 @@ export function apiErrorStatusCode(error: unknown): number | undefined {
  * one: honoring the shortest of two conflicting hints risks retrying before
  * the provider is actually willing to accept another request, whichever
  * source said so. `undefined` when the error carries no hint at all (or
- * isn't an API error), or when the only body evidence present is malformed
- * (see {@link retryDelaysFromBody}) — callers must stop conservatively
- * rather than inventing a fallback in either case.
+ * isn't an API error), or when EITHER source present is malformed (see
+ * {@link retryAfterFromHeaders}/{@link retryDelaysFromBody}) — callers must
+ * stop conservatively rather than inventing a fallback in either case.
+ * Third independent Codex review (issuecomment-5620134895), finding 2: a
+ * malformed header must NEVER be rescued by a valid body `RetryInfo` hint,
+ * nor a malformed body `RetryInfo` rescued by a valid header — either source
+ * being genuinely ABSENT is fine (the other source's evidence, if valid, is
+ * still honored), but a source that WAS supplied and failed to parse
+ * poisons the combined result, exactly as if the request carried no
+ * trustworthy hint at all.
  */
 export function parseRetryAfterMs(
   error: unknown,
@@ -303,9 +340,15 @@ export function parseRetryAfterMs(
 ): number | undefined {
   const apiError = findApiCallError(error);
   if (!apiError) return undefined;
-  const headerMs = retryAfterFromHeaders(apiError.responseHeaders, now);
-  const bodyDelaysMs = retryDelaysFromBody(apiError.responseBody);
-  const candidates = [...(headerMs !== undefined ? [headerMs] : []), ...(bodyDelaysMs ?? [])];
+  const headerEvidence = retryAfterFromHeaders(apiError.responseHeaders, now);
+  const bodyEvidence = retryDelaysFromBody(apiError.responseBody);
+  if (headerEvidence === RETRY_EVIDENCE_INVALID || bodyEvidence === RETRY_EVIDENCE_INVALID) {
+    return undefined;
+  }
+  const candidates = [
+    ...(typeof headerEvidence === "number" ? [headerEvidence] : []),
+    ...(Array.isArray(bodyEvidence) ? bodyEvidence : []),
+  ];
   return candidates.length > 0 ? Math.max(...candidates) : undefined;
 }
 
@@ -400,6 +443,20 @@ function quotaViolationsFromBody(body: string | undefined): unknown[] | undefine
 const MINUTE_REQUEST_QUOTA_ID = /^GenerateRequestsPerMinutePerProjectPerModel(-|$)/i;
 const DAILY_REQUEST_QUOTA_ID = /^GenerateRequestsPerDayPerProjectPerModel(-|$)/i;
 
+/**
+ * The exact, real request-count `quotaMetric` value Gemini's free-tier 429s
+ * carry (`packages/agent/README.md`'s quota-rationale table:
+ * `generativelanguage.googleapis.com/generate_content_free_tier_requests`).
+ * The ONLY metric value {@link categorizeViolation} trusts when a violation
+ * supplies one at all — anything else (a different metric family, e.g. the
+ * TOKEN-count metric `.../generate_content_free_tier_input_token_count`, or
+ * a non-string value) is inconsistent/untrustworthy evidence, never silently
+ * ignored in favor of `quotaId` alone (third independent Codex review,
+ * issuecomment-5620134895, finding 1).
+ */
+const REQUEST_QUOTA_METRIC =
+  "generativelanguage.googleapis.com/generate_content_free_tier_requests";
+
 type ViolationCategory = "minute" | "daily" | "other";
 
 /**
@@ -408,11 +465,31 @@ type ViolationCategory = "minute" | "daily" | "other";
  * 1's "validate string IDs/metrics" requirement), which {@link
  * classifyQuotaEvidence} treats as untrustworthy evidence overall rather
  * than silently ignoring the one bad entry and guessing from the rest.
+ *
+ * A `quotaMetric` field, when the violation supplies one at all, is
+ * validated too (third independent Codex review, issuecomment-5620134895,
+ * finding 1): `categorizeViolation` previously classified purely off
+ * `quotaId` and ignored `quotaMetric` entirely, so a violation naming a real
+ * minute `quotaId` alongside a non-string `quotaMetric`, or one naming the
+ * TOKEN-count metric (a different quota family than the request-count
+ * `quotaId` claims), still classified as `"minute"` — inconsistent/malformed
+ * evidence must stop, never be silently trusted off `quotaId` alone. A
+ * violation that supplies no `quotaMetric` at all is unaffected — `quotaId`
+ * remains sufficient evidence on its own, exactly as before this fix.
  */
 function categorizeViolation(violation: unknown): ViolationCategory | undefined {
-  const record = violation as { quotaId?: unknown } | null;
+  const record = violation as { quotaId?: unknown; quotaMetric?: unknown } | null;
   const quotaId = record?.quotaId;
   if (typeof quotaId !== "string") return undefined;
+  if (
+    record !== null &&
+    record !== undefined &&
+    "quotaMetric" in record &&
+    record.quotaMetric !== undefined &&
+    (typeof record.quotaMetric !== "string" || record.quotaMetric !== REQUEST_QUOTA_METRIC)
+  ) {
+    return undefined;
+  }
   if (MINUTE_REQUEST_QUOTA_ID.test(quotaId)) return "minute";
   if (DAILY_REQUEST_QUOTA_ID.test(quotaId)) return "daily";
   return "other";
@@ -449,11 +526,18 @@ export function classifyQuotaEvidence(error: unknown): QuotaClassification {
  * retried one re-acquiring its own slot. Deliberately carries NO raw error
  * body, header value, or credential — only a numeric `statusCode`, the
  * controlled {@link QuotaClassification} enum, and a parsed hint in
- * milliseconds. `admittedAt` is also `sendAt`: this limiter starts
- * `operation()` (the real provider send) the instant a window slot is
- * granted, so the two are always equal here — kept as separate fields so a
- * caller never has to guess which timestamp a given consumer means, and so
- * this shape stays stable if a future change ever separates them.
+ * milliseconds. `admittedAt` and `sendAt` are DISTINCT reads, not a copy of
+ * one into the other (third independent Codex review, issuecomment-
+ * 5620134895, finding 3 — corrected stale prose that claimed the two are
+ * "always equal": `run()` below takes its own fresh `now()` read for
+ * `sendAt` right before invoking `operation()`, deliberately never reusing
+ * `admittedAt`'s own atomically-captured value). In production the two are
+ * ordinarily a fraction of a millisecond apart, since this limiter starts
+ * `operation()` immediately once a window slot is granted — kept as
+ * separate fields so a caller never has to guess which timestamp a given
+ * consumer means, and so a future change that adds real work between
+ * admission and send is reflected automatically rather than silently
+ * staying "equal" by construction.
  */
 export interface RequestObservabilityRecord {
   /** Stable per-limiter-instance counter — a fresh request identity every time `operation()` runs, including a retry. */
