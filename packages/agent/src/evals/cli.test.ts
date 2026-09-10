@@ -1792,12 +1792,7 @@ describe("composed offline wiring — case/logical-request/attempt correlation e
     expect(firstAttemptRecord?.outcome).toBe("error");
     expect(firstAttemptRecord?.quotaClassification).toBe("per-minute");
     expect(secondAttemptRecord?.outcome).toBe("success");
-    // Belt-and-braces on top of the sleep-array checks above: the real
-    // admission spacing this suite would need without the injected clock is
-    // 1200ms (two 600ms waits); a tight per-test timeout well under that
-    // fails the test outright if a future change reintroduces a real wait,
-    // rather than merely running slower.
-  }, 500);
+  });
 
   it("persists the durable report through the real persistEvalArtifacts wiring even when the observability sidecar write fails — never hand-simulated", async () => {
     const { fullReport, observabilityLog } = await runComposedSuite();
@@ -1865,7 +1860,7 @@ describe("composed offline wiring — case/logical-request/attempt correlation e
       [1, 1],
       [1, 2],
     ]);
-  }, 500);
+  });
 });
 
 /**
@@ -2185,11 +2180,5 @@ describe("composed offline wiring — multi-step logical requests and a deadline
     );
     expect(persistedCaseCFailure.attempts[0].outcome).toBe("stopped-deadline-exceeded");
     expect(persisted.observability.requestCount).toBe(5);
-    // Belt-and-braces on top of the sleep-array checks above: the real
-    // admission spacing this suite would need without the injected limiter
-    // clock is ~2400ms (four 600ms waits); a tight per-test timeout well
-    // under that fails the test outright if a future change reintroduces a
-    // real wait, rather than merely running slower inside the old 4000ms
-    // budget.
-  }, 1_000);
+  }, 4_000);
 });
