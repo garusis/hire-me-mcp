@@ -722,6 +722,19 @@ export function createEvalRetryPolicy(options: {
    * of merely by matching completion order.
    */
   onBeforeAttempt?: (requestIndex: number, attempt: number) => void;
+  /**
+   * The retry policy's clock/sleep/deadline test seam, passed straight
+   * through to `./retry.ts`'s `createRetryPolicy` (#307 fourth independent
+   * Codex review, issuecomment-5620836057, finding 3) — `main()` never
+   * supplies these (real wall clock/timers), but a test composing the same
+   * production wiring `main()` builds needs a virtual clock to prove a
+   * `stopped-deadline-exceeded` stop or a hinted retry delay deterministically,
+   * without a real multi-second wait.
+   */
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+  maxRequestMs?: number;
+  maxPhaseMs?: number;
 }): RetryPolicy {
   const pricing = getModelPricing(options.modelId);
   const budgetGuard = createBudgetGuard({
@@ -730,6 +743,10 @@ export function createEvalRetryPolicy(options: {
   });
 
   return createRetryPolicy({
+    now: options.now,
+    sleep: options.sleep,
+    maxRequestMs: options.maxRequestMs,
+    maxPhaseMs: options.maxPhaseMs,
     onAttempt: (record) => {
       options.attemptTracker.onAttempt(record);
       if (typeof record.usage === "object") {

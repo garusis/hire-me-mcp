@@ -783,6 +783,50 @@ describe("parseRetryAfterMs", () => {
   it("still ignores a genuinely ABSENT header and honors a valid body RetryInfo hint — missing evidence is not the same as invalid evidence", () => {
     expect(parseRetryAfterMs(rateLimitError({ responseBody: GEMINI_429_BODY_47S }))).toBe(47_000);
   });
+
+  it("treats a Retry-After header that IS present but blank/whitespace-only as INVALID, not ABSENT — a valid sibling RetryInfo body must not rescue it (#307 fourth independent Codex review, issuecomment-5620836057, finding 1)", () => {
+    // A missing header key may defer to the body's own RetryInfo evidence
+    // (the previous test above); an EXPLICITLY PRESENT but blank value is a
+    // different, untrustworthy signal from the same source and must poison
+    // the combined result exactly like any other malformed header, never be
+    // silently treated as if the header were never sent at all.
+    expect(
+      parseRetryAfterMs(
+        rateLimitError({
+          responseHeaders: { "retry-after": "   " },
+          responseBody: GEMINI_429_BODY_47S,
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("resolves EVERY case-insensitively-named Retry-After header entry, not just the first one found via nullish-coalescing, to their conservative max (#307 fourth independent Codex review, issuecomment-5620836057, finding 2)", () => {
+    // The exact repro named in the review: `retry-after: 1` and
+    // `Retry-After: 80` present as two DISTINCT object keys (case differs)
+    // alongside a `RetryInfo retryDelay: 47s` body. Reading only the first
+    // key found (`??`) previously ignored the 80s entry entirely; every
+    // entry must be resolved and the conservative (largest) valid value used
+    // — 80s here, since it is the largest of all three valid hints and this
+    // module must never return earlier than any valid hint found.
+    expect(
+      parseRetryAfterMs(
+        rateLimitError({
+          responseHeaders: { "retry-after": "1", "Retry-After": "80" },
+          responseBody: GEMINI_429_BODY_47S,
+        }),
+      ),
+    ).toBe(80_000);
+  });
+
+  it("taints the combined result when one of several case-insensitively-named Retry-After entries is invalid, even though a sibling casing is valid", () => {
+    expect(
+      parseRetryAfterMs(
+        rateLimitError({
+          responseHeaders: { "retry-after": "1", "Retry-After": "not-a-number" },
+        }),
+      ),
+    ).toBeUndefined();
+  });
 });
 
 describe("classifyQuotaEvidence (#307 options 1+2)", () => {

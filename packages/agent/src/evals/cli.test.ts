@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { Agent } from "@mastra/core/agent";
+import { createTool } from "@mastra/core/tools";
 import { APICallError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { getInterviewAgent } from "../index.js";
 import { BudgetExceededError } from "./budget.js";
 import {
@@ -738,6 +741,114 @@ describe("createEvalRetryPolicy", () => {
       BudgetExceededError,
     );
     expect(onBeforeAttempt).not.toHaveBeenCalled();
+  });
+
+  /**
+   * #307 fourth independent Codex review (issuecomment-5620836057), finding
+   * 3: the composed-wiring suite below needs a deterministic, zero-real-wait
+   * way to prove a `stopped-deadline-exceeded` stop through the SAME
+   * `createEvalRetryPolicy` wiring `main()` uses — not a bare
+   * `createRetryPolicy` call reimplementing that wiring. `now`/`sleep`/
+   * `maxRequestMs`/`maxPhaseMs` are passed straight through to the
+   * underlying `./retry.ts` policy so a test can drive a virtual clock
+   * instead of real timers.
+   */
+  it("passes now/sleep/maxRequestMs/maxPhaseMs straight through to the underlying retry policy — a retried 429's own 15s hint is driven entirely by the injected virtual clock, never a real 15s wait (#307 fourth independent Codex review, issuecomment-5620836057, finding 3)", async () => {
+    const tracker = makeTracker();
+    let currentTime = 0;
+    const now = () => currentTime;
+    const sleepCalls: number[] = [];
+    const sleep = async (ms: number) => {
+      sleepCalls.push(ms);
+      currentTime += ms;
+    };
+    const policy = createEvalRetryPolicy({
+      modelId: "gemini-3.6-flash",
+      maxTotalTokens: 1_000_000,
+      maxCostUsd: 1_000,
+      attemptTracker: tracker,
+      now,
+      sleep,
+      maxRequestMs: 60_000,
+    });
+
+    const minuteQuota429 = new APICallError({
+      message: "Too Many Requests",
+      url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash",
+      requestBodyValues: {},
+      statusCode: 429,
+      isRetryable: true,
+      responseHeaders: { "retry-after": "15" },
+      responseBody: JSON.stringify({
+        error: {
+          details: [
+            {
+              "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+              violations: [{ quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" }],
+            },
+          ],
+        },
+      }),
+    });
+
+    let calls = 0;
+    const result = await policy.run(() => {
+      calls += 1;
+      return calls === 1 ? Promise.reject(minuteQuota429) : Promise.resolve("recovered");
+    });
+
+    expect(result).toBe("recovered");
+    // The retry actually waited through the INJECTED sleep (real
+    // setTimeout-based default sleep never records anything here, and
+    // would blow past this test's default 5s timeout waiting 15 real
+    // seconds instead).
+    expect(sleepCalls).toEqual([15_000]);
+    expect(currentTime).toBe(15_000);
+  }, 4_000);
+
+  it("passes maxRequestMs through so a hint past the injected virtual deadline stops deterministically, with zero real sleeps", async () => {
+    const tracker = makeTracker();
+    let currentTime = 0;
+    const now = () => currentTime;
+    const sleepCalls: number[] = [];
+    const sleep = async (ms: number) => {
+      sleepCalls.push(ms);
+      currentTime += ms;
+    };
+    const policy = createEvalRetryPolicy({
+      modelId: "gemini-3.6-flash",
+      maxTotalTokens: 1_000_000,
+      maxCostUsd: 1_000,
+      attemptTracker: tracker,
+      now,
+      sleep,
+      maxRequestMs: 5_000,
+    });
+
+    const minuteQuota429WithFarHint = new APICallError({
+      message: "Too Many Requests",
+      url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash",
+      requestBodyValues: {},
+      statusCode: 429,
+      isRetryable: true,
+      // 9_999s — far past the 5s virtual request deadline configured above.
+      responseHeaders: { "retry-after": "9999" },
+      responseBody: JSON.stringify({
+        error: {
+          details: [
+            {
+              "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+              violations: [{ quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" }],
+            },
+          ],
+        },
+      }),
+    });
+
+    await expect(policy.run(() => Promise.reject(minuteQuota429WithFarHint))).rejects.toThrow(
+      minuteQuota429WithFarHint,
+    );
+    expect(sleepCalls).toEqual([]);
   });
 });
 
@@ -1668,5 +1779,321 @@ describe("composed offline wiring — case/logical-request/attempt correlation e
     const persistedReport = JSON.parse(String(reportCall?.[1]));
     expect(persistedReport.observability.requestCount).toBe(3);
     expect(persistedReport.cases.map((c: { id: string }) => c.id)).toEqual(["case-a", "case-b"]);
+
+    // #307 fourth independent Codex review, issuecomment-5620836057, finding
+    // 3: the prior version of this test only checked `requestCount` and case
+    // ids — never that the PERSISTED sidecar JSON actually carries the same
+    // requestIndex/attempt correlation tuples the in-memory report asserted
+    // above. Parse the sidecar payload (attempted even though its own write
+    // failed — `writeFile` was still called with its serialized body) and
+    // verify every case-b observability record's `caseRequestSequence`/
+    // `attempt` tuple still matches its corresponding attempt-trace entry
+    // after a real JSON round trip, not merely by object identity in memory.
+    const sidecarCall = writeFile.mock.calls.find(([path]) => path === "eval-observability.json");
+    expect(sidecarCall).toBeDefined();
+    const persistedSidecar = JSON.parse(String(sidecarCall?.[1]));
+    const persistedCaseB = persistedReport.cases.find((c: { id: string }) => c.id === "case-b");
+    const persistedCaseBRequests = persistedSidecar.requests.filter(
+      (r: { caseId: string }) => r.caseId === "case-b",
+    );
+    expect(persistedCaseBRequests).toHaveLength(2);
+    for (const record of persistedCaseBRequests) {
+      const matchingAttempt = persistedCaseB.attempts.find(
+        (a: { attempt: number }) => a.attempt === record.attempt,
+      );
+      expect(matchingAttempt).toBeDefined();
+      expect(record.caseRequestSequence).toBe(matchingAttempt.requestIndex);
+    }
+    expect(
+      persistedCaseBRequests.map((r: { caseRequestSequence: number; attempt: number }) => [
+        r.caseRequestSequence,
+        r.attempt,
+      ]),
+    ).toEqual([
+      [1, 1],
+      [1, 2],
+    ]);
   });
+});
+
+/**
+ * #307 fourth independent Codex review (issuecomment-5620836057), finding 3:
+ * the composed suite above gives every case exactly ONE logical request
+ * (`case-b` retries once then succeeds, but never issues a SECOND logical
+ * request within the same case), and never exercises a deadline stop —
+ * both explicitly requested as remaining integration coverage. This suite
+ * extends the same real production composition (limiter -> observability
+ * collector -> attempt tracker -> retry policy -> retrying model -> a real
+ * Mastra `Agent` -> `createRunCase` -> `runEvalSuite` -> `buildReport`) with:
+ * a case whose first logical request retries then succeeds via a TOOL CALL,
+ * forcing the real Agent to issue a genuine second logical request
+ * (`requestIndex` 2) for the same case; and a separate case whose only
+ * request's 429 hint blows an injected, deliberately tiny virtual deadline,
+ * proving `stopped-deadline-exceeded` deterministically via
+ * `createEvalRetryPolicy`'s `now`/`sleep`/`maxRequestMs` test seam (this
+ * file's `createEvalRetryPolicy` describe block above) rather than the
+ * limiter's/retry policy's real wall clock — so this suite provably never
+ * waits 90 real seconds for the deadline case, no `vi.useFakeTimers()`
+ * needed since the composed pipeline's own clock is injected end to end.
+ */
+describe("composed offline wiring — multi-step logical requests and a deadline stop (#307 fourth independent Codex review, finding 3)", () => {
+  function generateResult(text: string) {
+    return {
+      content: [{ type: "text" as const, text }],
+      finishReason: { unified: "stop" as const, raw: undefined },
+      usage: {
+        inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+        outputTokens: { total: 5, text: 5, reasoning: undefined },
+      },
+      warnings: [],
+    };
+  }
+
+  function toolCallResult() {
+    return {
+      content: [
+        { type: "tool-call" as const, toolCallId: "call-1", toolName: "fake-tool", input: "{}" },
+      ],
+      finishReason: { unified: "tool-calls" as const, raw: undefined },
+      usage: {
+        inputTokens: { total: 8, noCache: 8, cacheRead: undefined, cacheWrite: undefined },
+        outputTokens: { total: 4, text: 4, reasoning: undefined },
+      },
+      warnings: [],
+    };
+  }
+
+  /** A real per-minute-quota 429 with a trustworthy, near-instant hint (retried via the injected virtual clock, not a real wait). */
+  function minuteQuota429(retryAfterSeconds = "0"): APICallError {
+    return new APICallError({
+      message: "Too Many Requests",
+      url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite",
+      requestBodyValues: {},
+      statusCode: 429,
+      isRetryable: true,
+      responseHeaders: { "retry-after": retryAfterSeconds },
+      responseBody: JSON.stringify({
+        error: {
+          details: [
+            {
+              "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+              violations: [{ quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" }],
+            },
+          ],
+        },
+      }),
+    });
+  }
+
+  /**
+   * A minute-quota 429 whose hint (600s) deliberately exceeds
+   * `DEADLINE_CASE_MAX_REQUEST_MS` below, so the retry policy stops rather
+   * than retries — proven via the injected virtual clock, never a real wait.
+   */
+  function minuteQuota429FarHint(): APICallError {
+    return minuteQuota429("600");
+  }
+
+  const DEADLINE_CASE_MAX_REQUEST_MS = 5_000;
+
+  function fakeTool() {
+    return createTool({
+      id: "fake-tool",
+      description: "test tool",
+      inputSchema: z.object({}).strict(),
+      execute: async () => ({ ok: true }),
+    });
+  }
+
+  async function runMultiStepAndDeadlineSuite() {
+    // Virtual clock shared by the retry policy AND the retries themselves —
+    // `sleepCalls` proves every wait went through this injected seam, never
+    // a real setTimeout.
+    let currentTime = 0;
+    const now = () => currentTime;
+    const sleepCalls: number[] = [];
+    const sleep = async (ms: number) => {
+      sleepCalls.push(ms);
+      currentTime += ms;
+    };
+
+    // Call #1 -> case-a's only request (success, one step).
+    // Call #2 -> case-b's request #1, attempt #1 (429, retried).
+    // Call #3 -> case-b's request #1, attempt #2 (tool call — this logical
+    //   request SUCCEEDS with a tool call, so the real Agent issues a
+    //   genuine second logical request for the same case).
+    // Call #4 -> case-b's request #2, attempt #1 (final text answer).
+    // Call #5 -> case-c's only request, only attempt (429 whose 600s hint
+    //   blows the tiny virtual deadline below — stops, never retried).
+    let calls = 0;
+    const doGenerate = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) return generateResult("answer 1");
+      if (calls === 2) throw minuteQuota429();
+      if (calls === 3) return toolCallResult();
+      if (calls === 4) return generateResult("final answer");
+      if (calls === 5) throw minuteQuota429FarHint();
+      throw new Error(`unexpected extra provider call #${calls}`);
+    });
+    const inner = new MockLanguageModelV4({ doGenerate: doGenerate as never });
+
+    const observability = createObservabilityCollector();
+    const limiter = createRequestRateLimiter({
+      rpmLimit: 100,
+      maxRetries: 0,
+      onRequest: observability.onRequest,
+    });
+    const attemptTracker = createCaseAttemptTracker();
+    const retryPolicy = createEvalRetryPolicy({
+      modelId: "gemini-3.5-flash-lite",
+      maxTotalTokens: 1_000_000,
+      maxCostUsd: 1_000,
+      attemptTracker,
+      onBeforeAttempt: (requestIndex, attempt) => observability.beginRequest(requestIndex, attempt),
+      now,
+      sleep,
+      maxRequestMs: DEADLINE_CASE_MAX_REQUEST_MS,
+    });
+    const model = createRetryingModel({
+      model: createRateLimitedModel({ model: inner, limiter }),
+      retryPolicy,
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      name: "Test Agent",
+      instructions: "test",
+      model,
+      tools: { "fake-tool": fakeTool() },
+    });
+
+    const cases: EvalCase[] = [
+      {
+        id: "case-a",
+        category: "grounded",
+        question: "Question A",
+        gapHonestyDirection: "claimed",
+      },
+      {
+        id: "case-b",
+        category: "grounded",
+        question: "Question B",
+        gapHonestyDirection: "claimed",
+      },
+      {
+        id: "case-c",
+        category: "grounded",
+        question: "Question C",
+        gapHonestyDirection: "claimed",
+      },
+    ];
+
+    const report = await runEvalSuite(
+      {
+        cases,
+        budget: { maxCases: cases.length, maxTotalTokens: 1_000_000, maxCostUsd: 1_000 },
+        promptVersion: "test-version",
+        modelId: "gemini-3.5-flash-lite",
+      },
+      {
+        runCase: createRunCase(agent, attemptTracker, {
+          onCaseStart: (question) => {
+            const caseId = cases.find((c) => c.question === question)?.id ?? question;
+            observability.startCase(caseId);
+          },
+        }),
+      },
+    );
+
+    const meta: ObservabilityLogMeta = {
+      runId: "test-run",
+      modelId: "gemini-3.5-flash-lite",
+      configuredRpmLimit: 100,
+      configuredWindowMs: 60_000,
+    };
+    const observabilityLog = observability.log(meta);
+    const fullReport = { ...report, observability: observabilityLog };
+    return { fullReport, observabilityLog, sleepCalls, calls: () => calls };
+  }
+
+  it("exercises a real SECOND logical request (requestIndex 2) within one case via a genuine tool-call step, and stops a separate case on a deliberately unreachable 429 deadline — all through the injected virtual clock, with zero real sleeps", async () => {
+    const { fullReport, observabilityLog, sleepCalls, calls } =
+      await runMultiStepAndDeadlineSuite();
+
+    // Exactly 5 real provider calls total, proving no extra/duplicate
+    // dispatch and no real retry of the deadline-blown case-c request.
+    expect(calls()).toBe(5);
+    // Every wait this run performed went through the injected clock; the
+    // 600s deadline-blowing hint was never actually slept on.
+    expect(sleepCalls).toEqual([0]);
+
+    expect(fullReport.cases.map((c) => c.id)).toEqual(["case-a", "case-b"]);
+    expect(fullReport.failedCases.map((c) => c.id)).toEqual(["case-c"]);
+
+    const caseB = fullReport.cases.find((c) => c.id === "case-b");
+    // Two logical requests: request #1 (429 then success-via-tool-call,
+    // two attempts) and request #2 (the final answer, one attempt) — three
+    // attempts total for the case.
+    expect(caseB?.attempts).toHaveLength(3);
+    const requestIndexes = caseB?.attempts?.map((a) => a.requestIndex);
+    expect(requestIndexes).toEqual([1, 1, 2]);
+    expect(caseB?.attempts?.map((a) => a.outcome)).toEqual(["retrying", "success", "success"]);
+
+    // The deadline-blown case-c request: a single attempt, stopped rather
+    // than retried against a hint that would never fit inside the
+    // (injected, 5s) virtual request deadline.
+    const caseCFailure = fullReport.failedCases.find((c) => c.id === "case-c");
+    expect(caseCFailure?.attempts).toHaveLength(1);
+    expect(caseCFailure?.attempts?.[0]?.outcome).toBe("stopped-deadline-exceeded");
+    expect(caseCFailure?.attempts?.[0]?.quotaClassification).toBe("per-minute");
+    expect(caseCFailure?.attempts?.[0]?.retryHintMs).toBe(600_000);
+
+    // Five real admitted requests total across all three cases — every
+    // attempt (including the one that never retried) took its own
+    // limiter slot.
+    expect(observabilityLog.requestCount).toBe(5);
+    const caseBRequests = observabilityLog.requests.filter((r) => r.caseId === "case-b");
+    expect(caseBRequests).toHaveLength(3);
+    // The explicit join, across BOTH of case-b's logical requests: every
+    // observability record's `caseRequestSequence`/`attempt` tuple matches
+    // its corresponding attempt-trace entry's `requestIndex`/`attempt`.
+    // Matching by `attempt` alone would be ambiguous here — both logical
+    // requests number their own attempts starting at 1 — so the join key
+    // is the (requestIndex, attempt) pair.
+    for (const record of caseBRequests) {
+      const matchingAttempt = caseB?.attempts?.find(
+        (a) => a.requestIndex === record.caseRequestSequence && a.attempt === record.attempt,
+      );
+      expect(matchingAttempt).toBeDefined();
+      expect(record.caseRequestSequence).toBe(matchingAttempt?.requestIndex);
+    }
+    expect(
+      caseBRequests
+        .map((r) => [r.caseRequestSequence ?? 0, r.attempt ?? 0] as const)
+        .sort(([a0, a1], [b0, b1]) => a0 - b0 || a1 - b1),
+    ).toEqual([
+      [1, 1],
+      [1, 2],
+      [2, 1],
+    ]);
+
+    const caseCRequests = observabilityLog.requests.filter((r) => r.caseId === "case-c");
+    expect(caseCRequests).toHaveLength(1);
+    expect(caseCRequests[0]?.caseRequestSequence).toBe(1);
+    expect(caseCRequests[0]?.attempt).toBe(1);
+    expect(caseCRequests[0]?.outcome).toBe("error");
+    expect(caseCRequests[0]?.quotaClassification).toBe("per-minute");
+
+    // Proves the whole joined shape survives a real JSON round trip, the
+    // same serialization `./cli.ts`'s `main()` performs before persisting.
+    const persisted = JSON.parse(JSON.stringify(fullReport));
+    const persistedCaseB = persisted.cases.find((c: { id: string }) => c.id === "case-b");
+    expect(persistedCaseB.attempts.map((a: { requestIndex: number }) => a.requestIndex)).toEqual([
+      1, 1, 2,
+    ]);
+    const persistedCaseCFailure = persisted.failedCases.find(
+      (c: { id: string }) => c.id === "case-c",
+    );
+    expect(persistedCaseCFailure.attempts[0].outcome).toBe("stopped-deadline-exceeded");
+    expect(persisted.observability.requestCount).toBe(5);
+  }, 4_000);
 });

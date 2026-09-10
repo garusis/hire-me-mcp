@@ -205,24 +205,26 @@ const RETRY_EVIDENCE_INVALID = "invalid";
 type RetryEvidence = number | typeof RETRY_EVIDENCE_ABSENT | typeof RETRY_EVIDENCE_INVALID;
 
 /**
- * Read a `retry-after` response header (numeric seconds, or an HTTP date) as
- * {@link RetryEvidence}. {@link RETRY_EVIDENCE_ABSENT} for missing or
- * empty/whitespace-only (#307 Codex review, finding 3 — `Number("")` is `0`,
- * which previously parsed as an innocuous "retry in 0ms" hint the provider
- * never actually sent). {@link RETRY_EVIDENCE_INVALID} for a header that WAS
- * supplied but is negative, non-finite, an unparseable date, or a numeric
- * value whose multiplication into milliseconds overflows to a non-finite
- * figure (third independent Codex review, finding 2's "header numeric
- * multiplication needs finite overflow validation" — a finite `seconds`
- * value like `1e307` still overflows once multiplied by 1000).
+ * Parse a single `retry-after` header VALUE (numeric seconds, or an HTTP
+ * date) — {@link RETRY_EVIDENCE_INVALID} for a value that is
+ * empty/whitespace-only, negative, non-finite, an unparseable date, or a
+ * numeric value whose multiplication into milliseconds overflows to a
+ * non-finite figure. Never {@link RETRY_EVIDENCE_ABSENT}: by the time a
+ * caller has a string to hand this function, the header key WAS present —
+ * "genuinely missing" is decided one layer up, in {@link
+ * retryAfterFromHeaders}, before this function is ever called (#307 fourth
+ * independent Codex review, issuecomment-5620836057, finding 1 — an
+ * explicitly-present but blank value is a different, untrustworthy signal
+ * from the header key being absent altogether, and must poison the combined
+ * result rather than being silently treated as if the header were never
+ * sent at all).
  */
-function retryAfterFromHeaders(
-  headers: Record<string, string> | undefined,
+function parseRetryAfterHeaderValue(
+  raw: string,
   now: () => number,
-): RetryEvidence {
-  const raw = headers?.["retry-after"] ?? headers?.["Retry-After"];
-  const trimmed = raw?.trim();
-  if (!trimmed) return RETRY_EVIDENCE_ABSENT;
+): number | typeof RETRY_EVIDENCE_INVALID {
+  const trimmed = raw.trim();
+  if (!trimmed) return RETRY_EVIDENCE_INVALID;
   const seconds = Number(trimmed);
   // A trimmed value that parses as a finite number is a NUMERIC-seconds
   // header, full stop — negative or otherwise invalid, it is rejected here
@@ -237,6 +239,34 @@ function retryAfterFromHeaders(
   }
   const asDate = Date.parse(trimmed);
   return Number.isNaN(asDate) ? RETRY_EVIDENCE_INVALID : Math.max(0, asDate - now());
+}
+
+/**
+ * Read EVERY case-insensitively-named `retry-after` response header entry as
+ * {@link RetryEvidence} — never just the first key found via `??` (#307
+ * fourth independent Codex review, issuecomment-5620836057, finding 2: a
+ * response carrying both `retry-after: 1` and `Retry-After: 80` as two
+ * DISTINCT object keys — case differing — previously resolved to only the
+ * first one found and silently discarded the other). {@link
+ * RETRY_EVIDENCE_ABSENT} when no key case-insensitively named `retry-after`
+ * is present at all. {@link RETRY_EVIDENCE_INVALID} when any one present
+ * entry fails to parse (see {@link parseRetryAfterHeaderValue}) — one bad
+ * entry taints every entry from this source, exactly like a malformed body
+ * `RetryInfo` detail already taints the whole body (same "stop, don't guess"
+ * treatment as {@link retryDelaysFromBody}). When every entry present is
+ * valid, returns their conservative MAXIMUM, never a shorter one — this
+ * module must never resolve to a value earlier than any valid hint found.
+ */
+function retryAfterFromHeaders(
+  headers: Record<string, string> | undefined,
+  now: () => number,
+): RetryEvidence {
+  if (!headers) return RETRY_EVIDENCE_ABSENT;
+  const entries = Object.entries(headers).filter(([key]) => key.toLowerCase() === "retry-after");
+  if (entries.length === 0) return RETRY_EVIDENCE_ABSENT;
+  const parsed = entries.map(([, value]) => parseRetryAfterHeaderValue(value, now));
+  if (parsed.some((value) => value === RETRY_EVIDENCE_INVALID)) return RETRY_EVIDENCE_INVALID;
+  return Math.max(...(parsed as number[]));
 }
 
 /** The exact `@type` Google's structured error details use for a retry hint — nothing else may supply one. */
