@@ -1584,6 +1584,15 @@ describe("printReportSummary", () => {
  * and separately proves a sidecar write failure cannot prevent the durable
  * report from persisting, through the real `persistEvalArtifacts` helper
  * `main()` itself calls (not a reimplementation of its logic in the test).
+ *
+ * "Zero real timers" above was inaccurate before the fifth independent Codex
+ * review (issuecomment-5621313572): `createRequestRateLimiter` was built
+ * with no `now`/`sleep` of its own, so its ~600ms-per-admission spacing wait
+ * (`windowMs / rpmLimit`) still ran on the real `Date.now`/`setTimeout`
+ * default for every request after the first in `runComposedSuite` below —
+ * only the retry policy's wait was virtual. `runComposedSuite` now shares
+ * one injected virtual clock between `createEvalRetryPolicy` AND
+ * `createRequestRateLimiter`, so the claim is actually true end to end.
  */
 describe("composed offline wiring — case/logical-request/attempt correlation end to end (#307 third independent Codex review, finding 3)", () => {
   function generateResult(text: string) {
@@ -1631,6 +1640,27 @@ describe("composed offline wiring — case/logical-request/attempt correlation e
     });
     const inner = new MockLanguageModelV4({ doGenerate: doGenerate as never });
 
+    // One virtual clock shared by the retry policy's own wait AND the
+    // limiter's admission-spacing wait (#307 fifth independent Codex review,
+    // issuecomment-5621313572: the limiter previously fell back to real
+    // `Date.now`/`setTimeout`, adding ~600ms of real pacing per admission
+    // after the first). `retrySleepCalls`/`limiterSleepCalls` are tracked
+    // separately so a retry wait is never confused with an admission wait —
+    // together they prove every wait in this suite went through an injected
+    // seam, never a real timer.
+    let currentTime = 0;
+    const now = () => currentTime;
+    const retrySleepCalls: number[] = [];
+    const retrySleep = async (ms: number) => {
+      retrySleepCalls.push(ms);
+      currentTime += ms;
+    };
+    const limiterSleepCalls: number[] = [];
+    const limiterSleep = async (ms: number) => {
+      limiterSleepCalls.push(ms);
+      currentTime += ms;
+    };
+
     // The exact composition `./cli.ts`'s `main()` builds — see its own
     // module docs — assembled here directly from the same exported pieces,
     // never hand-calling the collector/tracker in isolation from a fake
@@ -1640,6 +1670,8 @@ describe("composed offline wiring — case/logical-request/attempt correlation e
       rpmLimit: 100,
       maxRetries: 0,
       onRequest: observability.onRequest,
+      now,
+      sleep: limiterSleep,
     });
     const attemptTracker = createCaseAttemptTracker();
     const retryPolicy = createEvalRetryPolicy({
@@ -1648,6 +1680,8 @@ describe("composed offline wiring — case/logical-request/attempt correlation e
       maxCostUsd: 1_000,
       attemptTracker,
       onBeforeAttempt: (requestIndex, attempt) => observability.beginRequest(requestIndex, attempt),
+      now,
+      sleep: retrySleep,
     });
     const model = createRetryingModel({
       model: createRateLimitedModel({ model: inner, limiter }),
@@ -1695,11 +1729,24 @@ describe("composed offline wiring — case/logical-request/attempt correlation e
     };
     const observabilityLog = observability.log(meta);
     const fullReport = { ...report, observability: observabilityLog };
-    return { fullReport, observabilityLog };
+    return { fullReport, observabilityLog, retrySleepCalls, limiterSleepCalls };
   }
 
   it("joins case/logical-request/attempt identity between the retry policy's own per-case attempt trace and the limiter's observability log, in the final serialized report", async () => {
-    const { fullReport, observabilityLog } = await runComposedSuite();
+    const { fullReport, observabilityLog, retrySleepCalls, limiterSleepCalls } =
+      await runComposedSuite();
+
+    // Every wait this run performed went through an injected clock, never a
+    // real timer: the retry policy's single 429 recovery waited its 0ms
+    // hint, and the limiter's own admission-spacing wait (100 rpm over a
+    // 60s window is 600ms between successive admissions) fired for both
+    // requests after the first — this deterministically fails (rather than
+    // merely running slow) if a future change drops `now`/`sleep` from
+    // either `createEvalRetryPolicy` or `createRequestRateLimiter`, since a
+    // dropped option falls back to the real, un-tracked default and these
+    // arrays would stay empty instead of recording the expected waits.
+    expect(retrySleepCalls).toEqual([0]);
+    expect(limiterSleepCalls).toEqual([600, 600]);
 
     // The run completed both cases with no terminal failure — the retried
     // 429 recovered, so this is a normal, passing execution shape.
@@ -1745,7 +1792,12 @@ describe("composed offline wiring — case/logical-request/attempt correlation e
     expect(firstAttemptRecord?.outcome).toBe("error");
     expect(firstAttemptRecord?.quotaClassification).toBe("per-minute");
     expect(secondAttemptRecord?.outcome).toBe("success");
-  });
+    // Belt-and-braces on top of the sleep-array checks above: the real
+    // admission spacing this suite would need without the injected clock is
+    // 1200ms (two 600ms waits); a tight per-test timeout well under that
+    // fails the test outright if a future change reintroduces a real wait,
+    // rather than merely running slower.
+  }, 500);
 
   it("persists the durable report through the real persistEvalArtifacts wiring even when the observability sidecar write fails — never hand-simulated", async () => {
     const { fullReport, observabilityLog } = await runComposedSuite();
@@ -1813,7 +1865,7 @@ describe("composed offline wiring — case/logical-request/attempt correlation e
       [1, 1],
       [1, 2],
     ]);
-  });
+  }, 500);
 });
 
 /**
@@ -1834,7 +1886,17 @@ describe("composed offline wiring — case/logical-request/attempt correlation e
  * file's `createEvalRetryPolicy` describe block above) rather than the
  * limiter's/retry policy's real wall clock — so this suite provably never
  * waits 90 real seconds for the deadline case, no `vi.useFakeTimers()`
- * needed since the composed pipeline's own clock is injected end to end.
+ * needed.
+ *
+ * Fifth independent Codex review (issuecomment-5621313572): the previous
+ * version of this suite injected `now`/`sleep` into `createEvalRetryPolicy`
+ * only — `createRequestRateLimiter` still defaulted to real
+ * `Date.now`/`setTimeout`, so the five real provider calls below still cost
+ * ~2400ms of real admission-spacing pacing (100 rpm over a 60s window is
+ * 600ms between successive admissions), contradicting the "clock is injected
+ * end to end" and "zero real sleeps" claims. `runMultiStepAndDeadlineSuite`
+ * now shares the SAME virtual clock between the retry policy and the
+ * limiter, so both waits are injected and the claim is actually true.
  */
 describe("composed offline wiring — multi-step logical requests and a deadline stop (#307 fourth independent Codex review, finding 3)", () => {
   function generateResult(text: string) {
@@ -1906,14 +1968,23 @@ describe("composed offline wiring — multi-step logical requests and a deadline
   }
 
   async function runMultiStepAndDeadlineSuite() {
-    // Virtual clock shared by the retry policy AND the retries themselves —
-    // `sleepCalls` proves every wait went through this injected seam, never
-    // a real setTimeout.
+    // One virtual clock shared by the retry policy's own wait AND the
+    // limiter's admission-spacing wait. `retrySleepCalls`/`limiterSleepCalls`
+    // are tracked separately — a retry wait and an admission wait are
+    // distinct events and must never be asserted as one merged, ambiguous
+    // list — but both mutate the SAME `currentTime`, so the two waits stay
+    // correctly interleaved in one coherent timeline, proving every wait in
+    // this suite went through an injected seam, never a real setTimeout.
     let currentTime = 0;
     const now = () => currentTime;
-    const sleepCalls: number[] = [];
-    const sleep = async (ms: number) => {
-      sleepCalls.push(ms);
+    const retrySleepCalls: number[] = [];
+    const retrySleep = async (ms: number) => {
+      retrySleepCalls.push(ms);
+      currentTime += ms;
+    };
+    const limiterSleepCalls: number[] = [];
+    const limiterSleep = async (ms: number) => {
+      limiterSleepCalls.push(ms);
       currentTime += ms;
     };
 
@@ -1942,6 +2013,8 @@ describe("composed offline wiring — multi-step logical requests and a deadline
       rpmLimit: 100,
       maxRetries: 0,
       onRequest: observability.onRequest,
+      now,
+      sleep: limiterSleep,
     });
     const attemptTracker = createCaseAttemptTracker();
     const retryPolicy = createEvalRetryPolicy({
@@ -1951,7 +2024,7 @@ describe("composed offline wiring — multi-step logical requests and a deadline
       attemptTracker,
       onBeforeAttempt: (requestIndex, attempt) => observability.beginRequest(requestIndex, attempt),
       now,
-      sleep,
+      sleep: retrySleep,
       maxRequestMs: DEADLINE_CASE_MAX_REQUEST_MS,
     });
     const model = createRetryingModel({
@@ -2012,19 +2085,36 @@ describe("composed offline wiring — multi-step logical requests and a deadline
     };
     const observabilityLog = observability.log(meta);
     const fullReport = { ...report, observability: observabilityLog };
-    return { fullReport, observabilityLog, sleepCalls, calls: () => calls };
+    return {
+      fullReport,
+      observabilityLog,
+      retrySleepCalls,
+      limiterSleepCalls,
+      calls: () => calls,
+    };
   }
 
-  it("exercises a real SECOND logical request (requestIndex 2) within one case via a genuine tool-call step, and stops a separate case on a deliberately unreachable 429 deadline — all through the injected virtual clock, with zero real sleeps", async () => {
-    const { fullReport, observabilityLog, sleepCalls, calls } =
+  it("exercises a real SECOND logical request (requestIndex 2) within one case via a genuine tool-call step, and stops a separate case on a deliberately unreachable 429 deadline — all through the injected virtual clock (retry policy AND limiter admission pacing), with zero real sleeps", async () => {
+    const { fullReport, observabilityLog, retrySleepCalls, limiterSleepCalls, calls } =
       await runMultiStepAndDeadlineSuite();
 
     // Exactly 5 real provider calls total, proving no extra/duplicate
     // dispatch and no real retry of the deadline-blown case-c request.
     expect(calls()).toBe(5);
-    // Every wait this run performed went through the injected clock; the
-    // 600s deadline-blowing hint was never actually slept on.
-    expect(sleepCalls).toEqual([0]);
+    // Every wait this run performed went through an injected clock, never a
+    // real timer. The retry policy waited its one 0ms hint (the 600s
+    // deadline-blowing hint on case-c was never actually slept on — it
+    // stops instead). The limiter's own admission-spacing wait (100 rpm
+    // over a 60s window is 600ms between successive admissions) fired for
+    // each of the 4 admissions after the first, across all 3 cases. Kept as
+    // two separate arrays, never merged, so a retry wait is never mistaken
+    // for an admission wait: this deterministically fails (rather than
+    // merely running slow, ~2400ms of real pacing) if a future change drops
+    // `now`/`sleep` from either `createEvalRetryPolicy` or
+    // `createRequestRateLimiter`, since a dropped option falls back to the
+    // real, un-tracked default and the corresponding array would stay empty.
+    expect(retrySleepCalls).toEqual([0]);
+    expect(limiterSleepCalls).toEqual([600, 600, 600, 600]);
 
     expect(fullReport.cases.map((c) => c.id)).toEqual(["case-a", "case-b"]);
     expect(fullReport.failedCases.map((c) => c.id)).toEqual(["case-c"]);
@@ -2095,5 +2185,11 @@ describe("composed offline wiring — multi-step logical requests and a deadline
     );
     expect(persistedCaseCFailure.attempts[0].outcome).toBe("stopped-deadline-exceeded");
     expect(persisted.observability.requestCount).toBe(5);
-  }, 4_000);
+    // Belt-and-braces on top of the sleep-array checks above: the real
+    // admission spacing this suite would need without the injected limiter
+    // clock is ~2400ms (four 600ms waits); a tight per-test timeout well
+    // under that fails the test outright if a future change reintroduces a
+    // real wait, rather than merely running slower inside the old 4000ms
+    // budget.
+  }, 1_000);
 });
