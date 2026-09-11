@@ -262,13 +262,70 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
   },
 
   // ---- absent-topic (plausible recruiter questions, genuinely absent) ----
+  // Each entry's `distinguishingTerms` (#307) is the exact vocabulary that would
+  // falsify its absence premise if it ever appeared in the rendered corpus —
+  // `absent-topic-guard.test.ts` fails loudly the moment that happens, instead of
+  // a negative control silently rotting (as `absent-sap-erp` did once #295's SAP
+  // migration story was authored — see the #307 real-run diagnosis).
+  //
+  // Kept deliberately small (5) and, per the real 66-case artifact (33848493625),
+  // deliberately NOT about a programming language/framework/platform: every gaps.json
+  // entry (golang, rust, java, dotnet, graphql, mobile-native, django, shopify) is phrased
+  // "No production X experience" — near-identical framing to "does he have X experience?" —
+  // so a tech-adjacent absent-topic query risks scoring close to a gap record regardless of
+  // which tech it names (that real run's diagnosed violator for the former absent-blockchain
+  // case was gap:dotnet, not anything blockchain-specific). absent-blockchain and
+  // absent-penetration-testing were both real, scored failures in that artifact
+  // (gap:dotnet 0.6949; story:house-numbers-secure-public-document-upload 0.6525 — the
+  // latter a corpus-drift semantic neighbor added after #295, the same failure mode SAP had)
+  // and are replaced below with two non-technology-adjacent domains (life sciences,
+  // industrial automation) that share no vocabulary with any gap/skill/experience/
+  // project/story record, keeping the 0.8 `absentTopicAccuracy` threshold achievable
+  // without lowering it.
   {
-    id: "absent-blockchain",
-    query: "Does he have blockchain or smart-contract development experience?",
+    id: "absent-genomics-bioinformatics",
+    query: "Does he have experience with genome sequencing or clinical bioinformatics research?",
     category: "absent-topic",
     expectedSources: [],
     expectEmpty: true,
-    notes: "No mention of blockchain/web3/smart contracts anywhere in the corpus.",
+    distinguishingTerms: [
+      "genomics",
+      "bioinformatics",
+      "genome sequencing",
+      "clinical bioinformatics",
+    ],
+    notes:
+      "No mention of genomics, bioinformatics, genome sequencing, or clinical bioinformatics " +
+      "research anywhere in the corpus. Reworded (#307 post-fix correction, comment " +
+      "5538575047): the post-fix provider run (33857016367) scored a false positive because " +
+      "the original 'data pipelines' phrasing collided with project " +
+      "document-extraction-pipeline (0.65417) and skill llms (0.64602) on that shared generic " +
+      "phrase. Anchoring to genome sequencing and clinical bioinformatics research vocabulary " +
+      "shares no terms with any gap, skill, experience, project, or story record. Originally " +
+      "replaced the former absent-blockchain case (#307): both blockchain and the corpus's " +
+      "own gap records ('No production X experience') share enough framing that the real " +
+      "66-case artifact (33848493625) scored a gap:dotnet false-positive above the " +
+      "absent-topic floor.",
+  },
+  {
+    id: "absent-industrial-control-systems",
+    query: "Has he worked with SCADA or industrial control systems (ICS/OT)?",
+    category: "absent-topic",
+    expectedSources: [],
+    expectEmpty: true,
+    distinguishingTerms: ["scada", "industrial control system", "operational technology"],
+    notes:
+      "No mention of SCADA, industrial control systems, or operational technology anywhere " +
+      "in the corpus. Replaces the former absent-penetration-testing case (#307): that case's " +
+      "top violator in the real 66-case artifact (33848493625) was " +
+      "story:house-numbers-secure-public-document-upload (0.6525) — a security-adjacent story " +
+      "added after #295, the same corpus-drift failure mode SAP had. Industrial automation " +
+      "shares no vocabulary with any story, including the security ones. Uses the full phrase " +
+      "'operational technology', not the slash-form 'ics/ot' (Codex review checkpoint " +
+      "correction, #307): `normalizeForDriftCheck` (./absent-topic-guard.ts) strips " +
+      "punctuation, so 'ics/ot' silently collapses to the literal substring 'icsot', which " +
+      "cannot detect a later standalone 'ICS' or 'operational technology' mention — see " +
+      "absent-topic-guard.test.ts for the pinned failure case this replaces.",
   },
   {
     id: "absent-salesforce-admin",
@@ -276,6 +333,7 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
     category: "absent-topic",
     expectedSources: [],
     expectEmpty: true,
+    distinguishingTerms: ["salesforce"],
     notes: "No mention of Salesforce anywhere in the corpus.",
   },
   {
@@ -284,26 +342,31 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
     category: "absent-topic",
     expectedSources: [],
     expectEmpty: true,
+    distinguishingTerms: ["firmware", "embedded system"],
     notes: "No mention of embedded systems, firmware, or C anywhere in the corpus.",
   },
   {
-    id: "absent-sap-erp",
-    query: "Does he have SAP ERP implementation experience?",
+    id: "absent-veterinary-surgery",
+    query: "Has he worked in veterinary medicine or performed animal surgery?",
     category: "absent-topic",
     expectedSources: [],
     expectEmpty: true,
-    notes: "No mention of SAP or ERP systems anywhere in the corpus.",
-  },
-  {
-    id: "absent-penetration-testing",
-    query: "Has he done penetration testing or offensive security work?",
-    category: "absent-topic",
-    expectedSources: [],
-    expectEmpty: true,
-    notes: "No mention of penetration testing or offensive security anywhere in the corpus.",
+    distinguishingTerms: ["veterinary", "animal surgery", "veterinary medicine"],
+    notes:
+      "No mention of veterinary medicine, animal surgery, or clinical veterinary practice " +
+      "anywhere in the corpus. Replaces the former absent-mainframe-cobol case (#307 " +
+      "post-fix correction, comment 5538575047): the post-fix provider run (33857016367) " +
+      "scored it a false positive (fullstack-labs-sap-migration story 0.68800, gap:dotnet " +
+      "0.66693) as technology/modernization-adjacent vocabulary. Veterinary medicine is a " +
+      "genuinely remote, nontechnical domain that shares no vocabulary with any gap, skill, " +
+      "experience, project, or story record. absent-mainframe-cobol itself had replaced the " +
+      "former absent-sap-erp case (#307): the SAP migration story (006) made SAP/ERP no " +
+      "longer a genuinely absent topic once it was authored (#295).",
   },
 
-  // ---- behavioral-story eval manifest (#295): the locked 38-case set ----
+  // ---- behavioral-story eval manifest (#295): the locked 36-case retrieval set ----
+  // (originally 38 with 2 absent-topic behavioral cases, N01/N02; #307 moved those to the
+  // agent eval only — see the comment after story-c02 below.)
   // Story reference table (issue #295):
   // 001 xogito-client-account-recovery         009 house-numbers-zod-production-incident
   // 002 mutual-informal-leadership              010 house-numbers-vendor-extraction-contract
@@ -542,10 +605,6 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
       { sourceType: "story", sourceId: "house-numbers-prompt-platform-migration" },
     ],
     matchMode: "any",
-    preferredSource: {
-      sourceType: "story",
-      sourceId: "house-numbers-deterministic-document-checks",
-    },
   },
   {
     id: "story-a02-diagnosing-production-failure",
@@ -653,21 +712,10 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
     matchMode: "all",
   },
 
-  // ---- absent-topic (2) — honestly-absent behavioral topics (#295) ----
-  {
-    id: "story-n01-two-equally-urgent-clients",
-    query: "Tell me about a time Marcos managed two equally urgent client projects at once.",
-    category: "absent-topic",
-    expectedSources: [],
-    expectEmpty: true,
-    notes: "No authored story covers competing, equally-urgent concurrent client priorities.",
-  },
-  {
-    id: "story-n02-immovable-deadline-scope-cut",
-    query: "Describe a deadline Marcos could not move and how he cut scope to meet it.",
-    category: "absent-topic",
-    expectedSources: [],
-    expectEmpty: true,
-    notes: "No authored story covers an immovable deadline forcing a scope cut.",
-  },
+  // Behavioral absence (formerly story-n01/n02 here) moved out of this retrieval-only
+  // dataset per the #307 real-run diagnosis: an absolute-floor "nothing above minScore"
+  // check cannot distinguish an absent behavioral topic from a present one (nearby
+  // stories/recommendations score 0.65-0.78 regardless), so these honest-absence cases
+  // stay where they're actually evaluated — `packages/agent/src/evals/dataset/
+  // story-manifest-cases.ts`'s N01/N02, scored via story-scoped search plus gap-honesty.
 ];

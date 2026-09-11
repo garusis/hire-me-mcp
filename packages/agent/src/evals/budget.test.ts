@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertWithinBudget,
   BudgetExceededError,
+  createBudgetGuard,
   estimateCostUsd,
   getModelPricing,
 } from "./budget.js";
@@ -75,5 +76,109 @@ describe("getModelPricing", () => {
     const pricing = getModelPricing("gemini-3.5-flash-lite");
     expect(pricing.inputPerMillion).toBe(0);
     expect(pricing.outputPerMillion).toBe(0);
+  });
+});
+
+/**
+ * #307 second independent-review correction (2nd round), finding 2: budget
+ * enforcement was case-level only — checked once per case, AFTER
+ * `deps.runCase` fully returned. A multi-step case (model call -> tool call
+ * -> another model call) could issue further real provider requests after
+ * an earlier step already exhausted the known budget. `createBudgetGuard`
+ * accumulates KNOWN usage across every request/case sharing one instance and
+ * throws BEFORE the next request the instant either cap is already crossed
+ * — the guard `./retry.ts`'s `beforeAttempt` hook and `./cli.ts`'s `main()`
+ * wire together.
+ */
+describe("createBudgetGuard", () => {
+  const pricing = { inputPerMillion: 1, outputPerMillion: 1 };
+
+  it("does not throw before any usage is recorded, or while recorded usage stays within both caps", () => {
+    const guard = createBudgetGuard({ maxTotalTokens: 1_000, maxCostUsd: 1 });
+    expect(() => guard.assertNotExceeded()).not.toThrow();
+
+    guard.recordUsage({ inputTokens: 100, outputTokens: 100, totalTokens: 200 }, pricing);
+    expect(() => guard.assertNotExceeded()).not.toThrow();
+  });
+
+  it("throws BudgetExceededError once accumulated KNOWN tokens cross maxTotalTokens — before the next request, not after", () => {
+    const guard = createBudgetGuard({ maxTotalTokens: 100, maxCostUsd: 100 });
+    guard.recordUsage({ inputTokens: 60, outputTokens: 50, totalTokens: 110 }, pricing);
+
+    expect(() => guard.assertNotExceeded()).toThrow(BudgetExceededError);
+  });
+
+  it("throws BudgetExceededError once accumulated KNOWN cost crosses maxCostUsd", () => {
+    const guard = createBudgetGuard({ maxTotalTokens: 1_000_000, maxCostUsd: 0.0001 });
+    guard.recordUsage(
+      { inputTokens: 1_000_000, outputTokens: 0, totalTokens: 1_000_000 },
+      { inputPerMillion: 1, outputPerMillion: 0 },
+    );
+
+    expect(() => guard.assertNotExceeded()).toThrow(BudgetExceededError);
+  });
+
+  it("accumulates usage across multiple recordUsage calls sharing one instance — proving cross-request/cross-case consumption is shared, not per-call", () => {
+    const guard = createBudgetGuard({ maxTotalTokens: 150, maxCostUsd: 100 });
+    guard.recordUsage({ inputTokens: 50, outputTokens: 0, totalTokens: 50 }, pricing);
+    expect(() => guard.assertNotExceeded()).not.toThrow();
+    guard.recordUsage({ inputTokens: 50, outputTokens: 0, totalTokens: 50 }, pricing);
+    expect(() => guard.assertNotExceeded()).not.toThrow();
+    guard.recordUsage({ inputTokens: 51, outputTokens: 0, totalTokens: 51 }, pricing);
+
+    expect(() => guard.assertNotExceeded()).toThrow(BudgetExceededError);
+  });
+
+  /**
+   * #307 review issuecomment-5577656024: "Review exhausted budget equality
+   * too: no additional request once known consumption equals its cap."
+   * Previously `assertNotExceeded` used strict `>`, so known usage sitting
+   * EXACTLY on the cap let one more real provider request through before the
+   * guard ever fired — the cap is a ceiling to stop AT, not a threshold to
+   * cross before stopping.
+   */
+  it("throws once accumulated KNOWN tokens EQUAL maxTotalTokens exactly — never lets one more request through at the exact cap", () => {
+    const guard = createBudgetGuard({ maxTotalTokens: 100, maxCostUsd: 100 });
+    guard.recordUsage({ inputTokens: 60, outputTokens: 40, totalTokens: 100 }, pricing);
+
+    expect(() => guard.assertNotExceeded()).toThrow(BudgetExceededError);
+  });
+
+  it("throws once accumulated KNOWN cost EQUALS maxCostUsd exactly", () => {
+    const guard = createBudgetGuard({ maxTotalTokens: 1_000_000, maxCostUsd: 1 });
+    guard.recordUsage(
+      { inputTokens: 1_000_000, outputTokens: 0, totalTokens: 1_000_000 },
+      { inputPerMillion: 1, outputPerMillion: 0 },
+    );
+
+    expect(() => guard.assertNotExceeded()).toThrow(BudgetExceededError);
+  });
+});
+
+/**
+ * #307 review issuecomment-5577656024, finding 1: a `BudgetExceededError`
+ * thrown mid-case (from `beforeAttempt`, before a request that would cross
+ * the shared budget) must be able to carry the case's own known-usage
+ * attempt trace, so `./runner.ts` can fold that KNOWN usage into totals
+ * instead of losing it, and classify the case as aborted rather than
+ * never-started. Previously this class had no such field at all.
+ */
+describe("BudgetExceededError attempts", () => {
+  it("defaults to an empty attempts trace when none is supplied", () => {
+    const error = new BudgetExceededError("stopped");
+    expect(error.attempts).toEqual([]);
+  });
+
+  it("carries a supplied attempts trace", () => {
+    const attempts = [
+      {
+        attempt: 1,
+        outcome: "success" as const,
+        durationMs: 5,
+        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      },
+    ];
+    const error = new BudgetExceededError("stopped", attempts);
+    expect(error.attempts).toEqual(attempts);
   });
 });

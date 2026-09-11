@@ -65,12 +65,31 @@
  */
 
 import type { Competency } from "@hire-me-mcp/core";
+import { ABSENT_STORY_PATTERN } from "../scorers/tool-routing.js";
 import type { EvalCase } from "./schema.js";
 
 const FACTUAL_BOUNDARY_GUARDS: readonly string[] = [
   // No invented authority: none of the 16 stories' real titles are an
   // executive/formal-management role.
-  "\\b(?:CTO|Chief Technology Officer|VP of Engineering|Engineering Manager|founder|co-founder)\\b",
+  //
+  // #307 confirmed defect: the prior unconditional `\bCTO\b` forbade the
+  // token anywhere, including story 016's own approved content — "I spoke
+  // openly with my CTO" — which every honest paraphrase ("his CTO", "her
+  // CTO") also relays. The guard must catch Marcos being CAST as the CTO
+  // (a claimed title), never a third-party CTO he reported to or spoke
+  // with.
+  //
+  // #307 second independent-review correction: excluding ANY possessive
+  // determiner right before "CTO" was too broad — "the" is exactly how a
+  // self-attributing claim reads ("Marcos was **the** CTO"), and even "his"
+  // doesn't guarantee safety when the surrounding verb attributes the role
+  // to Marcos himself ("Marcos served as **his** CTO" — "served as" is not
+  // a relaying verb the way "spoke with"/"reported to" is). Narrowed the
+  // exclusion to the specific "(with|to|from|under) + possessive + CTO"
+  // shape that genuinely relays a third party's CTO; every other "CTO"
+  // occurrence (a bare claim, "was the CTO", "served as his CTO", "became
+  // CTO") still matches.
+  "\\bChief Technology Officer\\b|\\b(?:VP of Engineering|Engineering Manager|founder|co-founder)\\b|(?<!\\b(?:with|to|from|under)\\s(?:his|my|her|their)\\s)\\bCTO\\b",
   // No invented confidential identifiers: no story content contains a real
   // SSN, borrower name, or salary figure to relay.
   "\\bSSN\\b|social security number|\\$\\d{2,3},\\d{3}\\s*(?:salary|per year|annually)",
@@ -182,25 +201,25 @@ const S = {
  * Story 004's mandatory positive caveat (#295 third-independent-review
  * correction, finding 1): "must preserve that the remaining bucket includes
  * spam, unsupported cases, and an observability gap, and must not attribute
- * the full outcome to the model alone." Checked via `conditionalMustMatch`
- * — enforced ONLY when the answer actually cites story 004 — so an `any`
- * case (A08) that truthfully answers with 015 instead is never wrongly
- * forced to carry a caveat about a story it never cited.
+ * the full outcome to the model alone."
  *
- * Three INDEPENDENT entries (#295 fourth independent-review correction,
- * finding 1), not one combined three-lookahead pattern: the prior single
- * pattern chained `(?=.*\bspam\b)(?=.*\bunsupported\b)(?=.*\b(?:observability|gap)\b)`
- * with `.` spanning the whole remaining answer text, which — compiled
- * without dot-all — cannot match across a Markdown line break between any
- * two of the three required words. Splitting into three separately-checked
- * `conditionalMustMatch` entries, each a plain word-boundary pattern with
- * no `.` at all, makes the requirement immune to prose line-wrapping by
- * construction rather than by a dot-all flag.
+ * #307 confirmed defect: the prior `conditionalMustMatch` gated this purely
+ * on CITING story 004 — so an honest F04 answer that cites the story but
+ * never actually states the ~70%/effective-triage figure the caveat
+ * qualifies (nothing to caveat) still failed. The trigger is the figure
+ * itself, not the citation: each entry below is a `mustNotMatch` forbidding
+ * "the ~70%/effective-triage figure is stated ANYWHERE in the answer" AND
+ * "this specific caveat word is stated NOWHERE in the answer", via a
+ * positive lookahead paired with a negative one. `[\s\S]*` (not `.`) is used
+ * throughout so the check is immune to a Markdown line break between the
+ * figure and a caveat word without needing a dot-all flag (#295 fourth
+ * independent-review correction, finding 1's original motivation, preserved
+ * here under the new mustNotMatch shape).
  */
-const COMM_SERVICE_CAVEATS = [
-  { ifCitedRef: S.commService, pattern: "\\bspam\\b" },
-  { ifCitedRef: S.commService, pattern: "\\bunsupported\\b" },
-  { ifCitedRef: S.commService, pattern: "\\b(?:observability|gap)\\b" },
+const COMM_SERVICE_CAVEAT_OMISSION_GUARDS: readonly string[] = [
+  "(?=[\\s\\S]*(?:\\b70\\s*%|effective[- ]?triage))(?![\\s\\S]*\\bspam\\b)",
+  "(?=[\\s\\S]*(?:\\b70\\s*%|effective[- ]?triage))(?![\\s\\S]*\\bunsupported\\b)",
+  "(?=[\\s\\S]*(?:\\b70\\s*%|effective[- ]?triage))(?![\\s\\S]*\\b(?:observability|gap)\\b)",
 ];
 
 /** A single required story citation, plus one distinguishing keyword, the shared factual-boundary guards, and that story's own audited-risk guard (if any). */
@@ -401,7 +420,10 @@ export const STORY_MANIFEST_CASES: readonly EvalCase[] = [
     expectedToolCall: "search-career-story-scoped",
     answerAssertions: {
       ...singleStoryAssertions(S.commService, "communications"),
-      conditionalMustMatch: COMM_SERVICE_CAVEATS,
+      mustNotMatch: [
+        ...singleStoryAssertions(S.commService, "communications").mustNotMatch,
+        ...COMM_SERVICE_CAVEAT_OMISSION_GUARDS,
+      ],
     },
     notes:
       "stories/house-numbers-communication-service-ownership.json (story 004). Competencies: " +
@@ -634,7 +656,10 @@ export const STORY_MANIFEST_CASES: readonly EvalCase[] = [
     expectedToolCall: "search-career-story-scoped",
     answerAssertions: {
       ...groupAssertions("any", [S.commService, S.crossServiceDebugging]),
-      conditionalMustMatch: COMM_SERVICE_CAVEATS,
+      mustNotMatch: [
+        ...groupAssertions("any", [S.commService, S.crossServiceDebugging]).mustNotMatch,
+        ...COMM_SERVICE_CAVEAT_OMISSION_GUARDS,
+      ],
     },
     notes: "any: 004, 015 (no preferred source).",
   },
@@ -673,9 +698,7 @@ export const STORY_MANIFEST_CASES: readonly EvalCase[] = [
     gapHonestyDirection: "gap",
     expectedToolCall: "search-career-story-scoped",
     answerAssertions: {
-      mustMatch: [
-        "no (?:direct|specific) story|doesn'?t have a (?:direct|specific) story|hasn'?t (?:got|captured) a (?:direct|specific) story",
-      ],
+      mustMatch: [ABSENT_STORY_PATTERN],
     },
     notes:
       "Locked absent-topic case: no authored story covers simultaneously managing two equally " +
@@ -688,9 +711,7 @@ export const STORY_MANIFEST_CASES: readonly EvalCase[] = [
     gapHonestyDirection: "gap",
     expectedToolCall: "search-career-story-scoped",
     answerAssertions: {
-      mustMatch: [
-        "no (?:direct|specific) story|doesn'?t have a (?:direct|specific) story|hasn'?t (?:got|captured) a (?:direct|specific) story",
-      ],
+      mustMatch: [ABSENT_STORY_PATTERN],
     },
     notes:
       "Locked absent-topic case: no authored story covers an immovable deadline forcing scope " +

@@ -29,8 +29,8 @@ function citationPresent(
   );
 }
 
-/** Failure messages for every `mustMatch`/`mustNotMatch` text pattern that didn't hold, plus how many were checked. */
-function checkTextPatterns(
+/** Failure messages for every `mustMatch` text pattern that didn't hold, plus how many were checked. */
+function checkRequiredPatterns(
   answer: string,
   assertions: EvalCaseAnswerAssertions,
 ): { failures: string[]; total: number } {
@@ -43,6 +43,18 @@ function checkTextPatterns(
       failures.push(`missing required pattern /${source}/i`);
     }
   }
+
+  return { failures, total };
+}
+
+/** Failure messages for every `mustNotMatch` text pattern that didn't hold, plus how many were checked. */
+function checkForbiddenPatterns(
+  answer: string,
+  assertions: EvalCaseAnswerAssertions,
+): { failures: string[]; total: number } {
+  const failures: string[] = [];
+  let total = 0;
+
   for (const source of assertions.mustNotMatch ?? []) {
     total += 1;
     if (new RegExp(source, "i").test(answer)) {
@@ -51,6 +63,19 @@ function checkTextPatterns(
   }
 
   return { failures, total };
+}
+
+/** Failure messages for every `mustMatch`/`mustNotMatch` text pattern that didn't hold, plus how many were checked. */
+function checkTextPatterns(
+  answer: string,
+  assertions: EvalCaseAnswerAssertions,
+): { failures: string[]; total: number } {
+  const required = checkRequiredPatterns(answer, assertions);
+  const forbidden = checkForbiddenPatterns(answer, assertions);
+  return {
+    failures: [...required.failures, ...forbidden.failures],
+    total: required.total + forbidden.total,
+  };
 }
 
 /** Failure messages for every `mustCiteEntity`/`mustNotCiteEntity` ref that didn't hold against the answer's own parsed citation markers, plus how many were checked. */
@@ -314,11 +339,18 @@ export function scorePreferredSourceCompliance(
  * so a factual-boundary regression cannot hide behind an otherwise-healthy
  * average.
  *
- * Returns `null` when the case declares no `mustMatch`/`mustNotMatch`/
+ * Returns `null` when the case declares no `mustNotMatch`/
  * `conditionalMustMatch` entry at all (e.g. a case whose `answerAssertions`
- * is purely `mustCiteEntity`/`citationGroups`) — there is no factual
- * boundary declared for this case to hold, same optional-aggregate
- * treatment the other scorers in this module use.
+ * is purely `mustCiteEntity`/`citationGroups`, or purely `mustMatch`) —
+ * there is no factual boundary declared for this case to hold, same
+ * optional-aggregate treatment the other scorers in this module use.
+ *
+ * `mustMatch` (#307 categorization fix) is deliberately excluded: a missing
+ * required keyword is a retrieval/completeness gap, not an invented fact,
+ * and `scoreAnswerAssertions` already fails on it independently. Folding it
+ * in here mislabeled a missing-keyword miss (e.g. a retrieval gap that
+ * never surfaced "SAP") as a factual-boundary VIOLATION, when nothing was
+ * actually invented.
  */
 export function scoreFactualBoundaryCompliance(
   answer: string,
@@ -326,15 +358,14 @@ export function scoreFactualBoundaryCompliance(
 ): ScoreResult | null {
   if (!assertions) return null;
   const hasBoundaryAssertions =
-    (assertions.mustMatch?.length ?? 0) > 0 ||
     (assertions.mustNotMatch?.length ?? 0) > 0 ||
     (assertions.conditionalMustMatch?.length ?? 0) > 0;
   if (!hasBoundaryAssertions) return null;
 
-  const text = checkTextPatterns(answer, assertions);
+  const forbidden = checkForbiddenPatterns(answer, assertions);
   const conditional = checkConditionalMustMatch(answer, assertions);
-  const failures = [...text.failures, ...conditional.failures];
-  const total = text.total + conditional.total;
+  const failures = [...forbidden.failures, ...conditional.failures];
+  const total = forbidden.total + conditional.total;
   const passed = total - failures.length;
   const reason =
     failures.length === 0

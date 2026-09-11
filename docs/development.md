@@ -448,10 +448,14 @@ project: 15 requests/minute, 500 requests/day.
 
 The isolation is a provisioning decision, not something the code can enforce: if two slots are ever
 pointed at the same Google project, one surface's spend eats the other's allowance and the symptom
-is two of the rows below reporting `rate_limited` in lockstep. #264 confirmed Preview and
-Production are genuinely separate — the Preview deployment returned `rate_limited` for a whole day
-while production answered the same questions normally. To check a slot, read the key's project in
-[Google AI Studio](https://ai.dev/rate-limit) and compare.
+is two of the rows below reporting `rate_limited` in lockstep. On one specific day, #264 observed
+Preview and Production reporting `rate_limited` independently rather than in lockstep — the Preview
+deployment returned `rate_limited` for a whole day while production answered the same questions
+normally — which is evidence consistent with the two projects being separate, not proof (#307 Codex
+review, finding 4: correlated/uncorrelated `rate_limited` timing is a live signal, never a
+definitive identity check — see "Verifying quota-slot isolation without secrets or provider calls"
+below for what this kind of observation can and can't establish). To check a slot with certainty,
+read the key's project directly in [Google AI Studio](https://ai.dev/rate-limit) and compare.
 
 A `rate_limited` failure means the *project behind that surface* is out of allowance for the day
 (it resets around 07:00 UTC) — not that the chat is broken. Concretely:
@@ -469,6 +473,49 @@ A `rate_limited` failure means the *project behind that surface* is out of allow
   workflows" below.
 
 See `packages/agent/README.md`'s quota-rationale table for the per-run call budgets.
+
+### Verifying quota-slot isolation without secrets or provider calls (#307 options 1+2) — UNRESOLVED
+
+The three-slots table above states the isolation as a **provisioning decision, not something the
+code can enforce**. That claim has never been independently verified for all three slots at once —
+on one specific day, #264 observed Preview and Production reporting `rate_limited` independently
+(one, not the other), which is evidence consistent with the two being separate projects, never
+proof, and it says nothing about the CI slot. This section exists because item 4 of the #307
+options 1+2 owner-approved scope asked for a safe verification approach to be documented,
+explicitly WITHOUT touching secrets or making a live provider call to check.
+
+**What would NOT prove isolation.** The three slots having different *names* (Production, Preview,
+CI) or living in different credential stores (Vercel env vars vs. a GitHub Actions secret) proves
+nothing about which underlying Google Cloud project each key belongs to — two differently-named
+credential slots can still be two API keys minted from the very same project. Cohort/workflow
+naming is an organizational convenience, not a quota boundary.
+
+**A safe, secret-free way to check.** Every 429 this codebase now handles carries the provider's
+own structured `QuotaFailure` evidence, and `./rate-limit.ts`'s `classifyQuotaEvidence` /
+`onRequest` observability (#307 options 1+2) already records a sanitized classification and the
+per-request window count for every naturally-occurring 429 — without ever reading or logging the
+API key itself, the raw response body, or making an extra provider call solely to check. Comparing
+the timing of naturally-occurring `rate_limited` events across the three surfaces (via each
+surface's own logs/observability, not a dedicated probe) is the same method #264 already used, and
+it or a repeat of it is the only verification this document endorses: if two "separate" slots
+exhaust in lockstep repeatedly, they are very likely the same project; if they exhaust
+independently over enough real traffic, that's consistent with (but still short of a cryptographic
+proof of) real separation. **Do not** add a live "make one throwaway call per slot and compare"
+probe — that is itself a provider call spent purely to check, explicitly out of scope here, and it
+still wouldn't produce a project id, since the Gemini API does not return one in an ordinary
+response.
+
+**Status: UNRESOLVED.** The owner has been asked (per the #307 options 1+2 approval comment) to
+directly confirm the three keys' actual project relationship from the Google Cloud/AI Studio
+console — the only source that can state it with certainty. Until that confirmation lands here:
+
+- Do not claim the three quota slots are verified-isolated in any code, comment, or report this
+  repo produces.
+- Do not provision a new Google Cloud project, rotate a key, or otherwise change the current
+  isolation state to "fix" this — that is a provisioning action, explicitly out of scope for #307
+  options 1+2 (no new infrastructure, no cross-project quota workaround).
+- Treat a correlated `rate_limited` failure across two "separate" surfaces as a live signal worth
+  re-opening this question, not as a fluke to retry past.
 
 ## Performance budgets (#62)
 

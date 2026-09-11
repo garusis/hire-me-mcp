@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildReport, type CaseReport } from "./report.js";
+import { buildReport, type CaseReport, type FailedCaseReport } from "./report.js";
 
 const baseCases = [
   {
@@ -72,7 +72,7 @@ describe("buildReport", () => {
     expect(report.aggregates.relevance.count).toBe(3);
   });
 
-  it("carries promptVersion, modelId, and totals through unmodified", () => {
+  it("carries promptVersion, modelId, and totals through unmodified, marking totals.usageComplete true when every case's usage was known", () => {
     const report = buildReport({
       promptVersion: "test-version",
       modelId: "gemini-3.6-flash",
@@ -81,7 +81,7 @@ describe("buildReport", () => {
     });
     expect(report.promptVersion).toBe("test-version");
     expect(report.modelId).toBe("gemini-3.6-flash");
-    expect(report.totals).toEqual({ cases: 3, ...totals });
+    expect(report.totals).toEqual({ cases: 3, usageComplete: true, ...totals });
   });
 
   it("produces a passing verdict when every aggregate clears its threshold", () => {
@@ -351,5 +351,442 @@ describe("buildReport", () => {
     expect(report.aggregates.factualBoundaryCompliance).toEqual({ mean: 0.8, count: 5 });
     expect(report.verdict.passed).toBe(false);
     expect(report.verdict.failures.some((line) => /factual.boundary/i.test(line))).toBe(true);
+  });
+
+  /**
+   * #307 track 2 (agent-eval observability): a case's `toolTrace` (name,
+   * args, returned citations, in call order — the compact per-case trace
+   * that distinguishes a retrieval failure from the model ignoring a
+   * returned result) must survive assembly into the final report unmodified
+   * when present, and default to an empty array (never `undefined`) when a
+   * case carries none — the same default `runEvalSuite` applies for a run
+   * result with no `toolCalls` field (`./runner.ts`), so every case in a
+   * report has a consistently-typed `toolTrace: ToolCall[]`.
+   */
+  it("carries each case's toolTrace through to the report, defaulting to [] when a case declares none", () => {
+    const caseWithTrace: CaseReport = {
+      ...(baseCases[0] as CaseReport),
+      toolTrace: [
+        { toolName: "list-career-stories", args: { competencies: ["ownership"] } },
+        {
+          toolName: "search-career",
+          args: { query: "ownership", sourceTypes: ["story"] },
+          citations: [{ entityType: "story", entityId: "sap-incident" }],
+        },
+      ],
+    };
+
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: [caseWithTrace, baseCases[1] as CaseReport],
+      totals,
+    });
+
+    expect(report.cases[0]?.toolTrace).toEqual(caseWithTrace.toolTrace);
+    expect(report.cases[1]?.toolTrace).toEqual([]);
+  });
+
+  /**
+   * #307 second independent-review correction, finding 4: a successful
+   * case's own attempt trace must survive into the final report unmodified
+   * when present, and default to an empty array (never `undefined`) when a
+   * case carries none.
+   */
+  it("carries each case's attempts through to the report, defaulting to [] when a case declares none", () => {
+    const caseWithAttempts: CaseReport = {
+      ...(baseCases[0] as CaseReport),
+      attempts: [
+        { attempt: 1, outcome: "retrying", durationMs: 5, statusCode: 503 },
+        { attempt: 2, outcome: "success", durationMs: 5 },
+      ],
+    };
+
+    const report = buildReport({
+      promptVersion: "test-version",
+      modelId: "gemini-3.6-flash",
+      cases: [caseWithAttempts, baseCases[1] as CaseReport],
+      totals,
+    });
+
+    expect(report.cases[0]?.attempts).toEqual(caseWithAttempts.attempts);
+    expect(report.cases[1]?.attempts).toEqual([]);
+  });
+
+  /**
+   * #307 C5 (retry/observability): a terminal provider failure stops the
+   * suite mid-run rather than aborting with nothing to show for it — the
+   * runner (`./runner.ts`) hands `buildReport` whatever cases DID complete,
+   * plus the one that failed terminally and the ids of every case that never
+   * got to run. The report must surface all three, mark itself incomplete,
+   * and fail the verdict outright — a partial run is never silently reported
+   * as passing just because every case that ran happened to score well.
+   */
+  describe("terminal case failure (#307 C5)", () => {
+    const failedCase: FailedCaseReport = {
+      id: "grounded-2",
+      category: "grounded",
+      question: "What has he built with Kubernetes?",
+      statusCode: 503,
+      errorName: "APICallError",
+      errorMessage: "Service Unavailable",
+      attempts: [
+        { attempt: 1, outcome: "retrying", durationMs: 5, statusCode: 503 },
+        { attempt: 2, outcome: "stopped-retries-exhausted", durationMs: 5, statusCode: 503 },
+      ],
+    };
+
+    it("defaults to complete with no failed or unexecuted cases when the suite ran to completion", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+      });
+
+      expect(report.failedCases).toEqual([]);
+      expect(report.unexecutedCaseIds).toEqual([]);
+      expect(report.complete).toBe(true);
+    });
+
+    it("carries failedCases and unexecutedCaseIds through to the report and marks it incomplete", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases.slice(0, 1),
+        totals,
+        failedCases: [failedCase],
+        unexecutedCaseIds: ["off-topic-1"],
+      });
+
+      expect(report.failedCases).toEqual([failedCase]);
+      expect(report.unexecutedCaseIds).toEqual(["off-topic-1"]);
+      expect(report.complete).toBe(false);
+    });
+
+    it("fails the verdict on a terminal case failure even when every completed case's aggregate clears its threshold", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+        thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.05 },
+        failedCases: [failedCase],
+      });
+
+      expect(report.verdict.passed).toBe(false);
+      expect(report.verdict.failures.some((line) => line.includes(failedCase.id))).toBe(true);
+    });
+
+    it("fails the verdict when cases were left unexecuted after a terminal failure, naming them", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+        thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.05 },
+        unexecutedCaseIds: ["off-topic-2", "off-topic-3"],
+      });
+
+      expect(report.verdict.passed).toBe(false);
+      expect(report.verdict.failures.some((line) => line.includes("off-topic-2"))).toBe(true);
+      expect(report.verdict.failures.some((line) => line.includes("off-topic-3"))).toBe(true);
+    });
+  });
+
+  /**
+   * #307 second independent-review correction, finding 5: a budget overage
+   * stops the suite mid-run the same way a terminal provider failure does —
+   * the report must surface it distinctly (never conflated with
+   * `failedCases`, which is specifically for a case's own provider call
+   * failing), mark itself incomplete, and fail the verdict outright.
+   */
+  describe("budget exceeded (#307 second correction, finding 5)", () => {
+    it("defaults budgetExceeded to null when the suite ran to completion", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+      });
+
+      expect(report.budgetExceeded).toBeNull();
+    });
+
+    it("carries budgetExceeded through, marks the report incomplete, and fails the verdict naming the overage message", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases.slice(0, 2),
+        totals,
+        thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.05 },
+        unexecutedCaseIds: ["off-topic-1"],
+        budgetExceeded: { message: "Eval token budget exceeded: 300000 total token(s) used" },
+      });
+
+      expect(report.budgetExceeded).toEqual({
+        message: "Eval token budget exceeded: 300000 total token(s) used",
+      });
+      expect(report.complete).toBe(false);
+      expect(report.verdict.passed).toBe(false);
+      expect(
+        report.verdict.failures.some((line) => line.includes("Eval token budget exceeded")),
+      ).toBe(true);
+    });
+
+    it("fails the verdict on a budget overage even when every completed case's aggregate clears its threshold and no case is unexecuted", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+        thresholds: { groundedness: 0.5, gapHonesty: 0.5, relevance: 0.05 },
+        budgetExceeded: { message: "Eval cost budget exceeded: $5.00 spent" },
+      });
+
+      expect(report.verdict.passed).toBe(false);
+      expect(report.complete).toBe(false);
+    });
+  });
+
+  /**
+   * #307 review issuecomment-5577656024, finding 1: a case that was IN
+   * FLIGHT (had already made at least one known-usage attempt) when the
+   * shared budget guard stopped it must be classified distinctly from a case
+   * that never started at all — `unexecutedCaseIds` alone can't carry that
+   * distinction, so `partialCases` (parallel to `failedCases`) carries the
+   * aborted case's own id/category/question and its known attempt trace. A
+   * stop before ANY request (an empty attempts trace) is never a
+   * `partialCases` entry — it stays a plain unexecuted case.
+   */
+  describe("partial (mid-flight budget-aborted) cases", () => {
+    it("defaults partialCases to [] on a completed run", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+      });
+
+      expect(report.partialCases).toEqual([]);
+    });
+
+    it("carries a supplied partialCases entry through, keeps it distinct from unexecutedCaseIds and failedCases, and fails the verdict", () => {
+      const partialCase = {
+        id: "gap-1",
+        category: "gap" as const,
+        question: "Has he used Rust?",
+        attempts: [
+          {
+            attempt: 1,
+            outcome: "success" as const,
+            durationMs: 5,
+            usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+          },
+        ],
+      };
+
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases.slice(0, 1),
+        totals,
+        unexecutedCaseIds: ["off-topic-1"],
+        budgetExceeded: { message: "Eval token budget exceeded: stopping." },
+        partialCases: [partialCase],
+      });
+
+      expect(report.partialCases).toEqual([partialCase]);
+      expect(report.failedCases).toEqual([]);
+      expect(report.unexecutedCaseIds).toEqual(["off-topic-1"]);
+      expect(report.complete).toBe(false);
+      expect(report.verdict.passed).toBe(false);
+      expect(
+        report.verdict.failures.some((line) => line.includes("gap-1") && line.includes("aborted")),
+      ).toBe(true);
+    });
+
+    it("marks totals.usageComplete false whenever partialCases is non-empty, even if every scored case's own usage was known", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases.slice(0, 1),
+        totals,
+        budgetExceeded: { message: "Eval token budget exceeded: stopping." },
+        partialCases: [
+          {
+            id: "gap-1",
+            category: "gap" as const,
+            question: "Has he used Rust?",
+            attempts: [],
+          },
+        ],
+      });
+
+      expect(report.totals.usageComplete).toBe(false);
+    });
+  });
+
+  /**
+   * #307 second independent-review correction (2nd round), finding 3:
+   * `usageKnown` was collected per case (`createRunCase`'s
+   * `CaseRunResult.usageKnown`) but `scoreCase`/`buildReport` dropped it —
+   * a report consumer couldn't tell "this case's totals are a genuine zero"
+   * from "we don't actually know." `usageKnown` must persist per case, and
+   * `totals.usageComplete` must be `true` only when EVERY case's usage was
+   * known AND the run itself completed (no failed/unexecuted case, no
+   * budget stop) — distinct from the existing `complete` field, which is
+   * about case EXECUTION, not usage knowledge.
+   */
+  describe("usage completeness (#307 second correction, 2nd round, finding 3)", () => {
+    it("defaults a case's usageKnown to true when the run result carries no explicit flag", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+      });
+
+      expect(report.cases.every((c) => c.usageKnown === true)).toBe(true);
+      expect(report.totals.usageComplete).toBe(true);
+    });
+
+    it("marks totals.usageComplete false when even one case's usage was NOT known, while all-known cases stay true", () => {
+      const mixedCases: CaseReport[] = [
+        { ...(baseCases[0] as CaseReport), usageKnown: true },
+        { ...(baseCases[1] as CaseReport), usageKnown: false },
+      ];
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: mixedCases,
+        totals,
+      });
+
+      expect(report.cases[0]?.usageKnown).toBe(true);
+      expect(report.cases[1]?.usageKnown).toBe(false);
+      expect(report.totals.usageComplete).toBe(false);
+    });
+
+    it("marks totals.usageComplete false when every case's usage is unknown", () => {
+      const allUnknownCases: CaseReport[] = baseCases.map((c) => ({
+        ...(c as CaseReport),
+        usageKnown: false,
+      }));
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: allUnknownCases,
+        totals,
+      });
+
+      expect(report.cases.every((c) => c.usageKnown === false)).toBe(true);
+      expect(report.totals.usageComplete).toBe(false);
+    });
+
+    /**
+     * `complete` (case execution) and `usageComplete` (usage knowledge) must
+     * stay independently readable — a run can execute every case fully
+     * (`complete: true`) while still not knowing one case's true usage
+     * (`usageComplete: false`), and vice versa is NOT possible (a failed/
+     * unexecuted case's true usage can never be fully known), but the two
+     * fields must never be conflated into one.
+     */
+    it("keeps complete (case execution) and usageComplete (usage knowledge) as independent fields", () => {
+      const mixedCases: CaseReport[] = [{ ...(baseCases[0] as CaseReport), usageKnown: false }];
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: mixedCases,
+        totals,
+      });
+
+      expect(report.complete).toBe(true); // every selected case DID execute
+      expect(report.totals.usageComplete).toBe(false); // but its usage wasn't known
+    });
+
+    it("marks totals.usageComplete false whenever the run stopped on a terminal failure or budget overage, regardless of the completed cases' own usageKnown flags", () => {
+      const failedCase: FailedCaseReport = {
+        id: "grounded-2",
+        category: "grounded",
+        question: "What has he built with Kubernetes?",
+        statusCode: 503,
+        errorName: "TransientProviderError",
+        errorMessage: "HTTP 503",
+        attempts: [],
+      };
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases.slice(0, 1), // all-known
+        totals,
+        failedCases: [failedCase],
+      });
+
+      expect(report.totals.usageComplete).toBe(false);
+    });
+
+    it("marks totals.usageComplete false on a budget overage even when it hit on the LAST case (unexecutedCaseIds empty)", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases, // all-known
+        totals,
+        budgetExceeded: { message: "Eval token budget exceeded: stopping." },
+        // unexecutedCaseIds deliberately omitted/empty — the overage hit on
+        // the very last case, so nothing was left unrun.
+      });
+
+      expect(report.unexecutedCaseIds).toEqual([]);
+      expect(report.totals.usageComplete).toBe(false);
+    });
+  });
+
+  describe("observability (#307 Codex review, finding 4)", () => {
+    const observabilityLog = {
+      runId: "run-1",
+      modelId: "gemini-3.6-flash",
+      configuredRpmLimit: 10,
+      configuredWindowMs: 60_000,
+      generatedAt: "2026-01-01T00:00:01.000Z",
+      requestCount: 1,
+      requests: [
+        {
+          requestId: 0,
+          admittedAt: "2026-01-01T00:00:00.000Z",
+          sendAt: "2026-01-01T00:00:00.000Z",
+          completedAt: "2026-01-01T00:00:00.050Z",
+          waitMs: 0,
+          windowCount: 1,
+          effectiveRpm: 1,
+          outcome: "success" as const,
+          caseId: "grounded-1",
+          caseRequestSequence: 1,
+        },
+      ],
+    };
+
+    it("embeds the durable observability log unmodified when provided — the artifact both agent-evals.yml and release-readiness.yml already upload, not a separate untracked file", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+        observability: observabilityLog,
+      });
+
+      expect(report.observability).toEqual(observabilityLog);
+    });
+
+    it("defaults observability to null when the caller doesn't supply one — never a fabricated empty log", () => {
+      const report = buildReport({
+        promptVersion: "test-version",
+        modelId: "gemini-3.6-flash",
+        cases: baseCases,
+        totals,
+      });
+
+      expect(report.observability).toBeNull();
+    });
   });
 });

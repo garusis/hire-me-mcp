@@ -27,6 +27,8 @@
  * $0.
  */
 
+import type { RetryAttemptRecord } from "./retry.js";
+
 export interface BudgetConfig {
   maxCases: number;
   maxTotalTokens: number;
@@ -39,11 +41,27 @@ export interface BudgetUsage {
   costUsd: number;
 }
 
-/** Thrown by {@link assertWithinBudget} the instant a configured cap would be crossed. Never silently swallowed by the runner. */
+/**
+ * Thrown by {@link assertWithinBudget} the instant a configured cap would be
+ * crossed. Never silently swallowed by the runner.
+ *
+ * `attempts` (#307 review issuecomment-5577656024, finding 1) carries the
+ * KNOWN per-attempt usage trace collected for whichever case was in flight
+ * when a {@link BudgetGuard.assertNotExceeded} check stopped it mid-case —
+ * `./cli.ts`'s `createRunCase` attaches the current case's tracker attempts
+ * before rethrowing this error, so `./runner.ts` can fold that known usage
+ * into totals instead of discarding it, and tell "stopped mid-case" apart
+ * from "never started" (an empty trace). Defaults to `[]`: every OTHER
+ * throw site (`assertWithinBudget`'s own post-case cap check, or a guard
+ * check with no case context) has no such trace to attach.
+ */
 export class BudgetExceededError extends Error {
-  constructor(message: string) {
+  attempts: readonly RetryAttemptRecord[];
+
+  constructor(message: string, attempts: readonly RetryAttemptRecord[] = []) {
     super(message);
     this.name = "BudgetExceededError";
+    this.attempts = attempts;
   }
 }
 
@@ -95,4 +113,60 @@ export function estimateCostUsd(
   const inputCost = (tokens.inputTokens / 1_000_000) * pricing.inputPerMillion;
   const outputCost = (tokens.outputTokens / 1_000_000) * pricing.outputPerMillion;
   return inputCost + outputCost;
+}
+
+/**
+ * Enforces the token/cost budget BEFORE every provider request, not once per
+ * case after it completes (#307 second independent-review correction, 2nd
+ * round, finding 2). `assertWithinBudget` above is checked by `./runner.ts`
+ * only after a whole case returns, so a multi-step case (model call -> tool
+ * call -> another model call) could issue further real requests after an
+ * earlier step already exhausted the budget. `createBudgetGuard` is the
+ * shared-consumption tracker one instance spans an entire eval run
+ * (every case, every request, every retry) — `./retry.ts`'s
+ * `RetryPolicyOptions.beforeAttempt` calls `assertNotExceeded` before EVERY
+ * attempt, and `./cli.ts`'s `main()` calls `recordUsage` from the retry
+ * policy's own `onAttempt` the instant a request's real usage is known, so
+ * consumption from a request in progress is visible to the very next one —
+ * including a later step of the SAME case, or the first request of the NEXT
+ * case.
+ */
+export interface BudgetGuard {
+  /** Accumulate one request's known usage — never resets, shared for the whole run. */
+  recordUsage(
+    usage: { inputTokens: number; outputTokens: number; totalTokens: number },
+    pricing: TokenPricing,
+  ): void;
+  /** Throws {@link BudgetExceededError} if accumulated KNOWN usage has already crossed the token or cost cap. Case-count is not this guard's job — see `./runner.ts`'s own `assertWithinBudget` check for that. */
+  assertNotExceeded(): void;
+}
+
+/** Build a {@link BudgetGuard} tracking only the token/cost caps of `config`. */
+export function createBudgetGuard(
+  config: Pick<BudgetConfig, "maxTotalTokens" | "maxCostUsd">,
+): BudgetGuard {
+  let totalTokens = 0;
+  let costUsd = 0;
+  return {
+    recordUsage(usage, pricing) {
+      totalTokens += usage.totalTokens;
+      costUsd += estimateCostUsd(usage, pricing);
+    },
+    assertNotExceeded() {
+      // #307 review issuecomment-5577656024: equality also stops — known
+      // consumption sitting EXACTLY on the cap must never let one more real
+      // provider request through. The cap is a ceiling to stop AT, not a
+      // threshold to cross before stopping.
+      if (totalTokens >= config.maxTotalTokens) {
+        throw new BudgetExceededError(
+          `Eval token budget exceeded: ${totalTokens} total token(s) already spent, max is ${config.maxTotalTokens}. Stopping before issuing another provider request.`,
+        );
+      }
+      if (costUsd >= config.maxCostUsd) {
+        throw new BudgetExceededError(
+          `Eval cost budget exceeded: $${costUsd.toFixed(4)} already spent, max is $${config.maxCostUsd.toFixed(4)}. Stopping before issuing another provider request.`,
+        );
+      }
+    },
+  };
 }

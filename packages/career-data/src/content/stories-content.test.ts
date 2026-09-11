@@ -99,12 +99,70 @@ describe("real content: the #290 story corpus", () => {
 
   it("carries the owner-reviewed minimized tag sets locked in #305 decision 3 (176 assignments, 166 distinct)", () => {
     const tags = dataset.stories.flatMap((entry) => entry.retrievalTags);
+    // #307 owner-authorized correction: to resolve the story-scoped preference collisions the
+    // real-run diagnosis found, one retrieval tag was REPLACED (not appended) in each of two
+    // stories — mutual-informal-leadership swapped "personal-sacrifice" for
+    // "mission-over-personal-gain" (X02, preferred over mutual-sustainable-ownership-failure);
+    // house-numbers-deterministic-document-checks swapped the redundant "nondeterminism" for
+    // "challenged-preferred-direction" (A01, preferred over
+    // house-numbers-prompt-platform-migration). Net assignment/distinct counts are unchanged —
+    // a swap, not an addition — which also keeps every chunk-size boundary unchanged (#296's
+    // locked 90-story-chunk count in `packages/core/src/chunking/index.test.ts` is unaffected).
+    // Both new tags are accurate paraphrases of facts already stated in each story's own text,
+    // never a narrative or fact change.
     expect(tags).toHaveLength(176);
     expect(new Set(tags).size).toBe(166);
     for (const entry of dataset.stories) {
       expect(entry.retrievalTags.length).toBeGreaterThanOrEqual(6);
       expect(entry.retrievalTags.length).toBeLessThanOrEqual(15);
     }
+  });
+
+  describe("#307 story-scoped preference-collision retrieval tags", () => {
+    function storyById(id: string) {
+      const entry = dataset.stories.find((story) => story.id === id);
+      expect(entry, `expected a story with id "${id}"`).toBeDefined();
+      return entry as (typeof dataset.stories)[number];
+    }
+
+    it("X02: the preferred story (mutual-informal-leadership) carries mission-over-personal-gain, and its competing alternative (mutual-sustainable-ownership-failure) does not", () => {
+      expect(storyById("mutual-informal-leadership").retrievalTags).toContain(
+        "mission-over-personal-gain",
+      );
+      expect(storyById("mutual-sustainable-ownership-failure").retrievalTags).not.toContain(
+        "mission-over-personal-gain",
+      );
+    });
+
+    it("A01: the preferred story (house-numbers-deterministic-document-checks) carries challenged-preferred-direction, and its competing alternative (house-numbers-prompt-platform-migration) does not", () => {
+      expect(storyById("house-numbers-deterministic-document-checks").retrievalTags).toContain(
+        "challenged-preferred-direction",
+      );
+      expect(storyById("house-numbers-prompt-platform-migration").retrievalTags).not.toContain(
+        "challenged-preferred-direction",
+      );
+    });
+
+    it("preserves the global 001 > 002 leadership priority: mutual-informal-leadership's new tag does not touch xogito-client-account-recovery", () => {
+      expect(storyById("xogito-client-account-recovery").retrievalTags).not.toContain(
+        "mission-over-personal-gain",
+      );
+    });
+
+    it("X02 reinforcement (#307 post-fix correction, comment 5538575047): the post-fix provider run (33857016367) still ranked mutual-informal-leadership second by only 0.00063 behind mutual-sustainable-ownership-failure, so the unique working-first-version tag is REPLACED (not appended) by mission-over-financial-benefit, retaining mission-over-personal-gain, without changing tag cardinality", () => {
+      const tags = storyById("mutual-informal-leadership").retrievalTags;
+      expect(tags).toContain("mission-over-financial-benefit");
+      expect(tags).toContain("mission-over-personal-gain");
+      expect(tags).not.toContain("working-first-version");
+    });
+
+    it("A01 reinforcement (#307 owner decision after comment 5568959111): the post-fix provider run (33857016367) still ranked house-numbers-deterministic-document-checks second by only 0.00996 behind house-numbers-prompt-platform-migration, so the unique golden-sets tag is REPLACED (not appended) by compact tech-pushback, retaining challenged-preferred-direction and the locked 90-story-chunk boundary without changing tag cardinality", () => {
+      const tags = storyById("house-numbers-deterministic-document-checks").retrievalTags;
+      expect(tags).toContain("tech-pushback");
+      expect(tags).toContain("challenged-preferred-direction");
+      expect(tags).not.toContain("golden-sets");
+      expect(tags).not.toContain("challenged-technical-direction");
+    });
   });
 
   it("covers a useful spread of behavioral competencies as primaries", () => {

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { timeToFirstStreamEventWithCheckpoints } from "../../lib/perf/latency-checkpoint";
 import { percentile } from "../../lib/perf/percentile";
 import { resolveBaseUrl } from "../helpers/base-url";
 import { bypassHeaders } from "../helpers/bypass";
@@ -158,67 +159,74 @@ for (const [toolName, toolBudget] of Object.entries(budgets.latency.mcpTools.too
 // rate-limit error streams back in milliseconds, which would score as a
 // FASTER first event). Tagged so it runs only in the non-required
 // `preview-chat-live` lane; see playwright.preview.config.ts's LIVE_MODEL_TAG.
-test("chat: p75 time-to-first-stream-event stays within budget", {
-  tag: "@live-model",
-}, async () => {
-  const chatBudget = budgets.latency.chat;
-  const totalCalls = chatBudget.warmupCalls + chatBudget.sampleCalls;
-  expect(
-    totalCalls,
-    "this spec's total chat calls must not exceed maxCallsPerCiRun (shared Gemini free-tier quota, #169)",
-  ).toBeLessThanOrEqual(chatBudget.maxCallsPerCiRun);
+test(
+  "chat: p75 time-to-first-stream-event stays within budget",
+  {
+    tag: "@live-model",
+  },
+  // biome-ignore lint/correctness/noEmptyPattern: Playwright requires the literal object-destructuring pattern as the first test-callback parameter.
+  async ({}, testInfo) => {
+    const chatBudget = budgets.latency.chat;
+    const totalCalls = chatBudget.warmupCalls + chatBudget.sampleCalls;
+    expect(
+      totalCalls,
+      "this spec's total chat calls must not exceed maxCallsPerCiRun (shared Gemini free-tier quota, #169)",
+    ).toBeLessThanOrEqual(chatBudget.maxCallsPerCiRun);
 
-  async function timeToFirstStreamEvent(): Promise<number> {
-    const sessionId = crypto.randomUUID();
-    const startedAt = performance.now();
-    const response = await fetch(chatUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...bypassHeaders() },
-      body: JSON.stringify({
-        sessionId,
-        messages: [
-          {
-            id: crypto.randomUUID(),
-            role: "user",
-            parts: [{ type: "text", text: "In one short sentence, what does Marcos do?" }],
-          },
-        ],
-      }),
-    });
-    expect(response.ok, "chat request must succeed").toBe(true);
-    expect(response.body, "chat response must be a stream").not.toBeNull();
-
-    const reader = (response.body as ReadableStream<Uint8Array>).getReader();
-    try {
-      const { done } = await reader.read();
-      const elapsedMs = performance.now() - startedAt;
-      expect(done, "expected at least one stream chunk before the body closed").toBe(false);
-      return elapsedMs;
-    } finally {
-      await reader.cancel().catch(() => undefined);
+    /**
+     * #307: instrumented with `timeToFirstStreamEventWithCheckpoints`, which
+     * logs one safe checkpoint (call-start, response status, first read,
+     * cancel start/complete, or failure) per stage as it happens, instead of
+     * only after the full warmup+sample loop below completes. That closes the
+     * gap where a hard `test.setTimeout` abort mid-loop left zero per-call
+     * evidence — each already-completed call's checkpoints, and the last
+     * checkpoint of a call still in flight, survive in CI output even when a
+     * later call hangs. Behavior (request, stream read, cancel, and what
+     * counts as success/failure) is unchanged from before.
+     */
+    function timeToFirstStreamEvent(phase: "warmup" | "sample", index: number): Promise<number> {
+      const sessionId = crypto.randomUUID();
+      return timeToFirstStreamEventWithCheckpoints({
+        url: chatUrl,
+        requestInit: {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...bypassHeaders() },
+          body: JSON.stringify({
+            sessionId,
+            messages: [
+              {
+                id: crypto.randomUUID(),
+                role: "user",
+                parts: [{ type: "text", text: "In one short sentence, what does Marcos do?" }],
+              },
+            ],
+          }),
+        },
+        context: { label: "chat", phase, index, retry: testInfo.retry },
+      });
     }
-  }
 
-  // Warm-up call(s), discarded.
-  for (let i = 0; i < chatBudget.warmupCalls; i++) {
-    await timeToFirstStreamEvent();
-  }
+    // Warm-up call(s), discarded.
+    for (let i = 0; i < chatBudget.warmupCalls; i++) {
+      await timeToFirstStreamEvent("warmup", i);
+    }
 
-  const samples: number[] = [];
-  for (let i = 0; i < chatBudget.sampleCalls; i++) {
-    samples.push(await timeToFirstStreamEvent());
-  }
+    const samples: number[] = [];
+    for (let i = 0; i < chatBudget.sampleCalls; i++) {
+      samples.push(await timeToFirstStreamEvent("sample", i));
+    }
 
-  const measuredMs = percentile(samples, chatBudget.percentile);
-  // Deliberate: readable CI output for baseline capture (#62).
-  console.log(
-    `[latency] chat: p${chatBudget.percentile}=${measuredMs.toFixed(1)}ms ` +
-      `(threshold ${chatBudget.thresholdMs}ms, samples=${JSON.stringify(samples.map((s) => Math.round(s)))})`,
-  );
+    const measuredMs = percentile(samples, chatBudget.percentile);
+    // Deliberate: readable CI output for baseline capture (#62).
+    console.log(
+      `[latency] chat: p${chatBudget.percentile}=${measuredMs.toFixed(1)}ms ` +
+        `(threshold ${chatBudget.thresholdMs}ms, samples=${JSON.stringify(samples.map((s) => Math.round(s)))})`,
+    );
 
-  expect(
-    measuredMs,
-    `chat p${chatBudget.percentile} time-to-first-stream-event (${measuredMs.toFixed(1)}ms) ` +
-      `exceeded the ${chatBudget.thresholdMs}ms budget in performance-budgets.json`,
-  ).toBeLessThanOrEqual(chatBudget.thresholdMs);
-});
+    expect(
+      measuredMs,
+      `chat p${chatBudget.percentile} time-to-first-stream-event (${measuredMs.toFixed(1)}ms) ` +
+        `exceeded the ${chatBudget.thresholdMs}ms budget in performance-budgets.json`,
+    ).toBeLessThanOrEqual(chatBudget.thresholdMs);
+  },
+);

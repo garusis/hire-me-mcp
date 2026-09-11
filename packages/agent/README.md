@@ -381,9 +381,13 @@ The throttle now wraps the language model itself (the AI SDK's `wrapLanguageMode
 `wrapGenerate`/`wrapStream` await a slot before delegating), so it counts exactly what the provider
 counts — multi-step turns, retries, and anything a future change adds. It is a true **sliding
 window** over admitted-request timestamps, not a fixed inter-request delay, and acquisitions are
-serialized so concurrent callers cannot both slip through. A full run therefore paces itself over
-several minutes of deliberate waiting (roughly 15-20+ minutes for the current 66-case dataset,
-per #295) — that wait is the fix working, not a hang.
+serialized so concurrent callers cannot both slip through. On top of the rolling cap, admissions are
+also **smoothly paced**: a minimum spacing of `windowMs / rpmLimit` is enforced between two
+successive admissions (#307 Codex review, finding 1), so the window's whole allowance is never let
+through in a single instant burst the moment it has room — a retry re-acquiring its own slot is
+paced identically to a first attempt. A full run therefore paces itself over several minutes of
+deliberate waiting (roughly 15-20+ minutes for the current 66-case dataset, per #295) — that wait is
+the fix working, not a hang.
 
 **One source for the number.** `FREE_TIER_RPM_CEILING = 15` (the quota rationale table above) minus
 `RPM_SAFETY_MARGIN = 5` (headroom for the production chat traffic sharing this key) *is* the
@@ -391,15 +395,65 @@ default `EVAL_RPM_LIMIT` — `src/evals/rate-limit.ts` exports it, `src/evals/cl
 test asserts the config default equals it, so this document, the config and the limiter cannot
 drift apart.
 
-**429s are retried, not fatal.** A rate-limit 429 waits out the provider's own hint (a
-`retry-after` header, or Gemini's `RetryInfo.retryDelay` — ~1.5s in practice) and retries, up to 3
-times, falling back to bounded exponential backoff when the error carries no hint. Only HTTP 429 is
-retried: any other failure (a 500, a tool error, a malformed response) propagates immediately and
-unchanged, and a persistently exhausted quota — a *daily* cap, say — still fails the run loudly
-instead of spinning. The retried attempt takes its own slot in the window, because the provider
-counted it too. Budget accounting is untouched: a 429 returns no usage, every attempt that does
-return usage is aggregated into the turn's `totalUsage`, and `assertWithinBudget` still runs after
-every case.
+**429s are retried ONLY for an unambiguous per-minute quota (#307 options 1+2, corrected by #307
+Codex review) — this section was previously stale.** The single retry owner is
+`src/evals/retry.ts`'s `createRetryPolicy`, not this limiter (this limiter's own 429 retry loop
+still exists and is still tested directly, but is disabled in production via `maxRetries: 0` — see
+`./cli.ts`'s `main()`). `createRetryPolicy` reads the provider's own structured `QuotaFailure`
+evidence (`classifyQuotaEvidence`, below) — aggregated across **every** `QuotaFailure` detail the
+response carries, not just the first one — and retries a 429 only when it unambiguously names a
+**per-minute** REQUEST quota (an exact, anchored match against the real
+`GenerateRequestsPerMinutePerProjectPerModel-FreeTier`-shaped id — never a substring/lookalike
+match, and never a token-count quota, which is a different quota family entirely) AND the error
+carries a trustworthy `Retry-After`/`RetryInfo` hint — never an invented fallback backoff for a rate
+limit. A **daily** cap, a response naming both a daily and a minute violation (in the SAME
+`QuotaFailure` detail or across separate ones — `mixed`), evidence naming neither (`unknown`), or a
+missing/unparseable/malformed-shaped body (`malformed`) all stop the run immediately, same as any
+other 429 — retrying against a daily/ambiguous/unknown quota cannot succeed within the run's own
+deadlines and only spends more of a free-tier allowance production chat and Preview depend on. Any
+other failure (a 500, a tool error, a malformed response) propagates immediately and unchanged. A
+retried attempt re-acquires its own slot in this limiter's window (paced identically to a first
+attempt — see the pacing paragraph above), because the provider counted it too. Budget accounting
+is untouched: a 429 returns no usage, every attempt that does return usage is aggregated into the
+turn's `totalUsage`, and `assertWithinBudget` still runs after every case.
+
+**"Unambiguous" is strict, both on the quota evidence itself and on the hint that gates a retry
+(second independent Codex review, issuecomment-5608823305, finding 1+2) — this replaces an earlier,
+looser version of both checks.** A `QuotaFailure` detail only counts when its `@type` is EXACTLY
+`type.googleapis.com/google.rpc.QuotaFailure` (an unrelated type that merely contains the string
+"QuotaFailure" — a lookalike — no longer matches), and if ANY exact-type `QuotaFailure` detail in
+the response has a `violations` field that isn't an array at all, the WHOLE response classifies as
+`malformed` rather than silently dropping just that one detail and trusting a valid sibling. The
+retry-after hint resolver reads EVERY relevant piece of evidence — the `Retry-After` header and
+every `RetryInfo` detail in the body — and when more than one supplies a valid delay, returns the
+CONSERVATIVE MAXIMUM, never the shortest: honoring the shorter of two disagreeing hints risks
+retrying before the provider is actually willing to accept another request. A response whose only
+`RetryInfo` evidence is malformed (an unparseable duration, or one so large it overflows to a
+non-finite millisecond figure) yields no hint at all, rather than silently ignoring the bad one and
+falling through to whatever else was present.
+
+**Observability (#307 options 1+2, embedded per #307 Codex review, finding 4).** Every real
+admitted request — the first attempt AND every retry — is recorded with sanitized, durable
+telemetry: UTC admission, send, and completion timestamps (`sendAt` is its own fresh clock read
+taken immediately before the real provider call, not a copy of `admittedAt` — the two are ordinarily
+a fraction of a millisecond apart in production, but never conflated as the same field — second
+independent Codex review, issuecomment-5608823305, finding 3), how long the request waited for a
+slot, the window's request count at admission (`effectiveRpm`), a per-limiter request identity, and
+— only on a 429 — the sanitized quota classification and the parsed retry hint in milliseconds.
+**Never** a raw error body, header, or credential. `./cli.ts`'s `main()` stamps each record with the
+eval CASE it belongs to and a request/attempt identity EXPLICITLY threaded from `./retry.ts`'s own
+attempt tracker (`ObservabilityCollector.beginRequest`, called from `createEvalRetryPolicy`'s
+`beforeAttempt` hook before the request is sent — not a separately-derived counter that merely
+happens to match), then embeds the full log — run id, model id, the CONFIGURED `rpmLimit`/window
+duration (separate from the observed per-request count), and every correlated record — directly
+into `EvalReport.observability` inside `eval-report.json`, the same artifact both `agent-evals.yml`
+and `release-readiness.yml` already upload as a build artifact, rather than relying solely on a
+separate `eval-observability.json` no workflow retains. `main()` still ALSO writes that separate
+file (`EVAL_OBSERVABILITY_PATH`, default `eval-observability.json`, gitignored — a duplicate of data
+already embedded in the report, so a failure writing it is logged and never blocks the report write)
+for convenient local inspection. The same sanitized quota classification/retry hint are also
+recorded per-attempt on `RetryAttemptRecord` and so already flow into the case-level `attempts` in
+the main report.
 
 ### Thresholds and verdict (`src/evals/thresholds.ts`)
 
@@ -559,14 +613,16 @@ the hybrid retrieval policy the `search-career` tool (see above) and the
 `retrievalPolicy` prompt section add. All eight are copied verbatim from
 `packages/core`'s own `src/eval-retrieval/dataset/cases.ts` fuzzy/
 cross-cutting/absent-topic entries — already-vetted, public-facts-only
-phrasing #41 committed — so both eval suites agree on what "a fuzzy
-question about him" sounds like:
+phrasing #41 committed. Since #307, the agent suite keeps blockchain as an
+answer-honesty case while the retrieval suite uses less semantically adjacent
+negative controls; both suites use genomics/bioinformatics instead of the
+now-invalid SAP/ERP absence claim:
 
 - **Three RAG-grounded (`rag-*`)** — fuzzy/cross-cutting questions with no
   literal wording overlap against the corpus (event-driven architecture,
   combining full-stack with DevOps, taking an AI feature to production).
   `category: "grounded"`, `expectedToolCall: "search-career"`.
-- **Two RAG-grounded absent-topic (`gap-blockchain`, `gap-sap-erp`)** —
+- **Two RAG-grounded absent-topic (`gap-blockchain`, `gap-genomics-bioinformatics`)** —
   plausible recruiter questions about topics genuinely absent from the
   ENTIRE corpus, not just the curated `gaps.json` list (mirroring #41's own
   `absent-topic` category). `category: "gap"`,
@@ -620,6 +676,7 @@ failing score.
 | `EVAL_MAX_COST_USD`      | Max estimated USD cost before the run aborts.         | `0.5`                     |
 | `EVAL_RPM_LIMIT`         | Real provider REQUESTS per rolling minute (not cases — see "Request rate limiting" above). | `10` (`FREE_TIER_RPM_CEILING` 15 − `RPM_SAFETY_MARGIN` 5) |
 | `EVAL_REPORT_PATH`       | Where the JSON report is written.                     | `eval-report.json`        |
+| `EVAL_OBSERVABILITY_PATH` | Where the limiter's per-request observability log is written (#307 options 1+2 — see "Request rate limiting" above). | `eval-observability.json` |
 | `EVAL_CASE_IDS`          | Comma-separated dataset case ids to run instead of the full/sliced dataset (#143 — cheap single-case reproduction while debugging). | unset (runs the normal `budget.maxCases`-sliced dataset) |
 
 ## Running evals in CI (#73)
@@ -648,7 +705,7 @@ EVAL_CASE_IDS=grounded-nodejs-experience pnpm eval:agent
 
 Requires a real `GOOGLE_GENERATIVE_AI_API_KEY` in your environment (the local `.env`'s value is
 picked up automatically the same way the rest of this package resolves its provider — see
-"Provider abstraction" above), and — since #75, for the `rag-*`/`gap-blockchain`/`gap-sap-erp`
+"Provider abstraction" above), and — since #75, for the `rag-*`/`gap-blockchain`/`gap-genomics-bioinformatics`
 cases to exercise the real `search-career` tool rather than scoring a typed "unavailable" result —
 a real `DATABASE_URL` (the local `.env`'s value is valid; see the root README for how to point it
 at your own or a shared Neon branch). The command prints a summary to stdout and writes the full

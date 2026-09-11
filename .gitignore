@@ -36,6 +36,10 @@ coverage/
 # Eval suite (#72) report artifact — generated per-run, never committed.
 packages/agent/eval-report.json
 
+# Eval suite observability sidecar (#307 options 1+2) — generated per-run,
+# same treatment as eval-report.json above; also embedded in it directly.
+packages/agent/eval-observability.json
+
 # Playwright
 /test-results/
 /playwright-report/

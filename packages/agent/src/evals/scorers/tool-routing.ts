@@ -22,6 +22,8 @@
  * just tool-name presence.
  */
 
+import { competencySchema } from "@hire-me-mcp/core";
+import { parseCitations } from "../../citations.js";
 import type { EvalCaseExpectedToolCall } from "../dataset/schema.js";
 import type { ReturnedCitation, ScoreResult } from "./types.js";
 import { clampScore } from "./types.js";
@@ -71,8 +73,37 @@ function isBroaderSearch(call: ToolCall): boolean {
  * behavioral event. Both phrases below must appear in the answer for that
  * fallback to be honest.
  */
-const NO_DIRECT_STORY_REGEX =
-  /no (direct|specific) story|doesn'?t have a (direct|specific) story|hasn'?t (got|captured) a (direct|specific) story/i;
+/**
+ * #307 owner-approved decision 3: "Honest semantic equivalents of no direct
+ * story are valid; no literal phrase lock." The prior pattern recognized
+ * only "no direct/specific story"-shaped sentences; a real gap answer
+ * observed in the 66-case run ("The career records do not contain an
+ * account of...") states the same absence differently and was wrongly
+ * treated as dishonest. Exported (as a source string, not a compiled
+ * RegExp) so `../dataset/story-manifest-cases.ts`'s N01/N02 `mustMatch`
+ * assertions share this same broadened wording instead of maintaining a
+ * second, narrower copy that could drift out of sync.
+ */
+/**
+ * #307 fourth independent-review correction: the prior pattern recognized
+ * only "no direct/specific/matching story"-shaped sentences, missing the
+ * prompt's own phrase "no evidence" and common "no example"/"could not find
+ * an example" equivalents observed as false negatives. These three
+ * additional alternatives extend, not replace, the existing ones.
+ */
+export const ABSENT_STORY_PATTERN =
+  "no (?:direct|specific|matching) story|" +
+  "doesn'?t have a (?:direct|specific|matching) story|" +
+  "hasn'?t (?:got|captured) a (?:direct|specific|matching) story|" +
+  "(?:career records?|records?) (?:do|does) not (?:contain|include|have|show) (?:an? )?" +
+  "(?:direct |specific |matching )?(?:account|story|record|example) of|" +
+  "hasn'?t done (?:a|that|this|an?) [a-z ]{0,40}where|" +
+  "no evidence(?: of (?:an? )?(?:matching |direct |specific |behavioral )?" +
+  "(?:story|example|event))?|" +
+  "no (?:matching |direct |specific |behavioral )?examples?\\b|" +
+  "(?:could not|couldn'?t|did not|didn'?t) find (?:an? )?(?:story|evidence|example)";
+
+const NO_DIRECT_STORY_REGEX = new RegExp(ABSENT_STORY_PATTERN, "i");
 const RELATED_EVIDENCE_LABEL_REGEX =
   /(related|closest)( grounded| available)? evidence|not (itself )?a behavioral event/i;
 
@@ -98,10 +129,8 @@ function checkNonEmptyScopedFollowUp(
   storyScopedCitations: readonly ReturnedCitation[],
   trace: string,
 ): ScoreResult | null {
-  const fetchedId =
-    listCareerStoriesIndex === -1
-      ? undefined
-      : (toolCalls[listCareerStoriesIndex]?.args as Record<string, unknown> | null)?.id;
+  const fetchCall = listCareerStoriesIndex === -1 ? undefined : toolCalls[listCareerStoriesIndex];
+  const fetchedId = (fetchCall?.args as Record<string, unknown> | null)?.id;
   const scopedIds = new Set(storyScopedCitations.map((citation) => citation.entityId));
   if (typeof fetchedId !== "string" || !scopedIds.has(fetchedId)) {
     return {
@@ -109,6 +138,28 @@ function checkNonEmptyScopedFollowUp(
       reason:
         "The list-career-stories fetch's id did not match any story citation the " +
         `story-scoped search-career call returned; tool-call trace was: ${trace}.`,
+    };
+  }
+
+  // #307 fourth independent-review correction: full-fetch confirmation must
+  // fail closed. Merely issuing the fetch call with a matching `id` argument
+  // is not proof it actually returned that story, and neither is `undefined`
+  // (unparseable/unknown) — unlike elsewhere in this file, `undefined` here
+  // cannot stand in for "unavailable, nothing more required": the scoped
+  // search already confirmed a non-empty result exists, so a fetch that
+  // cannot itself confirm returning it (undefined, empty `[]`, wrong
+  // entityType, or wrong id) fails. Only a defined citation with
+  // `entityType: "story"` and `entityId === fetchedId` counts as confirmed.
+  const fetchedCitations = fetchCall?.citations;
+  const fetchConfirmed = (fetchedCitations ?? []).some(
+    (citation) => citation.entityType === "story" && citation.entityId === fetchedId,
+  );
+  if (!fetchConfirmed) {
+    return {
+      score: clampScore(0),
+      reason:
+        `The list-career-stories fetch's own result did not confirm retrieving "${fetchedId}", ` +
+        `the story the story-scoped search returned; tool-call trace was: ${trace}.`,
     };
   }
 
@@ -253,9 +304,264 @@ function hasAllCompetencies(args: unknown, expected: readonly string[]): boolean
   return expected.every((value) => competencies.includes(value));
 }
 
+/**
+ * Whether `args.competencies` is present, non-empty, and every value is a
+ * member of the controlled competency vocabulary (`@hire-me-mcp/core`'s
+ * `competencySchema`, career-data's own taxonomy, #289). #307 owner-approved
+ * decision (issuecomment-5575463218): "accept a valid competency filter that
+ * actually retrieves and cites an acceptable story, rather than requiring
+ * one exact competency label" — a real supporting competency (not just a
+ * story's primary one) can license the loosened acceptance below, but an
+ * arbitrary, uncontrolled string (a technology/vendor name like "SAP",
+ * which the taxonomy explicitly excludes — see
+ * `packages/career-data/src/schemas/competency.ts`) never does, regardless
+ * of what it happens to retrieve.
+ */
+function hasValidCompetencyFilter(args: unknown): boolean {
+  if (typeof args !== "object" || args === null) return false;
+  const competencies = (args as Record<string, unknown>).competencies;
+  if (!Array.isArray(competencies) || competencies.length === 0) return false;
+  return competencies.every(
+    (value) => typeof value === "string" && competencySchema.safeParse(value).success,
+  );
+}
+
+/**
+ * #307 second independent-review correction (finding 1, repro 2): a
+ * `list-career-stories` call's own CONFIRMED citations (`call.citations !==
+ * undefined` — see `ToolCall`'s doc: `undefined` is "unavailable/unknown"
+ * and stays unchecked, the same leniency `scoreStoryScoped` already applies)
+ * must actually contain every story the final answer cites — otherwise
+ * `scoreListCareerStories` passed a run purely on tool presence/arguments
+ * while the answer cited a story the tool never returned (including a
+ * confirmed-empty `[]` result). Returns `true` (a violation) only when
+ * `answer` and confirmed `citations` are both present and a cited story id
+ * is missing from them.
+ */
+function citesUnreturnedStory(
+  answer: string | undefined,
+  citations: readonly ReturnedCitation[] | undefined,
+): boolean {
+  if (answer === undefined || citations === undefined) return false;
+  const returnedIds = new Set(citations.map((citation) => citation.entityId));
+  return parseCitations(answer).some(
+    (marker) => marker.entityType === "story" && !returnedIds.has(marker.entityId),
+  );
+}
+
+/**
+ * #307 third independent-review correction (repro 3): when the case names
+ * acceptable story ids, `citations` being `undefined` (unparseable result)
+ * or `[]` (confirmed empty) cannot establish that a call actually retrieved
+ * one of them — regardless of what the final answer claims to cite. Returns
+ * `true` only when a confirmed citation both is acceptable (`acceptableStoryIds
+ * === undefined` means "no restriction known" — any confirmed, cited story
+ * qualifies) and is cited by `answer`.
+ */
+function confirmsAcceptableCitedStory(
+  citations: readonly ReturnedCitation[] | undefined,
+  answer: string | undefined,
+  acceptableStoryIds: readonly string[] | undefined,
+): boolean {
+  const confirmedCitations = citations ?? [];
+  const answerMarkers = parseCitations(answer ?? "");
+  return confirmedCitations.some(
+    (citation) =>
+      (acceptableStoryIds === undefined || acceptableStoryIds.includes(citation.entityId)) &&
+      answerMarkers.some(
+        (marker) =>
+          marker.entityType === citation.entityType && marker.entityId === citation.entityId,
+      ),
+  );
+}
+
+/**
+ * Whether `args.competencies` is present — regardless of validity. Used to
+ * decide whether a competency-filter check applies at all: an absent/empty
+ * filter (a plain, unfiltered listing) has nothing to validate, but a
+ * present one always does, even when `expectedCompetencies` is
+ * undefined/empty (Codex independent review, issuecomment-5575583880).
+ *
+ * Only two shapes count as "absent", matching the `list-career-stories`
+ * tool's own input schema (`apps/web/lib/mcp/tools/list-career-stories.ts`:
+ * "Omit, or pass an empty array, for no constraint"): the field is
+ * `undefined` (omitted), or it is an empty array. Every other value —
+ * including a non-array primitive/object (a string, a number, `null`, a
+ * plain object) or a non-empty array with invalid entries — is a MALFORMED
+ * but PRESENT filter and must not be conflated with "no filter" (Codex
+ * independent routing review of `de326d5`, issuecomment-5575701584: the
+ * prior `Array.isArray(competencies) && competencies.length > 0` check read
+ * any non-array value as absent, so `competencies: "SAP"` scored the same
+ * as an omitted filter on the own route while the identical trace correctly
+ * scored 0 on the alternate route only because that route's separate
+ * `hasValidCompetencyFilter` gate happened to catch it — an asymmetric
+ * accident, not intended leniency).
+ */
+function hasCompetencyFilter(args: unknown): boolean {
+  if (typeof args !== "object" || args === null) return false;
+  const competencies = (args as Record<string, unknown>).competencies;
+  if (competencies === undefined) return false;
+  if (Array.isArray(competencies) && competencies.length === 0) return false;
+  return true;
+}
+
+/**
+ * Codex independent review of `a7ea727` (issuecomment-5575583880): the
+ * prior exact-match check (`hasAllCompetencies` alone) only verified the
+ * located call's `competencies` array CONTAINS every `expectedCompetencies`
+ * value — a subset/containment check — never that the array carries no
+ * OTHER, invalid entries. A mixed filter like `["risk-management", "SAP"]`
+ * against `expectedCompetencies: ["risk-management"]` satisfied that exact
+ * match purely by containment, silently letting the uncontrolled "SAP"
+ * entry ride along, while the identical trace correctly scored 0 on the
+ * alternate route because `hasValidCompetencyFilter` rejects it — the
+ * asymmetry the review reproduced. The second bypass: when
+ * `expectedCompetencies` was undefined/empty, this whole check used to be
+ * skipped, so an invalid-only or mixed filter went unvalidated even within
+ * the `acceptableStoryIds` behavioral scope (the alternate route's own
+ * call always passes `expectedCompetencies: undefined`).
+ *
+ * Fixed by making the check unconditional on ANY present competency filter
+ * (`hasCompetencyFilter`, not gated on `expectedCompetencies`), and by
+ * requiring the ENTIRE filter to be controlled vocabulary
+ * (`hasValidCompetencyFilter`) for both the exact-match and
+ * supporting-match paths — an exact match is no longer just "contains the
+ * expected values", it is "contains the expected values AND has no invalid
+ * ones". A valid filter without an exact match still requires a confirmed,
+ * acceptable, cited story (`confirmsAcceptableCitedStory`) to pass, exactly
+ * as before — including failing closed when `acceptableStoryIds` is itself
+ * undefined, since there is then nothing to confirm acceptance against.
+ */
+function competencyFilterViolation(
+  located: ToolCall | undefined,
+  expectedCompetencies: readonly string[] | undefined,
+  answer: string | undefined,
+  acceptableStoryIds: readonly string[] | undefined,
+  trace: string,
+): ScoreResult | null {
+  const hasExpected = expectedCompetencies !== undefined && expectedCompetencies.length > 0;
+  const filterPresent = located !== undefined && hasCompetencyFilter(located.args);
+
+  if (!filterPresent) {
+    if (!hasExpected) return null;
+    return {
+      score: clampScore(0),
+      reason:
+        `Expected the list-career-stories call's competencies argument to contain ` +
+        `${JSON.stringify(expectedCompetencies)}, or a valid controlled-vocabulary ` +
+        "competency filter that retrieves and cites an acceptable story; tool-call trace " +
+        `was: ${trace}.`,
+    };
+  }
+
+  // Outside the behavioral-story scope this decision governs — neither an
+  // exact-label expectation nor a known set of acceptable stories to
+  // confirm against — the pre-existing, more lenient presence-only
+  // behavior stays: `confirmsAcceptableCitedStory`'s own later check
+  // already treats `acceptableStoryIds === undefined` as "no restriction
+  // known", and nothing here should be stricter than that for a case that
+  // never opted into either scope.
+  if (!hasExpected && acceptableStoryIds === undefined) return null;
+
+  const args = located?.args;
+  const filterIsValidVocabulary = hasValidCompetencyFilter(args);
+  const exactMatch =
+    hasExpected && filterIsValidVocabulary && hasAllCompetencies(args, expectedCompetencies);
+  const validSupportingMatch =
+    !exactMatch &&
+    filterIsValidVocabulary &&
+    acceptableStoryIds !== undefined &&
+    confirmsAcceptableCitedStory(located?.citations, answer, acceptableStoryIds);
+
+  if (exactMatch || validSupportingMatch) return null;
+
+  return {
+    score: clampScore(0),
+    reason: hasExpected
+      ? `Expected the list-career-stories call's competencies argument to contain ` +
+        `${JSON.stringify(expectedCompetencies)} with no other, invalid entries, or a valid ` +
+        "controlled-vocabulary competency filter that retrieves and cites an acceptable " +
+        `story; tool-call trace was: ${trace}.`
+      : "The list-career-stories call's competencies argument must be a valid, " +
+        "controlled-vocabulary competency filter that retrieves and cites an acceptable " +
+        `story; tool-call trace was: ${trace}.`,
+  };
+}
+
+/**
+ * Whether `call` (one `list-career-stories` call already known to satisfy
+ * the ordering gate) would, ON ITS OWN, satisfy every check
+ * `scoreListCareerStories` applies to a located call: a valid competency
+ * filter (exact-match or a valid controlled-vocabulary supporting match),
+ * no citation of a story the call itself didn't return, and — whenever the
+ * case defines `acceptableStoryIds` (the scope in which the existing route
+ * already requires it downstream, per `scoreListCareerStories`'s own final
+ * check) — a confirmed, acceptable, answer-cited story. Used by
+ * `locateListCareerStoriesCall` to test each candidate call in turn; kept
+ * in exact sync with `scoreListCareerStories`'s own gates so recovery never
+ * accepts anything the single-call scorer wouldn't have.
+ */
+function qualifiesAsLocatedListCall(
+  candidate: ToolCall,
+  expectedCompetencies: readonly string[] | undefined,
+  answer: string | undefined,
+  acceptableStoryIds: readonly string[] | undefined,
+): boolean {
+  if (competencyFilterViolation(candidate, expectedCompetencies, answer, acceptableStoryIds, "")) {
+    return false;
+  }
+  if (citesUnreturnedStory(answer, candidate.citations)) return false;
+  if (
+    acceptableStoryIds !== undefined &&
+    !confirmsAcceptableCitedStory(candidate.citations, answer, acceptableStoryIds)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * #307 assignment A (issuecomment-5591843129 / diagnosis section (a) / C1):
+ * `scoreListCareerStories` and `scoreListCareerStoriesAsAlternate` used to
+ * always evaluate the FIRST `list-career-stories` call in the trace, even
+ * when a later call in the same trace actually retrieved and the answer
+ * actually cited the acceptable story (the saved X05 trace: a first call
+ * whose extra `query` key failed Mastra's strict tool-input validation, so
+ * its `citations` came back `undefined`, followed by a valid, confirmed,
+ * cited second call). Returns the first call, among all `list-career-
+ * stories` calls in `toolCalls` (in trace order), that satisfies
+ * `qualifiesAsLocatedListCall` — i.e. would pass every gate
+ * `scoreListCareerStories` applies to a single located call, INCLUDING the
+ * evidence requirement whenever `acceptableStoryIds` is defined. An
+ * exact-match filter alone never short-circuits that requirement: a first
+ * call that is an exact match but carries no usable (confirmed, acceptable)
+ * citations does not qualify, so a later evidenced call is selected
+ * instead. Falls back to the very first `list-career-stories` call (index
+ * included) when no call qualifies, so the original failure reason is
+ * still reported against a real call.
+ */
+function locateListCareerStoriesCall(
+  toolCalls: readonly ToolCall[],
+  expectedCompetencies: readonly string[] | undefined,
+  answer: string | undefined,
+  acceptableStoryIds: readonly string[] | undefined,
+): { call: ToolCall; index: number } | undefined {
+  let fallback: { call: ToolCall; index: number } | undefined;
+  for (const [index, candidate] of toolCalls.entries()) {
+    if (candidate.toolName !== "list-career-stories") continue;
+    if (fallback === undefined) fallback = { call: candidate, index };
+    if (qualifiesAsLocatedListCall(candidate, expectedCompetencies, answer, acceptableStoryIds)) {
+      return { call: candidate, index };
+    }
+  }
+  return fallback;
+}
+
 function scoreListCareerStories(
   toolCalls: readonly ToolCall[],
   expectedCompetencies: readonly string[] | undefined,
+  answer: string | undefined,
+  acceptableStoryIds: readonly string[] | undefined,
 ): ScoreResult {
   const trace = traceOf(toolCalls);
   const listCareerStoriesIndex = toolCalls.findIndex(
@@ -278,22 +584,220 @@ function scoreListCareerStories(
     };
   }
 
-  if (expectedCompetencies !== undefined && expectedCompetencies.length > 0) {
-    const call = toolCalls[listCareerStoriesIndex];
-    if (call === undefined || !hasAllCompetencies(call.args, expectedCompetencies)) {
-      return {
-        score: clampScore(0),
-        reason:
-          `Expected the list-career-stories call's competencies argument to contain ` +
-          `${JSON.stringify(expectedCompetencies)}; tool-call trace was: ${trace}.`,
-      };
-    }
+  const locatedResult = locateListCareerStoriesCall(
+    toolCalls,
+    expectedCompetencies,
+    answer,
+    acceptableStoryIds,
+  );
+  const located = locatedResult?.call;
+  const locatedCallLabel = `call #${(locatedResult?.index ?? listCareerStoriesIndex) + 1}`;
+
+  const competencyViolation = competencyFilterViolation(
+    located,
+    expectedCompetencies,
+    answer,
+    acceptableStoryIds,
+    trace,
+  );
+  if (competencyViolation) {
+    return {
+      ...competencyViolation,
+      reason: `${competencyViolation.reason} (evaluated ${locatedCallLabel}.)`,
+    };
+  }
+
+  if (citesUnreturnedStory(answer, located?.citations)) {
+    return {
+      score: clampScore(0),
+      reason:
+        "The final answer cites a story that the list-career-stories call's own returned " +
+        `citations do not include; tool-call trace was: ${trace} (evaluated ${locatedCallLabel}.)`,
+    };
+  }
+
+  // #307 third independent-review correction (repro 2): a list-only route
+  // has no search step, so it can never honestly ground a semantic
+  // no-evidence/absence conclusion — that requires an empty or unavailable
+  // story-scoped search-career call first (`scoreStoryScoped`'s own honesty
+  // gate), which by construction did not run when this scorer applies. See
+  // `scoreToolRouting`'s route-selection doc.
+  if (answer !== undefined && NO_DIRECT_STORY_REGEX.test(answer)) {
+    return {
+      score: clampScore(0),
+      reason:
+        "The final answer reaches a semantic no-evidence/absence conclusion, which requires " +
+        "an empty or unavailable story-scoped search-career call first; list-career-stories " +
+        `alone cannot license it; tool-call trace was: ${trace}.`,
+    };
+  }
+
+  if (
+    acceptableStoryIds !== undefined &&
+    !confirmsAcceptableCitedStory(located?.citations, answer, acceptableStoryIds)
+  ) {
+    return {
+      score: clampScore(0),
+      reason:
+        "The list-career-stories call's own confirmed citations did not include an " +
+        "acceptable story id that the final answer also cites; tool-call trace was: " +
+        `${trace} (evaluated ${locatedCallLabel}.)`,
+    };
   }
 
   return {
     score: clampScore(1),
-    reason: `list-career-stories was called first, ahead of search-career; tool-call trace was: ${trace}.`,
+    reason:
+      "list-career-stories was called first, ahead of search-career; tool-call trace was: " +
+      `${trace} (evaluated ${locatedCallLabel}.)`,
   };
+}
+
+/** Whether `call` is the story-scoped `search-career` route (as opposed to `list-career-stories`) — see `scoreStoryRoute`'s doc. */
+function isStoryScopedSearchCall(call: ToolCall): boolean {
+  return call.toolName === "search-career" && hasStorySourceType(call.args);
+}
+
+/**
+ * #307 second independent-review correction (finding 1, repro 3), further
+ * corrected under the third independent review: an ALTERNATE story-scoped
+ * search used in place of a case's own `list-career-stories` route must
+ * satisfy `scoreStoryScoped`'s FULL semantics (order, non-empty-fetch,
+ * fallback-honesty) — not a citations-only shortcut — and, only when it
+ * actually retrieved a non-empty result (`confirmedNonEmpty`; an
+ * empty/unavailable result is an honest absence with nothing to cite), the
+ * final answer must cite a confirmed story that is acceptable for the case
+ * (`acceptableStoryIds` undefined means "any confirmed, cited story is
+ * acceptable" — see `confirmsAcceptableCitedStory`).
+ */
+function scoreStoryScopedAsAlternate(
+  toolCalls: readonly ToolCall[],
+  answer: string | undefined,
+  acceptableStoryIds: readonly string[] | undefined,
+): ScoreResult {
+  const base = scoreStoryScoped(toolCalls, answer ?? "");
+  if (base.score !== 1) return base;
+
+  const storyScopedIndex = toolCalls.findIndex((call) => isStoryScopedSearchCall(call));
+  const confirmedNonEmpty = (toolCalls[storyScopedIndex]?.citations ?? []).length > 0;
+  if (!confirmedNonEmpty) return base;
+
+  const listCall = toolCalls.find((call) => call.toolName === "list-career-stories");
+  if (!confirmsAcceptableCitedStory(listCall?.citations, answer, acceptableStoryIds)) {
+    return {
+      score: clampScore(0),
+      reason:
+        "The story-scoped search (used as the alternate route) retrieved a story, but the " +
+        "final answer did not cite an acceptable, confirmed story; tool-call trace was: " +
+        `${traceOf(toolCalls)}.`,
+    };
+  }
+  return base;
+}
+
+/**
+ * The mirror of `scoreStoryScopedAsAlternate`: an ALTERNATE `list-career-
+ * stories` call used in place of a case's own story-scoped-search route
+ * must satisfy `scoreListCareerStories`'s full semantics AND (always, not
+ * only when `acceptableStoryIds` is known) actually cite a confirmed story —
+ * a call made but never cited (#307 second independent-review repro,
+ * finding 1's original counterexample) does not demonstrate the equivalent
+ * behavior the either-route decision requires.
+ */
+function scoreListCareerStoriesAsAlternate(
+  toolCalls: readonly ToolCall[],
+  answer: string | undefined,
+  acceptableStoryIds: readonly string[] | undefined,
+): ScoreResult {
+  const base = scoreListCareerStories(toolCalls, undefined, answer, acceptableStoryIds);
+  if (base.score !== 1) return base;
+
+  const located = locateListCareerStoriesCall(
+    toolCalls,
+    undefined,
+    answer,
+    acceptableStoryIds,
+  )?.call;
+
+  // #307 owner-approved decision (issuecomment-5575463218): the mirror of
+  // the own-route loosening above — the alternate route has no case-specific
+  // `expectedCompetencies` to match, but its competency filter (when
+  // present) must still be a valid, controlled-vocabulary one, never an
+  // arbitrary/uncontrolled string, regardless of what it happens to
+  // retrieve.
+  //
+  // Codex independent review (issuecomment-5575823109): this gate used to
+  // fire unconditionally, so a legitimately ABSENT filter (omitted or `[]`
+  // — the tool's own "no constraint" semantics, per `hasCompetencyFilter`'s
+  // doc) failed `hasValidCompetencyFilter` (which requires a non-empty,
+  // fully valid array) and scored 0 here even though the identical
+  // no-filter trace scores 1 on the own route via `competencyFilterViolation`
+  // above. Gating this check on `hasCompetencyFilter` first restores that
+  // symmetry — a present-but-invalid filter still scores 0, but an absent
+  // one has nothing to validate and falls through to the citation check
+  // below, exactly like the own route.
+  if (hasCompetencyFilter(located?.args) && !hasValidCompetencyFilter(located?.args)) {
+    return {
+      score: clampScore(0),
+      reason:
+        "list-career-stories (used as the alternate route) must filter by a valid " +
+        "controlled-vocabulary competency, not an arbitrary/unvalidated string; tool-call " +
+        `trace was: ${traceOf(toolCalls)}.`,
+    };
+  }
+
+  if (!confirmsAcceptableCitedStory(located?.citations, answer, acceptableStoryIds)) {
+    return {
+      score: clampScore(0),
+      reason:
+        "list-career-stories (used as the alternate route) was called, but the final answer " +
+        "did not cite an acceptable, confirmed story; tool-call trace was: " +
+        `${traceOf(toolCalls)}.`,
+    };
+  }
+  return base;
+}
+
+/**
+ * #307 owner-approved decision 1: "A correct behavioral answer may use
+ * either list-career-stories or story-scoped search when it retrieves and
+ * cites an acceptable story." Corrected under the third independent review:
+ * which of the two tools was actually used decides which route's full
+ * semantics apply — a story-scoped `search-career` call anywhere in the
+ * trace always means the story-scoped route was taken (its own order/fetch/
+ * fallback-honesty checks are never bypassable), otherwise `list-career-
+ * stories` decides. When the tool actually used differs from `expected`,
+ * the "AsAlternate" wrapper for that tool additionally requires an honest,
+ * confirmed, acceptable citation (`scoreStoryScopedAsAlternate` /
+ * `scoreListCareerStoriesAsAlternate`) — the exception #307 decision 1
+ * describes, not a bypass of either route's own rules. When NEITHER tool
+ * appears in the trace at all, `expected`'s own scorer runs anyway, for its
+ * more specific "never called" failure reason.
+ */
+function scoreStoryRoute(
+  toolCalls: readonly ToolCall[],
+  expected: EvalCaseExpectedToolCall,
+  options?: {
+    expectedCompetencies?: readonly string[];
+    answer?: string;
+    acceptableStoryIds?: readonly string[];
+  },
+): ScoreResult {
+  const answer = options?.answer;
+  const acceptableStoryIds = options?.acceptableStoryIds;
+  const usedStoryScoped = toolCalls.some((call) => isStoryScopedSearchCall(call));
+  const usedListOnly =
+    !usedStoryScoped && toolCalls.some((call) => call.toolName === "list-career-stories");
+
+  if (expected === "search-career-story-scoped") {
+    return usedListOnly
+      ? scoreListCareerStoriesAsAlternate(toolCalls, answer, acceptableStoryIds)
+      : scoreStoryScoped(toolCalls, answer ?? "");
+  }
+
+  return usedStoryScoped
+    ? scoreStoryScopedAsAlternate(toolCalls, answer, acceptableStoryIds)
+    : scoreListCareerStories(toolCalls, options?.expectedCompetencies, answer, acceptableStoryIds);
 }
 
 /**
@@ -322,20 +826,33 @@ function scoreListCareerStories(
  *   than a behavioral event; else 0. See module docs.
  *
  * `options.expectedCompetencies` (#294 independent-review correction,
- * finding 2) applies only when `expected === "list-career-stories"`: the
- * located call must also come BEFORE any `search-career` call, and — when
- * supplied — its `competencies` argument must contain every listed value.
+ * finding 2) applies only on the list-only route: the located call must
+ * also come BEFORE any `search-career` call, and — when supplied — its
+ * `competencies` argument must contain every listed value.
+ *
+ * ## Either-route acceptance (#307 owner-approved decision 1, corrected
+ * under the third independent review)
+ *
+ * "A correct behavioral answer may use either list-career-stories or
+ * story-scoped search when it retrieves and cites an acceptable story." For
+ * `"search-career-story-scoped"` and `"list-career-stories"` alike,
+ * `scoreStoryRoute` decides which of the two routes was actually taken from
+ * the trace itself (never from `expected` — see its own doc) and applies
+ * that route's full scorer, so the alternate route is held to the exact
+ * same order/fetch/absence-honesty rules as the case's own route, not a
+ * lighter-weight citation-only check.
  */
 export function scoreToolRouting(
   toolCalls: readonly ToolCall[],
   expected: EvalCaseExpectedToolCall,
-  options?: { expectedCompetencies?: readonly string[]; answer?: string },
+  options?: {
+    expectedCompetencies?: readonly string[];
+    answer?: string;
+    acceptableStoryIds?: readonly string[];
+  },
 ): ScoreResult {
-  if (expected === "search-career-story-scoped") {
-    return scoreStoryScoped(toolCalls, options?.answer ?? "");
-  }
-  if (expected === "list-career-stories") {
-    return scoreListCareerStories(toolCalls, options?.expectedCompetencies);
+  if (expected === "search-career-story-scoped" || expected === "list-career-stories") {
+    return scoreStoryRoute(toolCalls, expected, options);
   }
 
   const calledSearchCareer = toolCalls.some((call) => call.toolName === "search-career");

@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { buildRetrievalReport, type RetrievalCaseReport } from "./report.js";
+import {
+  buildRetrievalReport,
+  type RetrievalCaseReport,
+  type RetrievalLaneResult,
+} from "./report.js";
 import { RETRIEVAL_THRESHOLDS } from "./thresholds.js";
+
+function laneResult(overrides: Partial<RetrievalLaneResult> = {}): RetrievalLaneResult {
+  return {
+    lane: "unscoped",
+    retrievedIds: ["skill:typescript"],
+    metrics: { recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 },
+    ...overrides,
+  };
+}
 
 function caseReport(overrides: Partial<RetrievalCaseReport> = {}): RetrievalCaseReport {
   return {
@@ -17,6 +30,15 @@ function caseReport(overrides: Partial<RetrievalCaseReport> = {}): RetrievalCase
     preferencePassed: null,
     preferredSourceReciprocalRank: null,
     passed: true,
+    scoringLane: "unscoped",
+    lanes: {
+      unscoped: laneResult(),
+      storyScoped: laneResult({
+        lane: "storyScoped",
+        retrievedIds: [],
+        metrics: { recallAtK: 0, precisionAtK: 0, reciprocalRank: 0 },
+      }),
+    },
     ...overrides,
   };
 }
@@ -36,6 +58,11 @@ function absentCaseReport(overrides: Partial<RetrievalCaseReport> = {}): Retriev
     preferencePassed: null,
     preferredSourceReciprocalRank: null,
     passed: true,
+    scoringLane: "unscoped",
+    lanes: {
+      unscoped: laneResult({ retrievedIds: [], metrics: null }),
+      storyScoped: laneResult({ lane: "storyScoped", retrievedIds: [], metrics: null }),
+    },
     ...overrides,
   };
 }
@@ -61,6 +88,18 @@ function preferenceCaseReport(overrides: Partial<RetrievalCaseReport> = {}): Ret
     preferencePassed: true,
     preferredSourceReciprocalRank: 1,
     passed: true,
+    scoringLane: "storyScoped",
+    lanes: {
+      unscoped: laneResult({
+        retrievedIds: ["story:preferred", "story:alt"],
+        metrics: { recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 },
+      }),
+      storyScoped: laneResult({
+        lane: "storyScoped",
+        retrievedIds: ["story:preferred", "story:alt"],
+        metrics: { recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 },
+      }),
+    },
     ...overrides,
   };
 }
@@ -230,5 +269,137 @@ describe("buildRetrievalReport", () => {
     expect(report.topK).toBe(7);
     expect(report.absentTopicMinScore).toBe(0.42);
     expect(report.cases).toEqual(cases);
+  });
+});
+
+describe("buildRetrievalReport: lane aggregates (#307)", () => {
+  it("computes separate recall/precision/MRR aggregates per lane, over cases with a non-null lane metric", () => {
+    const report = buildRetrievalReport({
+      cases: [
+        caseReport({
+          id: "a",
+          lanes: {
+            unscoped: laneResult({ metrics: { recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 } }),
+            storyScoped: laneResult({
+              lane: "storyScoped",
+              retrievedIds: [],
+              metrics: { recallAtK: 0, precisionAtK: 0, reciprocalRank: 0 },
+            }),
+          },
+        }),
+        caseReport({
+          id: "b",
+          lanes: {
+            unscoped: laneResult({
+              metrics: { recallAtK: 0.5, precisionAtK: 0.5, reciprocalRank: 0.5 },
+            }),
+            storyScoped: laneResult({
+              lane: "storyScoped",
+              retrievedIds: ["story:x"],
+              metrics: { recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 },
+            }),
+          },
+        }),
+      ],
+      topK: 5,
+      absentTopicMinScore: 0.4,
+    });
+
+    expect(report.aggregates.lanes.unscoped).toEqual({
+      recallAtK: 0.75,
+      precisionAtK: 0.75,
+      mrr: 0.75,
+      scoredCases: 2,
+    });
+    expect(report.aggregates.lanes.storyScoped).toEqual({
+      recallAtK: 0.5,
+      precisionAtK: 0.5,
+      mrr: 0.5,
+      scoredCases: 2,
+    });
+  });
+
+  it("excludes absent-topic (null-metric) cases from each lane's aggregate, same as the top-level aggregate", () => {
+    const report = buildRetrievalReport({
+      cases: [caseReport(), absentCaseReport()],
+      topK: 5,
+      absentTopicMinScore: 0.4,
+    });
+
+    expect(report.aggregates.lanes.unscoped.recallAtK).toBe(1);
+    expect(report.aggregates.lanes.storyScoped.recallAtK).toBe(0);
+  });
+
+  it("edge case: no cases with a non-null lane metric -> lane aggregate is 0, not NaN", () => {
+    const report = buildRetrievalReport({
+      cases: [absentCaseReport()],
+      topK: 5,
+      absentTopicMinScore: 0.4,
+    });
+
+    expect(report.aggregates.lanes.unscoped).toEqual({
+      recallAtK: 0,
+      precisionAtK: 0,
+      mrr: 0,
+      scoredCases: 0,
+    });
+    expect(report.aggregates.lanes.storyScoped).toEqual({
+      recallAtK: 0,
+      precisionAtK: 0,
+      mrr: 0,
+      scoredCases: 0,
+    });
+  });
+
+  it("carries each case's lane identity and ordered, deduplicated result ids verbatim", () => {
+    const cases = [preferenceCaseReport()];
+    const report = buildRetrievalReport({ cases, topK: 5, absentTopicMinScore: 0.4 });
+
+    expect(report.cases[0]?.lanes.unscoped.lane).toBe("unscoped");
+    expect(report.cases[0]?.lanes.storyScoped.lane).toBe("storyScoped");
+    expect(report.cases[0]?.lanes.unscoped.retrievedIds).toEqual(["story:preferred", "story:alt"]);
+  });
+
+  it("exposes each lane aggregate's scored-case count as the explicit denominator (Codex checkpoint correction)", () => {
+    const report = buildRetrievalReport({
+      cases: [
+        caseReport({ id: "a" }),
+        caseReport({
+          id: "b",
+          lanes: {
+            unscoped: laneResult({ metrics: { recallAtK: 1, precisionAtK: 1, reciprocalRank: 1 } }),
+            storyScoped: laneResult({ lane: "storyScoped", retrievedIds: [], metrics: null }),
+          },
+        }),
+        absentCaseReport(),
+      ],
+      topK: 5,
+      absentTopicMinScore: 0.4,
+    });
+
+    expect(report.aggregates.lanes.unscoped.scoredCases).toBe(2);
+    expect(report.aggregates.lanes.storyScoped.scoredCases).toBe(1);
+  });
+});
+
+describe("buildRetrievalReport: scoringLane (Codex review checkpoint correction, #307)", () => {
+  it("carries each case's declared scoringLane verbatim, distinct per case (mutation-sensitive: unscoped vs storyScoped are not interchangeable)", () => {
+    const cases = [
+      caseReport({ id: "unscoped-case", scoringLane: "unscoped" }),
+      preferenceCaseReport({ id: "story-case", scoringLane: "storyScoped" }),
+      absentCaseReport({ id: "absent-case", scoringLane: "unscoped" }),
+    ];
+    const report = buildRetrievalReport({ cases, topK: 5, absentTopicMinScore: 0.4 });
+
+    expect(report.cases.find((c) => c.id === "unscoped-case")?.scoringLane).toBe("unscoped");
+    expect(report.cases.find((c) => c.id === "story-case")?.scoringLane).toBe("storyScoped");
+    expect(report.cases.find((c) => c.id === "absent-case")?.scoringLane).toBe("unscoped");
+  });
+
+  it("round-trips scoringLane through JSON.stringify/parse untouched", () => {
+    const cases = [preferenceCaseReport({ scoringLane: "storyScoped" })];
+    const report = buildRetrievalReport({ cases, topK: 5, absentTopicMinScore: 0.4 });
+    const parsed = JSON.parse(JSON.stringify(report)) as typeof report;
+    expect(parsed.cases[0]?.scoringLane).toBe("storyScoped");
   });
 });
