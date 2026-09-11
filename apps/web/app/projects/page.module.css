@@ -99,3 +99,16 @@
   color: var(--color-fg-muted);
   font-size: var(--text-sm);
 }
+
+/* An unselected tag that no currently-matching project carries (or one
+   past MAX_SELECTED_TAGS) is shown but not linked — see filters.ts's
+   `addableTagsFor`: it would only ever lead to the empty state, and each
+   such link is one more filter-combination URL for a crawler to walk. */
+.filterTagUnavailable {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.filterTagUnavailable:hover {
+  border-color: transparent;
+}
