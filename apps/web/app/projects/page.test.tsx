@@ -151,10 +151,78 @@ describe("Projects page", () => {
   it("reflects the selected filter in the shareable URL of the other filter links", async () => {
     getProjectsListView.mockReturnValue(projectsView());
 
-    await renderProjectsPage({ tags: "python" });
+    await renderProjectsPage({ tags: "react" });
 
-    const reactFilterLink = screen.getByRole("link", { name: "react" });
-    expect(reactFilterLink).toHaveAttribute("href", "/projects?tags=python%2Creact");
+    const typescriptFilterLink = screen.getByRole("link", { name: "typescript" });
+    expect(typescriptFilterLink).toHaveAttribute("href", "/projects?tags=react%2Ctypescript");
+  });
+
+  // Bounding the filter-combination URL space (Sep 2026 Hobby-quota
+  // incident): robots.txt and rel=nofollow are advisory, so the page itself
+  // must not mint a link for every one of the 2^N combinations. A tag is
+  // only a link when adding it still matches at least one project, and never
+  // once MAX_SELECTED_TAGS are already selected.
+  it("does not link an unselected tag that no currently-matching project carries", async () => {
+    getProjectsListView.mockReturnValue(projectsView());
+
+    await renderProjectsPage({ tags: "react" });
+
+    const filterNav = screen.getByRole("navigation", { name: "Filter projects by technology" });
+    expect(within(filterNav).queryByRole("link", { name: "python" })).toBeNull();
+    // …but the tag is still visible, so the full vocabulary stays discoverable.
+    expect(within(filterNav).getByText("python")).toBeDefined();
+    expect(within(filterNav).getByRole("link", { name: "typescript" })).toBeDefined();
+  });
+
+  it("stops linking further tags once MAX_SELECTED_TAGS are selected", async () => {
+    const { MAX_SELECTED_TAGS } = await import("./filters.js");
+    const view = projectsView();
+    const tags = Array.from({ length: MAX_SELECTED_TAGS + 1 }, (_, i) => `tag-${i}`);
+    const firstItem = view.items[0];
+    if (firstItem === undefined) {
+      throw new Error("test fixture missing item");
+    }
+    firstItem.project.tech = tags;
+    getProjectsListView.mockReturnValue(view);
+    const selected = tags.slice(0, MAX_SELECTED_TAGS);
+    const extra = tags[MAX_SELECTED_TAGS] as string;
+
+    await renderProjectsPage({ tags: selected.join(",") });
+
+    const filterNav = screen.getByRole("navigation", { name: "Filter projects by technology" });
+    // The project still matches (it carries every selected tag)…
+    expect(screen.getByRole("link", { name: /Alpha Project/i })).toBeDefined();
+    // …yet the one addable tag is shown without a link.
+    expect(within(filterNav).queryByRole("link", { name: extra })).toBeNull();
+    expect(within(filterNav).getByText(extra)).toBeDefined();
+    // Selected tags remain links (each one removes itself).
+    for (const tag of selected) {
+      expect(within(filterNav).getByRole("link", { name: new RegExp(`^${tag}`) })).toBeDefined();
+    }
+  });
+
+  it("ignores tags past MAX_SELECTED_TAGS in a direct URL and says so", async () => {
+    const { MAX_SELECTED_TAGS } = await import("./filters.js");
+    const view = projectsView();
+    const tags = Array.from({ length: MAX_SELECTED_TAGS + 1 }, (_, i) => `tag-${i}`);
+    const firstItem = view.items[0];
+    if (firstItem === undefined) {
+      throw new Error("test fixture missing item");
+    }
+    firstItem.project.tech = tags;
+    getProjectsListView.mockReturnValue(view);
+    const extra = tags[MAX_SELECTED_TAGS] as string;
+
+    await renderProjectsPage({ tags: tags.join(",") });
+
+    const notice = screen.getByText(/at most \d+ tags combine/i);
+    expect(notice.textContent).toContain(String(MAX_SELECTED_TAGS));
+    expect(notice.textContent).toContain(extra);
+    // Filtering ran on the kept tags only: the project still matches.
+    expect(screen.getByRole("link", { name: /Alpha Project/i })).toBeDefined();
+    // The dropped tag is not marked as selected.
+    const filterNav = screen.getByRole("navigation", { name: "Filter projects by technology" });
+    expect(within(filterNav).getByText(extra)).not.toHaveAttribute("aria-current");
   });
 
   it("renders an empty state that names the active filters and states the AND semantics (#252), not a blank page", async () => {

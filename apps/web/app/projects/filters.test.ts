@@ -153,3 +153,68 @@ describe("partitionSelectedTags (issue 252)", () => {
     });
   });
 });
+
+describe("capSelectedTags (bounding the filter-combination URL space)", () => {
+  it("keeps the first MAX_SELECTED_TAGS tags and reports the rest as dropped", async () => {
+    const { capSelectedTags, MAX_SELECTED_TAGS } = await import("./filters.js");
+    const tags = ["a", "b", "c", "d", "e"].slice(0, MAX_SELECTED_TAGS + 2);
+
+    const { keptTags, droppedTags } = capSelectedTags(tags);
+
+    expect(keptTags).toEqual(tags.slice(0, MAX_SELECTED_TAGS));
+    expect(droppedTags).toEqual(tags.slice(MAX_SELECTED_TAGS));
+  });
+
+  it("drops nothing when the selection is within the cap", async () => {
+    const { capSelectedTags } = await import("./filters.js");
+
+    expect(capSelectedTags(["a"])).toEqual({ keptTags: ["a"], droppedTags: [] });
+    expect(capSelectedTags([])).toEqual({ keptTags: [], droppedTags: [] });
+  });
+
+  it("caps at three tags — enough to narrow a five-project portfolio to one card", async () => {
+    const { MAX_SELECTED_TAGS } = await import("./filters.js");
+
+    expect(MAX_SELECTED_TAGS).toBe(3);
+  });
+});
+
+describe("addableTagsFor (only link to combinations that still match a project)", () => {
+  const items = [
+    project("a", ["react", "typescript"]),
+    project("b", ["typescript", "aws"]),
+    project("c", ["python"]),
+  ];
+  const options = ["aws", "python", "react", "typescript"];
+
+  it("offers every option when nothing is selected yet", async () => {
+    const { addableTagsFor } = await import("./filters.js");
+
+    expect(addableTagsFor(items, [], options)).toEqual(new Set(options));
+  });
+
+  it("offers only the tags some currently-matching project carries, never the selected ones", async () => {
+    const { addableTagsFor, filterProjectsByTags } = await import("./filters.js");
+    const selected = ["typescript"];
+
+    const addable = addableTagsFor(filterProjectsByTags(items, selected), selected, options);
+
+    expect(addable).toEqual(new Set(["aws", "react"]));
+  });
+
+  it("offers nothing once the selection has reached the cap", async () => {
+    const { addableTagsFor, filterProjectsByTags } = await import("./filters.js");
+    const selected = ["react", "typescript"];
+
+    expect(addableTagsFor(filterProjectsByTags(items, selected), selected, options, 2).size).toBe(
+      0,
+    );
+  });
+
+  it("matches tags case-insensitively, returning canonical option spellings", async () => {
+    const { addableTagsFor } = await import("./filters.js");
+    const filtered = [project("a", ["React", "TypeScript"])];
+
+    expect(addableTagsFor(filtered, ["typescript"], options)).toEqual(new Set(["react"]));
+  });
+});

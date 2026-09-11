@@ -116,3 +116,57 @@ export function toggleTagHref(selectedTags: readonly string[], tag: string): str
   }
   return `/projects?${TAGS_PARAM}=${encodeURIComponent(next.join(","))}`;
 }
+
+/**
+ * The most tags a single filtered view combines. Every filtered view is a
+ * distinct URL, so N tags left uncapped form a 2^N space (22 tags today:
+ * ~4M URLs) that a crawler ignoring `robots.txt`'s `?tags=` disallow and
+ * the `rel=nofollow` on every filter link could still walk — exactly what
+ * burned through the Hobby plan's Fluid CPU / Function Invocation quota in
+ * Sep 2026. Capped at 3, the reachable space is at most
+ * N + C(N,2) + C(N,3) URLs (~1.8K for 22 tags), and `addableTagsFor` shrinks
+ * it further to the combinations that actually match a project. Three tags
+ * is also well past what narrows a five-project portfolio to a single card.
+ */
+export const MAX_SELECTED_TAGS = 3;
+
+/**
+ * Enforces `MAX_SELECTED_TAGS` on a URL-provided selection: the first `max`
+ * tags stay selected, the rest are reported (the page calls them out, like
+ * unknown tags) rather than silently filtering on more than the UI can ever
+ * produce.
+ */
+export function capSelectedTags(
+  selectedTags: readonly string[],
+  max: number = MAX_SELECTED_TAGS,
+): { keptTags: string[]; droppedTags: string[] } {
+  return { keptTags: selectedTags.slice(0, max), droppedTags: selectedTags.slice(max) };
+}
+
+/**
+ * The unselected tags that can still be ADDED to the current selection and
+ * leave at least one project on the page. Selection is AND-combined, so a
+ * tag only narrows a non-empty result if some currently-matching project
+ * carries it — every other unselected tag would produce the empty state,
+ * and the page renders those as plain (non-link) chips instead of minting
+ * one more empty-result URL for a crawler to fetch. Once `max` tags are
+ * selected nothing is addable. Keys are canonical option spellings.
+ */
+export function addableTagsFor(
+  filtered: readonly ProjectListItemView[],
+  selectedTags: readonly string[],
+  options: readonly string[],
+  max: number = MAX_SELECTED_TAGS,
+): Set<string> {
+  if (selectedTags.length >= max) {
+    return new Set();
+  }
+  const selectedKeys = new Set(selectedTags.map(tagKey));
+  const presentKeys = new Set(filtered.flatMap((item) => item.project.tech.map(tagKey)));
+  return new Set(
+    options.filter((option) => {
+      const key = tagKey(option);
+      return !selectedKeys.has(key) && presentKeys.has(key);
+    }),
+  );
+}

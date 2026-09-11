@@ -11,8 +11,11 @@ import { Link } from "../design-system/primitives/link";
 import { Prose } from "../design-system/primitives/prose";
 import { Section } from "../design-system/primitives/section";
 import {
+  addableTagsFor,
+  capSelectedTags,
   computeTagOptions,
   filterProjectsByTags,
+  MAX_SELECTED_TAGS,
   parseSelectedTags,
   partitionSelectedTags,
   TAGS_PARAM,
@@ -69,7 +72,23 @@ function ProjectCard({ item }: { item: ProjectListItemView }) {
   );
 }
 
-function FilterControls({ options, selectedTags }: { options: string[]; selectedTags: string[] }) {
+interface FilterControlsProps {
+  options: string[];
+  selectedTags: string[];
+  /** Unselected tags that can still be added and leave ≥1 project on the page — see `addableTagsFor`. */
+  addableTags: ReadonlySet<string>;
+}
+
+/**
+ * Only a tag that is either selected (its link removes it) or *addable*
+ * (some currently-matching project carries it, and the selection is under
+ * `MAX_SELECTED_TAGS`) renders as a link. Every other tag is a plain chip:
+ * `robots.txt`'s `?tags=` disallow and `rel=nofollow` are advisory, and a
+ * crawler that ignores both used to be handed a link to every one of the
+ * 2^N combinations from every filtered page. Now the reachable URL space is
+ * the (≤3-tag) combinations that actually match a project.
+ */
+function FilterControls({ options, selectedTags, addableTags }: FilterControlsProps) {
   return (
     <nav aria-label="Filter projects by technology" className={styles.filterNav}>
       {/* issue 252 — a visible label and stated semantics, so the tag row reads
@@ -85,6 +104,23 @@ function FilterControls({ options, selectedTags }: { options: string[]; selected
       <ul className={styles.filterList}>
         {options.map((tag) => {
           const selected = selectedTags.includes(tag);
+          if (!selected && !addableTags.has(tag)) {
+            return (
+              <li key={tag}>
+                <span
+                  className={cx(styles.filterTag, styles.filterTagUnavailable)}
+                  aria-disabled="true"
+                  title={
+                    selectedTags.length >= MAX_SELECTED_TAGS
+                      ? `At most ${MAX_SELECTED_TAGS} tags combine — deselect one first`
+                      : "No project matches this together with the selected tags"
+                  }
+                >
+                  {tag}
+                </span>
+              </li>
+            );
+          }
           return (
             <li key={tag}>
               <Link
@@ -139,17 +175,31 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
   // issue 252 — unknown tags (typos, stale shared links) are called out and
   // ignored rather than silently guaranteeing an empty page; filtering
   // runs on the known tags only.
-  const { knownTags, unknownTags } = partitionSelectedTags(
+  const { knownTags: recognisedTags, unknownTags } = partitionSelectedTags(
     parseSelectedTags(params[TAGS_PARAM]),
     options,
   );
+  // The UI never produces more than MAX_SELECTED_TAGS (see `FilterControls`),
+  // so a longer list only arrives via a hand-built URL — cap it, and say so.
+  const { keptTags: knownTags, droppedTags } = capSelectedTags(recognisedTags);
   const filtered = filterProjectsByTags(items, knownTags);
+  const addableTags = addableTagsFor(filtered, knownTags, options);
 
   return (
     <Section>
       <Container>
         <Heading level={1}>Projects</Heading>
-        <FilterControls options={options} selectedTags={knownTags} />
+        <FilterControls options={options} selectedTags={knownTags} addableTags={addableTags} />
+        {droppedTags.length > 0 && (
+          <Prose>
+            <p>
+              At most {MAX_SELECTED_TAGS} tags combine in one filter, so{" "}
+              {droppedTags.map((tag) => `"${tag}"`).join(", ")}{" "}
+              {droppedTags.length === 1 ? "was" : "were"} ignored from the URL. Deselect a tag to
+              make room for another.
+            </p>
+          </Prose>
+        )}
         {unknownTags.length > 0 && (
           <Prose>
             {/* issue 274 — the notice only ever fires for a tag no project
