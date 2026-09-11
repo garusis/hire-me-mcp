@@ -7,6 +7,8 @@ import {
   classifyProviderError,
   createRetryingModel,
   createRetryPolicy,
+  DEADLINE_EXCEEDED_REQUEST_SCOPE_MESSAGE,
+  DEADLINE_EXCEEDED_RUN_SCOPE_MESSAGE,
   DEFAULT_MAX_ATTEMPTS,
   DEFAULT_MAX_PHASE_MS,
   DEFAULT_MAX_REQUEST_MS,
@@ -15,6 +17,7 @@ import {
   RETRY_BACKOFF_STEPS_MS,
   RETRY_JITTER_MAX_MS,
   redactSecrets,
+  runPreflightChecks,
   sumKnownUsage,
 } from "./retry.js";
 
@@ -239,6 +242,120 @@ describe("classifyProviderError", () => {
     expect(result.classification).toBe("unknown-error");
     expect(result.errorName).toBe("UnknownError");
     expect(result.errorMessage).toBe("Non-provider error");
+  });
+
+  /**
+   * #307 issuecomment-5625009244 finding 1: an offline reproduction with
+   * `maxRequestMs: 5` and `maxPhaseMs: 2_700_000` (the review's own repro
+   * values) aborts at the per-REQUEST bound — the full-run/phase budget
+   * still has effectively all of its time left — yet every
+   * `DeadlineExceededError` was classified with the SAME message regardless
+   * of which bound actually stopped it, so a reader could not tell "one
+   * request took too long" from "the whole suite's shared budget ran out".
+   * `DeadlineExceededError.scope` (stamped by `createRetryPolicy` itself,
+   * not guessed here) must drive a genuinely distinct, truthful message per
+   * bound — never the same text for both.
+   */
+  it("gives a request-scoped DeadlineExceededError a message that names the per-request bound, never claiming the full-run budget", () => {
+    const error = new DeadlineExceededError(
+      "Deadline exceeded while the request was in flight",
+      "request",
+    );
+    const result = classifyProviderError(error);
+    expect(result.errorMessage).toBe(DEADLINE_EXCEEDED_REQUEST_SCOPE_MESSAGE);
+    expect(result.errorMessage).not.toBe(DEADLINE_EXCEEDED_RUN_SCOPE_MESSAGE);
+    expect(result.errorMessage.toLowerCase()).not.toContain("full-run");
+  });
+
+  it("gives a run-scoped DeadlineExceededError a message that names the full-run bound, distinct from the request-scoped message", () => {
+    const error = new DeadlineExceededError(
+      "Deadline exceeded while the request was in flight",
+      "run",
+    );
+    const result = classifyProviderError(error);
+    expect(result.errorMessage).toBe(DEADLINE_EXCEEDED_RUN_SCOPE_MESSAGE);
+    expect(result.errorMessage).not.toBe(DEADLINE_EXCEEDED_REQUEST_SCOPE_MESSAGE);
+  });
+
+  it("defaults an unscoped DeadlineExceededError (legacy/direct construction) to the run-scoped message, preserving prior behavior", () => {
+    const error = new DeadlineExceededError("Deadline exceeded while the request was in flight");
+    const result = classifyProviderError(error);
+    expect(result.errorMessage).toBe(DEADLINE_EXCEEDED_RUN_SCOPE_MESSAGE);
+  });
+});
+
+/**
+ * `runPreflightChecks` is the pure, directly-testable, standalone (no
+ * closure over a `createRetryPolicy` instance) piece `run()` defers to for
+ * the two checks that must pass before any attempt is issued — split out
+ * purely to keep `run()`'s own cognitive complexity under this repo's
+ * Biome limit (no behavior change from the single inline version this
+ * replaces; `createRetryPolicy`'s own suite below already proves the
+ * end-to-end behavior through real `policy.run()` calls).
+ */
+describe("runPreflightChecks", () => {
+  it("throws DeadlineExceededError with the given scope, and records a stopped-deadline-exceeded attempt, when the deadline has already passed", () => {
+    const onAttempt = vi.fn();
+    expect(() =>
+      runPreflightChecks({
+        attempt: 3,
+        deadline: 1_000,
+        scope: "request",
+        now: () => 1_000,
+        onAttempt,
+      }),
+    ).toThrow(DeadlineExceededError);
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ attempt: 3, outcome: "stopped-deadline-exceeded" }),
+    );
+  });
+
+  it("calls beforeAttempt with the attempt number when the deadline has not passed", () => {
+    const beforeAttempt = vi.fn();
+    expect(() =>
+      runPreflightChecks({
+        attempt: 1,
+        deadline: 2_000,
+        scope: "run",
+        now: () => 1_000,
+        beforeAttempt,
+      }),
+    ).not.toThrow();
+    expect(beforeAttempt).toHaveBeenCalledWith(1);
+  });
+
+  it("re-throws whatever beforeAttempt throws, and records a stopped-budget-exceeded attempt, never issuing the request", () => {
+    const onAttempt = vi.fn();
+    const budgetError = new Error("budget exceeded");
+    expect(() =>
+      runPreflightChecks({
+        attempt: 2,
+        deadline: 2_000,
+        scope: "run",
+        now: () => 1_000,
+        beforeAttempt: () => {
+          throw budgetError;
+        },
+        onAttempt,
+      }),
+    ).toThrow(budgetError);
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ attempt: 2, outcome: "stopped-budget-exceeded" }),
+    );
+  });
+
+  it("never calls beforeAttempt at all when the deadline check already stopped the attempt", () => {
+    const beforeAttempt = vi.fn();
+    expect(() =>
+      runPreflightChecks({
+        attempt: 1,
+        deadline: 1_000,
+        scope: "run",
+        now: () => 1_000,
+        beforeAttempt,
+      }),
+    ).toThrow(DeadlineExceededError);
+    expect(beforeAttempt).not.toHaveBeenCalled();
   });
 });
 
@@ -817,6 +934,93 @@ describe("createRetryPolicy", () => {
       expect(onAttempt).toHaveBeenCalledWith(
         expect.objectContaining({ outcome: "stopped-deadline-exceeded" }),
       );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * #307 issuecomment-5625009244 finding 1's own offline repro: a request
+   * bound tighter than the phase/full-run bound (`maxRequestMs` well below
+   * `maxPhaseMs: 2_700_000`, the review's exact phase value) must stamp the
+   * thrown `DeadlineExceededError` with `scope: "request"` — never `"run"`,
+   * which would falsely claim the whole suite's shared budget was the
+   * constraint when it still has virtually all its time left. A first
+   * attempt's own retry backoff (fixed at exactly the remaining
+   * per-request budget, via `random: () => 0` for zero jitter) advances the
+   * clock to precisely the per-request deadline, so the SECOND attempt's
+   * preflight recheck is what actually throws — proving the request-bound
+   * stop, not merely the immediate first-attempt case the existing
+   * "already passed" test already covers for the phase bound.
+   */
+  it("stamps a preflight deadline stop with scope 'request' when the per-request bound is the tighter one (#307 finding 1 repro values)", async () => {
+    const clock = createFakeClock(0);
+    const onAttempt = vi.fn();
+    const policy = createRetryPolicy({
+      now: clock.now,
+      sleep: clock.sleep,
+      random: () => 0,
+      maxRequestMs: RETRY_BACKOFF_STEPS_MS[0],
+      maxPhaseMs: 2_700_000,
+      onAttempt,
+    });
+    const operation = vi.fn().mockRejectedValue(apiError({ statusCode: 503 }));
+
+    const rejection = policy.run(operation);
+    await expect(rejection).rejects.toThrow(DeadlineExceededError);
+    await rejection.catch((error: unknown) => {
+      expect(error).toBeInstanceOf(DeadlineExceededError);
+      expect((error as DeadlineExceededError).scope).toBe("request");
+    });
+    // Confirms the SECOND attempt's preflight recheck is what stopped it
+    // (proving the retry-then-exhausted-request-budget path), not an
+    // immediate first-attempt stop.
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(onAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ attempt: 2, outcome: "stopped-deadline-exceeded" }),
+    );
+  });
+
+  /** The inverse of the test above: a phase/full-run bound tighter than the per-request bound must stamp `scope: "run"`. */
+  it("stamps a preflight deadline stop with scope 'run' when the phase/full-run bound is the tighter one", async () => {
+    const clock = createFakeClock();
+    const policy = createRetryPolicy({
+      now: clock.now,
+      sleep: clock.sleep,
+      maxRequestMs: 2_700_000,
+      maxPhaseMs: 5,
+    });
+    clock.advance(100);
+
+    const rejection = policy.run(vi.fn().mockResolvedValue("ok"));
+    await expect(rejection).rejects.toThrow(DeadlineExceededError);
+    await rejection.catch((error: unknown) => {
+      expect(error).toBeInstanceOf(DeadlineExceededError);
+      expect((error as DeadlineExceededError).scope).toBe("run");
+    });
+  });
+
+  /** Same distinction, but for the in-flight abort path (`raceWithDeadline`), not the preflight check. */
+  it("stamps an in-flight deadline abort with scope 'request' when the per-request bound is the tighter one", async () => {
+    vi.useFakeTimers();
+    try {
+      const clock = createFakeClock();
+      const policy = createRetryPolicy({
+        now: clock.now,
+        sleep: clock.sleep,
+        maxRequestMs: 5_000,
+        maxPhaseMs: 2_700_000,
+      });
+      const operation = vi.fn(() => new Promise<never>(() => {}));
+
+      const runPromise = policy.run(operation);
+      const assertion = runPromise.catch((error: unknown) => {
+        expect(error).toBeInstanceOf(DeadlineExceededError);
+        expect((error as DeadlineExceededError).scope).toBe("request");
+      });
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+      await expect(runPromise).rejects.toThrow(DeadlineExceededError);
     } finally {
       vi.useRealTimers();
     }

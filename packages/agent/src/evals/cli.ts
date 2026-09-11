@@ -50,6 +50,8 @@ import {
   classifyProviderError,
   createRetryingModel,
   createRetryPolicy,
+  DEADLINE_EXCEEDED_REQUEST_SCOPE_MESSAGE,
+  DEADLINE_EXCEEDED_RUN_SCOPE_MESSAGE,
   type RetryAttemptRecord,
   type RetryPolicy,
   sumKnownUsage,
@@ -851,6 +853,54 @@ export interface ReportCliSummary {
 }
 
 /**
+ * Pick the truthful header for a run stopped by one or more
+ * `DeadlineExceededError` failures — split out of {@link summarizeReportForCli}
+ * purely to keep that function's cognitive complexity under this repo's
+ * Biome limit (no behavior change from the single inline version this
+ * replaces). #307 issuecomment-5625009244 finding 1: a `DeadlineExceededError`
+ * can be stopped by EITHER the per-request bound or the shared full-run
+ * (phase) bound — `./retry.ts`'s `DeadlineExceededError.scope` (surfaced here
+ * via its own distinct, fixed `errorMessage` text, since
+ * `EvalReport`/`FailedCaseReport` carry no separate scope field) tells them
+ * apart. Claiming "the configured full-run deadline was exceeded" for a
+ * request-only stop is false — the run's own shared budget may still have
+ * virtually all of its time left (the review's own repro: `maxRequestMs: 5`
+ * against a `maxPhaseMs: 2_700_000`). Callers must only call this when at
+ * least one failed case is a genuine deadline stop.
+ */
+export function deadlineExecutionFailureHeader(
+  deadlineFailures: readonly CaseFailureInfo[],
+): string {
+  const allRunScope = deadlineFailures.every(
+    (failedCase) => failedCase.errorMessage === DEADLINE_EXCEEDED_RUN_SCOPE_MESSAGE,
+  );
+  if (allRunScope) {
+    return (
+      "Eval suite stopped early after the configured full-run deadline was exceeded " +
+      "(a local request/run timeout — not a provider error or quota):"
+    );
+  }
+  const allRequestScope = deadlineFailures.every(
+    (failedCase) => failedCase.errorMessage === DEADLINE_EXCEEDED_REQUEST_SCOPE_MESSAGE,
+  );
+  if (allRequestScope) {
+    return (
+      "Eval suite stopped early after a single request's own deadline was exceeded " +
+      "(a local per-request timeout — not the configured full-run/whole-suite budget, " +
+      "and not a provider error or quota):"
+    );
+  }
+  // Today unreachable (`./runner.ts` stops at the first terminal failure, so
+  // there is at most one entry) — kept as a truthful, neutral fallback
+  // rather than defaulting to either scope-specific claim if that ever
+  // changes.
+  return (
+    "Eval suite stopped early after a local request/run deadline was exceeded " +
+    "(not a provider error or quota):"
+  );
+}
+
+/**
  * Build the human-readable, execution-vs-threshold-labeled summary `main()`
  * prints for a finished eval run (#307 issuecomment-5591843129 assignment B
  * / diagnosis 5591743584 (c)). Pure and exported so it's unit-testable
@@ -886,13 +936,13 @@ export function summarizeReportForCli(report: EvalReport): ReportCliSummary {
     // own misrepresentation) — today there is at most one entry
     // (`./runner.ts` stops at the first terminal failure), so this is exact,
     // not approximate.
-    const allDeadlineExceeded = report.failedCases.every(
+    const deadlineFailures = report.failedCases.filter(
       (failedCase) => failedCase.errorName === "DeadlineExceededError",
     );
+    const allDeadlineExceeded = deadlineFailures.length === report.failedCases.length;
     executionFailureLines.push(
       allDeadlineExceeded
-        ? "Eval suite stopped early after the configured full-run deadline was exceeded " +
-            "(a local request/run timeout — not a provider error or quota):"
+        ? deadlineExecutionFailureHeader(deadlineFailures)
         : "Eval suite stopped early after a terminal provider failure:",
     );
     for (const failedCase of report.failedCases) {

@@ -118,19 +118,50 @@ export type RetryAttemptOutcome =
   | "stopped-budget-exceeded";
 
 /**
+ * Which shared budget actually stopped a `run()` call — the per-REQUEST
+ * bound (`maxRequestMs`, reset every `run()` call) or the whole-phase/
+ * full-run bound (`maxPhaseMs`, fixed once per policy instance and shared
+ * across every `run()` call). #307 issuecomment-5625009244 finding 1: an
+ * offline repro with `maxRequestMs: 5` and `maxPhaseMs: 2_700_000` aborts at
+ * the per-request bound while the full-run budget still has virtually all
+ * its time left, yet every `DeadlineExceededError` previously carried the
+ * same generic message regardless of which bound actually stopped it — a
+ * reader could not tell "this one request took too long" from "the whole
+ * suite's shared budget ran out". Determined in `run()` by comparing the two
+ * deadlines directly (not merely their `Math.min`), so it reflects which
+ * bound genuinely constrained THIS call, independent of how much wall clock
+ * has since elapsed.
+ */
+export type DeadlineScope = "request" | "run";
+
+/**
  * Thrown by {@link RetryPolicy.run} when a request's deadline is already
  * past before it can start, or elapses while it's in flight (#307 second
  * independent-review correction, finding 1). Distinct from a provider error
  * so `run()`'s catch handler never runs it through {@link decideOnFailure}'s
  * transient/permanent/429 classification — a deadline is never retried,
- * period.
+ * period. `scope` defaults to `"run"` so any direct/legacy construction
+ * (e.g. a test exercising `classifyProviderError` in isolation, with no
+ * notion of which bound it's simulating) keeps the prior, run-scoped
+ * message rather than silently becoming request-scoped.
  */
 export class DeadlineExceededError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly scope: DeadlineScope = "run",
+  ) {
     super(message);
     this.name = "DeadlineExceededError";
   }
 }
+
+/** Truthful, scope-specific message for a request-bound-only local deadline stop (#307 issuecomment-5625009244 finding 1) — never claims the whole-suite budget was the constraint when only this one request's own deadline was. */
+export const DEADLINE_EXCEEDED_REQUEST_SCOPE_MESSAGE =
+  "Local per-request deadline exceeded before completion (not the configured whole-suite budget, and not a provider error or quota)";
+
+/** Truthful, scope-specific message for a phase/full-run-bound local deadline stop — the whole eval suite's shared budget was the actual constraint. */
+export const DEADLINE_EXCEEDED_RUN_SCOPE_MESSAGE =
+  "Local full-run deadline exceeded before completion (not a provider error or quota)";
 
 /**
  * Regex-redact secrets out of a raw error message. Kept as a general-purpose
@@ -360,12 +391,15 @@ export function classifyProviderError(error: unknown): {
   errorMessage: string;
   statusCode?: number;
 } {
-  if (findDeadlineExceededError(error) !== undefined) {
+  const deadlineError = findDeadlineExceededError(error);
+  if (deadlineError !== undefined) {
     return {
       classification: "local-deadline-exceeded",
       errorName: ERROR_CLASSIFICATION_NAMES["local-deadline-exceeded"],
       errorMessage:
-        "Local request/run deadline exceeded before completion (not a provider error or quota)",
+        deadlineError.scope === "request"
+          ? DEADLINE_EXCEEDED_REQUEST_SCOPE_MESSAGE
+          : DEADLINE_EXCEEDED_RUN_SCOPE_MESSAGE,
     };
   }
   const statusCode = apiErrorStatusCode(error);
@@ -407,12 +441,13 @@ export function classifyProviderError(error: unknown): {
 function raceWithDeadline<T>(
   operation: (signal: AbortSignal) => PromiseLike<T>,
   remainingMs: number,
+  scope: DeadlineScope,
 ): Promise<T> {
   const controller = new AbortController();
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
       controller.abort();
-      reject(new DeadlineExceededError("Deadline exceeded while the request was in flight"));
+      reject(new DeadlineExceededError("Deadline exceeded while the request was in flight", scope));
     }, remainingMs);
     timer.unref?.();
     Promise.resolve(operation(controller.signal)).then(
@@ -426,6 +461,59 @@ function raceWithDeadline<T>(
       },
     );
   });
+}
+
+/** Params for {@link runPreflightChecks}. */
+export interface RunPreflightChecksParams {
+  /** 1-based attempt number about to be gated. */
+  attempt: number;
+  /** This `run()` call's own deadline — `Math.min(requestDeadline, phaseDeadline)`. */
+  deadline: number;
+  /** Which bound (`requestDeadline` vs `phaseDeadline`) actually constrains `deadline` — see {@link DeadlineScope}. */
+  scope: DeadlineScope;
+  now: () => number;
+  beforeAttempt?: (attempt: number) => void;
+  onAttempt?: (record: RetryAttemptRecord) => void;
+}
+
+/**
+ * The two checks that must pass before ANY attempt (the first, and every
+ * retry) is allowed to issue its request: the shared deadline hasn't
+ * already elapsed, and the caller's own budget guard doesn't reject it.
+ * Split out of `createRetryPolicy`'s `run()` purely to keep that function's
+ * cognitive complexity under this repo's Biome limit — no behavior change
+ * from the single inline version this replaces (`retry.test.ts` covers
+ * every branch directly here, and end to end through real `policy.run()`
+ * calls in `createRetryPolicy`'s own suite). A standalone, dependency-
+ * injected function (not a closure over a `createRetryPolicy` instance) so
+ * it's independently unit-testable. Throws (never returns a value) when
+ * either check stops the attempt; `run()`'s `for` loop only needs to call
+ * this and let a throw propagate.
+ */
+export function runPreflightChecks(params: RunPreflightChecksParams): void {
+  const { attempt, deadline, scope, now, beforeAttempt, onAttempt } = params;
+
+  // #307 second independent-review correction, finding 1: recheck the
+  // deadline BEFORE issuing a request, every attempt — not just after a
+  // failure. A deadline already passed (e.g. a near-exhausted phase budget
+  // shared with earlier `run()` calls) must never let a first attempt
+  // through.
+  if (now() >= deadline) {
+    onAttempt?.({ attempt, outcome: "stopped-deadline-exceeded", durationMs: 0 });
+    throw new DeadlineExceededError(
+      `Deadline exceeded before attempt ${attempt} could start — no request issued`,
+      scope,
+    );
+  }
+
+  if (beforeAttempt) {
+    try {
+      beforeAttempt(attempt);
+    } catch (error) {
+      onAttempt?.({ attempt, outcome: "stopped-budget-exceeded", durationMs: 0 });
+      throw error;
+    }
+  }
 }
 
 /** Build the single retry-owner policy described in this module's docs. */
@@ -570,10 +658,11 @@ export function createRetryPolicy(options: RetryPolicyOptions = {}): RetryPolicy
     extractUsage: ((result: T) => AttemptUsage) | undefined,
     attempt: number,
     deadline: number,
+    scope: DeadlineScope,
   ): Promise<{ done: true; value: T } | { done: false; delayMs: number }> {
     const startedAt = now();
     try {
-      const result = await raceWithDeadline(operation, deadline - now());
+      const result = await raceWithDeadline(operation, deadline - now(), scope);
       options.onAttempt?.({
         attempt,
         outcome: "success",
@@ -592,30 +681,24 @@ export function createRetryPolicy(options: RetryPolicyOptions = {}): RetryPolicy
   ): Promise<T> {
     const requestDeadline = now() + maxRequestMs;
     const deadline = Math.min(requestDeadline, phaseDeadline);
+    // #307 issuecomment-5625009244 finding 1: which bound genuinely
+    // constrains THIS call — compared directly, not derived from `deadline`
+    // (whose `Math.min` alone can't tell the two apart once elapsed). A tie
+    // reads as the per-request bound, since that is the one that reset for
+    // this specific call.
+    const scope: DeadlineScope = requestDeadline <= phaseDeadline ? "request" : "run";
 
     for (let attempt = 1; ; attempt++) {
-      // #307 second independent-review correction, finding 1: recheck the
-      // deadline BEFORE issuing a request, every attempt — not just after a
-      // failure. A deadline already passed (e.g. a near-exhausted phase
-      // budget shared with earlier `run()` calls) must never let a first
-      // attempt through.
-      if (now() >= deadline) {
-        options.onAttempt?.({ attempt, outcome: "stopped-deadline-exceeded", durationMs: 0 });
-        throw new DeadlineExceededError(
-          `Deadline exceeded before attempt ${attempt} could start — no request issued`,
-        );
-      }
+      runPreflightChecks({
+        attempt,
+        deadline,
+        scope,
+        now,
+        beforeAttempt: options.beforeAttempt,
+        onAttempt: options.onAttempt,
+      });
 
-      if (options.beforeAttempt) {
-        try {
-          options.beforeAttempt(attempt);
-        } catch (error) {
-          options.onAttempt?.({ attempt, outcome: "stopped-budget-exceeded", durationMs: 0 });
-          throw error;
-        }
-      }
-
-      const outcome = await attemptOnce(operation, extractUsage, attempt, deadline);
+      const outcome = await attemptOnce(operation, extractUsage, attempt, deadline, scope);
       if (outcome.done) return outcome.value;
       await sleep(outcome.delayMs);
     }
