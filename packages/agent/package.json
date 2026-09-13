@@ -32,17 +32,17 @@
     "eval:agent": "tsx src/evals/cli.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "4.0.41",
-    "@ai-sdk/google": "4.0.50",
+    "@ai-sdk/anthropic": "4.0.52",
+    "@ai-sdk/google": "4.0.67",
     "@hire-me-mcp/core": "workspace:*",
-    "@mastra/core": "1.61.0",
-    "ai": "7.0.77",
-    "zod": "4.4.3"
+    "@mastra/core": "1.66.0",
+    "ai": "7.0.97",
+    "zod": "4.6.2"
   },
   "devDependencies": {
     "@types/node": "24.13.3",
     "@vitest/coverage-v8": "4.1.11",
-    "tsx": "4.23.12",
+    "tsx": "4.23.13",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
   }
