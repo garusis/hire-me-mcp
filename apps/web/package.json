@@ -30,7 +30,7 @@
     "@hire-me-mcp/connect-metadata": "workspace:*",
     "@hire-me-mcp/core": "workspace:*",
     "@mastra/ai-sdk": "1.9.1",
-    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/server": "2.3.0",
     "@upstash/ratelimit": "2.0.8",
     "@upstash/redis": "1.38.2",
     "@vercel/analytics": "2.0.1",
