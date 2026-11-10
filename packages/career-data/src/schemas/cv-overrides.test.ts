@@ -3,14 +3,14 @@ import { type CvOverrides, cvOverridesSchema, cvVariantSchema } from "./cv-overr
 
 const VALID: CvOverrides = {
   profile: {
-    headline: { general: "General headline", ai: "AI headline" },
+    headline: { general: "General headline" },
     summary: { general: "General summary" },
     timezoneLine: "Remote (UTC-5, full US-hours overlap)",
   },
   experience: [
     {
       id: "fixture-role",
-      bullets: { general: ["Bullet one"], ai: ["AI bullet one", "AI bullet two"] },
+      bullets: { general: ["Bullet one"] },
       techAdditions: ["zod"],
       techExcludeIds: ["aws"],
       keepTogether: true,
@@ -32,7 +32,7 @@ const VALID: CvOverrides = {
   education: [{ id: "fixture-education", line: "Fixture University, coursework toward a degree" }],
   skills: {
     categoryLabels: { language: "Languages" },
-    groupOrder: { general: ["language", "backend"], ai: ["ai-ml", "language"] },
+    groupOrder: { general: ["language", "backend"] },
     excludeIds: ["angularjs"],
     displayNames: { "regulated-data-handling": "PII handling, field-level encryption" },
     categoryOverrides: { react: "frontend", nextjs: "frontend" },
@@ -40,9 +40,13 @@ const VALID: CvOverrides = {
 };
 
 describe("cvVariantSchema", () => {
-  it("accepts general and ai", () => {
+  it("accepts general as the only variant", () => {
     expect(cvVariantSchema.parse("general")).toBe("general");
-    expect(cvVariantSchema.parse("ai")).toBe("ai");
+    expect(cvVariantSchema.options).toEqual(["general"]);
+  });
+
+  it("rejects the removed ai variant", () => {
+    expect(cvVariantSchema.safeParse("ai").success).toBe(false);
   });
 
   it("rejects an unknown variant", () => {
@@ -63,7 +67,7 @@ describe("cvOverridesSchema", () => {
       education: [],
       skills: {
         categoryLabels: {},
-        groupOrder: { general: ["language"], ai: ["language"] },
+        groupOrder: { general: ["language"] },
         excludeIds: [],
         displayNames: {},
       },
@@ -87,7 +91,7 @@ describe("cvOverridesSchema", () => {
   it("rejects skills.groupOrder missing a variant", () => {
     const invalid = {
       ...VALID,
-      skills: { ...VALID.skills, groupOrder: { general: ["language"] } },
+      skills: { ...VALID.skills, groupOrder: {} },
     };
     expect(cvOverridesSchema.safeParse(invalid).success).toBe(false);
   });
@@ -128,7 +132,7 @@ describe("cvOverridesSchema", () => {
       education: [],
       skills: {
         categoryLabels: {},
-        groupOrder: { general: ["language"], ai: ["language"] },
+        groupOrder: { general: ["language"] },
         excludeIds: [],
         displayNames: {},
       },

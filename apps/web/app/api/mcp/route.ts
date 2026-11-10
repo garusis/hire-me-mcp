@@ -81,7 +81,7 @@ const handler = createMcpHandler(
       "results stories filtered by competency, company, or experience id, each cited to the " +
       "role where the event occurred. For his curated, recruiter-facing CV presentation — " +
       "the exact headline, summary, per-role highlight bullets, and skill grouping the " +
-      "generated CV PDF renders from, for the 'general' or 'ai'-focused variant — use " +
+      "generated CV PDF renders from — use " +
       "`get-cv-presentation` instead of assembling one yourself from the other tools. " +
       "Every tool call is recorded as an anonymized, aggregate-only usage " +
       "event (which tool, which surface, the outcome) — never the raw arguments, your IP, " +

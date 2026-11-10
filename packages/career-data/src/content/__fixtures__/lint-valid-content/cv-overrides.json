@@ -14,7 +14,7 @@
   "education": [],
   "skills": {
     "categoryLabels": { "language": "Languages" },
-    "groupOrder": { "general": ["language"], "ai": ["language"] },
+    "groupOrder": { "general": ["language"] },
     "excludeIds": [],
     "displayNames": {}
   }

@@ -31,7 +31,7 @@
       "house-numbers-deterministic-document-checks"
     ],
     "action": "keep",
-    "note": "Concise capability bullet: the Orq.ai migration across four services, version-controlled prompts, provider failover, per-call cost tracing, eval harnesses, and the deterministic replacement of hallucination-prone document checks. Expanded in #309 stage 3 round 3 to replace the prior slogan wording (\"turned agentic AI features into engineered systems\") with these concrete facts, plus the LLM-as-judge / *.agents.ts CI-lane and opposing-provider-judging facts sourced from André Treib's recommendation (recommendation-andre-treib-2026, no dedicated story exists for the CI-lane design). The prompt-platform migration and the deterministic-check decision remain the detailed events behind the rest of the bullet."
+    "note": "Concise capability bullet: the Orq.ai migration across four services, version-controlled prompts, provider failover, per-call cost tracing, eval harnesses, and the deterministic replacement of hallucination-prone document checks. Expanded in #309 stage 3 round 3 to replace the prior slogan wording (\"turned agentic AI features into engineered systems\") with these concrete facts, plus the LLM-as-judge / *.agents.ts CI-lane and opposing-provider-judging facts sourced from Andr\u00e9 Treib's recommendation (recommendation-andre-treib-2026, no dedicated story exists for the CI-lane design). The prompt-platform migration and the deterministic-check decision remain the detailed events behind the rest of the bullet."
   },
   {
     "experienceId": "house-numbers-2022-senior-full-stack-engineer",
@@ -196,5 +196,33 @@
     "classification": "concise-outcome",
     "action": "keep",
     "note": "Second, larger SAP migration, added in #309 stage 3 (open question 9). Sourced from the FullStack Labs story's `reflection` field (fullstack-labs-sap-migration), not from a Xogito-specific story \u2014 reflection is not preservable narrative under #290's classification, so no storyIds is attached here; the reflection field remains the fuller account."
+  },
+  {
+    "experienceId": "house-numbers-2022-senior-full-stack-engineer",
+    "field": "highlights.6",
+    "classification": "concise-outcome",
+    "action": "keep",
+    "note": "Document-extraction evaluation audit and its methodology, appended after the Dark Matter acquisition. Concise as written; no story attached."
+  },
+  {
+    "experienceId": "house-numbers-2022-senior-full-stack-engineer",
+    "field": "highlights.7",
+    "classification": "concise-outcome",
+    "action": "keep",
+    "note": "Engineering guide to handling PII in agent systems, appended after the Dark Matter acquisition. Concise as written; no story attached."
+  },
+  {
+    "experienceId": "dark-matter-technologies-2026-principal-engineer",
+    "field": "summary",
+    "classification": "role-context",
+    "action": "keep",
+    "note": "Role and scope only."
+  },
+  {
+    "experienceId": "dark-matter-technologies-2026-principal-engineer",
+    "field": "highlights.0",
+    "classification": "role-context",
+    "action": "keep",
+    "note": "Factual join statement; no story attached."
   }
 ]

@@ -148,7 +148,7 @@ const EMPTY_OVERRIDES: CvOverrides = {
   education: [],
   skills: {
     categoryLabels: {},
-    groupOrder: { general: ["language"], ai: ["language"] },
+    groupOrder: { general: ["language"] },
     excludeIds: [],
     displayNames: {},
   },
@@ -165,13 +165,17 @@ describe("getCvView", () => {
     const repository = createInMemoryCareerDataRepository(
       datasetWith({ profile: PROFILE, experience: EXPERIENCE }),
     );
-    getCvView(repository, { overrides: EMPTY_OVERRIDES, variant: "ai", maxHighlightsPerRole: 1 });
+    getCvView(repository, {
+      overrides: EMPTY_OVERRIDES,
+      variant: "general",
+      maxHighlightsPerRole: 1,
+    });
     expect(buildCvPresentation).toHaveBeenCalledTimes(1);
     expect(buildCvPresentation).toHaveBeenCalledWith(
       repository,
       expect.objectContaining({
         overrides: EMPTY_OVERRIDES,
-        variant: "ai",
+        variant: "general",
         maxHighlightsPerRole: 1,
       }),
     );
@@ -370,8 +374,8 @@ describe("getCvView", () => {
 
 const OVERRIDES: CvOverrides = {
   profile: {
-    headline: { general: "General headline", ai: "AI headline" },
-    summary: { general: "General summary", ai: "AI summary" },
+    headline: { general: "General headline" },
+    summary: { general: "General summary" },
     timezoneLine: "Remote (UTC-5)",
   },
   experience: [
@@ -379,7 +383,6 @@ const OVERRIDES: CvOverrides = {
       id: "fixture-role-new",
       bullets: {
         general: ["General bullet one", "General bullet two"],
-        ai: ["AI bullet one"],
       },
       techAdditions: ["fixture-skill-by-id"],
     },
@@ -392,7 +395,7 @@ const OVERRIDES: CvOverrides = {
   education: [{ id: "fixture-education", line: "Fixture University — overridden line" }],
   skills: {
     categoryLabels: { language: "Languages", tool: "Tooling" },
-    groupOrder: { general: ["tool", "language"], ai: ["language", "tool"] },
+    groupOrder: { general: ["tool", "language"] },
     excludeIds: ["fixture-skill-familiar"],
     displayNames: { "fixture-skill-expert": "Overridden Expert Name" },
   },
@@ -402,7 +405,7 @@ const OVERRIDES: CvOverrides = {
 // `bullets.general` (mirroring how headline/summary already fall back)
 // before falling back further to the canonical `highlights`, so an
 // overlay entry authored only for the general variant doesn't silently
-// drop the AI variant back to weaker canonical bullets.
+// drop back to weaker canonical bullets.
 const GENERAL_ONLY_BULLETS_OVERRIDES: CvOverrides = {
   ...OVERRIDES,
   experience: [
@@ -427,10 +430,6 @@ describe("getCvView CV-only overrides (#309 stage 3)", () => {
     expect(generalView.headline).toBe("General headline");
     expect(generalView.summary).toBe("General summary");
     expect(generalView.timezoneLine).toBe("Remote (UTC-5)");
-
-    const aiView = getCvView(repository, { overrides: OVERRIDES, variant: "ai" });
-    expect(aiView.headline).toBe("AI headline");
-    expect(aiView.summary).toBe("AI summary");
   });
 
   it("falls back to profile.headline/profile.summary when the overlay has no override for a field", () => {
@@ -448,10 +447,6 @@ describe("getCvView CV-only overrides (#309 stage 3)", () => {
     const generalView = getCvView(repository, { overrides: OVERRIDES, variant: "general" });
     const newRoleGeneral = generalView.experience.find((item) => item.company === "New Fixture Co");
     expect(newRoleGeneral?.highlights).toEqual(["General bullet one", "General bullet two"]);
-
-    const aiView = getCvView(repository, { overrides: OVERRIDES, variant: "ai" });
-    const newRoleAi = aiView.experience.find((item) => item.company === "New Fixture Co");
-    expect(newRoleAi?.highlights).toEqual(["AI bullet one"]);
   });
 
   it("appends techAdditions, resolved to display names, after the entry's own tech", () => {
@@ -526,19 +521,19 @@ describe("getCvView CV-only overrides (#309 stage 3)", () => {
     expect(view.education.map((entry) => entry.id)).toEqual(["fixture-education"]);
   });
 
-  it("falls back to the general bullets for a variant with no bullets of its own, before falling back further to canonical highlights (#309 stage 3 second review, item 2)", () => {
+  it("uses the general bullets authored for a role instead of its canonical highlights (#309 stage 3 second review, item 2)", () => {
     const repository = createInMemoryCareerDataRepository(
       datasetWith({ profile: PROFILE, experience: EXPERIENCE }),
     );
-    const aiView = getCvView(repository, {
+    const view = getCvView(repository, {
       overrides: GENERAL_ONLY_BULLETS_OVERRIDES,
-      variant: "ai",
+      variant: "general",
     });
-    const oldRoleAi = aiView.experience.find((item) => item.company === "Old Fixture Co");
-    expect(oldRoleAi?.highlights).toEqual(["General-only bullet one", "General-only bullet two"]);
+    const oldRole = view.experience.find((item) => item.company === "Old Fixture Co");
+    expect(oldRole?.highlights).toEqual(["General-only bullet one", "General-only bullet two"]);
   });
 
-  it("falls back to canonical highlights when the overlay entry has bullets for neither variant", () => {
+  it("falls back to canonical highlights when the overlay entry has no bullets", () => {
     const repository = createInMemoryCareerDataRepository(
       datasetWith({ profile: PROFILE, experience: EXPERIENCE }),
     );
@@ -546,7 +541,7 @@ describe("getCvView CV-only overrides (#309 stage 3)", () => {
       ...OVERRIDES,
       experience: [{ id: "fixture-role-old", keepTogether: true }],
     };
-    const view = getCvView(repository, { overrides: overridesWithNoBullets, variant: "ai" });
+    const view = getCvView(repository, { overrides: overridesWithNoBullets, variant: "general" });
     const oldRole = view.experience.find((item) => item.company === "Old Fixture Co");
     expect(oldRole?.highlights).toEqual(["Old highlight one", "Old highlight two"]);
   });
@@ -625,13 +620,6 @@ describe("getCvView CV-only overrides (#309 stage 3)", () => {
     expect(generalView.skillGroups).toEqual([
       { category: "language", label: "Languages", names: ["Overridden Expert Name"] },
     ]);
-
-    const aiView = getCvView(repository, { overrides: OVERRIDES, variant: "ai" });
-    expect(aiView.skillGroups[0]).toEqual({
-      category: "language",
-      label: "Languages",
-      names: ["Overridden Expert Name"],
-    });
   });
 
   it("reassigns a skill to a CV-only category via categoryOverrides, without touching the canonical category (#309 stage 3 second review, item 15)", () => {
@@ -645,7 +633,6 @@ describe("getCvView CV-only overrides (#309 stage 3)", () => {
         categoryLabels: { ...OVERRIDES.skills.categoryLabels, frontend: "Frontend" },
         groupOrder: {
           general: ["frontend", "tool", "language"],
-          ai: ["language", "frontend", "tool"],
         },
         excludeIds: [],
         categoryOverrides: { "fixture-skill-expert": "frontend" },

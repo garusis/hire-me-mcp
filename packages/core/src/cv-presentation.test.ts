@@ -123,7 +123,7 @@ const EMPTY_OVERRIDES: CvOverrides = {
   education: [],
   skills: {
     categoryLabels: {},
-    groupOrder: { general: ["language"], ai: ["language"] },
+    groupOrder: { general: ["language"] },
     excludeIds: [],
     displayNames: {},
   },
@@ -247,8 +247,8 @@ describe("buildCvPresentation", () => {
 
 const OVERRIDES: CvOverrides = {
   profile: {
-    headline: { general: "General headline", ai: "AI headline" },
-    summary: { general: "General summary", ai: "AI summary" },
+    headline: { general: "General headline" },
+    summary: { general: "General summary" },
     timezoneLine: "Remote (UTC-5)",
   },
   experience: [
@@ -256,7 +256,6 @@ const OVERRIDES: CvOverrides = {
       id: "fixture-role-new",
       bullets: {
         general: ["General bullet one", "General bullet two"],
-        ai: ["AI bullet one"],
       },
       techAdditions: ["fixture-skill-by-id"],
     },
@@ -269,7 +268,7 @@ const OVERRIDES: CvOverrides = {
   education: [{ id: "fixture-education", line: "Fixture University — overridden line" }],
   skills: {
     categoryLabels: { language: "Languages", tool: "Tooling" },
-    groupOrder: { general: ["tool", "language"], ai: ["language", "tool"] },
+    groupOrder: { general: ["tool", "language"] },
     excludeIds: ["fixture-skill-familiar"],
     displayNames: { "fixture-skill-expert": "Overridden Expert Name" },
   },

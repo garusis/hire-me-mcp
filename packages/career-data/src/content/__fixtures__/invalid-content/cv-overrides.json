@@ -5,7 +5,7 @@
   "education": [],
   "skills": {
     "categoryLabels": {},
-    "groupOrder": { "general": ["language"], "ai": ["language"] },
+    "groupOrder": { "general": ["language"] },
     "excludeIds": [],
     "displayNames": {}
   }

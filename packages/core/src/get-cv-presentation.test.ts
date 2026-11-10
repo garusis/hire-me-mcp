@@ -85,7 +85,7 @@ const EMPTY_OVERRIDES: CvOverrides = {
   education: [],
   skills: {
     categoryLabels: {},
-    groupOrder: { general: ["language"], ai: ["language"] },
+    groupOrder: { general: ["language"] },
     excludeIds: [],
     displayNames: {},
   },
@@ -106,7 +106,7 @@ const OVERRIDES: CvOverrides = {
   education: [{ id: "fixture-education", line: "Overridden line" }],
   skills: {
     categoryLabels: {},
-    groupOrder: { general: ["language"], ai: ["language"] },
+    groupOrder: { general: ["language"] },
     excludeIds: [],
     displayNames: {},
   },
@@ -217,16 +217,19 @@ describe("getCvPresentation", () => {
     expect(educationCitation?.fragment).toContain("cv-overrides");
   });
 
-  it("supports the ai variant", () => {
+  it("supports the general variant explicitly, the only variant that exists", () => {
     const repository = createInMemoryCareerDataRepository(datasetWith({ profile: PROFILE }));
     const overrides: CvOverrides = {
       ...OVERRIDES,
-      profile: { headline: { ai: "AI headline" }, summary: { ai: "AI summary" } },
+      profile: {
+        headline: { general: "General headline" },
+        summary: { general: "General summary" },
+      },
     };
-    const result = getCvPresentation(repository, { overrides, variant: "ai" });
-    expect(result.data.variant).toBe("ai");
-    expect(result.data.headline).toBe("AI headline");
-    expect(result.data.summary).toBe("AI summary");
+    const result = getCvPresentation(repository, { overrides, variant: "general" });
+    expect(result.data.variant).toBe("general");
+    expect(result.data.headline).toBe("General headline");
+    expect(result.data.summary).toBe("General summary");
   });
 
   it("loads the real overlay by default and never leaks story content or a profile field in its data (#296)", () => {
@@ -286,7 +289,7 @@ describe("getCvPresentation never leaks real story content into the MCP response
     return dataset.stories.flatMap((story) => storyUnits(story).flatMap(longSentencesOf));
   }
 
-  it.each(["general", "ai"] as const)(
+  it.each(["general"] as const)(
     "the real MCP tool response contains no story sentence from the real dataset (%s variant)",
     (variant) => {
       const result = getCvPresentation(createContentCareerDataRepository(), { variant });

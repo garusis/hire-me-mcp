@@ -25,7 +25,7 @@ import { toolSuccessSchema } from "../wire-schemas";
  */
 type GetCvPresentationData = ReturnType<typeof getCvPresentation>["data"];
 
-const CV_VARIANTS = ["general", "ai"] as const;
+const CV_VARIANTS = ["general"] as const;
 
 const inputSchema = z.object({
   variant: z
@@ -34,9 +34,8 @@ const inputSchema = z.object({
     })
     .optional()
     .describe(
-      "Which CV audience to build: 'general' (default) leads with full-stack range; 'ai' leads " +
-        "with LLM/agentic depth for AI-tooling-company postings. Both project the same " +
-        "canonical dataset — only selection, order, and CV-only wording vary. English only; " +
+      "Which CV audience to build. Only 'general' exists (the default); it projects the " +
+        "canonical dataset with CV-only selection, order, and wording. English only; " +
         "there is no Spanish variant on this server.",
     ),
 });
@@ -167,8 +166,8 @@ export const getCvPresentationTool: ToolDefinition<typeof inputSchema, GetCvPres
     "full underlying record), and every citation resolves to that canonical entity — citations " +
     "for headline/summary/bullets/project-summary/education-line carry a 'cv-overrides' " +
     "fragment suffix wherever the displayed wording came from the CV-only overlay rather than " +
-    "being the canonical text verbatim. Use this to render a CV-style summary of Marcos, to " +
-    "compare general vs. AI-focused framing, or to answer 'what does his CV say'. Do not use " +
+    "being the canonical text verbatim. Use this to render a CV-style summary of Marcos or " +
+    "to answer 'what does his CV say'. Do not use " +
     "it for the raw canonical work history or skill inventory (use get-experience/list-skills " +
     "directly) or for behavioral stories (use list-career-stories) — this tool's wording is " +
     "curated presentation, not the full canonical record. English only; there is no Spanish " +

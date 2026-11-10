@@ -119,22 +119,33 @@ describe("getCvPresentationTool", () => {
     });
   });
 
-  it("passes an explicit ai variant through to the domain service", async () => {
+  it("passes an explicit general variant through to the domain service", async () => {
     vi.mocked(core.getCvPresentation).mockReturnValue({
-      data: { ...fixtureData, variant: "ai" },
+      data: { ...fixtureData, variant: "general" },
       citations: fixtureCitations,
     });
     const executor = createToolExecutor(getCvPresentationTool);
 
-    const result = await executor({ variant: "ai" });
+    const result = await executor({ variant: "general" });
 
     expect(result.isError).toBeUndefined();
     expect(core.getCvPresentation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ variant: "ai" }),
+      expect.objectContaining({ variant: "general" }),
     );
     const structuredContent = result.structuredContent as { data: { variant: string } };
-    expect(structuredContent.data.variant).toBe("ai");
+    expect(structuredContent.data.variant).toBe("general");
+  });
+
+  it("rejects the removed ai variant as an invalid_input error naming general as the only value", async () => {
+    const executor = createToolExecutor(getCvPresentationTool);
+
+    const result = await executor({ variant: "ai" });
+
+    expect(result.isError).toBe(true);
+    const structuredContent = result.structuredContent as { code: string; message: string };
+    expect(structuredContent.code).toBe("invalid_input");
+    expect(structuredContent.message).toContain('"general"');
   });
 
   it("rejects an unknown variant value as a documented, self-correcting invalid_input error", async () => {
@@ -146,7 +157,7 @@ describe("getCvPresentationTool", () => {
     const structuredContent = result.structuredContent as { code: string; message: string };
     expect(structuredContent.code).toBe("invalid_input");
     expect(structuredContent.message).toContain('"general"');
-    expect(structuredContent.message).toContain('"ai"');
+    expect(structuredContent.message).not.toContain('"ai"');
   });
 
   it("passes citations through by deep equality (contract test)", async () => {

@@ -2,32 +2,30 @@ import { z } from "zod";
 import { idSchema } from "./common.js";
 
 /**
- * The CV's two selectable audiences (#309 stage 3, open question 2):
- * `general` leads with full-stack range and is the default PDF; `ai` leads
- * with LLM/agentic depth for AI-tooling-company postings. Both read the
- * same canonical dataset — only selection, order and CV-only wording vary.
+ * The CV's selectable audiences. Only `general` exists today (the owner
+ * dropped the `ai` variant); the variant concept stays so another audience
+ * can be added later. Every variant reads the same canonical dataset —
+ * only selection, order and CV-only wording vary.
  */
-export const cvVariantSchema = z.enum(["general", "ai"]);
+export const cvVariantSchema = z.enum(["general"]);
 export type CvVariant = z.infer<typeof cvVariantSchema>;
 
 /** Per-variant CV-only text: at least one variant must be authored. */
 const variantTextSchema = z
   .object({
     general: z.string().min(1).optional(),
-    ai: z.string().min(1).optional(),
   })
-  .refine((value) => value.general !== undefined || value.ai !== undefined, {
-    message: "at least one of general/ai must be set",
+  .refine((value) => value.general !== undefined, {
+    message: "at least one variant must be set",
   });
 
 /** Per-variant CV-only bullet lists, replacing an experience entry's canonical `highlights` on the CV only. */
 const variantBulletsSchema = z
   .object({
     general: z.array(z.string().min(1)).min(1).optional(),
-    ai: z.array(z.string().min(1)).min(1).optional(),
   })
-  .refine((value) => value.general !== undefined || value.ai !== undefined, {
-    message: "at least one of general/ai must be set",
+  .refine((value) => value.general !== undefined, {
+    message: "at least one variant must be set",
   });
 
 /**
@@ -124,7 +122,6 @@ const cvSkillsOverrideSchema = z.object({
   categoryLabels: z.record(z.string().min(1), z.string().min(1)),
   groupOrder: z.object({
     general: z.array(z.string().min(1)).min(1),
-    ai: z.array(z.string().min(1)).min(1),
   }),
   excludeIds: z.array(idSchema),
   displayNames: z.record(idSchema, z.string().min(1)),

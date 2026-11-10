@@ -36,8 +36,9 @@ describe("real content: experience/*.json", () => {
     expect(errors).toEqual([]);
   });
 
-  it("has all seven roles from the canonical career reference, none silently dropped", () => {
+  it("has all eight roles from the canonical career reference, none silently dropped", () => {
     const expectedRoles = [
+      { company: "Dark Matter Technologies", startDate: "2026-11" },
       { company: "House Numbers", startDate: "2022-05" },
       { company: "Xogito Group", startDate: "2020-12" },
       { company: "FullStack Labs", startDate: "2018-12" },
@@ -59,7 +60,7 @@ describe("real content: experience/*.json", () => {
   it("has exactly one current (open-ended) role, using an omitted endDate", () => {
     const current = readExperienceEntries().filter((entry) => entry.endDate === undefined);
     expect(current).toHaveLength(1);
-    expect(current[0]?.company).toBe("House Numbers");
+    expect(current[0]?.company).toBe("Dark Matter Technologies");
   });
 
   it("every entry has a startDate matching the documented YYYY-MM format", () => {
