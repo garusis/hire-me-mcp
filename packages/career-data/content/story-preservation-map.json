@@ -216,13 +216,13 @@
     "field": "summary",
     "classification": "role-context",
     "action": "keep",
-    "note": "Role and scope only."
+    "note": "Factual join statement: the acquisition that brought the role."
   },
   {
     "experienceId": "dark-matter-technologies-2026-principal-engineer",
     "field": "highlights.0",
     "classification": "role-context",
     "action": "keep",
-    "note": "Factual join statement; no story attached."
+    "note": "Current scope only (AI tooling for Empower LOS/POS); no story attached."
   }
 ]
