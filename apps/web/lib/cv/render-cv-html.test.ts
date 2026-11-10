@@ -165,11 +165,8 @@ describe("renderCvHtml", () => {
     expect(html).not.toContain("Selected Projects");
   });
 
-  it("the header (not a footer) calls out the MCP endpoint URL passed in options for the ai variant (#232, #309 stage 3 action 12) — no footer is emitted", () => {
-    // The general variant collapses the portfolio line to one URL
-    // (#309 stage 3 action 12); the MCP endpoint callout is an ai-variant
-    // header feature now, exercised here with variant: "ai".
-    const html = renderCvHtml({ ...FIXTURE_VIEW, variant: "ai" }, FIXTURE_OPTIONS);
+  it("the header (not a footer) calls out the MCP endpoint URL passed in options (#232, #309 stage 3 action 12) — no footer is emitted", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
     expect(html).toContain("https://example.test/api/mcp");
     expect(html).toMatch(/MCP client/);
     expect(html).not.toContain("<footer");
@@ -260,13 +257,8 @@ describe("renderCvHtml", () => {
     expect(html).toContain(
       'href="https://www.linkedin.example/in/fixture-person/">linkedin.example/in/fixture-person</a>',
     );
-    // The general-variant portfolio siteUrl link is shown the same way.
+    // The portfolio siteUrl link is shown the same way.
     expect(html).toContain('href="https://example.test">example.test</a>');
-    // The ai variant additionally shows the MCP endpoint, displayed like
-    // every other URL on the page (scheme stripped, full href kept) so the
-    // header reads consistently (#309 round 3 grading, nit 6).
-    const aiHtml = renderCvHtml({ ...FIXTURE_VIEW, variant: "ai" }, FIXTURE_OPTIONS);
-    expect(aiHtml).toContain('href="https://example.test/api/mcp">example.test/api/mcp</a>');
   });
 
   it("renders a Tech line under a role from the view's tech field, omitted when it is empty (#299)", () => {
@@ -290,14 +282,12 @@ describe("renderCvHtml", () => {
     expect(htmlNoTimezone).not.toContain("Remote (Fixture-5)");
   });
 
-  it("collapses the portfolio line to the site URL alone for the general variant, and includes the MCP URL for the ai variant (#309 stage 3, action 12)", () => {
-    const generalHtml = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
-    const headerEndGeneral = generalHtml.indexOf("<h2>");
-    expect(generalHtml.slice(0, headerEndGeneral)).not.toContain(FIXTURE_OPTIONS.mcpUrl);
-
-    const aiHtml = renderCvHtml({ ...FIXTURE_VIEW, variant: "ai" }, FIXTURE_OPTIONS);
-    const headerEndAi = aiHtml.indexOf("<h2>");
-    expect(aiHtml.slice(0, headerEndAi)).toContain(FIXTURE_OPTIONS.mcpUrl);
+  it("renders the portfolio line with the site URL and the queryable MCP endpoint callout in the header (#309 stage 3, action 12; the former ai-variant header is now the only one)", () => {
+    const html = renderCvHtml(FIXTURE_VIEW, FIXTURE_OPTIONS);
+    const header = html.slice(0, html.indexOf("<h2>"));
+    expect(header).toContain(FIXTURE_OPTIONS.siteUrl.replace(/^https?:\/\//, ""));
+    expect(header).toContain("Query it from any MCP client:");
+    expect(header).toContain(FIXTURE_OPTIONS.mcpUrl.replace(/^https?:\/\//, ""));
   });
 
   it("renders a role with compactLine as a structured entry under an Earlier Experience heading — bold company, role, full date range, one description line (#309 stage 3 second review, item 7)", () => {
@@ -432,7 +422,7 @@ const NEVER_DEPLOYED_PHRASES = [
 
 describe("renderCvHtml never leads with non-shipped-work framing (#309 stage 3, action 19)", () => {
   it("the real CV's lead bullet, for every variant, never contains 'never deployed', 'stayed experimental', or 'left as a later team decision'", () => {
-    for (const variant of ["general", "ai"] as const) {
+    for (const variant of ["general"] as const) {
       const view = getCvView(createContentCareerDataRepository(), { variant });
       for (const item of view.experience) {
         const leadBullet = item.highlights[0];
@@ -450,8 +440,8 @@ describe("renderCvHtml never leads with non-shipped-work framing (#309 stage 3, 
     }
   });
 
-  it("the rendered HTML for both variants carries none of the banned phrases anywhere in the Experience section's lead bullets", () => {
-    for (const variant of ["general", "ai"] as const) {
+  it("the rendered HTML for every variant carries none of the banned phrases anywhere in the Experience section's lead bullets", () => {
+    for (const variant of ["general"] as const) {
       const view = getCvView(createContentCareerDataRepository(), { variant });
       const html = renderCvHtml(view, FIXTURE_OPTIONS).toLowerCase();
       // A coarse whole-document check backs up the per-bullet one above:

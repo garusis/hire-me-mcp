@@ -1,12 +1,10 @@
 {
   "profile": {
     "headline": {
-      "general": "Senior Full-Stack Engineer · TypeScript, Node.js, React, AWS · Production LLM systems",
-      "ai": "Senior Full-Stack Engineer · LLM and agentic systems in production · TypeScript, Node.js, React, AWS"
+      "general": "Principal Engineer · Production LLM platforms in regulated lending · Evaluations, provider failover, cost tracing · TypeScript, Node.js, AWS"
     },
     "summary": {
-      "general": "Senior full-stack engineer with 13 years shipping TypeScript/Node.js, React and AWS products, the last four at House Numbers, where I joined an engineering team of three (now seven) and helped take a mortgage-lending platform through a B2C-to-B2B pivot and from a handful of services to a 16-service event-driven monorepo. I own critical production systems end to end, including a communications service handling 57,000+ emails, SMS and calls in a recent seven-month window (~70% automated) and a hardened public document-upload boundary, and for the last three years have put LLM features into production with evaluation harnesses, cost tracing and deterministic safeguards. Earlier: main backend engineer on a multi-tenant SaaS, two legacy-SAP data migrations, a monolith-to-Kubernetes migration, client-facing delivery.",
-      "ai": "Senior full-stack engineer (TypeScript, Node.js, React, AWS) who has spent the last three years putting LLM and agentic features into production on a 16-service mortgage-lending platform: evaluation harnesses with human-graded ground truth and LLM-as-judge scoring, per-call cost tracing, version-controlled prompts and provider failover. I built and maintain the platform's communications service (57,000+ emails, SMS and calls triaged in a recent seven-month window, ~70% reaching an automated triage outcome) and led the migration off a prompt-management vendor to repository-native LLM infrastructure across four services with no significant regression. Thirteen years of full-stack, DevOps and client-facing delivery underneath."
+      "general": "I build production LLM platforms for regulated mortgage lending. I spent 4.5 years as Staff Engineer at House Numbers, one of its first two non-founding engineers, as the team grew from three to seven. I built its LLM evaluation, provider-failover and deterministic-validation layers. When Dark Matter Technologies acquired the House Numbers platform and team, I joined as Principal Engineer."
     },
     "timezoneLine": "UTC-5, US-hours overlap"
   },
@@ -16,23 +14,12 @@
       "techExcludeIds": ["aws"],
       "bullets": {
         "general": [
-          "Built and maintain the communications service that triaged 57,000+ emails, SMS and calls in a recent seven-month window, ~70% to an automated outcome, letting operations retire its manual-triage shifts: webhook intake, LLM-assisted extraction and classification kept separate from deterministic routing, loan matching over field-level-encrypted data, hardened with alerts, durable retries and webhook reconciliation.",
-          "Eliminated failed-upload complaints on a public document-upload flow where an estimated two in three submissions had ended in a complaint or escalation: designed and built the replacement security boundary (opaque sessions, CAPTCHA, rate limiting, replay protection, encrypted audit trail) and a hybrid deterministic/LLM routing model that kept ambiguous matches with a human.",
-          "Built the loan-application product's filter UI in React and the reusable TypeScript query library behind it — multi-value, related-entity, date-range and text-search operators — tenant-scoped for sensitive loan data.",
-          "Owned incident response on the document-processing path: contained a crash loop (96 restarts in 24 hours against a 0-4 baseline), made the failing path observable and retryable, and reprocessed the affected window with no permanent data loss.",
-          "Replaced hallucination-prone LLM-generated loan-document checks with deterministic validation covered by focused unit and integration tests (plus capped, evaluated AI observations) in under two weeks, after decomposing the monolithic analysis pipeline into three idempotent, retryable stages; processors adopted the checks and the open-ended LLM runtime cost for them was removed.",
-          "Retired a prompt-management vendor (Orq.ai) and its recurring cost by leading a multi-month, service-by-service migration to repository-native LLM infrastructure across four services with no significant regression: version-controlled prompts, provider failover, shared per-call cost tracing and automated evaluations that let the team swap in cheaper models under measured quality.",
-          "Authored the shared on-call investigation workflow the whole rotation adopted, and proposed the alert-to-PR automation on top of it: a human report or a New Relic alert can trigger an agent that gathers evidence and drafts a fix for engineer review; designed the CI-gated, agent-consumable monorepo documentation system."
-        ],
-        "ai": [
-          "Built and maintain the communications service that triaged 57,000+ emails, SMS and calls in a recent seven-month window, ~70% to an automated outcome, letting operations retire its manual-triage shifts: webhook intake, LLM-assisted extraction and classification kept separate from deterministic routing, loan matching over field-level-encrypted data, hardened with alerts, durable retries and webhook reconciliation.",
-          "Retired a prompt-management vendor (Orq.ai) and its recurring cost by leading a multi-month, service-by-service migration to repository-native LLM infrastructure across four services with no significant regression: version-controlled prompts, provider failover, shared per-call cost tracing and automated evaluations that let the team swap in cheaper models under measured quality.",
-          "Designed the team's LLM test and evaluation lane: the *.agents.ts convention that isolates model-dependent tests into a CI lane triggered only when a prompt or agent changes, model selection moved out of environment variables so judging can use an opposing provider, and a declarative factory that replaced 24 hand-written MCP tool definitions and still generates the team's tools.",
-          "Replaced hallucination-prone LLM-generated loan-document checks with deterministic validation covered by focused unit and integration tests (plus capped, evaluated AI observations) in under two weeks, after decomposing the monolithic analysis pipeline into three idempotent, retryable stages; processors adopted the checks and the open-ended LLM runtime cost for them was removed.",
-          "Eliminated failed-upload complaints on a public document-upload flow where an estimated two in three submissions had ended in a complaint or escalation: designed and built the replacement security boundary (opaque sessions, CAPTCHA, rate limiting, replay protection, encrypted audit trail) and a hybrid deterministic/LLM routing model that kept ambiguous matches with a human.",
-          "Built the loan-application product's filter UI in React and the reusable TypeScript query library behind it — multi-value, related-entity, date-range and text-search operators — tenant-scoped for sensitive loan data.",
-          "Owned incident response on the document-processing path: contained a crash loop (96 restarts in 24 hours against a 0-4 baseline), made the failing path observable and retryable, and reprocessed the affected window with no permanent data loss.",
-          "Authored the shared on-call investigation workflow the whole rotation adopted, and proposed the alert-to-PR automation built on top of it: an incident report or a New Relic alert now starts an agent that correlates the evidence, ranks likely causes and drafts a fix as a pull request for an engineer to validate before anything merges."
+          "Built and owned the communications service, keeping LLM classification separate from deterministic routing. It let operations retire manual-triage shifts and handled 57,000+ communications in a seven-month window.",
+          "Moved LLM infrastructure for four services off a vendor platform into an in-house layer with versioned prompts, provider failover, per-call cost tracing and evaluations.",
+          "Led the document-extraction evaluation audit and wrote its methodology (ground truth from printed values, exact matching, a hash-locked answer key), giving the team a reproducible baseline for under $10 across three runs.",
+          "Moved document checks from LLM generation to deterministic, tested validation, so loan processors get reproducible results.",
+          "Rebuilt routing for the public borrower document-upload flow, resolving recurring failed-upload complaints.",
+          "Wrote the engineering guide to handling PII in agent systems, later used to shape the company's data-retention and deletion work."
         ]
       }
     },
@@ -122,16 +109,7 @@
       "practice": "Practices"
     },
     "groupOrder": {
-      "general": [
-        "language",
-        "frontend",
-        "runtime",
-        "database",
-        "cloud-infra",
-        "ai-ml",
-        "practice"
-      ],
-      "ai": ["ai-ml", "language", "frontend", "runtime", "database", "cloud-infra", "practice"]
+      "general": ["ai-ml", "language", "frontend", "runtime", "database", "cloud-infra", "practice"]
     },
     "excludeIds": [
       "angularjs",

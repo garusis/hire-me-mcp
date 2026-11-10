@@ -176,14 +176,14 @@ marks another story's or an experience's chunks as changed. Adding a brand-new s
 inserts only, with every unrelated chunk in `unchanged`; deleting a story shows up as deletes
 only, scoped to that story's chunk ids.
 
-**Expected total, today:** the real content directory's 16 authored stories chunk to **90**
+**Expected total, today:** the real content directory's 16 authored stories chunk to **88**
 `sourceType: "story"` chunks in total (`packages/core/src/chunking/index.test.ts` (#296) locks
 this exact count against the real dataset — the number changes only when a story is added,
 removed, or restructured into a different number of sections). After merging a story change to
 `main`, `.github/workflows/reindex-production.yml` runs the real incremental `pnpm ingest`
 automatically (see "How re-indexing works" below) — its job summary's one-line `inserted: N,
 updated: N, deleted: N, unchanged: N` should match what the local dry-run predicted: for the
-first run that ever indexes the story corpus, `inserted` should equal 90 (plus whatever
+first run that ever indexes the story corpus, `inserted` should equal 88 (plus whatever
 non-story chunks changed in the same push); for a later edit to one existing story, `updated`
 should equal only that story's chunk count with `inserted`/`deleted` at 0 unless the edit added
 or removed a section. A count that doesn't match the dry-run's prediction is a real signal to

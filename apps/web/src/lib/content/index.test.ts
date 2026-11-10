@@ -54,8 +54,6 @@ describe("apps/web content layer public entry point", () => {
     // by category, not proficiency.
     expect(cv.variant).toBe("general");
     expect(cv.skillGroups.length).toBeGreaterThan(0);
-    const aiCv = getCvView(undefined, { variant: "ai" });
-    expect(aiCv.headline).not.toBe(cv.headline);
 
     // #293: every story's parent pointer resolves to a real experience slug.
     const storyParents = listStoryParents();

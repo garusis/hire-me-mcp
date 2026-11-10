@@ -125,23 +125,14 @@ function link(url: string): string {
 }
 
 /**
- * The header's portfolio line (#309 stage 3, action 12): the general
- * variant collapses to one URL; the `ai` variant keeps the MCP endpoint
- * callout, since the AI-tooling audience it targets treats a queryable MCP
- * server as a differentiator rather than noise.
+ * The header's portfolio line (#309 stage 3, action 12): the site URL plus
+ * the queryable MCP endpoint callout (formerly the `ai` variant's header,
+ * now the only one).
  */
-function renderPortfolioLine(
-  variant: CvView["variant"],
-  options: Pick<RenderCvHtmlOptions, "siteUrl" | "mcpUrl">,
-): string {
-  if (variant === "ai") {
-    return `<p class="contact"><strong>Portfolio, references and a queryable MCP endpoint:</strong> ${link(
-      options.siteUrl,
-    )} &middot; <strong>Query it from any MCP client:</strong> ${link(options.mcpUrl)}</p>`;
-  }
+function renderPortfolioLine(options: Pick<RenderCvHtmlOptions, "siteUrl" | "mcpUrl">): string {
   return `<p class="contact"><strong>Portfolio, references and a queryable MCP endpoint:</strong> ${link(
     options.siteUrl,
-  )}</p>`;
+  )} &middot; <strong>Query it from any MCP client:</strong> ${link(options.mcpUrl)}</p>`;
 }
 
 function renderHeader(
@@ -158,7 +149,7 @@ function renderHeader(
   <h1>${escapeHtml(profile.name)}</h1>
   <p class="contact"><strong>${escapeHtml(view.headline)}</strong></p>
   <p class="contact-line">${locationLine} &middot; ${contacts}</p>
-  ${renderPortfolioLine(view.variant, options)}`;
+  ${renderPortfolioLine(options)}`;
 }
 
 function renderSummary(summary: string): string {

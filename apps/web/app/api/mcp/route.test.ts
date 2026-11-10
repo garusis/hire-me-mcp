@@ -260,19 +260,19 @@ describe("MCP endpoint (app/api/mcp/route.ts)", () => {
     await client.close();
   });
 
-  it("calls get-cv-presentation with variant: 'ai' over streamable HTTP and gets the ai variant back (#315)", async () => {
+  it("calls get-cv-presentation with variant: 'general' over streamable HTTP and gets the general variant back (#315)", async () => {
     const client = new Client({ name: "test-client", version: "0.0.0" });
     const transport = new StreamableHTTPClientTransport(new URL(baseUrl));
     await client.connect(transport);
 
     const result = await client.callTool({
       name: "get-cv-presentation",
-      arguments: { variant: "ai" },
+      arguments: { variant: "general" },
     });
 
     expect(result.isError).not.toBe(true);
     const structuredContent = result.structuredContent as { data: { variant: string } };
-    expect(structuredContent.data.variant).toBe("ai");
+    expect(structuredContent.data.variant).toBe("general");
 
     await client.close();
   });
@@ -290,7 +290,7 @@ describe("MCP endpoint (app/api/mcp/route.ts)", () => {
     expect(result.isError).toBe(true);
     const [firstBlock] = result.content as Array<{ type: string; text?: string }>;
     expect(firstBlock?.text).toContain('"general"');
-    expect(firstBlock?.text).toContain('"ai"');
+    expect(firstBlock?.text).not.toContain('"ai"');
 
     await client.close();
   });

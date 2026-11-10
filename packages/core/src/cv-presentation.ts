@@ -255,13 +255,13 @@ interface ResolvedText {
   source: CvPresentationSource;
 }
 
-/** `{ general, ai }` -> the text for `variant`, falling back to the other variant's text, then to `fallback`, tagged with its source. */
+/** `{ general }` -> the text for `variant`, falling back to `fallback`, tagged with its source. */
 function resolveVariantText(
-  value: { general?: string; ai?: string } | undefined,
+  value: { general?: string } | undefined,
   variant: CvVariant,
   fallback: string,
 ): ResolvedText {
-  const overlayText = value?.[variant] ?? value?.general ?? value?.ai;
+  const overlayText = value?.[variant];
   return overlayText === undefined
     ? { value: fallback, source: "canonical" }
     : { value: overlayText, source: "cv-overrides" };
@@ -273,16 +273,15 @@ interface ResolvedBullets {
 }
 
 /**
- * `{ general, ai }` -> the bullet list for `variant`, falling back to the
- * other variant's bullets, then to `fallback` (the canonical highlights,
- * capped), tagged with its source.
+ * `{ general }` -> the bullet list for `variant`, falling back to
+ * `fallback` (the canonical highlights, capped), tagged with its source.
  */
 function resolveVariantBullets(
-  value: { general?: string[]; ai?: string[] } | undefined,
+  value: { general?: string[] } | undefined,
   variant: CvVariant,
   fallback: string[],
 ): ResolvedBullets {
-  const overlayBullets = value?.[variant] ?? value?.general ?? value?.ai;
+  const overlayBullets = value?.[variant];
   return overlayBullets === undefined
     ? { value: fallback, source: "canonical" }
     : { value: overlayBullets, source: "cv-overrides" };

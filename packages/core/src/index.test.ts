@@ -281,7 +281,7 @@ describe("public entry point", () => {
       education: [],
       skills: {
         categoryLabels: {},
-        groupOrder: { general: [], ai: [] },
+        groupOrder: { general: [] },
         excludeIds: [],
         displayNames: {},
       },

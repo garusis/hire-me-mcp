@@ -35,18 +35,9 @@
  * live there. Any other value (or unset) keeps the default, capped "web"
  * projection unchanged.
  *
- * `CV_VARIANT=ai` (#309 stage 3, open question 2) switches the optimized
- * projection to the AI-adjacent variant — LLM/agentic depth leads the
- * summary, headline and House Numbers bullet order, and the header keeps
- * the MCP endpoint callout. The default (unset, or any other value) is
- * `general`, which stays the default downloadable PDF at the stable
- * `<filename>` the profile name derives; the `ai` variant writes to a
- * `-ai` suffixed filename instead so both can be generated and committed
- * side by side without one clobbering the other. `CV_VARIANT` has no
- * effect in full mode (Stage 1 is variant-agnostic by design: it dumps
- * everything, before any variant-specific selection happens), and it
- * likewise saves its HTML to `docs/cv-review/` for reviewer comparison
- * against the `.full.html` dump.
+ * Only the `general` CV variant exists; the default projection writes the
+ * stable `<filename>` the profile name derives and saves its HTML to
+ * `docs/cv-review/` for reviewer comparison against the `.full.html` dump.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -62,12 +53,7 @@ const CV_OUTPUT_DIR = resolve(SCRIPT_DIR, "..", "public", "cv");
 const CV_REVIEW_DIR = resolve(SCRIPT_DIR, "..", "..", "..", "docs", "cv-review");
 
 const isFullMode = process.env.CV_MODE === "full";
-const variant: CvVariant = process.env.CV_VARIANT === "ai" ? "ai" : "general";
-
-/** `<slug>-cv.pdf` -> `<slug>-cv-ai.pdf` for the ai variant's own filename, never clobbering the general variant's. */
-function filenameFor(baseFilename: string, requestedVariant: CvVariant): string {
-  return requestedVariant === "ai" ? baseFilename.replace(/\.pdf$/, "-ai.pdf") : baseFilename;
-}
+const variant: CvVariant = "general";
 
 async function main(): Promise<void> {
   const view = isFullMode
@@ -83,18 +69,9 @@ async function main(): Promise<void> {
     mcpUrl: PRODUCTION_MCP_ENDPOINT_URL,
   });
 
-  // Clears only *this run's own* stale output (by extension), not the
-  // whole directory: `pnpm generate:cv` (general) and
-  // `CV_VARIANT=ai pnpm generate:cv` (ai) both write into public/cv/, and
-  // one must not delete the other's PDF. A profile-name change still
-  // can't leave a stale differently-named PDF behind, since this run's
-  // own previous file (if renamed) simply stops being written and the
-  // directory only ever holds the two current, correctly-named variants
-  // plus whatever the other variant's most recent run wrote.
   mkdirSync(CV_OUTPUT_DIR, { recursive: true });
 
-  const filename = isFullMode ? view.filename : filenameFor(view.filename, variant);
-  const outputPath = join(CV_OUTPUT_DIR, filename);
+  const outputPath = join(CV_OUTPUT_DIR, view.filename);
   await generateCvPdf(html, outputPath);
 
   console.log(`generate:cv: wrote ${outputPath}`);

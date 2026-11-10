@@ -416,9 +416,11 @@ describe("chunkCareerData — real dataset story coverage (#296)", () => {
   // Unaffected by #307's retrieval-tag sharpening on mutual-informal-leadership and
   // house-numbers-deterministic-document-checks: each replaced one existing tag with one
   // new tag (net tag count per story unchanged), keeping every story's header text under
-  // the same chunk-size boundary — count stays 90.
+  // the same chunk-size boundary — count stayed 90 then. The House Numbers role
+  // title change to "Staff Engineer" (Dark Matter acquisition) shortened every
+  // House Numbers story header, so two stories now fit one fewer chunk: 88.
   it("records the exact total story-chunk count for the production reindex handoff", () => {
-    expect(storyChunks.length).toBe(90);
+    expect(storyChunks.length).toBe(88);
   });
 });
 
